@@ -13,6 +13,8 @@ export interface TableCards {
   readonly hero: TableCard;
   readonly villain: TableCard;
   readonly inPlay: readonly TableCard[];
+  /** In engine order, ending with the visible top card. */
+  readonly discard: readonly TableCard[];
   readonly staged: TableCard | null;
   readonly selected: readonly string[];
 }
@@ -21,6 +23,7 @@ interface Handlers {
   onPick(id: string): void;
   onHover(id: string | null): void;
   onLanded(id: string): void;
+  onDiscardLanded?(count: number): void;
   onDraw?(): void;
 }
 
@@ -37,6 +40,12 @@ interface Piece {
   face: THREE.Mesh<THREE.ShapeGeometry, THREE.MeshBasicMaterial>;
   rim: THREE.Mesh;
   target: Pose;
+}
+
+interface Flight {
+  from: Pose;
+  started: number;
+  kind: "play" | "return" | "discard";
 }
 
 const HEIGHT = 1.407;
@@ -151,6 +160,7 @@ export class BattleTable {
   readonly #stockMaterial = new THREE.MeshStandardMaterial({ color: 0xb7b2a2, roughness: 0.87 });
   readonly #glow = new THREE.MeshBasicMaterial({ color: 0xffc66c });
   readonly #mat = new THREE.Group();
+  readonly #discardSlot = new THREE.Group();
   readonly #observer: ResizeObserver;
   readonly #reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
   #state: TableCards | null = null;
@@ -162,7 +172,8 @@ export class BattleTable {
   #height = 1;
   #disposed = false;
   #contextLost = false;
-  #flight: { id: string; from: Pose; started: number } | null = null;
+  readonly #flights = new Map<string, Flight>();
+  #discardDeal: { ids: string[]; landed: number; done(): void } | null = null;
   #press: { id: string; pointer: number; x: number; y: number; dragging: boolean } | null = null;
 
   constructor(host: HTMLElement, handlers: Handlers) {
@@ -206,6 +217,19 @@ export class BattleTable {
     this.#mat.rotation.x = -Math.PI / 2;
     this.#mat.add(binding, cloth);
     this.#scene.add(this.#mat);
+    const slotShape = roundedRect(1.07, HEIGHT + 0.07, 0.055);
+    slotShape.holes.push(roundedRect(1.042, HEIGHT + 0.042, 0.044));
+    const border = new THREE.Mesh(
+      new THREE.ShapeGeometry(slotShape, 8),
+      new THREE.MeshBasicMaterial({ color: 0x869897, transparent: true, opacity: 0.72 }),
+    );
+    const well = new THREE.Mesh(
+      this.#face,
+      new THREE.MeshBasicMaterial({ color: 0x101a24, transparent: true, opacity: 0.45 }),
+    );
+    this.#discardSlot.rotation.x = -Math.PI / 2;
+    this.#discardSlot.add(well, border);
+    this.#scene.add(this.#discardSlot);
     this.#observer = new ResizeObserver(this.#resize);
     this.#observer.observe(host);
     this.#resize();
@@ -221,7 +245,7 @@ export class BattleTable {
   setCards(state: TableCards): void {
     const previous = this.#state?.staged?.id;
     this.#state = state;
-    const cards = [state.hero, state.villain, ...state.inPlay, ...state.hand];
+    const cards = [state.hero, state.villain, ...state.inPlay, ...state.hand, ...state.discard];
     if (state.staged) cards.push(state.staged);
     const live = new Set(cards.map((card) => card.id));
     for (const [id, piece] of this.#pieces) {
@@ -229,6 +253,7 @@ export class BattleTable {
       this.#scene.remove(piece.root);
       piece.face.material.dispose();
       this.#pieces.delete(id);
+      this.#flights.delete(id);
     }
     const fresh = new Set<string>();
     for (const card of cards) {
@@ -257,19 +282,52 @@ export class BattleTable {
       piece.rim.visible = state.selected.includes(card.id);
     }
     if (previous !== state.staged?.id) {
-      this.#flight = null;
+      if (previous) this.#flights.delete(previous);
       if (state.staged) {
-        const piece = this.#pieces.get(state.staged.id)!;
-        const { position, rotation, scale } = piece.root;
-        this.#flight = {
-          id: state.staged.id,
-          started: performance.now(),
-          from: { position: position.clone(), scale: scale.x, pitch: rotation.x, roll: rotation.z },
-        };
+        this.#startFlight(state.staged.id, "play");
+      } else if (previous && state.hand.some((card) => card.id === previous)) {
+        this.#startFlight(previous, "return");
+      } else if (previous && state.discard.some((card) => card.id === previous)) {
+        this.#startFlight(previous, "discard");
       }
     }
     this.#layout();
     for (const id of fresh) this.#apply(this.#pieces.get(id)!, 1);
+    this.#requestFrame();
+  }
+
+  #startFlight(id: string, kind: Flight["kind"], started = performance.now()): void {
+    const { position, rotation, scale } = this.#pieces.get(id)!.root;
+    this.#flights.set(id, {
+      kind,
+      started,
+      from: { position: position.clone(), scale: scale.x, pitch: rotation.x, roll: rotation.z },
+    });
+  }
+
+  /** The dialog supplies its last displayed scan rectangles before revealing the table. */
+  animateDiscards(cards: readonly { id: string; rect: DOMRect }[], done: () => void): void {
+    const visible = cards.filter(({ id }) => this.#pieces.has(id));
+    if (!visible.length || this.#contextLost || this.#disposed) {
+      done();
+      return;
+    }
+    const canvas = this.#renderer.domElement.getBoundingClientRect();
+    const started = performance.now();
+    this.#discardDeal = { ids: visible.map(({ id }) => id), landed: 0, done };
+    visible.forEach(({ id, rect }, index) => {
+      const piece = this.#pieces.get(id)!;
+      const x = rect.left + rect.width / 2 - canvas.left;
+      const y = rect.top + rect.height / 2 - canvas.top;
+      // A source outside the canvas, e.g. below the table on a phone, lifts from its physical hand slot.
+      if (rect.width > 0 && x >= 0 && x <= canvas.width && y >= 0 && y <= canvas.height) {
+        this.#pose(id, x, y, rect.width, 2.1, this.#camera.rotation.x);
+        this.#apply(piece, 1);
+      }
+      piece.rim.visible = false;
+      this.#startFlight(id, "discard", started + index * 155);
+    });
+    this.#layout();
     this.#requestFrame();
   }
 
@@ -287,18 +345,24 @@ export class BattleTable {
 
   /** Stage-relative CSS pixel positions for DOM controls, including cards in flight. */
   anchors(): { id: string; x: number; y: number; bottom: number }[] {
-    return Array.from(this.#pieces, ([id, { root }]) => {
-      root.updateMatrixWorld();
-      this.#scratch.copy(root.position).project(this.#camera);
-      const x = (0.5 + this.#scratch.x / 2) * this.#width;
-      const y = (0.5 - this.#scratch.y / 2) * this.#height;
-      let bottom = y;
-      for (const [cx, cy] of corners) {
-        this.#scratch.set(cx, cy, 0.02).applyMatrix4(root.matrixWorld).project(this.#camera);
-        bottom = Math.max(bottom, (0.5 - this.#scratch.y / 2) * this.#height);
-      }
-      return { id, x, y, bottom };
-    });
+    return Array.from(this.#pieces, ([id, { root }]) => ({ id, ...this.#anchor(root) }));
+  }
+
+  discardAnchor(): { x: number; y: number; bottom: number } {
+    return this.#anchor(this.#discardSlot);
+  }
+
+  #anchor(root: THREE.Group): { x: number; y: number; bottom: number } {
+    root.updateMatrixWorld();
+    this.#scratch.copy(root.position).project(this.#camera);
+    const x = (0.5 + this.#scratch.x / 2) * this.#width;
+    const y = (0.5 - this.#scratch.y / 2) * this.#height;
+    let bottom = y;
+    for (const [cx, cy] of corners) {
+      this.#scratch.set(cx, cy, 0.02).applyMatrix4(root.matrixWorld).project(this.#camera);
+      bottom = Math.max(bottom, (0.5 - this.#scratch.y / 2) * this.#height);
+    }
+    return { x, y, bottom };
   }
 
   setHovered(id: string | null): void {
@@ -326,7 +390,9 @@ export class BattleTable {
     this.#mat.position.z = (near.z + far.z) / 2;
     this.#mat.scale.set(near.x * 2, near.z - far.z, 1);
     this.#layout();
-    for (const piece of this.#pieces.values()) this.#apply(piece, 1);
+    for (const [id, piece] of this.#pieces) {
+      if (!this.#flights.has(id)) this.#apply(piece, 1);
+    }
     this.#requestFrame();
   };
 
@@ -348,9 +414,9 @@ export class BattleTable {
     this.#pose(state.hero.id, w * 0.255, h * 0.271, boardWidth, 0.045, flat);
     this.#pose(state.villain.id, w * 0.745, h * 0.271, boardWidth, 0.045, flat);
     const inPlay = state.inPlay.filter((c) => c.id !== state.staged?.id);
-    const playWidth = Math.min(boardWidth * 0.8, (w * 0.65) / Math.max(3, inPlay.length));
+    const playWidth = Math.min(boardWidth * 0.8, (w * 0.57) / Math.max(3, inPlay.length));
     inPlay.forEach((card, i) =>
-      this.#pose(card.id, w * 0.5 + (i - (inPlay.length - 1) / 2) * playWidth * 1.15, h * 0.49, playWidth, 0.05, flat),
+      this.#pose(card.id, w * 0.43 + (i - (inPlay.length - 1) / 2) * playWidth * 1.1, h * 0.49, playWidth, 0.05, flat),
     );
     const hand = state.hand.filter((card) => card.id !== state.staged?.id);
     const spread = w < 550 ? 0.73 : 1.03;
@@ -385,6 +451,22 @@ export class BattleTable {
     if (state.staged) {
       this.#pose(state.staged.id, w * 0.5, h * (inPlay.length ? 0.31 : 0.43), boardWidth, 0.16, flat + 0.1);
     }
+    const pileX = w * 0.822;
+    const pileY = h * 0.505;
+    const pileWidth = Math.min(w * 0.125, h * 0.125);
+    const base = this.#point(pileX, pileY, 0.025);
+    const scale = this.#point(pileX + pileWidth, pileY, 0.025).x - base.x;
+    this.#discardSlot.position.copy(base);
+    this.#discardSlot.scale.setScalar(scale);
+    const pileIds = state.discard.map((card) => card.id).concat(this.#discardDeal?.ids ?? []);
+    pileIds.forEach((id, i) => {
+      const piece = this.#pieces.get(id);
+      if (!piece) return;
+      const position = base.clone();
+      position.y += (0.012 + i * 0.023) * scale;
+      position.x += Math.min(i, 8) * scale * 0.008;
+      piece.target = { position, pitch: flat, roll: 0, scale };
+    });
   }
 
   #apply(piece: Piece, t: number): void {
@@ -408,18 +490,24 @@ export class BattleTable {
     let landed: string | null = null;
     for (const [id, piece] of this.#pieces) {
       if (this.#press?.dragging && this.#press.id === id) continue;
-      if (this.#flight?.id === id) {
-        const { from, started } = this.#flight;
-        const progress = this.#reduced.matches ? 1 : Math.min(1, Math.max(0, (now - started) / 310));
+      const flight = this.#flights.get(id);
+      if (flight) {
+        const { from, started, kind } = flight;
+        const duration = kind === "discard" ? 460 : 310;
+        const progress = this.#reduced.matches ? 1 : THREE.MathUtils.clamp((now - started) / duration, 0, 1);
         const t = progress * progress * (3 - 2 * progress);
         piece.root.position.lerpVectors(from.position, piece.target.position, t);
-        piece.root.position.y += Math.sin(Math.PI * progress) * 0.46;
+        piece.root.position.y += Math.sin(Math.PI * progress) * (kind === "discard" ? 0.95 : 0.46);
         piece.root.rotation.x = THREE.MathUtils.lerp(from.pitch, piece.target.pitch, t);
         piece.root.rotation.z = THREE.MathUtils.lerp(from.roll, piece.target.roll, t);
         piece.root.scale.setScalar(THREE.MathUtils.lerp(from.scale, piece.target.scale, t));
         if (progress === 1) {
-          landed = id;
-          this.#flight = null;
+          this.#flights.delete(id);
+          if (kind === "play") landed = id;
+          if (kind === "discard" && this.#discardDeal?.ids.includes(id)) {
+            this.#discardDeal.landed++;
+            this.#handlers.onDiscardLanded?.((this.#state?.discard.length ?? 0) + this.#discardDeal.landed);
+          }
         } else moving = true;
       } else {
         const delta =
@@ -435,7 +523,16 @@ export class BattleTable {
     this.#handlers.onDraw?.();
     if (moving) this.#requestFrame();
     if (landed) this.#handlers.onLanded(landed);
+    if (this.#discardDeal && this.#discardDeal.landed === this.#discardDeal.ids.length) this.#finishDiscards();
   };
+
+  #finishDiscards(): void {
+    const deal = this.#discardDeal;
+    if (!deal) return;
+    this.#discardDeal = null;
+    for (const id of deal.ids) this.#flights.delete(id);
+    deal.done();
+  }
 
   #hit(event: PointerEvent): string | null {
     const rect = this.#renderer.domElement.getBoundingClientRect();
@@ -473,6 +570,7 @@ export class BattleTable {
   }
 
   readonly #move = (event: PointerEvent): void => {
+    if (this.#discardDeal) return;
     const press = this.#press;
     if (!press) {
       if (event.pointerType !== "touch") this.#notifyHover(this.#hit(event));
@@ -496,7 +594,7 @@ export class BattleTable {
   };
 
   readonly #down = (event: PointerEvent): void => {
-    if (event.button !== 0 || !event.isPrimary || this.#press) return;
+    if (event.button !== 0 || !event.isPrimary || this.#press || this.#discardDeal) return;
     const id = this.#hit(event);
     if (!id) return;
     this.#notifyHover(id);
@@ -539,6 +637,7 @@ export class BattleTable {
     this.#contextLost = true;
     cancelAnimationFrame(this.#frame);
     this.#frame = 0;
+    this.#finishDiscards();
   };
   readonly #restoreContext = (): void => {
     this.#contextLost = false;

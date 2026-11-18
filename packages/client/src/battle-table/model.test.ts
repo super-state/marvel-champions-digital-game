@@ -29,6 +29,7 @@ describe("Peter Parker and Rhino's practice turn", () => {
     expect(opening.heroHp).toBe(10);
     expect(opening.villainHp).toBe(14);
     expect(opening.hand).toHaveLength(6);
+    expect(opening.discard).toEqual([]);
     expect(opening.hand.every((card) => card.art.includes("/card-art/") && !card.art.includes("back"))).toBe(true);
     const strength = opening.hand.find((card) => card.name === "Strength")!;
     expect(strength).toMatchObject({ playable: false, type: "resource" });
@@ -58,6 +59,7 @@ describe("Peter Parker and Rhino's practice turn", () => {
     expect(result.hand).toHaveLength(3);
     expect(result.hand.some((card) => [subject.id, extra.cardId, strength.cardId].includes(card.id))).toBe(false);
     expect(result.inPlay.some((card) => card.id === subject.id)).toBe(true);
+    expect(result.discard.map((card) => card.id)).toEqual([strength.cardId, extra.cardId]);
   });
 
   test("deselecting or cancelling a staged card leaves the original hand intact", () => {
@@ -67,22 +69,46 @@ describe("Peter Parker and Rhino's practice turn", () => {
     expect(battle.snapshot().payment?.canPay).toBe(true);
     spend("Strength");
     expect(battle.snapshot().payment?.paid).toBe(0);
+    expect(battle.snapshot().payment?.discards).toEqual([]);
+    spend("Strength");
     battle.cancel();
     expect(battle.snapshot()).toEqual(opening);
   });
 
-  test("paying for Swinging Web Kick allows the real engine to damage Rhino", () => {
-    pick("Swinging Web Kick");
+  test("reselecting a source moves its card to the top of the proposed and committed discard stack", () => {
+    pick("Helicarrier");
+    const strength = spend("Strength");
+    const intuition = spend("Heroic Intuition");
     spend("Strength");
-    spend("Heroic Intuition");
+    spend("Strength");
+    const proposed = [intuition.cardId, strength.cardId];
+    const before = battle.snapshot();
+    expect(before.payment?.discards).toEqual(proposed);
+    expect(before.discard).toHaveLength(0);
+    expect(battle.pay()).toBe(true);
+    const { discard } = battle.snapshot();
+    expect(discard.map((card) => card.id)).toEqual(proposed);
+    expect(discard.map((card) => card.name)).toEqual(["Heroic Intuition", "Strength"]);
+    for (const card of discard) {
+      expect(card.art).toBe(before.hand.find((source) => source.id === card.id)!.art);
+    }
+  });
+
+  test("paying for Swinging Web Kick allows the real engine to damage Rhino", () => {
+    const kick = pick("Swinging Web Kick");
+    const strength = spend("Strength");
+    const intuition = spend("Heroic Intuition");
     expect(battle.pay()).toBe(true);
     const pending = battle.snapshot().choice;
     if (pending) {
+      expect(battle.snapshot().discard.map((card) => card.id)).toEqual([strength.cardId, intuition.cardId]);
       const target = pending.options.find((option) => option.label.includes("Rhino"))!;
       expect(target).toBeDefined();
       expect(battle.choose(target.id)).toBe(true);
     }
     expect(battle.snapshot().villainHp).toBe(6);
     expect(battle.snapshot().inPlay.some((card) => card.name === "Swinging Web Kick")).toBe(false);
+    expect(battle.snapshot().discard.map((card) => card.id)).toEqual([strength.cardId, intuition.cardId, kick.id]);
+    expect(battle.snapshot().discard.at(-1)?.art).toBe(kick.art);
   });
 });

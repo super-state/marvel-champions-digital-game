@@ -36,6 +36,8 @@ export interface BattlePayment {
   required: number;
   paid: number;
   canPay: boolean;
+  /** Hand instances in the order their payment discards will land. */
+  discards: string[];
   sources: {
     id: string;
     cardId: string;
@@ -60,6 +62,8 @@ export interface BattleSnapshot {
   heroHp: number;
   villainHp: number;
   inPlay: BattleCard[];
+  /** Bottom to top, so each paid card is placed on its predecessor. */
+  discard: BattleCard[];
   payment: BattlePayment | null;
   choice: BattleChoice | null;
 }
@@ -159,6 +163,12 @@ export class BattleModel {
             required: priced.required,
             paid: priced.paid,
             canPay: !!priced.command,
+            discards: priced.sources
+              .flatMap((source) =>
+                source.discardOrder === null ? [] : [{ order: source.discardOrder, id: source.instanceId }],
+              )
+              .sort((a, b) => a.order - b.order)
+              .map((source) => source.id),
             sources: priced.sources.map((source) => ({
               id: source.optionId,
               cardId: source.instanceId,
@@ -196,6 +206,7 @@ export class BattleModel {
       heroHp: remainingHitPoints(state, player.identity.instanceId, CORE_DEPS) ?? 0,
       villainHp: remainingHitPoints(state, villain.instanceId, CORE_DEPS) ?? 0,
       hand: player.hand.map((id) => this.#card(id)),
+      discard: player.discard.map((id) => this.#card(id)).reverse(),
       inPlay: [...new Set([...player.playArea, ...attached])].map((id) => this.#card(id)),
       payment,
       choice,

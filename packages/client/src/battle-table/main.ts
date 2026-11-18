@@ -1,9 +1,9 @@
 import "./battle.css";
 import { BattleModel, type BattleCard } from "./model.js";
 import { BattleTable } from "./table.js";
+import { PaymentLightbox, resourceText } from "./payment-lightbox.js";
 
 type Snapshot = ReturnType<BattleModel["snapshot"]>;
-type Payment = NonNullable<Snapshot["payment"]>;
 
 function element<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -25,18 +25,22 @@ const preview = element<HTMLImageElement>("preview");
 const decision = element("decision");
 const instruction = element("instruction");
 const restart = element<HTMLButtonElement>("reset");
+const pile = element("discard-label");
+const pileCount = element("discard-count");
+const lightbox = new PaymentLightbox(toggle, pay, cancel);
 let table: BattleTable | undefined;
 let state: Snapshot;
 let staged: BattleCard | null = null;
 let flying = false;
+let discarding = false;
 const labels = new Map<string, HTMLButtonElement>();
 
 function cards() {
-  return [state.hero, state.villain, ...state.hand, ...state.inPlay];
+  return [state.hero, state.villain, ...state.hand, ...state.inPlay, ...state.discard];
 }
 
 function inspect(id: string | null) {
-  if (!id) return;
+  if (!id || discarding) return;
   const card = cards().find((item) => item.id === id);
   if (card && card.art) {
     if (preview.getAttribute("src") !== card.art) preview.src = card.art;
@@ -45,14 +49,8 @@ function inspect(id: string | null) {
   }
 }
 
-function wordsForIcons(icons: readonly string[]): string {
-  const counts = new Map<string, number>();
-  for (const icon of icons) counts.set(icon, (counts.get(icon) ?? 0) + 1);
-  return [...counts].map(([name, n]) => `${n} ${name.toLowerCase()}`).join(" + ");
-}
-
 function pick(id: string) {
-  if (flying) return;
+  if (flying || discarding) return;
   inspect(id);
   if (state.payment) {
     const source = state.payment.sources.find((item) => item.cardId === id);
@@ -93,11 +91,8 @@ function landed(id: string) {
 
 function toggle(id: string) {
   if (!state.payment) return;
-  const restore = document.activeElement instanceof HTMLButtonElement ? document.activeElement.dataset.source : null;
   model.toggle(id);
   render();
-  if (restore)
-    decision.querySelector<HTMLButtonElement>(`[data-source="${CSS.escape(restore)}"]`)?.focus({ preventScroll: true });
 }
 
 function act(work: () => void) {
@@ -113,84 +108,45 @@ function act(work: () => void) {
 }
 
 function cancel() {
+  const returned = staged?.name;
   model.cancel();
   staged = null;
   flying = false;
-  instruction.textContent = "Pick a card to play.";
+  instruction.textContent = returned ? `${returned} returned to your hand.` : "Pick a card to play.";
   render();
 }
 
 function pay() {
-  if (!state.payment?.canPay) return;
-  const subject = state.payment.subject;
+  const payment = state.payment;
+  if (discarding || !payment?.canPay || !table) return;
+  const flights = lightbox.discardRects(payment);
   const before = state.villainHp;
-  act(() => {
-    if (!model.pay()) return;
-    state = model.snapshot();
-    staged = null;
-    const damage = before - state.villainHp;
-    instruction.textContent = state.choice
-      ? state.choice.prompt
-      : damage > 0
-        ? `${subject.name} dealt ${damage} damage to Rhino.`
-        : `${subject.name} played.`;
-  });
-}
-
-function showPayment(payment: Payment) {
-  const header = make("div", "payment-header");
-  const art = make("img", "subject-art");
-  art.src = payment.subject.art;
-  art.alt = "";
-  const title = make("div", "");
-  title.append(make("p", "eyebrow", "Pay for card"), make("h2", "", payment.subject.name));
-  header.append(art, title);
-  const total = make("div", "total");
-  total.append(make("strong", "", `${payment.paid} / ${payment.required}`), make("span", "", "resources"));
-  const meter = make("div", "meter");
-  const fill = make("span", "");
-  fill.style.width = `${100 * Math.min(1, payment.paid / (payment.required || 1))}%`;
-  meter.append(fill);
-  const remaining = Math.max(0, payment.required - payment.paid);
-  const excess = Math.max(0, payment.paid - payment.required);
-  const status = make(
-    "p",
-    "balance",
-    remaining
-      ? `Choose ${remaining} more resource${remaining === 1 ? "" : "s"}.`
-      : excess
-        ? `Cost covered · ${excess} extra selected.`
-        : "Cost covered.",
-  );
-  status.setAttribute("role", "status");
-  const sources = make("div", "sources");
-  if (payment.sources.length) sources.append(make("h3", "", "Available resources"));
-  for (const source of payment.sources) {
-    const button = make("button", "source");
-    button.type = "button";
-    button.dataset.source = source.id;
-    button.setAttribute("aria-pressed", String(source.selected));
-    button.onclick = () => toggle(source.id);
-    const checkbox = make("span", "check", source.selected ? "✓" : "");
-    checkbox.setAttribute("aria-hidden", "true");
-    const label = make("span", "");
-    const resource = wordsForIcons(source.icons);
-    label.append(make("strong", "", source.label), make("span", "source-detail", resource));
-    const amount = make("span", "yield", `+${source.icons.length}`);
-    amount.setAttribute("aria-hidden", "true");
-    button.append(checkbox, label, amount);
-    sources.append(button);
+  if (!model.pay()) return;
+  discarding = true;
+  restart.disabled = true;
+  lightbox.close();
+  anchors.inert = true;
+  for (const { id } of flights) {
+    const label = labels.get(id);
+    if (label) label.hidden = true;
   }
-  const actions = make("div", "decision-actions");
-  const confirm = make("button", "commit", "Pay & play");
-  confirm.type = "button";
-  confirm.disabled = !payment.canPay;
-  confirm.onclick = pay;
-  const back = make("button", "quiet", "Cancel");
-  back.type = "button";
-  back.onclick = cancel;
-  actions.append(confirm, back);
-  decision.append(header, total, meter, status, sources, actions);
+  instruction.textContent = flights.length ? "Discarding payment…" : `Playing ${payment.subject.name}…`;
+  table.animateDiscards(flights, () => {
+    discarding = false;
+    restart.disabled = false;
+    anchors.inert = false;
+    state = model.snapshot();
+    // Keep a resolving event on the mat while the player chooses its target.
+    staged =
+      state.choice && payment.subject.type === "event" && !state.discard.some((card) => card.id === payment.subject.id)
+        ? payment.subject
+        : null;
+    const damage = before - state.villainHp;
+    instruction.textContent =
+      state.choice?.prompt ??
+      (damage > 0 ? `${payment.subject.name} dealt ${damage} damage to Rhino.` : `${payment.subject.name} played.`);
+    render();
+  });
 }
 
 function choose(id: string | null) {
@@ -257,7 +213,7 @@ function synchronizeLabels() {
       target
         ? `Choose ${card.name}`
         : source
-          ? `${source.selected ? "Remove" : "Spend"} ${card.name}, ${wordsForIcons(source.icons)}`
+          ? `${source.selected ? "Remove" : "Spend"} ${card.name}, ${resourceText(source.icons)}`
           : card.playable
             ? `Play ${card.name}, cost ${card.cost}`
             : `Inspect ${card.name}`,
@@ -267,6 +223,8 @@ function synchronizeLabels() {
 
 function placeLabels() {
   if (!table) return;
+  const discard = table.discardAnchor();
+  pile.style.transform = `translate(${Math.round(discard.x)}px,${Math.round(discard.bottom + 3)}px)`;
   const projected = table.anchors();
   const handIds = new Set(state.hand.filter((card) => card.id !== staged?.id).map((card) => card.id));
   const hand = projected.filter((point) => handIds.has(point.id)).sort((a, b) => a.x - b.x);
@@ -288,17 +246,20 @@ function render() {
     hero: state.hero,
     villain: state.villain,
     inPlay: state.inPlay,
+    discard: state.discard,
     hand: state.hand.filter((card) => card.id !== staged?.id),
     staged,
     selected: state.payment?.sources.filter((item) => item.selected).map((item) => item.cardId) ?? [],
   });
   synchronizeLabels();
+  pileCount.textContent = String(state.discard.length);
   element("hand-count").textContent = String(state.hand.filter((card) => card.id !== staged?.id).length);
   decision.replaceChildren();
-  decision.hidden = !state.payment && !state.choice;
+  decision.hidden = !state.choice;
   reader.hidden = !decision.hidden;
-  if (state.payment) showPayment(state.payment);
-  else if (state.choice) showChoice(state.choice);
+  if (state.payment) lightbox.show(state.payment, cards());
+  else lightbox.close();
+  if (state.choice) showChoice(state.choice);
 }
 
 function deal() {
@@ -313,6 +274,9 @@ function deal() {
       onHover: inspect,
       onLanded: landed,
       onDraw: placeLabels,
+      onDiscardLanded: (count) => {
+        pileCount.textContent = String(count);
+      },
     });
   }
   render();

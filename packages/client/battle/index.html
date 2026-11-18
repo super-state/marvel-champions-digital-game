@@ -17,19 +17,39 @@
         <section class="playfield" aria-label="Battle table">
           <div id="stage">
             <div id="space"></div>
-            <div id="anchors" aria-label="Cards on the table"></div>
+            <div id="anchors" aria-label="Cards on the table">
+              <span id="discard-label">Discard <b id="discard-count">0</b></span>
+            </div>
           </div>
           <div class="hand-strip">
             <div><span class="deck-mark" aria-hidden="true"></span> Your hand <b id="hand-count"></b></div>
             <span id="instruction" role="status">Dealing the opening hand…</span>
           </div>
         </section>
-        <aside class="rail" aria-label="Card inspection and payment" id="rail">
+        <aside class="rail" aria-label="Card inspection and choices" id="rail">
           <div id="reader" class="reader"><img id="preview" alt="" hidden /></div>
           <section id="decision" hidden></section>
         </aside>
       </div>
     </main>
+    <dialog id="payment" aria-labelledby="payment-title" aria-describedby="payment-subject">
+      <div class="payment-content">
+        <header class="payment-heading">
+          <p class="eyebrow" id="payment-subject"></p>
+          <h2 id="payment-title" tabindex="-1" autofocus>Discard for resources</h2>
+        </header>
+        <div class="payment-progress" role="status" aria-live="polite" aria-atomic="true">
+          <strong id="payment-total"></strong>
+          <div class="payment-track" aria-hidden="true"><span></span></div>
+          <span id="payment-balance"></span>
+        </div>
+        <div id="payment-sources" role="group" aria-label="Choose resources"></div>
+        <footer class="payment-actions">
+          <button type="button" id="payment-cancel">Cancel</button>
+          <button type="button" id="payment-submit" disabled>Submit</button>
+        </footer>
+      </div>
+    </dialog>
     <script type="module" src="/src/battle-table/main.ts"></script>
   </body>
 </html>
