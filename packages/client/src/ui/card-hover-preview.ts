@@ -429,7 +429,7 @@ export class HoverPreview {
     if (id === this.#pendingId) return;
     this.#clear();
     this.#pendingId = id;
-    if (instant) this.#show(id);
+    if (instant || this.deps.onCardDetails) this.#show(id);
     else this.#timer = this.scene.time.delayedCall(HOVER_DELAY_MS, () => this.#show(id));
   }
 

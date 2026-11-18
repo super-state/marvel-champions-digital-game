@@ -49,6 +49,8 @@ import { drawMyPiles } from "./piles.js";
 import { focusKey } from "./selection.js";
 import { setMask } from "../../ui/rex.js";
 import { bindDragSurface } from "../../ui/hold-target.js";
+import { isMousePointer } from "../../ui/card-hover-preview.js";
+import { pointInRect } from "../../view/drag-gesture.js";
 import { addTapTarget } from "./tap-target.js";
 import { bindHandLift } from "./hand-lift.js";
 
@@ -71,6 +73,7 @@ const HAND_CAPTION_HEIGHT = 20;
  */
 /** A mode bar: 44px controls with 4px above and below (`hit.target` is the floor for anything tapped). */
 const BAR_HEIGHT = BAR_ROW;
+const hoveredHandCard = new WeakMap<Phaser.Scene, InstanceId>();
 
 export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel, table: Rect): void {
   const { scene, hand, tabbed } = ctx;
@@ -314,6 +317,8 @@ function drawLiftableCard(
   let carrying = false;
   let hovered = false;
   const show = (over: boolean, instant = false): void => {
+    if (over) hoveredHandCard.set(scene, card.instanceId);
+    else if (hoveredHandCard.get(scene) === card.instanceId) hoveredHandCard.delete(scene);
     hovered = over;
     if (carrying) return;
     const raised = over;
@@ -323,8 +328,17 @@ function drawLiftableCard(
     cardGroup.setDepth(over ? 2_000 + index : index);
     layer.sort("depth");
     scene.tweens.killTweensOf(print);
-    if (instant || reducedMotion) print.setPosition(cx, y).setScale(scale);
-    else scene.tweens.add({ targets: print, x: cx, y, scale, duration: raised ? 135 : 165, ease: "Cubic.easeOut" });
+    if (instant || reducedMotion || raised) print.setPosition(cx, y).setScale(scale);
+    else
+      scene.tweens.add({
+        targets: print,
+        x: cx,
+        y,
+        scaleX: scale,
+        scaleY: scale,
+        duration: 140,
+        ease: "Cubic.easeOut",
+      });
   };
   print.once("destroy", () => scene.tweens.killTweensOf(print));
   const target = ctx.makeTapTarget(
@@ -342,7 +356,12 @@ function drawLiftableCard(
       (hovered || y >= face.y - pose.target.y) && Phaser.Geom.Rectangle.Contains(bounds, x, y);
   }
   ctx.frame.focusRects.set(focusKey({ kind: "card", instanceId: card.instanceId }), face);
-  show(false, true);
+  // Art arrivals and transitions can replace this zone while the mouse is still on it.
+  const pointer = scene.input.activePointer;
+  const previous = hoveredHandCard.get(scene);
+  const continuing = previous === card.instanceId && pointInRect(pointer.x, pointer.y, pose.target);
+  const underMouse = pointer.event?.type === "mousemove" && pointInRect(pointer.x, pointer.y, face);
+  show(!pointer.isDown && isMousePointer(pointer) && (continuing || underMouse), true);
 
   if (!table || ctx.actionsHeld || ctx.replay || !ctx.marks?.playable.has(card.instanceId)) return;
   let hint: Phaser.GameObjects.Text | undefined;
