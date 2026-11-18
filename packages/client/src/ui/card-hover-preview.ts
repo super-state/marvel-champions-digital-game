@@ -93,6 +93,8 @@ export interface HoverPreviewDeps {
    * a bigger copy.
    */
   readonly skipLarge?: boolean;
+  /** The table can route mouse previews to its fixed reader. Held zoom still uses the original scan. */
+  readonly onCardDetails?: (id: InstanceId) => void;
 }
 
 /** True when the pointer is a mouse (or pen): a touch has long-press Inspect instead. */
@@ -440,6 +442,12 @@ export class HoverPreview {
       return;
     }
     const pile = this.deps.facedown?.().find((entry) => entry.key === id);
+    if (this.deps.onCardDetails) {
+      this.#pendingId = null;
+      this.#shownId = id;
+      if (!pile) this.deps.onCardDetails(id as InstanceId);
+      return;
+    }
     if (pile) {
       const built = this.#buildFacedown(pile, area);
       this.#pendingId = null;

@@ -226,6 +226,8 @@ export interface LayoutOptions {
    * the table and the hand stay in view and live beside the phase. Omitted or 0 lays the board out as usual.
    */
   readonly villainDock?: number;
+  /** Room for a stationary card reader at the right of the long table. */
+  readonly cardDetails?: number;
   /**
    * The villain phase docked as the band over the long table (tablet landscape; `villainDockRects("band")`). With
    * `tall` set (a defend decision or the recap, TB1/TB2) the band takes the villain band and most of the player
@@ -409,9 +411,8 @@ export function boardLayout(viewport: Rect, options: LayoutOptions): BoardLayout
   // enemies, the identity panel and so on — narrows to make room. So `chrome` is always laid out against the
   // real, full-width `viewport`; every other zone gets the inset one.
   const railed = options.guideRail ? insetForGuideRail(viewport, options.guideRail) : viewport;
-  const boardViewport = options.villainDock
-    ? insetForGuideRail(railed, { side: "right", width: options.villainDock })
-    : railed;
+  const rightRail = (options.villainDock ?? 0) + (tabbed ? 0 : (options.cardDetails ?? 0));
+  const boardViewport = rightRail ? insetForGuideRail(railed, { side: "right", width: rightRail }) : railed;
   const placed =
     formFactor === "phoneLandscape"
       ? phoneLandscapeZones(boardViewport, options, viewport)

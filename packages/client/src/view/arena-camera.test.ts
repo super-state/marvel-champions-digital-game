@@ -16,11 +16,13 @@ describe("the tabletop camera", () => {
     expect(view.project({ x: 0, y: -0.06, z: 1 }).y).toBeGreaterThan(front.y);
   });
 
-  it("changes perspective on opposite ends when looking across the playmat", () => {
-    const rect = { x: 0, y: 45, width: 1280, height: 630 };
-    const left = arenaView(rect, -1);
-    const right = arenaView(rect, 1);
-    expect(right.project({ x: 0, y: 0, z: -1 }).x).toBeGreaterThan(left.project({ x: 0, y: 0, z: -1 }).x);
-    expect(right.project({ x: 0, y: 0, z: 1 }).x).toBeLessThan(left.project({ x: 0, y: 0, z: 1 }).x);
+  it("keeps both edges symmetric around the centerline", () => {
+    const view = arenaView({ x: 15, y: 45, width: 1280, height: 630 });
+    for (const z of [-1, 0, 1]) {
+      const left = view.project({ x: -view.halfWidth, y: 0, z });
+      const right = view.project({ x: view.halfWidth, y: 0, z });
+      expect((left.x + right.x) / 2).toBeCloseTo(655);
+      expect(left.y).toBeCloseTo(right.y);
+    }
   });
 });

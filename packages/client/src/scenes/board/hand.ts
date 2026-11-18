@@ -6,7 +6,7 @@
 import { countChipText } from "../../view/gift-count.js";
 import { noTargetTag } from "../../view/hand-reason.js";
 import { teamUpTagFor, type TeamUpRole } from "../../view/team-up-model.js";
-import type Phaser from "phaser";
+import Phaser from "phaser";
 import type { ResourceIconType } from "@mc/content";
 import { cardOf, type GameState, type InstanceId } from "@mc/engine";
 import { artFor } from "../../art/art-source.js";
@@ -24,7 +24,7 @@ import type { DiscardChoiceView } from "../../view/discard-choice-model.js";
 import { FORCED_ACTION_CODE } from "../../view/forced-actions.js";
 import type { IllegalReason } from "../../view/highlights.js";
 import { DEFENSE_LOCKOUT_TAG, isDefenseBarMessage } from "../../view/defense-lockout.js";
-import { handFan, type HandFanCard } from "../../view/hand-fan.js";
+import { handCardPose, type HandCardPose } from "../../view/hand-presentation.js";
 import { handRow, type HandRowLayout } from "../../view/hand-row.js";
 import type { VillainHandTagKind } from "../../view/villain-hand-tags.js";
 import type { Rect } from "../../view/layout.js";
@@ -61,9 +61,8 @@ const HAND_CAPTION_HEIGHT = 20;
 /**
  * The hand row. On the tabbed board (`Board - Phone`) a crowded hand scrolls
  * instead of shrinking below a readable size: every card at full size, the row
- * dragged or wheeled sideways (PLAN.md Phase 4, "the phone hand crowds at six
- * cards"). The long table fans an idle hand. A decision straightens its cards
- * so tags, costs and pinned resource tiles can be read side by side.
+ * dragged or wheeled sideways. The long table uses one baseline, with room
+ * for the hovered card to lift out of the row.
  *
  * The tabbed row is one masked container, and a scroll only moves it
  * (`HandScroll#attach`): the cards are clipped to `cardArea`, so they slide
@@ -204,7 +203,7 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel, t
     landscape: model.hand.map((card) => card.landscape),
   });
   const { slots } = row;
-  const poses = !tabbed && idle ? handFan(slots, row.cardArea) : null;
+  const poses = !tabbed && idle ? slots.map((slot) => handCardPose(slot, row.cardArea.y + row.cardArea.height)) : null;
   // The tabbed hand's whole strip takes a sideways drag once it scrolls, not only its cards: a finger that starts in a
   // gap or above a short card still scrolls the hand. Made before the cards and table tiles, so each keeps its own press.
   const dragSurface = tabbed
@@ -226,7 +225,7 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel, t
       if (!slot) return;
       const drawn: Rect = poses?.[index]?.target ?? { ...slot, x: slot.x - scrollX };
       ctx.frame.hitRects.set(card.instanceId, drawn);
-      ctx.frame.focusRects.set(focusKey({ kind: "card", instanceId: card.instanceId }), drawn);
+      ctx.frame.focusRects.set(focusKey({ kind: "card", instanceId: card.instanceId }), poses?.[index]?.face ?? drawn);
     });
   };
   const drawnAt = hand.scrollX;
@@ -238,14 +237,14 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel, t
     ? { x: row.cardArea.x, y: rect.y, width: row.cardArea.width, height: rect.height }
     : null;
   if (strip) ctx.frame.handStrip.push(strip);
-  const fanLayer = poses ? scene.add.container(0, 0) : null;
+  const liftLayer = poses ? scene.add.container(0, 0) : null;
   model.hand.forEach((card, index) => {
     const slot = slots[index];
     // A card still flying in from the deck leaves its slot empty; its ghost fills it (`BoardMotion#isArriving`).
     if (!slot || ctx.motion.isArriving(card.instanceId)) return;
     const pose = poses?.[index];
-    if (fanLayer && pose) {
-      drawFannedCard(ctx, fanLayer, index, pose, card, model.phase === "player" ? table : null);
+    if (liftLayer && pose) {
+      drawLiftableCard(ctx, liftLayer, index, pose, card, model.phase === "player" ? table : null);
       return;
     }
     const at = { ...slot, x: slot.x - drawnAt };
@@ -293,11 +292,11 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel, t
 }
 
 /** Only the card's face tilts. Its stationary tap zone and its face share a place in the fan's stacking order. */
-function drawFannedCard(
+function drawLiftableCard(
   ctx: BoardDrawContext,
   layer: Phaser.GameObjects.Container,
   index: number,
-  pose: HandFanCard,
+  pose: HandCardPose,
   card: HandCardView,
   table: Rect | null,
 ): void {
@@ -307,26 +306,25 @@ function drawFannedCard(
   const cy = face.y + face.height / 2;
   const start = scene.children.list.length;
   drawHandCard(ctx, { ...face, x: -face.width / 2, y: -face.height / 2 }, card, null, null);
-  const print = scene.add.container(cx, cy, scene.children.list.slice(start)).setAngle(pose.angle);
+  const print = scene.add.container(cx, cy, scene.children.list.slice(start)).setName(`Hand card ${card.instanceId}`);
   const cardGroup = scene.add.container(0, 0, [print]);
   layer.add(cardGroup);
 
-  const focused = ctx.focusedCard === card.instanceId;
   const reducedMotion = appSession().settings.reducedMotion;
   let carrying = false;
+  let hovered = false;
   const show = (over: boolean, instant = false): void => {
+    hovered = over;
     if (carrying) return;
-    const raised = over || focused;
+    const raised = over;
     const scale = raised ? lifted.width / face.width : 1;
     const y = raised ? lifted.y + lifted.height / 2 : cy;
-    const angle = raised ? 0 : pose.angle;
     // Containers draw their children in list order. Raise only within the hand, below every later overlay.
-    cardGroup.setDepth(over ? 2_000 + index : focused ? 1_000 + index : index);
+    cardGroup.setDepth(over ? 2_000 + index : index);
     layer.sort("depth");
     scene.tweens.killTweensOf(print);
-    if (instant || reducedMotion) print.setPosition(cx, y).setAngle(angle).setScale(scale);
-    else
-      scene.tweens.add({ targets: print, x: cx, y, angle, scale, duration: raised ? 135 : 165, ease: "Cubic.easeOut" });
+    if (instant || reducedMotion) print.setPosition(cx, y).setScale(scale);
+    else scene.tweens.add({ targets: print, x: cx, y, scale, duration: raised ? 135 : 165, ease: "Cubic.easeOut" });
   };
   print.once("destroy", () => scene.tweens.killTweensOf(print));
   const target = ctx.makeTapTarget(
@@ -337,7 +335,13 @@ function drawFannedCard(
     show,
   );
   cardGroup.add(target.zone);
-  if (focused) ctx.frame.focusRects.set(focusKey({ kind: "card", instanceId: card.instanceId }), lifted);
+  // The raised face is clickable above the hand as long as this card was already hovered.
+  // Before that, the extra hit area must not intercept anything on the table.
+  if (target.zone.input) {
+    target.zone.input.hitAreaCallback = (bounds: Phaser.Geom.Rectangle, x: number, y: number) =>
+      (hovered || y >= face.y - pose.target.y) && Phaser.Geom.Rectangle.Contains(bounds, x, y);
+  }
+  ctx.frame.focusRects.set(focusKey({ kind: "card", instanceId: card.instanceId }), face);
   show(false, true);
 
   if (!table || ctx.actionsHeld || ctx.replay || !ctx.marks?.playable.has(card.instanceId)) return;
@@ -382,7 +386,7 @@ function drawFannedCard(
       held = null;
       if (print.active && cardGroup.active) {
         print.setVisible(true);
-        show(false);
+        show(hovered);
       }
     },
     activate: target.activate,

@@ -76,11 +76,6 @@ export class ArenaTable {
   #print: Phaser.Textures.CanvasTexture | null = null;
   #image: Phaser.GameObjects.Image | null = null;
   #texture: Phaser.Textures.Texture | null = null;
-  #still = true;
-  #lookX = 0;
-  #lookY = 0;
-  #targetX = 0;
-  #targetY = 0;
 
   constructor(scene: Phaser.Scene) {
     this.#scene = scene;
@@ -88,17 +83,14 @@ export class ArenaTable {
     this.#metal = scene.add.graphics();
     this.#root.add(this.#metal);
     this.#webgl = scene.game.renderer.type === Phaser.WEBGL;
-    scene.input.on(Phaser.Input.Events.POINTER_MOVE, this.#point);
-    scene.input.on(Phaser.Input.Events.GAME_OUT, this.#center);
   }
 
   detach(): void {
     this.#root.removeFromDisplayList();
   }
 
-  show(rect: Rect, reducedMotion: boolean): void {
+  show(rect: Rect): void {
     this.#root.addToDisplayList();
-    const still = reducedMotion || !this.#webgl;
     const old = this.#rect;
     if (
       this.#texture &&
@@ -106,16 +98,10 @@ export class ArenaTable {
       rect.x === old.x &&
       rect.y === old.y &&
       rect.width === old.width &&
-      rect.height === old.height &&
-      still === this.#still
+      rect.height === old.height
     )
       return;
     this.#rect = rect;
-    this.#still = still;
-    if (still) {
-      this.#center();
-      this.#lookX = this.#lookY = 0;
-    }
     if (!this.#texture && ensurePictureLoaded(this.#scene, ROOFTOP, this.#onLoaded)) this.#onLoaded();
     else this.#draw();
   }
@@ -144,32 +130,10 @@ export class ArenaTable {
     this.#draw();
   };
 
-  readonly #point = (pointer: Phaser.Input.Pointer): void => {
-    const rect = this.#rect;
-    if (!rect || this.#still || pointer.wasTouch || pointer.isDown) return;
-    const centered = (n: number) => Math.max(-1, Math.min(1, 2 * n - 1));
-    this.#targetX = centered((pointer.x - rect.x) / rect.width);
-    this.#targetY = centered((pointer.y - rect.y) / rect.height);
-  };
-
-  readonly #center = (): void => {
-    this.#targetX = this.#targetY = 0;
-  };
-
-  update(deltaMs: number): void {
-    if (this.#still || (this.#lookX === this.#targetX && this.#lookY === this.#targetY)) return;
-    const weight = 1 - Math.exp(-deltaMs / 105);
-    const ease = (value: number, target: number) =>
-      Math.abs(target - value) < 0.003 ? target : value + (target - value) * weight;
-    this.#lookX = ease(this.#lookX, this.#targetX);
-    this.#lookY = ease(this.#lookY, this.#targetY);
-    this.#draw();
-  }
-
   #draw(): void {
     const rect = this.#rect;
     if (!rect) return;
-    const view = arenaView(rect, this.#lookX, this.#lookY);
+    const view = arenaView(rect);
     paintBezel(this.#metal, view);
     if (!this.#texture) return;
     const source = this.#texture.getSourceImage() as HTMLImageElement | HTMLCanvasElement;
@@ -218,8 +182,6 @@ export class ArenaTable {
   }
 
   destroy(): void {
-    this.#scene.input.off(Phaser.Input.Events.POINTER_MOVE, this.#point);
-    this.#scene.input.off(Phaser.Input.Events.GAME_OUT, this.#center);
     this.#root.destroy();
     if (this.#print) this.#scene.textures.remove(CANVAS_PRINT);
   }

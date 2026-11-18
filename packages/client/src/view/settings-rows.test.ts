@@ -445,7 +445,7 @@ describe("inspect card row (#358)", () => {
 describe("card size on hover row", () => {
   test("offers off then 1.5x to 4x with the selected one marked", () => {
     const info = cardHoverRowInfoOf({ ...BASE, cardHoverScale: "2.5x" });
-    expect(info.title).toBe("Card size on hover");
+    expect(info.title).toBe("Card previews and zoom");
     expect(info.options.map((o) => o.label)).toEqual(["Off", "1.5×", "2×", "2.5×", "3×", "4×"]);
     expect(info.selected).toBe("2.5x");
   });

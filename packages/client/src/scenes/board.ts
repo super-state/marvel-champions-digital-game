@@ -133,6 +133,8 @@ import { layerMarkerSpot } from "../view/layer-marker.js";
 import { nextAbilityPage } from "../view/pad-layer-hold.js";
 import { drawCharacter } from "./board/character-panel.js";
 import { ArenaTable } from "./board/arena.js";
+import { BoardCardDetails } from "./board/card-details.js";
+import { inspectModel } from "../view/inspect-model.js";
 import { drawDealtPile } from "./board/dealt-pile.js";
 import { dealtCaption, dealtReasonsOf } from "../view/dealt-pile.js";
 import { drawChrome, drawPhoneTabs } from "./board/chrome.js";
@@ -237,6 +239,9 @@ function soundInfoOfCard(cardId: CardId): CardSoundInfo | null {
 
 export class BoardScene extends Phaser.Scene {
   #arena: ArenaTable | null = null;
+  #details: BoardCardDetails | null = null;
+  #detailsRect: Rect | null = null;
+  #detailsCard: InstanceId | null = null;
   /** Team-Ups present in the latest state (relevant to this game, both characters in play in any form). */
   #teamUps: readonly TeamUpPair[] = [];
   /** Keys of the present pairs the engine lets a player play cards for now (both showing the hero side). */
@@ -531,7 +536,6 @@ export class BoardScene extends Phaser.Scene {
 
   /** The hand's flick coasts frame by frame; everything else on the table moves by tween or by redraw. */
   override update(_time: number, deltaMs: number): void {
-    this.#arena?.update(deltaMs);
     // Settings can be opened over the board from Pause and change what it draws and wires (Card size, the piles' Cards
     // left taps, #575) under it; a wheel or drag asked for a scroll.
     if (this.#model && modelIsStale(this.#drawnSettings, appSession().settings)) {
@@ -567,6 +571,9 @@ export class BoardScene extends Phaser.Scene {
   create(): void {
     holdGameArt(this);
     this.#arena = new ArenaTable(this);
+    this.#details = new BoardCardDetails(this, (id) => this.#inspect(id));
+    this.#detailsCard = null;
+    this.#detailsRect = null;
     this.#replay = activeReplay();
     this.#replayBarTop = false;
     // A scene is reused from game to game: each game shows its own first "not offered" notices.
@@ -643,12 +650,17 @@ export class BoardScene extends Phaser.Scene {
     this.#formFanOpen = false;
     this.#formFanT = 0;
     this.#formFanTween = null;
-    // The desktop card hover popover: one listener set on the scene's pointer, not one per card.
+    // Mouse hover fills the fixed reader. The held Inspect control can still zoom explicitly.
     this.#hover = new HoverPreview(this, {
       cards: () => this.#frame.hitRects,
       sizeRects: () => this.#frame.hoverSizeRects,
       facedown: () => this.#frame.facedownHovers,
-      area: (pointer) => this.#hoverArea(isMousePointer(pointer)),
+      area: (pointer) => (isMousePointer(pointer) && this.#detailsRect ? this.#hoverArea(true) : null),
+      onCardDetails: (id) => {
+        if (id === this.#detailsCard) return;
+        this.#detailsCard = id;
+        this.#drawCardDetails();
+      },
     });
     // When the villain phase closes, the table draws again without it: its review handle (`#drawVillainReviewHandle`)
     // only shows once the phase is gone, and nothing else redraws the Board at that moment.
@@ -780,6 +792,9 @@ export class BoardScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.#arena?.destroy();
       this.#arena = null;
+      this.#details?.clearFrame();
+      this.#details = null;
+      this.#detailsRect = null;
       this.#zoomOn = false;
       this.#hover?.destroy();
       this.#hover = null;
@@ -1611,6 +1626,7 @@ export class BoardScene extends Phaser.Scene {
     this.#frame = emptyFrame();
     this.#hints.reset();
     this.#arena?.detach();
+    this.#details?.clearFrame();
     destroyChildren(this);
 
     const { width, height } = this.scale.gameSize;
@@ -1624,6 +1640,16 @@ export class BoardScene extends Phaser.Scene {
     this.#drawnSettings = appSession().settings;
     const cardSize = this.#drawnSettings.cardSize;
     const cardScale = cardSizeFactor(cardSize);
+    const freeWidth = width - (guideRail?.width ?? 0);
+    const detailsWidth =
+      !dock &&
+      !this.#logOpen &&
+      !isTabbed(formFactorFor(width, height)) &&
+      freeWidth >= 960 &&
+      height >= 550 &&
+      cardHoverFactor(this.#drawnSettings.cardHoverScale) !== null
+        ? Math.min(365, Math.max(240, Math.round(freeWidth * 0.225)))
+        : 0;
     this.#scrollDirty = false;
     const atRest = boardLayout(viewport, {
       playerCount: model.team.length + 1,
@@ -1631,6 +1657,7 @@ export class BoardScene extends Phaser.Scene {
       // The open log takes the tab area; the tab under it comes back when it shuts.
       activeTab: this.#logOpen ? "log" : this.#activeTab,
       ...(guideRail ? { guideRail } : {}),
+      ...(detailsWidth ? { cardDetails: detailsWidth } : {}),
       ...(dock?.request === "rail"
         ? { villainDock: this.#dockShown.width }
         : this.#logOpen && !isTabbed(formFactorFor(width, height))
@@ -1690,10 +1717,22 @@ export class BoardScene extends Phaser.Scene {
 
     const { zones } = layout;
     const tableTop = zones.chrome!.y + zones.chrome!.height + 3;
-    this.#arena?.show(
-      { x: 0, y: tableTop, width, height: Math.max(1, (zones.actionBar?.y ?? height) - tableTop - 5) },
-      this.#drawnSettings.reducedMotion,
-    );
+    const tableEnd = zones.actionBar?.y ?? height;
+    this.#arena?.show({
+      x: layout.tableWindow.x,
+      y: tableTop,
+      width: layout.tableWindow.width,
+      height: Math.max(1, tableEnd - tableTop - 5),
+    });
+    // A guide on the right already owns the edge; use the space between it and the board.
+    this.#detailsRect = detailsWidth
+      ? {
+          x: layout.tableWindow.x + layout.tableWindow.width + 6,
+          y: tableTop + 3,
+          width: detailsWidth - 14,
+          height: height - tableTop - 12,
+        }
+      : null;
     const drawTopBand = (): void => {
       drawChrome(this, zones.chrome!, model, {
         notSaving: appSession().store.state.saveError !== null,
@@ -1845,6 +1884,7 @@ export class BoardScene extends Phaser.Scene {
     this.#tip?.draw(viewport, layout.tabbed, zones.actionBar, this.#tipBlocked());
     this.#syncGuideFocusRegion();
     this.#drawVillainReviewHandle(layout, viewport);
+    this.#drawCardDetails();
     this.#hover?.onDraw();
   }
 
@@ -2711,6 +2751,18 @@ export class BoardScene extends Phaser.Scene {
    * The area the card popover may use now, or null when it must not show. `mouse` is false for the held-Inspect zoom,
    * which has no pointer and shows on any form factor (a pad is what holds Y on a handheld).
    */
+  #drawCardDetails(): void {
+    if (!this.#detailsRect || !this.#details) return;
+    const { game: stored, perspectiveId, legal } = appSession().store.state;
+    const game = tableGame(stored);
+    const id = this.#detailsCard;
+    const model =
+      game && id && perspectiveId !== null && this.#frame.hitRects.has(id)
+        ? inspectModel(game, id, legal?.actions ?? null, perspectiveId, gameDeps())
+        : null;
+    this.#details.draw(this.#detailsRect, model?.hidden ? null : model);
+  }
+
   #hoverArea(mouse: boolean): Rect | null {
     const { width, height } = this.scale.gameSize;
     // A choice sheet the docked villain phase covers is hidden and inert (`sheetIsCovered`): it is no overlay.
@@ -2732,7 +2784,7 @@ export class BoardScene extends Phaser.Scene {
         this.scene.isActive(key),
     );
     return hoverArea({
-      formFactor: mouse ? formFactorFor(width, height) : "desktop",
+      formFactor: mouse && !this.#detailsRect ? formFactorFor(width, height) : "desktop",
       mouse: true,
       scale: appSession().settings.cardHoverScale,
       overlays,
@@ -2760,6 +2812,7 @@ export class BoardScene extends Phaser.Scene {
 
   #setFocus(focus: FocusTarget | null): void {
     this.#focus = focus;
+    if (focus?.kind === "card" && inputDevice().mode !== "touch") this.#detailsCard = focus.instanceId;
     this.#logFocused = false;
     // A greyed Undo says why while keyboard focus is on it (drawn by the next draw).
     this.#controller.setUndoFocus(this.#focus?.kind === "undo");
