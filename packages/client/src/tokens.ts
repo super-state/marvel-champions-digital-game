@@ -62,6 +62,19 @@ export const accent = {
   redGlowAlpha: 0.3,
 } as const;
 
+/** Fixed inks for the illustrated table and its metal fittings, in both reading themes. */
+export const tabletop = {
+  shadow: 0x060e16,
+  rail: 0x101f2b,
+  plate: 0x172d39,
+  raised: 0x294858,
+  edge: 0x527080,
+  brass: 0xc6a367,
+  gold: 0xf0d29a,
+  lettering: 0xf5eedd,
+  secondary: 0xbcccd0,
+} as const;
+
 /** Section 01 — signals. Four colors, each with one meaning. */
 export const signal = {
   /** Resource pips, cost chips, low curve bars. */

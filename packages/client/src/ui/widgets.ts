@@ -33,6 +33,7 @@ import {
   type TypeSpec,
 } from "../tokens.js";
 import { fieldClipPath } from "../view/card-hover.js";
+import { fillCard, paintCardStock, strokeCard } from "./card-stock.js";
 import { pointInRect } from "../view/drag-gesture.js";
 import { ribbonHeight, type Rect } from "../view/layout.js";
 import { PressArm, withinTapSlop } from "../view/press-arm.js";
@@ -49,6 +50,13 @@ import { colorScheme, onColorSchemeChange, schemeCss } from "../view/color-schem
 /** Draws a rect with the design's border model into an existing Graphics. */
 export function paintPanel(g: Phaser.GameObjects.Graphics, rect: Rect, kind: WidgetKind, state: WidgetState): void {
   const s = skin(kind, state);
+  if (kind === "tableAction" || kind === "tableCommit") {
+    const { x, y, width: w, height: h } = rect;
+    g.fillStyle(s.fill, 1).fillRoundedRect(x, y, w, h, 5);
+    g.lineStyle(s.strokeWidth, s.stroke, 1).strokeRoundedRect(x + 0.5, y + 0.5, w - 1, h - 1, 5);
+    g.lineStyle(1, s.text, state === "unavailable" ? 0.08 : 0.19).lineBetween(x + 5, y + 2, x + w - 5, y + 2);
+    return;
+  }
   g.fillStyle(s.fill, s.fillAlpha);
   g.fillRect(rect.x, rect.y, rect.width, rect.height);
   g.lineStyle(s.strokeWidth, s.stroke, s.fillAlpha);
@@ -594,7 +602,7 @@ export class McSelectionRing {
     this.graphics = scene.add.graphics();
   }
 
-  show(rect: Rect, mode: "static" | "pulse", reducedMotion: boolean): void {
+  show(rect: Rect, mode: "static" | "pulse", reducedMotion: boolean, shape: "rect" | "card" = "rect"): void {
     const { offset, width, glowWidth, glowAlpha } = selectionRing;
     const color = { hex: this.color ?? selectionRing.color.hex };
     const outer: Rect = {
@@ -604,16 +612,20 @@ export class McSelectionRing {
       height: rect.height + offset * 2,
     };
     this.graphics.clear().setVisible(true).setAlpha(1);
-    this.graphics.lineStyle(glowWidth, color.hex, glowAlpha);
-    this.graphics.strokeRect(outer.x - 2, outer.y - 2, outer.width + 4, outer.height + 4);
+    const outline = (box: Rect, lineWidth: number, tone: number, alpha: number): void => {
+      if (shape === "card") strokeCard(this.graphics, box, lineWidth, tone, alpha);
+      else this.graphics.lineStyle(lineWidth, tone, alpha).strokeRect(box.x, box.y, box.width, box.height);
+    };
+    outline(
+      { x: outer.x - 2, y: outer.y - 2, width: outer.width + 4, height: outer.height + 4 },
+      glowWidth,
+      color.hex,
+      glowAlpha,
+    );
     // A focus ring has a white edge under the red, so it still reads against a red button (End turn, Select, the
     // commit buttons) and fills the gap between the two; on cream and ink the red stays the ring.
-    if (this.focus) {
-      this.graphics.lineStyle(width + selectionRing.focusEdgeExtra, selectionRing.focusEdge, 1);
-      this.graphics.strokeRect(outer.x, outer.y, outer.width, outer.height);
-    }
-    this.graphics.lineStyle(width, color.hex, 1);
-    this.graphics.strokeRect(outer.x, outer.y, outer.width, outer.height);
+    if (this.focus) outline(outer, width + selectionRing.focusEdgeExtra, selectionRing.focusEdge, 1);
+    outline(outer, width, color.hex, 1);
 
     this.#tween?.remove();
     this.#tween = null;
@@ -881,7 +893,7 @@ export class McCardTile {
     const alpha = enabled ? 1 : ink.illegal;
 
     const frame = scene.add.graphics();
-    paintPanel(frame, rect, "card", state);
+    paintCardStock(frame, rect, state);
     this.#objects.push(frame);
 
     const artSlot: Rect = {
@@ -892,7 +904,7 @@ export class McCardTile {
     };
     if (artSlot.height > 0) {
       const ground = scene.add.graphics();
-      ground.fillStyle(surface.parchment.hex, alpha).fillRect(artSlot.x, artSlot.y, artSlot.width, artSlot.height);
+      fillCard(ground, artSlot, surface.parchment.hex, alpha);
       this.#objects.push(ground);
       const art = options.paintArt(artSlot);
       if (art) this.#objects.push(art);

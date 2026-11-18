@@ -6,7 +6,8 @@
  * only lays them out (`view/searched-pick-layout.ts`) and wires the taps.
  */
 import { drawArt } from "../../art/card-art.js";
-import { accent, border, ink, surface, typeRole } from "../../tokens.js";
+import { paintCardStock } from "../../ui/card-stock.js";
+import { accent, ink, surface, typeRole } from "../../tokens.js";
 import { textStyle } from "../../ui/theme.js";
 import { fitText, fitWrapped, McButton } from "../../ui/widgets.js";
 import { bindHoldTarget } from "../../ui/hold-target.js";
@@ -102,7 +103,7 @@ export function drawSearchedPickSheet(ctx: BoardDrawContext, viewport: Rect, pic
     const index = layout.first + onPage;
     const option = pick.options[index]!;
     const { face, tag, caption, inspect } = rects;
-    g.fillStyle(surface.parchment.hex, 1).fillRect(face.x, face.y, face.width, face.height);
+    paintCardStock(g, face);
     const drawn = drawArt(scene, ctx.art.request(scene, option.art), face, { fit: "contain" }) !== null;
     if (!drawn) {
       // No scan for this card: its name on the parchment, so the tile is still a card you can read.
@@ -117,7 +118,6 @@ export function drawSearchedPickSheet(ctx: BoardDrawContext, viewport: Rect, pic
         .setWordWrapWidth(face.width - 12)
         .setAlign("center");
     }
-    g.lineStyle(border.object, surface.ink.hex, 1).strokeRect(face.x, face.y, face.width, face.height);
     // The area tag: a solid strip with words, never a colour alone.
     g.fillStyle(option.areaTag === "ENCOUNTER DECK" ? surface.ink.hex : accent.heroRed.hex, 1).fillRect(
       tag.x,

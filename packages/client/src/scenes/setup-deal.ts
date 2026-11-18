@@ -64,6 +64,7 @@ import { setMask } from "../ui/rex.js";
 import { cssOf, textStyle } from "../ui/theme.js";
 import { McButton, McSelectionRing, dashedRect, fitText, label, paintDotGrid, paintPanel } from "../ui/widgets.js";
 import { cardArt, drawArt, type CardArt } from "../art/card-art.js";
+import { fillCard, paintCardStock } from "../ui/card-stock.js";
 import { canConfirmChoice, cardChoiceDisplayOrder, initialChoiceSelection } from "../view/choice-focus.js";
 import { wrapChipsToRows } from "../view/chip-layout.js";
 import { commitStepDown, commitStepUp } from "../view/commit-row-nav.js";
@@ -784,7 +785,7 @@ export class SetupDealScene extends Phaser.Scene {
     noteHoverCard(this, card.instanceId, slot);
 
     const g = this.add.graphics();
-    paintPanel(g, slot, "card", picked ? "selected" : "rest");
+    paintCardStock(g, slot, picked ? "selected" : "rest");
     const inner: Rect = { x: slot.x + 3, y: slot.y + 3, width: slot.width - 6, height: slot.height - 6 };
     const key = this.#art.request(this, card.art);
     const drawn = drawArt(this, key, inner, { fit: "contain" });
@@ -803,7 +804,7 @@ export class SetupDealScene extends Phaser.Scene {
     if (picked) {
       // The dim wash: this card leaves the hand, so its art reads as already half-gone.
       const dim = this.add.graphics();
-      dim.fillStyle(surface.ink.hex, 0.55).fillRect(inner.x, inner.y, inner.width, inner.height);
+      fillCard(dim, inner, surface.ink.hex, 0.55);
 
       const tagWidth = Math.min(inner.width - 8, 96);
       const tagHeight = 20;

@@ -16,6 +16,7 @@
  * per-letter spacing, same ascent-based baseline, same binary searches.
  */
 import { focusedOffset } from "./focus.js";
+import { cardCanvasPath, cardRadius } from "./card-shape.js";
 import { desktopFont } from "../view/desktop-type.js";
 
 /** One font as Phaser's `TextStyle` would build it (`ui/theme.ts`'s `textStyle`). */
@@ -100,7 +101,10 @@ export function cardFaceKey(spec: CardFaceSpec): string {
 }
 
 /** The part of `CanvasRenderingContext2D` / `OffscreenCanvasRenderingContext2D` this paints with. */
-export interface FaceContext {
+export interface FaceContext extends Pick<
+  CanvasRenderingContext2D,
+  "beginPath" | "moveTo" | "arcTo" | "closePath" | "clip" | "stroke"
+> {
   font: string;
   fillStyle: string | CanvasGradient | CanvasPattern;
   strokeStyle: string | CanvasGradient | CanvasPattern;
@@ -365,7 +369,8 @@ export function paintCardFace(
   if (spec.artOnly) {
     ctx.strokeStyle = withAlpha(colors.ink, spec.inkLabel);
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(0.75, 0.75, width - 1.5, height - 1.5);
+    cardCanvasPath(ctx, width, height, 0.75);
+    ctx.stroke();
     return;
   }
 
@@ -418,19 +423,21 @@ export function paintCardFace(
   if (spec.selected) {
     ctx.strokeStyle = colors.heroRed;
     ctx.lineWidth = 4;
-    ctx.strokeRect(2, 2, width - 4, height - 4);
+    cardCanvasPath(ctx, width, height, 2);
   } else {
     ctx.strokeStyle = withAlpha(colors.ink, spec.blocked ? dim : spec.inkLabel);
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(0.75, 0.75, width - 1.5, height - 1.5);
+    cardCanvasPath(ctx, width, height, 0.75);
   }
+  ctx.stroke();
 
   if (spec.tag) {
     // Sized to the label as measured. The game-object card guessed `length * 6 + 16`, which the desktop type bump
     // outgrew: "SELECTED" and "LOCKED" ran past their red plate and off the card's edge.
     const text = spec.tagFont.uppercase ? spec.tag.toUpperCase() : spec.tag;
     const box = measureBox(ctx, text, spec.tagFont, spec.tagFont.size, spec.desktop);
-    const tagWidth = Math.min(width - 8, Math.max(spec.tag.length * 6 + 16, box.width + 8));
+    const safeInset = Math.max(4, Math.ceil(cardRadius(width, height) / 2));
+    const tagWidth = Math.min(width - 8, Math.max(spec.tag.length * 6 + 16, box.width + safeInset + 4));
     ctx.fillStyle = colors.heroRed;
     ctx.fillRect(width - tagWidth, 0, tagWidth, 16);
     drawBox(ctx, box, width - tagWidth + 4, 2, colors.paper);

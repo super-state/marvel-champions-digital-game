@@ -3,7 +3,8 @@
  */
 
 import type Phaser from "phaser";
-import { accent, ink, signal, surface, typeRole, type TypeSpec } from "../../tokens.js";
+import { ink, signal, surface, tabletop, typeRole, type TypeSpec } from "../../tokens.js";
+import { paintTableRail } from "../../ui/tabletop-finish.js";
 import { cssOf, textStyle } from "../../ui/theme.js";
 import { onTap } from "../../ui/tap.js";
 import { McButton, McTabs, clipLine } from "../../ui/widgets.js";
@@ -76,7 +77,7 @@ export interface ChromeOptions {
  */
 export function drawChrome(scene: Phaser.Scene, whole: Rect, model: BoardModel, options: ChromeOptions): void {
   const g = scene.add.graphics();
-  g.fillStyle(surface.ink.hex, 1).fillRect(whole.x, whole.y, whole.width, whole.height);
+  paintTableRail(g, whole, "bottom");
   const ownRow = whole.height >= CHROME_HEIGHT.phone && whole.width < 768;
   const rect: Rect = ownRow ? { ...whole, height: whole.height - CHROME_TICKER_ROW } : whole;
 
@@ -96,7 +97,7 @@ export function drawChrome(scene: Phaser.Scene, whole: Rect, model: BoardModel, 
   }
   options.buttons.push(
     new McButton(scene, {
-      kind: "onInk",
+      kind: "tableAction",
       label: wide ? "MENU" : "≡",
       // The phone board's "≡" is a symbol standing in for a whole word, not a
       // short label — at `typeRole.label`'s own 9px it rendered as a barely
@@ -116,7 +117,7 @@ export function drawChrome(scene: Phaser.Scene, whole: Rect, model: BoardModel, 
     evidenceRect = { x: menuRect.x - 8 - evidenceWidth, y: menuRect.y, width: evidenceWidth, height: menuRect.height };
     options.buttons.push(
       new McButton(scene, {
-        kind: "onInk",
+        kind: "tableAction",
         label: wide ? "EVIDENCE" : "EVID.",
         type: typeRole.label,
         rect: evidenceRect,
@@ -140,21 +141,21 @@ export function drawChrome(scene: Phaser.Scene, whole: Rect, model: BoardModel, 
   // button's (#337), left of the music button's.
   const anchorX = themeSlotBeside(languageSlotBeside(musicRect)).x - 2;
 
-  // The live round chip is the one red besides the forward action.
+  // The round marker shares the brass edge of the table.
   const chip: Rect = { x: rect.x + 8, y: rect.y + 5, width: 54, height: rect.height - 10 };
   const chipFirstDrawn = scene.children.list.length;
   const chipG = scene.add.graphics();
-  chipG.fillStyle(accent.heroRed.hex, 1).fillRect(chip.x, chip.y, chip.width, chip.height);
+  chipG.fillStyle(tabletop.raised, 1).fillRoundedRect(chip.x, chip.y, chip.width, chip.height, 4);
+  chipG.lineStyle(1, tabletop.brass, 0.9).strokeRoundedRect(chip.x, chip.y, chip.width, chip.height, 4);
   scene.add
     .text(
       chip.x + chip.width / 2,
       chip.y + chip.height / 2,
       `RD ${model.round}`,
-      textStyle(typeRole.statSmall, surface.paper.hex),
+      textStyle(typeRole.statSmall, tabletop.gold),
     )
     .setOrigin(0.5);
-  // A pop (1.25 -> 1) right when the round just turned — the chip is the design's one red besides the forward
-  // action, so it's the thing that should visibly react when the number on it changes.
+  // The marker pops as the printed round number changes.
   const pop = options.motion.roundChipPop(model.round);
   if (pop) {
     const cx = chip.x + chip.width / 2;
@@ -198,14 +199,14 @@ export function drawChrome(scene: Phaser.Scene, whole: Rect, model: BoardModel, 
       const active = model.phase === phase;
       const sideFirstDrawn = scene.children.list.length;
       const bg = scene.add.graphics();
-      bg.fillStyle(active ? surface.paper.hex : surface.ink.hex, 1).fillRect(box.x, box.y, box.width, box.height);
-      bg.lineStyle(2, surface.paper.hex, active ? 1 : ink.meta).strokeRect(box.x, box.y, box.width, box.height);
+      bg.fillStyle(active ? tabletop.raised : tabletop.rail, 1).fillRoundedRect(box.x, box.y, box.width, box.height, 3);
+      if (active) bg.fillStyle(tabletop.brass, 1).fillRect(box.x + 5, box.y + box.height - 3, box.width - 10, 2);
       scene.add
         .text(
           box.x + box.width / 2,
           box.y + box.height / 2,
           phase.toUpperCase(),
-          textStyle(typeRole.label, active ? surface.ink.hex : surface.paper.hex, active ? 1 : ink.meta),
+          textStyle(typeRole.label, active ? tabletop.gold : tabletop.secondary, active ? 1 : 0.8),
         )
         .setOrigin(0.5);
       // The active side fades in right when the phase just turned to it.
@@ -237,8 +238,8 @@ function drawLogTicker(scene: Phaser.Scene, rect: Rect, options: ChromeOptions):
   const { log, hints } = options;
   if (rect.width < 90) return;
   const g = scene.add.graphics();
-  g.lineStyle(1.5, surface.paper.hex, log.open ? 1 : ink.disabled).strokeRect(rect.x, rect.y, rect.width, rect.height);
-  if (log.open) g.fillStyle(surface.paper.hex, 0.14).fillRect(rect.x, rect.y, rect.width, rect.height);
+  g.fillStyle(tabletop.shadow, log.open ? 0.9 : 0.5).fillRoundedRect(rect.x, rect.y, rect.width, rect.height, 4);
+  g.lineStyle(1, tabletop.edge, log.open ? 1 : 0.45).strokeRoundedRect(rect.x, rect.y, rect.width, rect.height, 4);
   const middle = rect.y + rect.height / 2;
   const alpha = log.enabled ? ink.body : ink.meta;
   const word = scene.add

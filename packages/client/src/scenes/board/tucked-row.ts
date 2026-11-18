@@ -7,6 +7,7 @@
 
 import type { InstanceId } from "@mc/engine";
 import { drawArt } from "../../art/card-art.js";
+import { fillCard, strokeCard } from "../../ui/card-stock.js";
 import { surface, typeRole } from "../../tokens.js";
 import { textStyle } from "../../ui/theme.js";
 import type { CharacterPanel } from "../../view/board-model.js";
@@ -39,8 +40,8 @@ export function drawTuckedRow(
   panel.tucked.forEach((card, index) => {
     const rect = layout.cards[index]!;
     const back = scene.add.graphics();
-    back.fillStyle(surface.ink.hex, dim).fillRect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2);
-    back.fillStyle(surface.paper.hex, dim).fillRect(rect.x, rect.y, rect.width, rect.height);
+    fillCard(back, rect, surface.paper.hex, dim);
+    strokeCard(back, rect, 1, surface.ink.hex, dim);
     const art = card.faceup ? card.art : null;
     const drawn = drawArt(scene, ctx.art.request(scene, art), rect, { fit: "cover", alpha: dim }) !== null;
     if (!drawn) {

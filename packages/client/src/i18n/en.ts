@@ -21,6 +21,8 @@ export const en = {
   "title.rankUp": "RANK UP",
   "title.releaseNotes": "Release notes ↗",
   "title.openReplay": "Open a replay",
+  "hand.releaseToPlay": "Release to play",
+  "hand.releaseToReturn": "Release to return",
   "title.pastGames": "Past games",
   "pastGames.title": "Past games",
   "pastGames.openFile": "Open a replay file",

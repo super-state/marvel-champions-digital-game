@@ -10,6 +10,7 @@ import type { GameState, InstanceId, PlayerId } from "@mc/engine";
 import { cardOf } from "@mc/engine";
 import { artFor, CARD_BACKS, isHiddenArt, type ArtSource, type CardFace } from "../art/art-source.js";
 import { cardArt, drawArt } from "../art/card-art.js";
+import { fillCard, strokeCard } from "./card-stock.js";
 import { flipLabel } from "../view/villain-phase-reveal.js";
 import { drawFlipCard } from "./flip-card.js";
 import { gameDeps } from "../content/game-deps.js";
@@ -458,7 +459,7 @@ function drawCard(
   if (rect.width <= 0 || rect.height <= 0) return;
   noteHoverCard(scene, instanceId, rect);
   const g = scene.add.graphics();
-  g.fillStyle(signal.spent.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
+  fillCard(g, rect, signal.spent.hex);
   const art = cardArt(scene).request(scene, source);
   if (!drawArt(scene, art, rect)) {
     const name = scene.add
@@ -473,8 +474,7 @@ function drawCard(
       .setWordWrapWidth(rect.width - 12);
     name.setMaxLines(4);
   }
-  g.lineStyle(border.object, surface.paper.hex, 1);
-  g.strokeRect(rect.x, rect.y, rect.width, rect.height);
+  strokeCard(g, rect, border.detail, surface.paper.hex);
   const zone = scene.add
     .zone(rect.x, rect.y, rect.width, rect.height)
     .setOrigin(0, 0)
@@ -652,12 +652,9 @@ function drawFacedownText(
     for (let i = shown - 1; i >= 0; i--) {
       const rect: Rect = { x: x + i * backWidth * 0.6, y: rowY, width: backWidth, height: backHeight };
       if (!drawArt(scene, backKey, rect, { fit: "cover" })) {
-        scene.add.graphics().fillStyle(signal.spent.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
+        fillCard(scene.add.graphics(), rect, signal.spent.hex);
       }
-      scene.add
-        .graphics()
-        .lineStyle(border.detail, surface.paper.hex, 1)
-        .strokeRect(rect.x, rect.y, rect.width, rect.height);
+      strokeCard(scene.add.graphics(), rect, border.detail, surface.paper.hex);
     }
     label(
       scene,

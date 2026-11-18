@@ -71,6 +71,8 @@ import { choiceRowsOf } from "../view/choice-option-rows.js";
 import { optionArtInstance, optionArtOf } from "../view/choice-option-art.js";
 import { accent, guideTag, hit, ink, signal, surface, typeRole } from "../tokens.js";
 import { cssOf, textStyle } from "../ui/theme.js";
+import { paintCardStock } from "../ui/card-stock.js";
+import { paintReadingPlate, paintTableRail } from "../ui/tabletop-finish.js";
 import { McScrollRegion } from "../ui/scroll-region.js";
 import { onTap } from "../ui/tap.js";
 import { VariableListScroll } from "../view/variable-list-scroll.js";
@@ -790,7 +792,7 @@ export class ChoiceOverlay extends Phaser.Scene {
       g.fillStyle(surface.ink.hex, 1).fillRect(docked.x, docked.y, docked.width, docked.height);
       g.lineStyle(2, surface.paper.hex, 1).strokeRect(docked.x + 1, docked.y + 1, docked.width - 2, docked.height - 2);
     }
-    paintPanel(g, sheet, "card", "rest");
+    paintReadingPlate(g, sheet);
     if (docked)
       g.lineStyle(3, signal.caution.hex, 1).strokeRect(sheet.x + 1.5, sheet.y + 1.5, sheet.width - 3, sheet.height - 3);
 
@@ -819,7 +821,7 @@ export class ChoiceOverlay extends Phaser.Scene {
     const header = choiceHeaderOf(state.game, choice, gameDeps(), genericTitle);
     const bar: Rect = { x: sheet.x, y: sheet.y, width: sheet.width, height: seat ? 56 : header.subtitle ? 52 : 38 };
     const barG = this.add.graphics();
-    barG.fillStyle(surface.ink.hex, 1).fillRect(bar.x, bar.y, bar.width, bar.height);
+    paintTableRail(barG, bar, "bottom");
 
     // "Back out" (`view/back-out.ts`'s own doc comment): rewinds the game to the state just before this player's
     // own `playCard`/`useAbility` opened this very choice — offered only when that command's own resolution hasn't
@@ -1989,8 +1991,8 @@ export class ChoiceOverlay extends Phaser.Scene {
       height: sheetHeight,
     };
     const g = this.add.graphics();
-    paintPanel(g, sheet, "card", "rest");
-    g.fillStyle(surface.ink.hex, 1).fillRect(sheet.x, sheet.y, sheet.width, BAR);
+    paintReadingPlate(g, sheet);
+    paintTableRail(g, { ...sheet, height: BAR }, "bottom");
     const title = this.add
       .text(sheet.x + pad, sheet.y + BAR / 2, "MAKE THE ACCUSATION", textStyle(typeRole.barTitle, surface.paper.hex))
       .setOrigin(0, 0.5)
@@ -2874,7 +2876,7 @@ export class ChoiceOverlay extends Phaser.Scene {
     const picked = this.#selected.includes(row.optionId);
     this.#focusRects.set(choiceFocusKey({ kind: "option", optionId: row.optionId }), slot);
     const g = this.add.graphics();
-    paintPanel(g, slot, "card", picked ? "selected" : "rest");
+    paintCardStock(g, slot, picked ? "selected" : "rest");
     const scan: Rect = {
       x: slot.x + 3,
       y: slot.y + 3,
@@ -3014,7 +3016,7 @@ export class ChoiceOverlay extends Phaser.Scene {
     this.#focusRects.set(choiceFocusKey({ kind: "option", optionId: option.optionId }), slot);
 
     const g = this.add.graphics();
-    paintPanel(g, slot, "card", picked ? "selected" : "rest");
+    paintCardStock(g, slot, picked ? "selected" : "rest");
 
     // A scheme's threat or a character's hit points sit in a strip under the scan, so the bar never covers the
     // card's own text; the scan is drawn in what is left.

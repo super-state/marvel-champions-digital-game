@@ -10,6 +10,7 @@ import { border, ink, signal, surface, typeRole } from "../tokens.js";
 import type { Rect } from "../view/layout.js";
 import { FLIP_MS, flipFrameAt } from "../view/villain-phase-reveal.js";
 import { textStyle } from "./theme.js";
+import { fillCard, strokeCard } from "./card-stock.js";
 
 /**
  * Draws one card side in `rect`: the scan, or a labelled blank when it has not arrived. `elapsedMs` null draws the
@@ -27,7 +28,7 @@ export function drawFlipCard(
   if (rect.width <= 0 || rect.height <= 0) return;
   const side = (art: ArtSource | null, name: string): Phaser.GameObjects.GameObject[] => {
     const ground = scene.add.graphics();
-    ground.fillStyle(signal.spent.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
+    fillCard(ground, rect, signal.spent.hex);
     const objects: Phaser.GameObjects.GameObject[] = [ground];
     const image = drawArt(scene, cardArt(scene).request(scene, art), rect);
     if (image) objects.push(image);
@@ -47,7 +48,7 @@ export function drawFlipCard(
       );
     }
     const frame = scene.add.graphics();
-    frame.lineStyle(border.object, surface.paper.hex, 1).strokeRect(rect.x, rect.y, rect.width, rect.height);
+    strokeCard(frame, rect, border.detail, surface.paper.hex, 0.8);
     objects.push(frame);
     return objects;
   };

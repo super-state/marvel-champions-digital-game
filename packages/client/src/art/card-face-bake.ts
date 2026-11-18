@@ -9,6 +9,7 @@
  * state (selected, seated, dimmed) doesn't fetch and decode its art again.
  */
 import { artDecodeSize, footerHeightOf, paintCardFace, type CardFaceSpec, type FaceContext } from "./card-face.js";
+import { cardCanvasPath } from "./card-shape.js";
 
 interface DecodedArt {
   readonly width: number;
@@ -140,6 +141,8 @@ export async function bakeCardFace(spec: CardFaceSpec, art: ArtBitmaps): Promise
   const { ctx, finish } = surfaceFor(pixelWidth, pixelHeight);
   ctx.save();
   ctx.scale(spec.resolution, spec.resolution);
+  cardCanvasPath(ctx, spec.width, spec.height);
+  ctx.clip();
   paintCardFace(ctx, painted, decoded);
   ctx.restore();
   return finish();

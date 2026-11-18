@@ -8,9 +8,11 @@ import { ringDiameterFor, rowRings } from "../../view/team-up-layout.js";
 import type Phaser from "phaser";
 import type { InstanceId, PlayerId } from "@mc/engine";
 import { drawArt } from "../../art/card-art.js";
+import { fillCard, paintCardStock, strokeCard } from "../../ui/card-stock.js";
 import { CARD_BACKS, type ArtSource } from "../../art/art-source.js";
-import { accent, ink, pileRunOut, signal, status, surface, typeRole } from "../../tokens.js";
-import { cssOf, skin, textStyle } from "../../ui/theme.js";
+import { accent, ink, pileRunOut, signal, status, surface, tabletop, typeRole } from "../../tokens.js";
+import { cssOf, textStyle } from "../../ui/theme.js";
+import { paintEmptyPosition, paintPlayZone } from "../../ui/tabletop-finish.js";
 import { appSession } from "../../session.js";
 import { McButton, fitText, fitTight, fitWrapped, hatchRect, label, paintPanel } from "../../ui/widgets.js";
 import type {
@@ -112,7 +114,7 @@ import { onTap } from "../../ui/tap.js";
 
 export function drawEnemies(ctx: BoardDrawContext, rect: Rect, model: BoardModel): void {
   const g = ctx.scene.add.graphics();
-  paintPanel(g, rect, "card", "rest");
+  paintPlayZone(g, rect);
 
   // A single villain is every scenario before The Wrecking Crew, and keeps its own unchanged layout — the full-size
   // panel, with an environment (Risky Business's Criminal Enterprise) beside it. More than one villain switches to
@@ -308,7 +310,7 @@ function drawSingleVillain(
   else {
     // A short caption so the empty band reads as a state, not a board that failed to draw.
     ctx.scene.add
-      .text(villainRect.x + 8, villainRect.y + 8, "No villain in play", textStyle(typeRole.label, surface.ink.hex, 0.7))
+      .text(villainRect.x + 8, villainRect.y + 8, "No villain in play", textStyle(typeRole.label, tabletop.secondary))
       .setOrigin(0, 0);
   }
 
@@ -535,9 +537,9 @@ function drawCompactVillain(ctx: BoardDrawContext, rect: Rect, villain: VillainP
   const tile = villainTileLayout(rect);
   if (tile.art) {
     const frame = scene.add.graphics();
-    frame.fillStyle(surface.parchment.hex, dim).fillRect(tile.art.x, tile.art.y, tile.art.width, tile.art.height);
+    fillCard(frame, tile.art, surface.parchment.hex, dim);
     drawArt(scene, ctx.art.request(scene, panel.art), tile.art, { fit: "cover", alpha: dim });
-    frame.lineStyle(1, surface.ink.hex, dim).strokeRect(tile.art.x, tile.art.y, tile.art.width, tile.art.height);
+    strokeCard(frame, tile.art, 1, surface.ink.hex, dim);
   }
 
   const textLeft = tile.text.x;
@@ -707,7 +709,7 @@ const chipStripeWidth = (counter: EnvironmentCounter): number => (counter.danger
 function drawEnvironment(ctx: BoardDrawContext, rect: Rect, environment: EnvironmentPanel): void {
   const { scene } = ctx;
   const g = scene.add.graphics();
-  paintPanel(g, rect, "card", targetState(ctx.controller.selection, environment.instanceId));
+  paintCardStock(g, rect, targetState(ctx.controller.selection, environment.instanceId));
   const dim = dimAlpha(ctx.controller.selection, environment.instanceId);
   ctx.frame.hitRects.set(environment.instanceId, rect);
 
@@ -930,8 +932,8 @@ function drawTuckedFan(ctx: BoardDrawContext, room: Rect, environment: Environme
   environment.tucked.forEach((card, index) => {
     const rect = fan.cards[index]!;
     const back = scene.add.graphics();
-    back.fillStyle(surface.ink.hex, dim).fillRect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2);
-    back.fillStyle(surface.paper.hex, dim).fillRect(rect.x, rect.y, rect.width, rect.height);
+    fillCard(back, rect, surface.paper.hex, dim);
+    strokeCard(back, rect, 1, surface.ink.hex, dim);
     const art = card.faceup ? card.art : null;
     const drawn = drawArt(scene, ctx.art.request(scene, art), rect, { fit: "cover", alpha: dim }) !== null;
     if (!drawn) {
@@ -1151,7 +1153,8 @@ export function drawEncounter(
       ctx.frame.pileRects.set(pileKey(kind), box);
     if (kind === "victoryDisplay") ctx.frame.focusRects.set(focusKey({ kind: "victoryDisplay" }), box);
     const g = scene.add.graphics();
-    paintPanel(g, box, count > 0 ? "card" : "quiet", count > 0 ? "rest" : "unavailable");
+    if (count > 0) paintCardStock(g, box, "rest", count);
+    else strokeCard(g, box, 1.5, surface.ink.hex, ink.meta);
 
     const inner: Rect = { x: box.x + 3, y: box.y + 3, width: box.width - 6, height: box.height - 6 };
     const drawn = count > 0 && drawArt(scene, ctx.art.request(scene, art), inner, { fit: "cover" }) !== null;
@@ -1336,7 +1339,7 @@ export function drawScenarioPlayAreas(
 ): void {
   const { scene } = ctx;
   const g = scene.add.graphics();
-  paintPanel(g, rect, "rail", "rest");
+  paintPlayZone(g, rect);
   const share = rect.width / Math.max(1, areas.length);
   areas.forEach((area, index) => {
     const box: Rect = { x: rect.x + index * share, y: rect.y, width: share, height: rect.height };
@@ -1346,19 +1349,18 @@ export function drawScenarioPlayAreas(
       box.y + 6,
       area.neutral ? `${area.name} area · shared by the pod` : `${area.name} area · no player controls it`,
       typeRole.label,
-      surface.ink.hex,
-      ink.label,
+      tabletop.secondary,
     );
     const inner: Rect = { x: box.x + 8, y: box.y + 22, width: box.width - 16, height: box.height - 30 };
     if (area.cards.length === 0) {
       const empty = scene.add.graphics();
-      paintPanel(empty, inner, "quiet", "unavailable");
+      paintEmptyPosition(empty, inner);
       scene.add
         .text(
           inner.x + inner.width / 2,
           inner.y + inner.height / 2,
           "Nothing here",
-          textStyle(typeRole.body, surface.ink.hex, ink.meta),
+          textStyle(typeRole.body, tabletop.secondary),
         )
         .setOrigin(0.5);
       return;
@@ -1382,8 +1384,7 @@ export function drawScenarioPlayAreas(
             slot.y + slot.height + 5,
             card.note,
             typeRole.label,
-            surface.ink.hex,
-            ink.label,
+            tabletop.secondary,
           );
           fitText(note, slot.width - 4, typeRole.label.size);
         }
@@ -1414,8 +1415,7 @@ export function drawScenarioPlayAreas(
           slot.y + slot.height - room + 5,
           words,
           typeRole.label,
-          surface.ink.hex,
-          ink.label,
+          tabletop.secondary,
         );
         fitText(note, slot.width - 4, typeRole.label.size);
       }
@@ -1435,22 +1435,14 @@ export function drawPlayArea(
   const { scene } = ctx;
   const compact = options.compact === true;
   const g = scene.add.graphics();
-  paintPanel(g, rect, "rail", "rest");
+  paintPlayZone(g, rect);
   // The whole zone takes a sideways drag once the row scrolls: a finger that starts between cards, above or below them
   // or on the caption still scrolls the row. Made first, so every card, arrow and form card drawn after it sits on top
   // and keeps its own press; switched on below once the row is measured.
   const dragSurface = scene.add.zone(rect.x, rect.y, rect.width, rect.height).setOrigin(0, 0);
   if (compact) {
     // The tall villain band's strip (TB1): the caption beside the thumbnails, not above them.
-    const caption = label(
-      scene,
-      rect.x + 10,
-      rect.y + rect.height / 2,
-      "play area",
-      typeRole.label,
-      surface.ink.hex,
-      ink.label,
-    );
+    const caption = label(scene, rect.x + 10, rect.y + rect.height / 2, "play area", typeRole.label, tabletop.gold);
     caption.setOrigin(0, 0.5);
     fitText(caption, COMPACT_PLAY_CAPTION - 10, typeRole.label.size);
   }
@@ -1465,8 +1457,7 @@ export function drawPlayArea(
         // its width: the RT layer marker sits right after it (`view/layer-marker.ts`).
         appSession().store.state.peekSeat !== null ? "their play area" : "your play area",
         typeRole.label,
-        surface.ink.hex,
-        ink.label,
+        tabletop.gold,
       );
 
   // A second deck the identity brings (Doctor Strange's Invocation deck) gets
@@ -1526,12 +1517,11 @@ export function drawPlayArea(
   if (wideCaption) fitText(wideCaption, inner.width, typeRole.label.size);
 
   if (model.myPlayArea.length === 0) {
-    // A dashed slot: present, not yet filled.
     const empty = scene.add.graphics();
-    paintPanel(empty, inner, "quiet", "unavailable");
+    paintEmptyPosition(empty, inner);
     const hint = scene.add
       .text(inner.x + inner.width / 2, inner.y + inner.height / 2, "Play a card to put it here", {
-        ...textStyle(typeRole.body, surface.ink.hex, ink.meta),
+        ...textStyle(typeRole.body, tabletop.secondary),
         align: "center",
       })
       .setOrigin(0.5);
@@ -1565,8 +1555,7 @@ export function drawPlayArea(
     compact ? rect.y + 4 : rect.y + 6,
     `${ids.length} cards`,
     typeRole.label,
-    surface.ink.hex,
-    ink.label,
+    tabletop.secondary,
   );
   count.setX(inner.x + inner.width - count.width);
   // No room beside the caption (a narrow row): the scroll chevrons still say there is more.
@@ -1580,7 +1569,7 @@ export function drawPlayArea(
     ...ctx,
     makeTapTarget: (target, id, onTap, _drag, onHover) => {
       registered.push({ id, rect: target });
-      ctx.makeTapTarget(target, id, onTap, row.drag, onHover);
+      return ctx.makeTapTarget(target, id, onTap, row.drag, onHover);
     },
   };
   const before = scene.children.list.length;
@@ -1638,7 +1627,7 @@ function drawCompactPlayNote(scene: Phaser.Scene, inner: Rect, slots: readonly R
   const exhausted = model.myPlayArea.filter((panel) => panel.exhausted).length;
   const text = `${model.myPlayArea.length} in play${exhausted > 0 ? ` · ${exhausted} exhausted` : ""}`;
   const note = scene.add
-    .text(left, inner.y + inner.height / 2, text, textStyle(typeRole.body, surface.ink.hex, ink.meta))
+    .text(left, inner.y + inner.height / 2, text, textStyle(typeRole.body, tabletop.secondary))
     .setOrigin(0, 0.5);
   fitText(note, room, typeRole.body.size);
 }
@@ -1654,8 +1643,8 @@ function drawPlayAreaScrollHint(ctx: BoardDrawContext, area: Rect, scrollX: numb
   const { row } = ctx.playAreaScroll;
   const band = 28;
   const g = scene.add.graphics();
-  const ground = skin("rail", "rest").fill;
-  const style = { ...textStyle({ ...typeRole.label, size: 26 }, surface.ink.hex), fontStyle: "bold" };
+  const ground = tabletop.rail;
+  const style = { ...textStyle({ ...typeRole.label, size: 26 }, tabletop.lettering), fontStyle: "bold" };
   const edges = ([-1, 1] as const).map((direction) => {
     const x = direction < 0 ? area.x : area.x + area.width - band;
     const chevron = scene.add
@@ -1705,7 +1694,7 @@ function drawFormCards(ctx: BoardDrawContext, row: Rect, group: FormCardGroup): 
   const fan = isSet ? ctx.formFan : { ...ctx.formFan, open: false, t: 0 };
   const layout = formStackLayout(row, cards.length, fan.t);
   if (!layout || layout.cards[0]!.height < 24) return;
-  const heading = label(scene, row.x, row.y, group.title, typeRole.label, surface.ink.hex, ink.label);
+  const heading = label(scene, row.x, row.y, group.title, typeRole.label, tabletop.secondary);
   fitText(heading, row.width, typeRole.label.size);
   // Back to front, so the front card is drawn last, over the edges of the rest.
   for (let index = cards.length - 1; index >= 0; index--) {
@@ -1715,8 +1704,7 @@ function drawFormCards(ctx: BoardDrawContext, row: Rect, group: FormCardGroup): 
     // Folded, the cards behind are dimmed edges; they brighten as they fan out.
     const dim = front ? 1 : ink.secondary + (1 - ink.secondary) * fan.t;
     const frame = scene.add.graphics();
-    frame.fillStyle(surface.ink.hex, 1).fillRect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2);
-    frame.fillStyle(surface.paper.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
+    paintCardStock(frame, rect);
     const drawn = drawArt(scene, ctx.art.request(scene, card.art), rect, { fit: "cover", alpha: dim }) !== null;
     if (!drawn && (front || fan.open)) {
       const name = scene.add
@@ -1733,7 +1721,12 @@ function drawFormCards(ctx: BoardDrawContext, row: Rect, group: FormCardGroup): 
     const foot = { x: rect.x, y: rect.y + rect.height - 16, width: rect.width, height: 16 };
     if (isSet && card.active) {
       const ring = scene.add.graphics();
-      ring.lineStyle(3, signal.heal.hex, 1).strokeRect(rect.x - 2, rect.y - 2, rect.width + 4, rect.height + 4);
+      strokeCard(
+        ring,
+        { x: rect.x - 2, y: rect.y - 2, width: rect.width + 4, height: rect.height + 4 },
+        3,
+        signal.heal.hex,
+      );
       if (rect.height >= 60) drawFootStrip(scene, foot, "ACTIVE", "ability", 1);
     } else if (!isSet && card.otherFace && rect.height >= 60) {
       drawFootStrip(scene, foot, `FLIPS TO ${card.otherFace.toUpperCase()}`, "ability", 1);
@@ -1777,8 +1770,7 @@ function drawFormCards(ctx: BoardDrawContext, row: Rect, group: FormCardGroup): 
       layout.footer.y + layout.footer.height / 2,
       `Tap to see all ${cards.length}`,
       typeRole.label,
-      surface.ink.hex,
-      ink.label,
+      tabletop.secondary,
     ).setOrigin(0.5, 0.5);
     fitText(hint, layout.footer.width, typeRole.label.size);
   }
@@ -1822,7 +1814,7 @@ function drawSeparateDecks(
   decks.forEach((deck, index) => {
     const row: Rect = { x: rect.x, y: rect.y + index * (rowHeight + 8), width: rect.width, height: rowHeight };
     if (row.y + row.height > rect.y + rect.height) return;
-    label(scene, row.x, row.y, deck.name, typeRole.label, surface.ink.hex, ink.label);
+    label(scene, row.x, row.y, deck.name, typeRole.label, tabletop.secondary);
     const boxTop = row.y + 14;
     // Cards of an encounter-card deck that are out of it (a Labor card being revealed, in play, in the victory display):
     // one line each under the boxes, a tap on it reads the card. Only as many as the row has room for.
@@ -1844,15 +1836,7 @@ function drawSeparateDecks(
       ctx.frame.pileRects.set(pileKey("separateDiscard", perspectiveId, deck.name), discardBox);
     }
     deck.outside.slice(0, lineCount).forEach((card, at) => {
-      const line = label(
-        scene,
-        row.x,
-        boxTop + boxHeight + 2 + at * 12,
-        card.line,
-        typeRole.label,
-        surface.ink.hex,
-        ink.label,
-      );
+      const line = label(scene, row.x, boxTop + boxHeight + 2 + at * 12, card.line, typeRole.label, tabletop.secondary);
       fitText(line, row.width, typeRole.label.size);
       ctx.makeTapTarget(
         { x: row.x, y: boxTop + boxHeight + 2 + at * 12, width: row.width, height: 12 },
@@ -1885,7 +1869,7 @@ function drawSeparateDecks(
 export function drawTeam(ctx: BoardDrawContext, rect: Rect, model: BoardModel): void {
   const { scene } = ctx;
   const g = scene.add.graphics();
-  paintPanel(g, rect, "rail", "rest");
+  paintPlayZone(g, rect);
   // Cards another seat controls that this player may use now ("any player" Actions), as chips under that seat's row.
   const { game, legal } = appSession().store.state;
   const usable = game
@@ -1898,7 +1882,7 @@ export function drawTeam(ctx: BoardDrawContext, rect: Rect, model: BoardModel): 
     model.team.length,
     model.team.map((seat) => !seat.eliminated && usable.some((card) => card.seatId === seat.playerId)),
   );
-  if (layout.header) label(scene, rect.x + 8, rect.y + 6, "other heroes", typeRole.label, surface.ink.hex, ink.label);
+  if (layout.header) label(scene, rect.x + 8, rect.y + 6, "other heroes", typeRole.label, tabletop.gold);
 
   model.team.forEach((seat, index) => {
     const row = layout.rows[index]!;

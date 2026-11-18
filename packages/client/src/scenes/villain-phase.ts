@@ -131,6 +131,7 @@ import { cardOf, type GameState, type InstanceId, type PlayerId } from "@mc/engi
 import { artFor, CARD_BACKS } from "../art/art-source.js";
 import { drawFlipCard } from "../ui/flip-card.js";
 import { cardArt, drawArt } from "../art/card-art.js";
+import { fillCard, strokeCard } from "../ui/card-stock.js";
 import { gameDeps } from "../content/game-deps.js";
 import { accent, border, hit, ink, signal, surface, typeRole } from "../tokens.js";
 import { bindHoldTarget } from "../ui/hold-target.js";
@@ -2470,12 +2471,9 @@ export class VillainPhaseOverlay extends Phaser.Scene {
       for (let i = shown - 1; i >= 0; i--) {
         const back: Rect = { x: x + i * backWidth * 0.6, y: cursor, width: backWidth, height: backHeight };
         if (!drawArt(this, backKey, back, { fit: "cover" })) {
-          this.add.graphics().fillStyle(signal.spent.hex, 1).fillRect(back.x, back.y, back.width, back.height);
+          fillCard(this.add.graphics(), back, signal.spent.hex);
         }
-        this.add
-          .graphics()
-          .lineStyle(border.detail, surface.ink.hex, 1)
-          .strokeRect(back.x, back.y, back.width, back.height);
+        strokeCard(this.add.graphics(), back, border.detail, surface.ink.hex);
       }
       label(
         this,
@@ -2573,7 +2571,7 @@ export class VillainPhaseOverlay extends Phaser.Scene {
 
       if (slot.art.width > 0 && slot.art.height > 0) {
         const artFill = this.add.graphics();
-        artFill.fillStyle(surface.parchment.hex, 1).fillRect(slot.art.x, slot.art.y, slot.art.width, slot.art.height);
+        fillCard(artFill, slot.art, surface.parchment.hex);
         const key = cardArt(this).request(this, artFor(cardOf(state, boost.instanceId), { kind: "front" }));
         const art = drawArt(this, key, slot.art);
         if (!art) {
@@ -2959,7 +2957,7 @@ export class VillainPhaseOverlay extends Phaser.Scene {
 
       if (slot.art.width > 0 && slot.art.height > 0) {
         const artFill = this.add.graphics();
-        artFill.fillStyle(surface.parchment.hex, 1).fillRect(slot.art.x, slot.art.y, slot.art.width, slot.art.height);
+        fillCard(artFill, slot.art, surface.parchment.hex);
         const key = cardArt(this).request(this, artFor(cardOf(state, option.instanceId), face));
         if (!drawArt(this, key, slot.art)) {
           this.add

@@ -4,6 +4,7 @@
  * numbers, attachments and rules text are one tap away (the whole panel is the card's tap target).
  */
 import { drawArt } from "../../art/card-art.js";
+import { paintCardStock } from "../../ui/card-stock.js";
 import { accent, ink, signal, surface, typeRole } from "../../tokens.js";
 import { textStyle } from "../../ui/theme.js";
 import { fitText, hatchRect, paintPanel } from "../../ui/widgets.js";
@@ -31,9 +32,8 @@ export function drawCompactIdentity(
     width: Math.round((rect.height - 10) * CARD_ASPECT),
     height: rect.height - 10,
   };
-  g.fillStyle(surface.parchment.hex, 1).fillRect(thumb.x, thumb.y, thumb.width, thumb.height);
+  paintCardStock(g, thumb);
   drawArt(scene, ctx.art.request(scene, panel.art), thumb, { fit: "contain", alpha: 1 });
-  g.lineStyle(2, surface.ink.hex, 1).strokeRect(thumb.x, thumb.y, thumb.width, thumb.height);
 
   const left = thumb.x + thumb.width + 10;
   const right = rect.x + rect.width - 8;

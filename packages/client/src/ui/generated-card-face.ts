@@ -14,6 +14,7 @@ import type { Rect } from "../view/layout.js";
 import { cardInspectModel, type InspectModel } from "../view/inspect-model.js";
 import { textStyle } from "./theme.js";
 import { fitText, fitWrapped } from "./widgets.js";
+import { cardRadius, fillCard, strokeCard } from "./card-stock.js";
 
 /** The glyph a resource pip carries, so its type survives colorblindness and a 10 px chip. */
 const PIP_GLYPH = { physical: "P", mental: "M", energy: "E", wild: "*" } as const;
@@ -88,7 +89,7 @@ export function drawGeneratedFace(
   const s = faceScaleOf(rect.width);
   const pad = Math.max(3, Math.round(5 * s));
   const g = scene.add.graphics();
-  g.fillStyle(surface.paper.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
+  fillCard(g, rect, surface.paper.hex);
   objects.push(g);
 
   // Header: cost chip, then the name.
@@ -96,7 +97,12 @@ export function drawGeneratedFace(
   let nameX = rect.x + pad;
   if (model.cost !== null) {
     const chipW = Math.round(headerH * 0.85);
-    g.fillStyle(signal.cost.hex, 1).fillRect(rect.x, rect.y, chipW, headerH);
+    g.fillStyle(signal.cost.hex, 1).fillRoundedRect(rect.x, rect.y, chipW, headerH, {
+      tl: cardRadius(rect.width, rect.height),
+      tr: 0,
+      br: 0,
+      bl: 0,
+    });
     const cost = scene.add
       .text(
         rect.x + chipW / 2,
@@ -157,6 +163,6 @@ export function drawGeneratedFace(
       .setMaxLines(Math.max(1, Math.floor(rulesH / (rulesSize * 1.6))));
     objects.push(rules);
   }
-  g.lineStyle(2, surface.ink.hex, 1).strokeRect(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2);
+  strokeCard(g, rect, 1.5, surface.ink.hex);
   return objects;
 }

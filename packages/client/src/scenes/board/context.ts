@@ -190,7 +190,7 @@ export interface BoardDrawContext {
     onHover?: (over: boolean) => void,
     /** The clipped strip the card sits in (the phone's hand): presses outside it are not the card's. */
     clip?: Rect,
-  ): void;
+  ): { zone: Phaser.GameObjects.Zone; activate: () => void };
   /** The hover caption for a player's pile of facedown dealt encounter cards: what it is, why it is there, when it flips. */
   dealtCaptionOf(ids: readonly InstanceId[]): string;
   /** Opens a card. `siblings` is the list ◂ ▸ steps through; without it, the hand when the card is in it. */

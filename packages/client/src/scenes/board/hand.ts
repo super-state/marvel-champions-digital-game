@@ -10,17 +10,21 @@ import type Phaser from "phaser";
 import type { ResourceIconType } from "@mc/content";
 import { cardOf, type GameState, type InstanceId } from "@mc/engine";
 import { artFor } from "../../art/art-source.js";
+import { t } from "../../i18n/translate.js";
 import { drawArt } from "../../art/card-art.js";
+import { cardRadius, fillCard, paintCardStock } from "../../ui/card-stock.js";
+import { liftCardMesh } from "../../ui/held-card.js";
 import { appSession } from "../../session.js";
 import { accent, hit, ink, signal, surface, typeRole } from "../../tokens.js";
 import { caseOf, cssOf, textStyle } from "../../ui/theme.js";
 import { glyphsFitLayout, zonesHintFits } from "../../view/glyph-placement.js";
-import { McSelectionRing, fitText, fitWrapped, label, paintPanel } from "../../ui/widgets.js";
+import { McSelectionRing, fitText, fitWrapped, label } from "../../ui/widgets.js";
 import { faceOf, type BoardModel, type HandCardView } from "../../view/board-model.js";
 import type { DiscardChoiceView } from "../../view/discard-choice-model.js";
 import { FORCED_ACTION_CODE } from "../../view/forced-actions.js";
 import type { IllegalReason } from "../../view/highlights.js";
 import { DEFENSE_LOCKOUT_TAG, isDefenseBarMessage } from "../../view/defense-lockout.js";
+import { handFan, type HandFanCard } from "../../view/hand-fan.js";
 import { handRow, type HandRowLayout } from "../../view/hand-row.js";
 import type { VillainHandTagKind } from "../../view/villain-hand-tags.js";
 import type { Rect } from "../../view/layout.js";
@@ -46,6 +50,7 @@ import { focusKey } from "./selection.js";
 import { setMask } from "../../ui/rex.js";
 import { bindDragSurface } from "../../ui/hold-target.js";
 import { addTapTarget } from "./tap-target.js";
+import { bindHandLift } from "./hand-lift.js";
 
 import type { HandScroll } from "../../view/hand-scroll.js";
 export { HandScroll } from "../../view/hand-scroll.js";
@@ -57,8 +62,8 @@ const HAND_CAPTION_HEIGHT = 20;
  * The hand row. On the tabbed board (`Board - Phone`) a crowded hand scrolls
  * instead of shrinking below a readable size: every card at full size, the row
  * dragged or wheeled sideways (PLAN.md Phase 4, "the phone hand crowds at six
- * cards"). The long table never crowds this badly at any realistic hand size,
- * so it keeps the older shrink-and-overlap row (`cardRow`'s default).
+ * cards"). The long table fans an idle hand. A decision straightens its cards
+ * so tags, costs and pinned resource tiles can be read side by side.
  *
  * The tabbed row is one masked container, and a scroll only moves it
  * (`HandScroll#attach`): the cards are clipped to `cardArea`, so they slide
@@ -68,10 +73,17 @@ const HAND_CAPTION_HEIGHT = 20;
 /** A mode bar: 44px controls with 4px above and below (`hit.target` is the floor for anything tapped). */
 const BAR_HEIGHT = BAR_ROW;
 
-export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel): void {
+export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel, table: Rect): void {
   const { scene, hand, tabbed } = ctx;
   const g = scene.add.graphics();
-  g.fillStyle(surface.ink.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
+  const idle = ctx.controller.selection.kind === "idle";
+  g.fillStyle(0x0a1521, tabbed || ctx.cardScale > 1 || !idle ? 0.97 : 0.64).fillRect(
+    rect.x,
+    rect.y,
+    rect.width,
+    rect.height,
+  );
+  g.fillStyle(0xd4ad71, 0.48).fillRect(rect.x, rect.y, rect.width, 1);
 
   // While paying, or choosing a discard cost, the caption line gives way to
   // that mode's bar: the hand is the instrument of the decision, so the count
@@ -181,6 +193,7 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel): 
     landscape: model.hand.map((card) => card.landscape),
   });
   const { slots } = row;
+  const poses = !tabbed && idle ? handFan(slots, row.cardArea) : null;
   // The tabbed hand's whole strip takes a sideways drag once it scrolls, not only its cards: a finger that starts in a
   // gap or above a short card still scrolls the hand. Made before the cards and table tiles, so each keeps its own press.
   const dragSurface = tabbed
@@ -200,7 +213,7 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel): 
     model.hand.forEach((card, index) => {
       const slot = slots[index];
       if (!slot) return;
-      const drawn: Rect = { ...slot, x: slot.x - scrollX };
+      const drawn: Rect = poses?.[index]?.target ?? { ...slot, x: slot.x - scrollX };
       ctx.frame.hitRects.set(card.instanceId, drawn);
       ctx.frame.focusRects.set(focusKey({ kind: "card", instanceId: card.instanceId }), drawn);
     });
@@ -214,11 +227,28 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel): 
     ? { x: row.cardArea.x, y: rect.y, width: row.cardArea.width, height: rect.height }
     : null;
   if (strip) ctx.frame.handStrip.push(strip);
+  const fanLayer = poses ? scene.add.container(0, 0) : null;
   model.hand.forEach((card, index) => {
     const slot = slots[index];
     // A card still flying in from the deck leaves its slot empty; its ghost fills it (`BoardMotion#isArriving`).
-    if (slot && !ctx.motion.isArriving(card.instanceId))
-      drawHandCard(ctx, { ...slot, x: slot.x - drawnAt }, card, payment, discard, strip);
+    if (!slot || ctx.motion.isArriving(card.instanceId)) return;
+    const pose = poses?.[index];
+    if (fanLayer && pose) {
+      drawFannedCard(ctx, fanLayer, index, pose, card, model.phase === "player" ? table : null);
+      return;
+    }
+    const at = { ...slot, x: slot.x - drawnAt };
+    drawHandCard(ctx, at, card, payment, discard);
+    const source = payment?.sources.find((candidate) => candidate.instanceId === card.instanceId);
+    const hover = onTopHover(scene, at, card.instanceId, source?.orderNote ?? null);
+    ctx.makeTapTarget(
+      at,
+      card.instanceId,
+      () => ctx.controller.tapHandCard(card.instanceId),
+      hand.drag,
+      hover,
+      strip ?? undefined,
+    );
   });
   if (tabbed) {
     // Everything the cards just added (frames, scans, tags, rings, tap zones), reparented into one clipped strip —
@@ -249,6 +279,103 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel): 
   }
 
   drawMyPiles(ctx, row, model);
+}
+
+/** Only the card's face tilts. Its stationary tap zone and its face share a place in the fan's stacking order. */
+function drawFannedCard(
+  ctx: BoardDrawContext,
+  layer: Phaser.GameObjects.Container,
+  index: number,
+  pose: HandFanCard,
+  card: HandCardView,
+  table: Rect | null,
+): void {
+  const { scene } = ctx;
+  const { face, lifted } = pose;
+  const cx = face.x + face.width / 2;
+  const cy = face.y + face.height / 2;
+  const start = scene.children.list.length;
+  drawHandCard(ctx, { ...face, x: -face.width / 2, y: -face.height / 2 }, card, null, null);
+  const print = scene.add.container(cx, cy, scene.children.list.slice(start)).setAngle(pose.angle);
+  const cardGroup = scene.add.container(0, 0, [print]);
+  layer.add(cardGroup);
+
+  const focused = ctx.focusedCard === card.instanceId;
+  const reducedMotion = appSession().settings.reducedMotion;
+  let carrying = false;
+  const show = (over: boolean, instant = false): void => {
+    if (carrying) return;
+    const raised = over || focused;
+    const scale = raised ? lifted.width / face.width : 1;
+    const y = raised ? lifted.y + lifted.height / 2 : cy;
+    const angle = raised ? 0 : pose.angle;
+    // Containers draw their children in list order. Raise only within the hand, below every later overlay.
+    cardGroup.setDepth(over ? 2_000 + index : focused ? 1_000 + index : index);
+    layer.sort("depth");
+    scene.tweens.killTweensOf(print);
+    if (instant || reducedMotion) print.setPosition(cx, y).setAngle(angle).setScale(scale);
+    else
+      scene.tweens.add({ targets: print, x: cx, y, angle, scale, duration: raised ? 135 : 165, ease: "Cubic.easeOut" });
+  };
+  print.once("destroy", () => scene.tweens.killTweensOf(print));
+  const target = ctx.makeTapTarget(
+    pose.target,
+    card.instanceId,
+    () => ctx.controller.tapHandCard(card.instanceId),
+    ctx.hand.drag,
+    show,
+  );
+  cardGroup.add(target.zone);
+  if (focused) ctx.frame.focusRects.set(focusKey({ kind: "card", instanceId: card.instanceId }), lifted);
+  show(false, true);
+
+  if (!table || ctx.actionsHeld || ctx.replay || !ctx.marks?.playable.has(card.instanceId)) return;
+  let hint: Phaser.GameObjects.Text | undefined;
+  let held: ReturnType<typeof liftCardMesh> = null;
+  bindHandLift(scene, target.zone, {
+    table,
+    ready: () =>
+      ctx.controller.selection.kind === "idle" &&
+      !ctx.controller.readOnly &&
+      appSession().store.state.peekSeat === null,
+    carry: (dx, dy, onTable) => {
+      if (!carrying) {
+        carrying = true;
+        scene.tweens.killTweensOf(print);
+        cardGroup.setDepth(3_000 + index);
+        layer.sort("depth");
+        print.setAngle(0).setScale(lifted.width / face.width);
+        if (!reducedMotion) held = liftCardMesh(scene, print, face, lifted.width / face.width);
+        if (held) {
+          cardGroup.add(held.mesh);
+          print.setVisible(false);
+        }
+        hint = scene.add
+          .text(0, 0, "", textStyle(typeRole.label, surface.paper.hex))
+          .setOrigin(0.5, 1)
+          .setPadding(9, 5, 9, 5)
+          .setBackgroundColor("#122331");
+        cardGroup.add(hint);
+      }
+      print.setPosition(cx + dx, cy + dy);
+      held?.move(print.x, print.y, dx, dy);
+      const text = t(onTable ? "hand.releaseToPlay" : "hand.releaseToReturn");
+      if (hint && hint.text !== text) hint.setText(text);
+      hint?.setPosition(print.x, Math.max(25, print.y - lifted.height / 2 - 6));
+    },
+    settle: () => {
+      carrying = false;
+      hint?.destroy();
+      hint = undefined;
+      held?.mesh.destroy();
+      held = null;
+      if (print.active && cardGroup.active) {
+        print.setVisible(true);
+        show(false);
+      }
+    },
+    activate: target.activate,
+  });
 }
 
 /**
@@ -317,7 +444,7 @@ function drawPaymentTable(ctx: BoardDrawContext, row: HandRowLayout, payment: Pa
     drawTableTile(ctx, tile, game, subject, "selected");
     tableTag(scene, tile, "paying for", accent.heroRed.hex, "top");
     const ring = new McSelectionRing(scene);
-    ring.show(tile, "static", true);
+    ring.show(tile, "static", true, "card");
     ctx.frame.rings.push(ring);
   }
 
@@ -328,7 +455,12 @@ function drawPaymentTable(ctx: BoardDrawContext, row: HandRowLayout, payment: Pa
     drawTableTile(ctx, tile, game, shown, source.spent ? "selected" : "rest");
     if (source.spent || source.lockedReason) {
       const wash = scene.add.graphics();
-      wash.fillStyle(surface.ink.hex, 0.3).fillRect(tile.x + 3, tile.y + 3, tile.width - 6, tile.height - 6);
+      fillCard(
+        wash,
+        { x: tile.x + 3, y: tile.y + 3, width: tile.width - 6, height: tile.height - 6 },
+        surface.ink.hex,
+        0.3,
+      );
     }
     // Both facts show, one tag over the other: where the card comes from (whose hand, the amount it takes, "overpay
     // only"), and, once picked, its place in the payment ("spent 2 · on top"). A narrow tile gets the compact words.
@@ -398,13 +530,13 @@ function drawTableTile(
 ): void {
   const { scene } = ctx;
   const g = scene.add.graphics();
-  paintPanel(g, tile, "card", state);
+  paintCardStock(g, tile, state);
   const inner: Rect = { x: tile.x + 3, y: tile.y + 3, width: tile.width - 6, height: tile.height - 6 };
   const card = cardOf(game, id);
   const art = card ? artFor(card, faceOf(game, id)) : null;
   if (!drawArt(scene, ctx.art.request(scene, art), inner, { fit: "contain" })) {
     const ground = scene.add.graphics();
-    ground.fillStyle(surface.parchment.hex, 1).fillRect(inner.x, inner.y, inner.width, inner.height);
+    fillCard(ground, inner, surface.parchment.hex);
     // A card's name is wrapped, never cut: the scan-less fallback has the whole tile to put it on.
     fitWrapped(
       scene.add.text(inner.x + 3, inner.y + 18, card?.name ?? "Card", textStyle(typeRole.label, surface.ink.hex)),
@@ -478,11 +610,11 @@ function paintHandSlot(
     const available = isSubject || picked || discard.candidates.includes(card.instanceId);
     const alpha = available ? 1 : ink.illegal;
     const g = ctx.scene.add.graphics();
-    paintPanel(g, slot, "card", isSubject || picked ? "selected" : available ? "rest" : "unavailable");
+    paintCardStock(g, slot, isSubject || picked ? "selected" : available ? "rest" : "unavailable");
     if (isSubject) {
       // The card whose cost this is gets the same static ring a payment's subject does.
       const ring = new McSelectionRing(ctx.scene);
-      ring.show(slot, "static", true);
+      ring.show(slot, "static", true, "card");
       ctx.frame.rings.push(ring);
     }
     return { spent: picked, subject: isSubject, alpha };
@@ -506,11 +638,11 @@ function paintHandSlot(
   const alpha = available ? 1 : ink.illegal;
 
   const g = ctx.scene.add.graphics();
-  paintPanel(g, slot, "card", subject ? "selected" : available ? "rest" : "unavailable");
+  paintCardStock(g, slot, subject ? "selected" : available ? "rest" : "unavailable");
   if (subject) {
     // The design's treatment for the card being paid for: the red ring.
     const ring = new McSelectionRing(ctx.scene);
-    ring.show(slot, "static", true);
+    ring.show(slot, "static", true, "card");
     ctx.frame.rings.push(ring);
   }
   return { spent, subject, alpha };
@@ -528,7 +660,6 @@ function drawHandCard(
   card: HandCardView,
   payment: PaymentView | null,
   discard: DiscardChoiceView | null = null,
-  clip: Rect | null = null,
 ): void {
   const { scene } = ctx;
   const { spent, subject, alpha } = paintHandSlot(ctx, slot, card, payment, discard);
@@ -538,7 +669,7 @@ function drawHandCard(
   // shape, so the scan *is* the card face: it fills the slot with nothing
   // cropped and nothing letterboxed, and it already prints the name, cost,
   // type and rules text better than we can redraw them at this size.
-  const inner: Rect = { x: slot.x + 3, y: slot.y + 3, width: slot.width - 6, height: slot.height - 6 };
+  const inner: Rect = { x: slot.x + 1.5, y: slot.y + 1.5, width: slot.width - 3, height: slot.height - 3 };
   const key = ctx.art.request(scene, card.art);
   const drawn = drawArt(scene, key, inner, { fit: "cover", alpha });
   if (!drawn) drawHandCardFallback(scene, inner, card, alpha);
@@ -546,8 +677,13 @@ function drawHandCard(
   // (the owner, 2026-10-14): over the scan, so the frame reads at a glance.
   if (!payment && !discard && ctx.villainHandTags?.get(card.instanceId)?.kind === "now") {
     const glow = scene.add.graphics();
-    glow.lineStyle(8, signal.caution.hex, 0.35).strokeRect(slot.x - 2, slot.y - 2, slot.width + 4, slot.height + 4);
-    glow.lineStyle(4, signal.caution.hex, 1).strokeRect(slot.x + 1, slot.y + 1, slot.width - 2, slot.height - 2);
+    const radius = cardRadius(slot.width, slot.height);
+    glow
+      .lineStyle(8, signal.caution.hex, 0.35)
+      .strokeRoundedRect(slot.x - 2, slot.y - 2, slot.width + 4, slot.height + 4, radius + 2);
+    glow
+      .lineStyle(4, signal.caution.hex, 1)
+      .strokeRoundedRect(slot.x + 1, slot.y + 1, slot.width - 2, slot.height - 2, radius);
   }
 
   // Chrome the scan cannot carry, because it is about this game rather than
@@ -611,18 +747,8 @@ function drawHandCard(
     // A spent card is on its way to the discard pile. Enough of a wash to
     // read as "gone", not so much that the hand looks broken.
     const wash = scene.add.graphics();
-    wash.fillStyle(surface.ink.hex, 0.3).fillRect(slot.x + 3, slot.y + 3, slot.width - 6, slot.height - 6);
+    fillCard(wash, inner, surface.ink.hex, 0.3);
   }
-
-  const onHover = onTopHover(scene, slot, card.instanceId, source?.orderNote ?? null);
-  ctx.makeTapTarget(
-    slot,
-    card.instanceId,
-    () => ctx.controller.tapHandCard(card.instanceId),
-    ctx.hand.drag,
-    onHover,
-    clip ?? undefined,
-  );
 }
 
 /** The card the mouse is over while it carries the "on top" note, so a redraw under the mouse keeps the note open. */
@@ -773,7 +899,12 @@ function drawHandCardFallback(scene: Phaser.Scene, slot: Rect, card: HandCardVie
   if (card.cost !== null) {
     const chip: Rect = { x: header.x, y: header.y, width: 20, height: header.height };
     const chipG = scene.add.graphics();
-    chipG.fillStyle(signal.cost.hex, alpha).fillRect(chip.x, chip.y, chip.width, chip.height);
+    chipG.fillStyle(signal.cost.hex, alpha).fillRoundedRect(chip.x, chip.y, chip.width, chip.height, {
+      tl: cardRadius(slot.width, slot.height),
+      tr: 0,
+      br: 0,
+      bl: 0,
+    });
     scene.add
       .text(
         chip.x + chip.width / 2,

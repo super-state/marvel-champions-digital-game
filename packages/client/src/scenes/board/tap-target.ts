@@ -39,7 +39,7 @@ export interface TapGesture {
   clip?: Rect | undefined;
 }
 
-export function addTapTarget(scene: Phaser.Scene, rect: Rect, gesture: TapGesture): void {
+export function addTapTarget(scene: Phaser.Scene, rect: Rect, gesture: TapGesture): Phaser.GameObjects.Zone {
   const zone = scene.add.zone(rect.x, rect.y, rect.width, rect.height).setOrigin(0, 0);
   const { clip } = gesture;
   if (clip) {
@@ -65,4 +65,5 @@ export function addTapTarget(scene: Phaser.Scene, rect: Rect, gesture: TapGestur
       })
       .on("pointerout", () => onHover(false));
   }
+  return zone;
 }

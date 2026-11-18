@@ -9,11 +9,13 @@
 
 import { cardRectInRow } from "../../view/card-hover.js";
 import { drawArt } from "../../art/card-art.js";
+import { fillCard } from "../../ui/card-stock.js";
 import { countTween } from "../../ui/bound-tween.js";
 import { McScrollRegion } from "../../ui/scroll-region.js";
-import { ink, surface, typeRole } from "../../tokens.js";
+import { surface, tabletop, typeRole } from "../../tokens.js";
+import { paintPlayZone, paintTablePlate } from "../../ui/tabletop-finish.js";
 import { textStyle } from "../../ui/theme.js";
-import { fitWrapped, label, paintPanel, paintThreatMeter } from "../../ui/widgets.js";
+import { fitWrapped, label, paintThreatMeter } from "../../ui/widgets.js";
 import { counterNote, scenarioAreaTag, type BoardModel, type SchemePanel } from "../../view/board-model.js";
 import { CARD_ASPECT, type Rect } from "../../view/layout.js";
 import { fullyVisible, schemeListLayout, visibleSlice, type SchemeListLayout } from "../../view/scheme-list-layout.js";
@@ -42,7 +44,7 @@ export class SchemeScrollState {
 export function drawSchemes(ctx: BoardDrawContext, rect: Rect, model: BoardModel): void {
   const { scene } = ctx;
   const g = scene.add.graphics();
-  paintPanel(g, rect, "card", "rest");
+  paintPlayZone(g, rect);
 
   // Tower Defense's own second main scheme is drawn like the first, pinned above the side schemes.
   const all = [model.mainScheme, ...model.extraMainSchemes, ...model.sideSchemes];
@@ -172,17 +174,12 @@ function drawScrollHint(ctx: BoardDrawContext, viewport: Rect, heights: readonly
  * without duplicating this layout math or reaching into `drawScheme`'s own locals.
  */
 /**
- * The art column's width in a scheme row, 0 when the row is too narrow for it. It widens with a taller row, so a grown
- * row shows a bigger card. Above Fit to screen (`cardScale` > 1) the column takes the scheme's own sideways shape, so
- * the larger Card size shows the whole card larger instead of fitting it into a portrait column.
+ * Main schemes are printed sideways. Use their landscape aspect while keeping space for the live threat and name.
  */
 export function schemeArtWidth(rect: Rect, cardScale = 1): number {
   if (rect.width < 170) return 0;
-  // Also a row 160px tall or more (an ultrawide's tall column; the 1440x900 table tops out at 150): a 120px portrait strip
-  // beside a card-sized row wastes the room.
-  const grown = cardScale > 1 || rect.height >= 160;
-  const shaped = Math.round((rect.height - 6) * (grown ? 1 / CARD_ASPECT : CARD_ASPECT));
-  return Math.round(Math.min(Math.max(96, shaped), rect.width * (grown ? 0.5 : 0.3)));
+  const liveReadout = Math.min(rect.width * 0.65, 132 * Math.max(1, cardScale));
+  return Math.round(Math.min((rect.height - 6) / CARD_ASPECT, rect.width * 0.53, rect.width - liveReadout));
 }
 
 export function schemeMeterRect(rect: Rect, cardScale = 1): Rect {
@@ -219,7 +216,7 @@ export function drawScheme(ctx: BoardDrawContext, rect: Rect, scheme: SchemePane
   const selection = ctx.controller.selection;
   ctx.frame.hitRects.set(scheme.instanceId, rect);
   const g = scene.add.graphics();
-  paintPanel(g, rect, "card", targetState(selection, scheme.instanceId));
+  paintTablePlate(g, rect, targetState(selection, scheme.instanceId));
 
   const dim = dimAlpha(selection, scheme.instanceId);
   // The art column earns its place whenever the name and the meter still fit
@@ -231,7 +228,7 @@ export function drawScheme(ctx: BoardDrawContext, rect: Rect, scheme: SchemePane
   if (artWidth > 0) {
     const column: Rect = { x: rect.x + 3, y: rect.y + 3, width: artWidth, height: rect.height - 6 };
     const frame = scene.add.graphics();
-    frame.fillStyle(surface.parchment.hex, dim).fillRect(column.x, column.y, column.width, column.height);
+    fillCard(frame, column, tabletop.rail, dim);
     const key = ctx.art.request(scene, scheme.art);
     if (!drawArt(scene, key, column, { alpha: dim, focusY: 0.3 })) {
       label(
@@ -240,12 +237,14 @@ export function drawScheme(ctx: BoardDrawContext, rect: Rect, scheme: SchemePane
         column.y + column.height / 2,
         "art",
         typeRole.label,
-        surface.ink.hex,
-        ink.meta * dim,
+        tabletop.secondary,
+        dim,
       ).setOrigin(0.5);
     }
     const rule = scene.add.graphics();
-    rule.fillStyle(surface.ink.hex, dim).fillRect(column.x + column.width, column.y, 3, column.height);
+    rule
+      .fillStyle(tabletop.brass, 0.32 * dim)
+      .fillRect(column.x + column.width + 1, column.y + 3, 1, column.height - 6);
   }
 
   const textLeft = rect.x + 8 + (artWidth > 0 ? artWidth + 6 : 0);
@@ -256,9 +255,9 @@ export function drawScheme(ctx: BoardDrawContext, rect: Rect, scheme: SchemePane
   // whole words into the room that is left, and the subtitle starts under however many lines the name took, so a long
   // name never lands on "MAIN SCHEME 2" and the meter never covers "SIDE SCHEME · WRECKER".
   const nameText = scene.add
-    .text(textLeft, rect.y + (compact ? 3 : 6), scheme.name, textStyle(typeRole.rowTitle, surface.ink.hex, dim))
+    .text(textLeft, rect.y + (compact ? 3 : 6), scheme.name, textStyle(typeRole.sectionHeader, tabletop.lettering, dim))
     .setWordWrapWidth(textWidth);
-  fitWrapped(nameText, textWidth, rect.height >= 78 * Math.max(1, ctx.cardScale) ? 2 : 1, typeRole.rowTitle.size);
+  fitWrapped(nameText, textWidth, rect.height >= 78 * Math.max(1, ctx.cardScale) ? 2 : 1, typeRole.sectionHeader.size);
   const subtitleTop = nameText.y + Math.ceil(nameText.height) + 1;
   const subtitleText = label(
     scene,
@@ -266,8 +265,8 @@ export function drawScheme(ctx: BoardDrawContext, rect: Rect, scheme: SchemePane
     subtitleTop,
     scheme.areaLabel ? `${scheme.subtitle} · ${scheme.areaLabel}` : scheme.subtitle,
     typeRole.label,
-    surface.ink.hex,
-    ink.label * dim,
+    tabletop.secondary,
+    dim,
   );
   fitWrapped(subtitleText, textWidth, meter.y - 1 - subtitleTop >= 26 ? 2 : 1, typeRole.label.size);
 
@@ -282,7 +281,7 @@ export function drawScheme(ctx: BoardDrawContext, rect: Rect, scheme: SchemePane
   let abilityTop = Math.max(rect.y + 48, subtitleTop + Math.ceil(subtitleText.height) + 2);
   const counterText = counterNote(scheme.counters);
   if (counterText && abilityTop + 14 <= schemeMeterRect(rect, ctx.cardScale).y - 2) {
-    label(scene, textLeft, abilityTop, counterText, typeRole.label, surface.ink.hex, ink.meta * dim);
+    label(scene, textLeft, abilityTop, counterText, typeRole.label, tabletop.secondary, dim);
     abilityTop += 14;
   }
   // A scenario area the scheme loses on (The Grand Collection's "at least 5 per hero cards in The Collection"): its
@@ -307,7 +306,7 @@ export function drawScheme(ctx: BoardDrawContext, rect: Rect, scheme: SchemePane
   let tuckedTargets: (() => void) | null = null;
   if (scheme.tuckedCount > 0 && scheme.tuckedLabel) {
     if (scheme.targetNote && abilityTop + 14 <= meter.y - 2) {
-      label(scene, textLeft, abilityTop, scheme.targetNote, typeRole.label, surface.ink.hex, ink.meta * dim);
+      label(scene, textLeft, abilityTop, scheme.targetNote, typeRole.label, tabletop.secondary, dim);
       abilityTop += 14;
     }
     const room: Rect = { x: textLeft, y: abilityTop, width: textWidth, height: meter.y - 4 - abilityTop };

@@ -22,6 +22,7 @@ import { SCENES } from "../scenes/keys.js";
 import { appSession } from "../session.js";
 import { surface, typeRole } from "../tokens.js";
 import { drawGeneratedFace, faceModelOf } from "./generated-card-face.js";
+import { paintCardStock } from "./card-stock.js";
 import { textStyle } from "./theme.js";
 import { McHpPlate, fieldsOf, paintThreatMeter } from "./widgets.js";
 import { schemePanel } from "../view/board-model.js";
@@ -576,11 +577,9 @@ export class HoverPreview {
     }
 
     const card: Rect = { x: 0, y: 0, width: size.width, height: size.height };
-    const shadow = this.scene.add.graphics();
-    shadow
-      .fillStyle(surface.ink.hex, 0.35)
-      .fillRect(5, 6, size.width, size.height + (strip || meterHeight ? STRIP_GAP + stripHeight + meterHeight : 0));
-    container.add(shadow);
+    const stock = this.scene.add.graphics();
+    paintCardStock(stock, card);
+    container.add(stock);
     const image = drawArt(this.scene, key, card);
     if (image) container.add(image);
     else container.add(this.#plainFrame(card, model));
@@ -649,17 +648,11 @@ export class HoverPreview {
     }
     const stripHeight = caption.height + 14;
     const card: Rect = { x: 0, y: 0, width: size.width, height: size.height };
-    const shadow = this.scene.add.graphics();
-    shadow.fillStyle(surface.ink.hex, 0.35).fillRect(5, 6, size.width, size.height + STRIP_GAP + stripHeight);
-    container.add(shadow);
+    const stock = this.scene.add.graphics();
+    paintCardStock(stock, card);
+    container.add(stock);
     const image = drawArt(this.scene, key, card);
     if (image) container.add(image);
-    else {
-      const plain = this.scene.add.graphics();
-      plain.fillStyle(surface.paper.hex, 1).fillRect(0, 0, size.width, size.height);
-      plain.lineStyle(4, surface.ink.hex, 1).strokeRect(2, 2, size.width - 4, size.height - 4);
-      container.add(plain);
-    }
     const bandTop = size.height + STRIP_GAP;
     const bar = this.scene.add.graphics();
     bar.fillStyle(surface.ink.hex, 1).fillRect(0, bandTop, size.width, stripHeight);
@@ -697,9 +690,9 @@ export class HoverPreview {
     const size = hoverCardSize(onScreen, aspect, appSession().settings.cardHoverScale, area);
     const container = this.scene.add.container(0, 0).setDepth(HOVER_DEPTH);
     const rect: Rect = { x: 0, y: 0, width: size.width, height: size.height };
-    const shadow = this.scene.add.graphics();
-    shadow.fillStyle(surface.ink.hex, 0.35).fillRect(5, 6, size.width, size.height);
-    container.add(shadow);
+    const stock = this.scene.add.graphics();
+    paintCardStock(stock, rect);
+    container.add(stock);
     const image = drawArt(this.scene, key, rect);
     // No picture (yet): the generated face from the record, so a card of a pack that ships none is still readable.
     container.add(
@@ -716,10 +709,6 @@ export class HoverPreview {
   /** What stands in for a scan that has not arrived or does not exist: name, type line and rules text on paper. */
   #plainFrame(card: Rect, model: InspectModel): Phaser.GameObjects.Container {
     const frame = this.scene.add.container(0, 0);
-    const g = this.scene.add.graphics();
-    g.fillStyle(surface.paper.hex, 1).fillRect(0, 0, card.width, card.height);
-    g.lineStyle(4, surface.ink.hex, 1).strokeRect(2, 2, card.width - 4, card.height - 4);
-    frame.add(g);
     const pad = 14;
     const wrap = { width: Math.max(1, card.width - pad * 2) };
     const name = this.scene.add.text(pad, pad, model.name, {

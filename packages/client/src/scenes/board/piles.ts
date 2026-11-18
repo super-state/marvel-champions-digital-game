@@ -17,9 +17,10 @@ import type { ResourceIconType } from "@mc/content";
 import type { ArtSource } from "../../art/art-source.js";
 import { CARD_BACKS } from "../../art/art-source.js";
 import { drawArt } from "../../art/card-art.js";
+import { fillCard, paintCardStock, strokeCard } from "../../ui/card-stock.js";
 import { accent, ink, pileRunOut, signal, surface, typeRole } from "../../tokens.js";
 import { cssOf, textStyle } from "../../ui/theme.js";
-import { fitText, label, paintPanel } from "../../ui/widgets.js";
+import { fitText, label } from "../../ui/widgets.js";
 import type { BoardModel, DeckTopView } from "../../view/board-model.js";
 import type { HandRowLayout } from "../../view/hand-row.js";
 import type { Rect } from "../../view/layout.js";
@@ -169,9 +170,9 @@ export function drawPile(
   const g = scene.add.graphics();
   if (count === 0) {
     // An empty pile keeps its place, as a faint outline on the ink ground.
-    g.lineStyle(2, surface.paper.hex, 0.3).strokeRect(box.x, box.y, box.width, box.height);
+    strokeCard(g, box, 1.5, surface.paper.hex, 0.34);
   } else {
-    paintPanel(g, box, "card", "rest");
+    paintCardStock(g, box, "rest", count);
   }
 
   const inner: Rect = { x: box.x + 3, y: box.y + 3, width: box.width - 6, height: box.height - 6 };
@@ -222,6 +223,6 @@ export function drawPile(
 
 /** The light red wash (and an edge in the same red) over a pile the next round will empty. */
 export function tintRunOut(g: Phaser.GameObjects.Graphics, box: Rect): void {
-  g.fillStyle(accent.heroRed.hex, pileRunOut.alpha).fillRect(box.x, box.y, box.width, box.height);
-  g.lineStyle(2, accent.heroRed.hex, 1).strokeRect(box.x + 1, box.y + 1, box.width - 2, box.height - 2);
+  fillCard(g, box, accent.heroRed.hex, pileRunOut.alpha);
+  strokeCard(g, { x: box.x + 1, y: box.y + 1, width: box.width - 2, height: box.height - 2 }, 2, accent.heroRed.hex);
 }

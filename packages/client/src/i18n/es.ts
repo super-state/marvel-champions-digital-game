@@ -23,6 +23,8 @@ export const es: Readonly<Partial<Record<keyof typeof en, string>>> = {
   "title.rankUp": "¡NUEVO RANGO!",
   "title.releaseNotes": "Novedades ↗",
   "title.openReplay": "Abrir una repetición",
+  "hand.releaseToPlay": "Suelta para jugar",
+  "hand.releaseToReturn": "Suelta para devolverla",
   "title.pastGames": "Partidas jugadas",
   "pastGames.title": "Partidas jugadas",
   "pastGames.openFile": "Abrir un archivo",

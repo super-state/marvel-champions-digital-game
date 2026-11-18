@@ -10,6 +10,7 @@
 import type { InstanceId, PlayerId } from "@mc/engine";
 import { CARD_BACKS } from "../../art/art-source.js";
 import { drawArt } from "../../art/card-art.js";
+import { paintCardStock } from "../../ui/card-stock.js";
 import { surface, typeRole } from "../../tokens.js";
 import { textStyle } from "../../ui/theme.js";
 import { fitText } from "../../ui/widgets.js";
@@ -35,10 +36,8 @@ export function drawDealtPile(
   const key = ctx.art.request(scene, CARD_BACKS.encounter);
   const drawBack = (rect: Rect): void => {
     const g = scene.add.graphics();
-    g.fillStyle(surface.ink.hex, 1).fillRect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2);
-    g.fillStyle(surface.parchment.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
+    paintCardStock(g, rect);
     drawArt(scene, key, rect, { fit: "cover" });
-    g.lineStyle(1, surface.paper.hex, 0.9).strokeRect(rect.x - 0.5, rect.y - 0.5, rect.width + 1, rect.height + 1);
   };
   if (ids.length > 1) drawBack(parts.rear);
   drawBack(parts.front);

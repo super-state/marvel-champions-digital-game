@@ -11,6 +11,7 @@ import type Phaser from "phaser";
 import { cardOf, getPlayer, type GameEvent, type InstanceId, type PlayerId, type ZoneId } from "@mc/engine";
 import { artFor, CARD_BACKS, type ArtSource } from "../../art/art-source.js";
 import { drawArt } from "../../art/card-art.js";
+import { fillCard, strokeCard } from "../../ui/card-stock.js";
 import { appSession } from "../../session.js";
 import { accent, motion, signal, surface, typeRole } from "../../tokens.js";
 import { cssOf, textStyle } from "../../ui/theme.js";
@@ -910,6 +911,7 @@ export class BoardMotion {
       const scaleTo = { x: travel.to.width / travel.from.width, y: travel.to.height / travel.from.height };
       const halfW = travel.from.width / 2;
       const halfH = travel.from.height / 2;
+      const face = { x: -halfW, y: -halfH, width: travel.from.width, height: travel.from.height };
 
       // The card's own face when it's already on hand, so a travel reads as
       // "that card" rather than as a generic parchment tile; the plain
@@ -919,20 +921,10 @@ export class BoardMotion {
       const backArt = travel.facedown ? CARD_BACKS.encounter : CARD_BACKS.player;
       const backKey = (travel.draw || travel.facedown) && this.#scene.textures.exists(backArt.key) ? backArt.key : null;
       const image =
-        (backKey ?? travel.art?.key)
-          ? drawArt(
-              scene,
-              (backKey ?? travel.art?.key)!,
-              { x: -halfW, y: -halfH, width: travel.from.width, height: travel.from.height },
-              { fit: "cover" },
-            )
-          : null;
+        (backKey ?? travel.art?.key) ? drawArt(scene, (backKey ?? travel.art?.key)!, face, { fit: "cover" }) : null;
       const ghost = scene.add.graphics();
-      if (!image)
-        ghost
-          .fillStyle(surface.parchment.hex, travel.draw || travel.facedown ? 1 : 0.55)
-          .fillRect(-halfW, -halfH, travel.from.width, travel.from.height);
-      ghost.lineStyle(3, accent.heroRed.hex, 0.85).strokeRect(-halfW, -halfH, travel.from.width, travel.from.height);
+      if (!image) fillCard(ghost, face, surface.parchment.hex, travel.draw || travel.facedown ? 1 : 0.55);
+      strokeCard(ghost, face, 2, accent.heroRed.hex, 0.85);
 
       const container = scene.add.container(
         lerp(fromCenter.x, toCenter.x, progress),

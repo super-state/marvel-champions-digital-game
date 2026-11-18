@@ -14,19 +14,12 @@ import { countTween } from "../../ui/bound-tween.js";
 import type Phaser from "phaser";
 import type { InstanceId, PlayerId } from "@mc/engine";
 import { drawArt, type ArtFit } from "../../art/card-art.js";
+import { fillCard, paintCardStock } from "../../ui/card-stock.js";
 import type { ArtSource } from "../../art/art-source.js";
-import { accent, font, ink, signal, status as statusTokens, surface, typeRole } from "../../tokens.js";
+import { accent, font, ink, signal, status as statusTokens, surface, tabletop, typeRole } from "../../tokens.js";
+import { paintTablePlate } from "../../ui/tabletop-finish.js";
 import { textStyle } from "../../ui/theme.js";
-import {
-  McHpPlate,
-  McStatBadge,
-  fitText,
-  fitTight,
-  fitWrapped,
-  label,
-  paintPanel,
-  type StatKey,
-} from "../../ui/widgets.js";
+import { McHpPlate, McStatBadge, fitText, fitTight, fitWrapped, label, type StatKey } from "../../ui/widgets.js";
 import {
   attachmentChipDamageTag,
   attachmentChipText,
@@ -152,7 +145,7 @@ export function drawCharacter(
   // sits in. See `turnSideways`.
   const firstDrawn = scene.children.list.length;
   const g = scene.add.graphics();
-  paintPanel(g, rect, "card", targetState(controller.selection, panel.instanceId));
+  const state = targetState(controller.selection, panel.instanceId);
 
   // A panel that is already roughly card-shaped *is* the card: the scan fills
   // it and the live numbers ride on top. A wider panel gives the card a
@@ -161,9 +154,11 @@ export function drawCharacter(
   // rather than as art. The identity asks for the wide panel outright, since
   // a tall window can hand it a slot that *looks* card-shaped.
   if (panelShape(rect, options.shape) === "card") {
+    paintCardStock(g, rect, state);
     drawCardShapedPanel(ctx, rect, panel, dim, firstDrawn, options.onTagDropped);
     return;
   }
+  paintTablePlate(g, rect, state);
 
   // As tall as the panel allows, so the card is the thing you see — capped
   // only by leaving the numbers beside it a readable column. `PANEL_TEXT_INSETS`
@@ -187,7 +182,9 @@ export function drawCharacter(
     const column = artColumn;
     drawArtSlot(ctx, column, panel.art, dim);
     const rule = scene.add.graphics();
-    rule.fillStyle(surface.ink.hex, dim).fillRect(column.x + column.width, column.y, 3, column.height);
+    rule
+      .fillStyle(tabletop.brass, 0.32 * dim)
+      .fillRect(column.x + column.width + 1, column.y + 3, 1, column.height - 6);
   }
 
   const left = rect.x + 8 + (artWidth > 0 ? artWidth + 6 : 0);
@@ -202,20 +199,12 @@ export function drawCharacter(
   const seatBadges = (options.playerId && rings?.byPlayer.get(options.playerId)) || [];
 
   const name = scene.add
-    .text(left, top, panel.name, textStyle(typeRole.rowTitle, surface.ink.hex, dim))
+    .text(left, top, panel.name, textStyle(typeRole.sectionHeader, tabletop.lettering, dim))
     .setWordWrapWidth(textWidth)
     .setMaxLines(2);
   // Wrapped, not shrunk: "Alter-ego · Justice" losing "Justice" to an
   // ellipsis loses the aspect, which is a thing the player needs to know.
-  const subtitle = label(
-    scene,
-    left,
-    top + name.height + gap,
-    panel.subtitle,
-    typeRole.label,
-    surface.ink.hex,
-    ink.label * dim,
-  )
+  const subtitle = label(scene, left, top + name.height + gap, panel.subtitle, typeRole.label, tabletop.secondary, dim)
     .setWordWrapWidth(textWidth)
     .setMaxLines(2);
   top = subtitle.y + subtitle.height + gap + 2;
@@ -302,20 +291,12 @@ export function drawCharacter(
       animateAlphaFrom(scene, scene.children.list.slice(badgeFirstDrawn), exhaustMotion);
   }
   if (panel.boostCount > 0) {
-    label(scene, left, top, `boost ?? ×${panel.boostCount}`, typeRole.label, surface.ink.hex, ink.meta * dim);
+    label(scene, left, top, `boost ?? ×${panel.boostCount}`, typeRole.label, tabletop.secondary, dim);
     top += 14;
   }
   if (panel.counters.length > 0) {
     // Wrapped, not cut ("2 CHARGE COUN" lost its end at the panel's edge).
-    const counters = label(
-      scene,
-      left,
-      top,
-      counterLine(panel.counters),
-      typeRole.label,
-      surface.ink.hex,
-      ink.meta * dim,
-    );
+    const counters = label(scene, left, top, counterLine(panel.counters), typeRole.label, tabletop.secondary, dim);
     fitWrapped(counters, textWidth, 2, typeRole.label.size);
     top += Math.max(14, Math.ceil(counters.height) + 2);
   }
@@ -656,7 +637,7 @@ function drawCardShapedPanel(
   const key = ctx.art.request(scene, panel.art);
   if (!drawArt(scene, key, inner, { fit: "cover", alpha: dim })) {
     const ground = scene.add.graphics();
-    ground.fillStyle(surface.parchment.hex, dim).fillRect(inner.x, inner.y, inner.width, inner.height);
+    fillCard(ground, inner, surface.parchment.hex, dim);
     scene.add
       .text(inner.x + inner.width / 2, inner.y + 14, panel.name, textStyle(typeRole.rowTitle, surface.ink.hex, dim))
       .setOrigin(0.5, 0)
@@ -1302,7 +1283,7 @@ function drawArtSlot(
 ): void {
   const { scene } = ctx;
   const frame = scene.add.graphics();
-  frame.fillStyle(surface.parchment.hex, dim).fillRect(slot.x, slot.y, slot.width, slot.height);
+  fillCard(frame, slot, surface.parchment.hex, dim);
 
   const key = ctx.art.request(scene, source);
   if (!drawArt(scene, key, slot, { fit, alpha: dim }) && slot.height >= 26) {

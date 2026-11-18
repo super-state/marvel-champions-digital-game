@@ -17,7 +17,7 @@
 
 import Phaser from "phaser";
 import { artLanguageNow } from "../art/art-source.js";
-import { accent, dotGrid, hit, ink, signal, surface, typeRole } from "../tokens.js";
+import { accent, dotGrid, hit, ink, signal, surface, tabletop, typeRole } from "../tokens.js";
 import type { Rect } from "../view/layout.js";
 import { cssOf, skin, textStyle } from "../ui/theme.js";
 import { drawPlayPlatformIcon } from "../ui/play-platform-icon.js";
@@ -507,13 +507,7 @@ export class TitleScene extends Phaser.Scene {
       paintDotGrid(this, layout.artPanel!, "ink", dotGrid.onInk).setDepth(ART_GROUND_DEPTH);
       this.#artPanel = layout.artPanel!;
       this.add
-        .rectangle(
-          layout.divider!.x,
-          layout.divider!.y,
-          layout.divider!.width,
-          layout.divider!.height,
-          accent.heroRed.hex,
-        )
+        .rectangle(layout.divider!.x, layout.divider!.y, layout.divider!.width, layout.divider!.height, tabletop.brass)
         .setOrigin(0, 0);
       this.add
         .rectangle(
@@ -521,10 +515,10 @@ export class TitleScene extends Phaser.Scene {
           layout.menuPanel.y,
           layout.menuPanel.width,
           layout.menuPanel.height,
-          surface.paper.hex,
+          tabletop.rail,
         )
         .setOrigin(0, 0);
-      paintDotGrid(this, layout.menuPanel, "paper", dotGrid.onPaper);
+      paintDotGrid(this, layout.menuPanel, "ink", dotGrid.onInk);
     } else {
       this.add.rectangle(0, 0, width, height, surface.ink.hex).setOrigin(0, 0).setDepth(ART_GROUND_DEPTH);
       paintDotGrid(this, { x: 0, y: 0, width, height }, "ink", dotGrid.onInk).setDepth(ART_GROUND_DEPTH);
@@ -534,13 +528,11 @@ export class TitleScene extends Phaser.Scene {
       this.#artPanel = { x: 0, y: 0, width, height };
     }
 
-    // Text/menu color: ink-on-paper when split, paper-on-ink on phone (`surface.paper` doubles as the dark-ground text color).
-    const onDark = !layout.split;
-    const textColor = onDark ? surface.paper.hex : surface.ink.hex;
-    const menuKind = onDark ? "onInk" : "secondary";
+    const textColor = tabletop.lettering;
+    const menuKind = "tableAction";
 
     const eyebrowText = this.add
-      .text(layout.eyebrow.x, layout.eyebrow.y, t("title.eyebrow"), textStyle(typeRole.label, accent.heroRed.hex, 1))
+      .text(layout.eyebrow.x, layout.eyebrow.y, t("title.eyebrow"), textStyle(typeRole.label, tabletop.gold))
       .setLetterSpacing(1);
     this.add
       .text(layout.left, layout.eyebrow.y + layout.eyebrow.height + 8, "MARVEL\nCHAMPIONS", {
@@ -549,7 +541,9 @@ export class TitleScene extends Phaser.Scene {
         lineSpacing: -Math.round(layout.titleSize * 0.16),
       })
       .setLetterSpacing(2);
-    this.add.rectangle(layout.rule.x, layout.rule.y, layout.rule.width, layout.rule.height, textColor).setOrigin(0, 0);
+    this.add
+      .rectangle(layout.rule.x, layout.rule.y, layout.rule.width, layout.rule.height, tabletop.brass)
+      .setOrigin(0, 0);
 
     // A window too short for the menu: everything from here to the footer is drawn as usual, then moved into a
     // scroll region under the rule (`ui/scroll-capture.ts`).
@@ -574,7 +568,7 @@ export class TitleScene extends Phaser.Scene {
       const slot = mark ? playPlatformSlotIn(rect) : null;
       this.#buttons.push(
         new McButton(this, {
-          kind: "primary",
+          kind: "tableCommit",
           label: continueLabel(save),
           // A built game's label names its stages and sets: wrapped onto a second line rather than cut.
           wrap: true,
@@ -594,7 +588,7 @@ export class TitleScene extends Phaser.Scene {
         (window as unknown as { __mcContinuePlatform?: string | null }).__mcContinuePlatform = mark?.platform ?? null;
       }
       if (mark && slot) {
-        const s = skin("primary", this.#starting ? "unavailable" : "rest");
+        const s = skin("tableCommit", this.#starting ? "unavailable" : "rest");
         drawPlayPlatformIcon(this.add.graphics(), mark, slot.box, s.text, s.textAlpha);
       }
       this.#stops.set("continue", {
@@ -626,7 +620,7 @@ export class TitleScene extends Phaser.Scene {
 
     this.#buttons.push(
       new McButton(this, {
-        kind: "primary",
+        kind: "tableCommit",
         label: this.#starting ? t("title.starting") : t("title.newGame"),
         type: typeRole.barTitle,
         rect: layout.newGame,
@@ -964,7 +958,7 @@ export class TitleScene extends Phaser.Scene {
       drawStoreIconButton(this, storeIconRect, openModStore);
       this.#stops.set("chrome:mod-store", { rect: storeIconRect, activate: openModStore });
       this.#hints?.hang(storeIconRect, ["activate"], TOP_ROW_GLYPH_HEIGHT, {
-        ground: onDark ? "ink" : "paper",
+        ground: "ink",
         when: () => this.#route?.focused === "chrome:mod-store",
       });
     }
@@ -973,14 +967,14 @@ export class TitleScene extends Phaser.Scene {
       const discordIcon = drawDiscordIconButton(this, discordIconRect, openDiscord);
       this.#stops.set("chrome:discord", { rect: discordIconRect, activate: openDiscord });
       this.#hints?.hang(discordIconRect, ["activate"], TOP_ROW_GLYPH_HEIGHT, {
-        ground: onDark ? "ink" : "paper",
+        ground: "ink",
         when: () => this.#route?.focused === "chrome:discord",
       });
       this.#discordIcon = discordIcon;
     }
     for (const [key, rect] of topRow) {
       this.#hints?.hang(rect, ["activate"], TOP_ROW_GLYPH_HEIGHT, {
-        ground: onDark ? "ink" : "paper",
+        ground: "ink",
         when: () => this.#route?.focused === key,
       });
     }

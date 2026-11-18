@@ -7,6 +7,7 @@ import { appSession } from "../../session.js";
 import { t } from "../../i18n/translate.js";
 import { hit, signal, status, surface, typeRole } from "../../tokens.js";
 import { textStyle } from "../../ui/theme.js";
+import { paintTableRail } from "../../ui/tabletop-finish.js";
 import { McButton } from "../../ui/widgets.js";
 import { specsForShortcuts, type CustomSpecs } from "../../ui/glyph-hints.js";
 import { layerTriggerGlyph } from "../../view/input-glyph-model.js";
@@ -41,7 +42,7 @@ export function drawActionBar(ctx: BoardDrawContext, rect: Rect, model: BoardMod
   const { scene, controller, marks } = ctx;
   const selection = controller.selection;
   const g = scene.add.graphics();
-  g.fillStyle(surface.ink.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
+  paintTableRail(g, rect, "top");
 
   // A replay is watched, not played: the transport (`scenes/replay-transport.ts`) takes this zone over.
   if (ctx.replay) {
@@ -205,7 +206,7 @@ export function drawActionBar(ctx: BoardDrawContext, rect: Rect, model: BoardMod
     const choosingForm = action === "changeForm" && selection.kind === "choosingForm";
     const choosingStat = action === "thwart" && selection.kind === "choosingThwartStat";
     const basicButton = new McButton(scene, {
-      kind: "onInk",
+      kind: "tableAction",
       label: cancelledBy && allCancelled ? `${labels[action]} ✕` : labels[action],
       ...(sources.length > 1 ? { value: `×${sources.length}` } : {}),
       ...(action === "changeForm" && formSources.length > 1 ? { value: `×${formSources.length}` } : {}),
@@ -229,7 +230,7 @@ export function drawActionBar(ctx: BoardDrawContext, rect: Rect, model: BoardMod
     );
   });
 
-  // The one red fill in the bar: the forward action of the table.
+  // The brass control at the right commits the phase.
   const endTurn = marks?.basics.find((basic) => basic.action === "endTurn");
   const owedReason = endTurn?.code === FORCED_ACTION_CODE && endTurn.reason ? endTurn.reason : null;
   const endTurnRect: Rect = stacked
@@ -244,7 +245,7 @@ export function drawActionBar(ctx: BoardDrawContext, rect: Rect, model: BoardMod
     ctx.frame.focusRects.set(focusKey({ kind: "undo" }), undoRect);
     why = drawUndoWhy(scene, rect, undoRect, undo.kind === "unavailable" ? undo.reason : null, controller.undoWhy());
     const undoButton = new McButton(scene, {
-      kind: "onInk",
+      kind: "tableAction",
       // Taking the previous hero's End turn back (`view/end-turn-takeback.ts`) reads as what it is.
       label: undo.kind === "available" && undo.command.type === "endTurn" ? "Nevermind" : "Undo",
       type: typeRole.label,
@@ -265,7 +266,7 @@ export function drawActionBar(ctx: BoardDrawContext, rect: Rect, model: BoardMod
   }
   ctx.frame.focusRects.set(focusKey({ kind: "basic", action: "endTurn" }), endTurnRect);
   const endTurnButton = new McButton(scene, {
-    kind: "primary",
+    kind: "tableCommit",
     // A Forced Action still owed (a Trance, a Temptation): End turn waits for it, and says which card.
     label: stacked && owedReason ? owedReason : "End turn",
     type: typeRole.barTitle,

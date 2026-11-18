@@ -33,6 +33,7 @@ import type { Rect } from "../view/layout.js";
 import { CARD_BACKS, type ArtSource } from "./art-source.js";
 import { onArtChange, onLanguageChange } from "../language-change.js";
 import { releasePackArt } from "./pack-art.js";
+import { roundScan } from "./card-shape.js";
 
 /**
  * `Phaser.Loader.Events.FILE_COMPLETE` / `.FILE_LOAD_ERROR` and
@@ -231,7 +232,19 @@ export class CardArt {
     this.#hooked.add(scene);
 
     const onAdd = (key: string, _type: string, _loader: unknown, file: Phaser.Loader.File): void => {
-      if (this.#inflight.get(key) === scene) this.#files.set(key, file);
+      if (this.#inflight.get(key) !== scene) return;
+      this.#files.set(key, file);
+      const addToCache = file.addToCache.bind(file);
+      file.addToCache = () => {
+        const image = file.data;
+        if (typeof HTMLImageElement !== "undefined" && image instanceof HTMLImageElement) file.data = roundScan(image);
+        try {
+          addToCache();
+        } finally {
+          // Other file-complete listeners still receive the original image.
+          file.data = image;
+        }
+      };
     };
     const onFile = (key: string): void => {
       this.#inflight.delete(key);
@@ -307,7 +320,15 @@ export class CardArt {
       this.#resident.delete(key);
       this.#lastUsed.delete(key);
       this.#requested.delete(key);
-      if (scene.textures.exists(key)) scene.textures.remove(key);
+      if (scene.textures.exists(key)) {
+        const source = scene.textures.get(key).getSourceImage();
+        scene.textures.remove(key);
+        if (typeof HTMLCanvasElement !== "undefined" && source instanceof HTMLCanvasElement) {
+          // Release a die-cut scan's backing store at eviction, including on WebKit's memory-limited canvas pool.
+          source.width = 0;
+          source.height = 0;
+        }
+      }
       // A pack picture was loaded from a blob: URL; revoke it (a later ask reads the store again).
       releasePackArt(key);
     }

@@ -46,7 +46,7 @@ import {
 } from "../replay/replay-inspect.js";
 import type { ReplayHost } from "../replay/replay-host.js";
 import { accent, dotGrid, surface, typeRole } from "../tokens.js";
-import { cssOf, textStyle } from "../ui/theme.js";
+import { textStyle } from "../ui/theme.js";
 import { McSelectionRing, McTabs, fitText, paintDotGrid } from "../ui/widgets.js";
 import { boardModel, type BoardModel } from "../view/board-model.js";
 import { highlights, type Highlights } from "../view/highlights.js";
@@ -132,6 +132,7 @@ import type { LayerActionId } from "../view/pad-layer-bindings.js";
 import { layerMarkerSpot } from "../view/layer-marker.js";
 import { nextAbilityPage } from "../view/pad-layer-hold.js";
 import { drawCharacter } from "./board/character-panel.js";
+import { ArenaTable } from "./board/arena.js";
 import { drawDealtPile } from "./board/dealt-pile.js";
 import { dealtCaption, dealtReasonsOf } from "../view/dealt-pile.js";
 import { drawChrome, drawPhoneTabs } from "./board/chrome.js";
@@ -235,6 +236,7 @@ function soundInfoOfCard(cardId: CardId): CardSoundInfo | null {
 }
 
 export class BoardScene extends Phaser.Scene {
+  #arena: ArenaTable | null = null;
   /** Team-Ups present in the latest state (relevant to this game, both characters in play in any form). */
   #teamUps: readonly TeamUpPair[] = [];
   /** Keys of the present pairs the engine lets a player play cards for now (both showing the hero side). */
@@ -529,6 +531,7 @@ export class BoardScene extends Phaser.Scene {
 
   /** The hand's flick coasts frame by frame; everything else on the table moves by tween or by redraw. */
   override update(_time: number, deltaMs: number): void {
+    this.#arena?.update(deltaMs);
     // Settings can be opened over the board from Pause and change what it draws and wires (Card size, the piles' Cards
     // left taps, #575) under it; a wheel or drag asked for a scroll.
     if (this.#model && modelIsStale(this.#drawnSettings, appSession().settings)) {
@@ -563,6 +566,7 @@ export class BoardScene extends Phaser.Scene {
 
   create(): void {
     holdGameArt(this);
+    this.#arena = new ArenaTable(this);
     this.#replay = activeReplay();
     this.#replayBarTop = false;
     // A scene is reused from game to game: each game shows its own first "not offered" notices.
@@ -654,7 +658,7 @@ export class BoardScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
       villainPhase.events.off(Phaser.Scenes.Events.SHUTDOWN, afterVillainPhase),
     );
-    this.cameras.main.setBackgroundColor(cssOf(surface.ink.hex));
+    this.cameras.main.setBackgroundColor("#0d1821");
     const { store } = appSession();
     this.#unsubscribe = store.subscribe((state) => this.#onState(state));
     const config = store.state.config;
@@ -774,6 +778,8 @@ export class BoardScene extends Phaser.Scene {
     // sheet reports which one was picked, and only the board ever dispatches.
     this.game.events.on("mc-use-ability", this.#onInspectUseAbility, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.#arena?.destroy();
+      this.#arena = null;
       this.#zoomOn = false;
       this.#hover?.destroy();
       this.#hover = null;
@@ -1604,6 +1610,7 @@ export class BoardScene extends Phaser.Scene {
     this.#tabs = null;
     this.#frame = emptyFrame();
     this.#hints.reset();
+    this.#arena?.detach();
     destroyChildren(this);
 
     const { width, height } = this.scale.gameSize;
@@ -1681,10 +1688,12 @@ export class BoardScene extends Phaser.Scene {
       inspectReference: (reference) => this.scene.launch(SCENES.inspect, { reference }),
     };
 
-    // The table felt, and nothing else.
-    paintDotGrid(this, { x: 0, y: 0, width, height }, "ink", dotGrid.onInk);
-
     const { zones } = layout;
+    const tableTop = zones.chrome!.y + zones.chrome!.height + 3;
+    this.#arena?.show(
+      { x: 0, y: tableTop, width, height: Math.max(1, (zones.actionBar?.y ?? height) - tableTop - 5) },
+      this.#drawnSettings.reducedMotion,
+    );
     const drawTopBand = (): void => {
       drawChrome(this, zones.chrome!, model, {
         notSaving: appSession().store.state.saveError !== null,
@@ -1763,7 +1772,7 @@ export class BoardScene extends Phaser.Scene {
     } else {
       setTapOccluders(this, []);
     }
-    drawHand(ctx, zones.hand!, model);
+    drawHand(ctx, zones.hand!, model, layout.tableWindow);
     drawActionBar(ctx, zones.actionBar!, model);
     // After the pinned bands: on a scrolling table they run the full width of the screen, under the docked log.
     const logRect = this.#logOpen ? (zones.log ?? logDockRect(layout, logDockWidthFor(width))) : null;
@@ -1970,7 +1979,7 @@ export class BoardScene extends Phaser.Scene {
       // A target scrolled under the chrome or the hand has no ring: it would be drawn over them.
       if (this.#hiddenByScroll(target, rect)) continue;
       const ring = new McSelectionRing(this);
-      ring.show(rect, "pulse", reduced);
+      ring.show(rect, "pulse", reduced, "card");
       this.#frame.rings.push(ring);
       this.#targetRings.push(ring);
     }
@@ -2963,7 +2972,7 @@ export class BoardScene extends Phaser.Scene {
     if (!rect) return null;
     this.#focusRing = new McSelectionRing(this, undefined, true);
     // Static, not pulsing: the ring says "here you are", not "act now".
-    this.#focusRing.show(rect, "static", true);
+    this.#focusRing.show(rect, "static", true, focus.kind === "card" ? "card" : "rect");
     return focus.kind === "card" && glyphsFitLayout(this.#layout?.tabbed ?? true) ? rect : null;
   }
 
@@ -2978,12 +2987,13 @@ export class BoardScene extends Phaser.Scene {
     drag?: RowDrag,
     onHover?: (over: boolean) => void,
     clip?: Rect,
-  ): void {
+  ): { zone: Phaser.GameObjects.Zone; activate: () => void } {
     this.#frame.focusRects.set(focusKey({ kind: "card", instanceId: id }), rect);
-    addTapTarget(this, rect, {
-      onTap: () => {
-        if (!this.#controller.tapInMode(id)) onTap?.();
-      },
+    const activate = (): void => {
+      if (!this.#controller.tapInMode(id)) onTap?.();
+    };
+    const zone = addTapTarget(this, rect, {
+      onTap: activate,
       onInspect: () => this.#inspect(id),
       onDrag: drag?.onDrag,
       onDragEnd: drag?.onDragEnd,
@@ -2991,6 +3001,7 @@ export class BoardScene extends Phaser.Scene {
       onHover,
       clip,
     });
+    return { zone, activate };
   }
 
   /** The scenario's printed rules cards (God of Lies' Shatter the Illusion), looked up once per game. */

@@ -10,7 +10,7 @@
  */
 
 import type Phaser from "phaser";
-import { accent, border, font, ink, surface, type TypeSpec } from "../tokens.js";
+import { accent, border, font, ink, surface, tabletop, type TypeSpec } from "../tokens.js";
 import type { FaceFont } from "../art/card-face.js";
 
 /**
@@ -41,6 +41,8 @@ export interface Skin {
 }
 
 export type WidgetKind =
+  | "tableAction"
+  | "tableCommit"
   /** The single forward action on the screen. One per screen, by rule. */
   | "primary"
   /** An ordinary control on paper. */
@@ -71,6 +73,19 @@ const solid = (fill: number, text: number, stroke: number, strokeWidth: number):
  */
 export function skin(kind: WidgetKind, state: WidgetState): Skin {
   switch (kind) {
+    case "tableAction":
+    case "tableCommit": {
+      if (state === "unavailable") return solid(tabletop.rail, 0x8e9da2, 0x3a505a, 1);
+      if (kind === "tableCommit")
+        return solid(state === "hover" ? tabletop.gold : tabletop.brass, tabletop.shadow, tabletop.gold, 1);
+      const active = state === "hover" || state === "selected";
+      return solid(
+        active ? tabletop.raised : tabletop.plate,
+        tabletop.lettering,
+        active ? tabletop.gold : tabletop.edge,
+        active ? 2 : 1,
+      );
+    }
     case "primary":
       switch (state) {
         case "hover":

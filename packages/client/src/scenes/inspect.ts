@@ -73,6 +73,7 @@ import type { AnyCard, CardId, ResourceIconType } from "@mc/content";
 import { currentCardsById } from "../content/pool.js";
 import { gameDeps } from "../content/game-deps.js";
 import { cardArt, drawArt } from "../art/card-art.js";
+import { cardRadius, fillCard, paintCardStock, strokeCard } from "../ui/card-stock.js";
 import type { CardFace } from "../art/art-source.js";
 import { appSession } from "../session.js";
 import { guidePrefs } from "../guide/guide-store.js";
@@ -860,10 +861,10 @@ export class InspectOverlay extends Phaser.Scene {
 
   /** The card face: everything `@mc/content` prints on it. */
   #drawCardPanel(rect: Rect, model: InspectModel): void {
-    this.#drawShadow(rect);
     const g = this.add.graphics();
-    g.fillStyle(surface.paper.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
-    g.lineStyle(5, surface.ink.hex, 1).strokeRect(rect.x, rect.y, rect.width, rect.height);
+    fillCard(g, { ...rect, x: rect.x + 5, y: rect.y + 9 }, surface.ink.hex, 0.6);
+    fillCard(g, rect, surface.paper.hex);
+    strokeCard(g, rect, 2, surface.ink.hex);
     // The card panel carries no controls, so it dismisses like the scrim does.
     this.add
       .zone(rect.x, rect.y, rect.width, rect.height)
@@ -883,7 +884,12 @@ export class InspectOverlay extends Phaser.Scene {
     if (model.cost !== null) {
       const chip: Rect = { x: rect.x, y: rect.y, width: 62, height: face.header.height };
       const chipG = this.add.graphics();
-      chipG.fillStyle(accent.heroRed.hex, 1).fillRect(chip.x, chip.y, chip.width, chip.height);
+      chipG.fillStyle(accent.heroRed.hex, 1).fillRoundedRect(chip.x, chip.y, chip.width, chip.height, {
+        tl: cardRadius(rect.width, rect.height),
+        tr: 0,
+        br: 0,
+        bl: 0,
+      });
       // A per player cost: the scaled price leads and "2 PER PLAYER" sits under it (design 08B / L06B).
       const perPlayer = model.perPlayerCost;
       this.add
@@ -1910,8 +1916,7 @@ export class InspectOverlay extends Phaser.Scene {
       ...(stacked ? stackedScanSize(rect.width, scan) : thumbSizeFor(scan)),
     };
     const frame = this.add.graphics();
-    frame.fillStyle(surface.parchment.hex, 1).fillRect(thumb.x, thumb.y, thumb.width, thumb.height);
-    frame.lineStyle(border.object, surface.ink.hex, 1).strokeRect(thumb.x, thumb.y, thumb.width, thumb.height);
+    paintCardStock(frame, thumb);
     if (!drawArt(this, key, thumb)) {
       label(
         this,
