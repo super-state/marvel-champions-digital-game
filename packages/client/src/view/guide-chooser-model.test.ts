@@ -25,7 +25,7 @@ describe("GUIDE_CHOOSER_OPTIONS text", () => {
       expect(CATALOGS.es[option.labelKey]).toBeDefined();
       expect(CATALOGS.es[option.bodyKey]).toBeDefined();
     }
-    expect(t("guide.suitUp", undefined, "es")).toBe("¡A la acción!");
+    expect(t("guide.suitUp", undefined, "es")).toBe("Continuar");
   });
 });
 
