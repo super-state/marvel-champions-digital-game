@@ -377,7 +377,8 @@ export class BattleTable {
         restY - lift,
         cardWidth * (raised ? 1.09 : 1),
         1.34 + i * 0.012 + (raised ? 0.72 : selected ? 0.15 : 0),
-        -0.48,
+        // Keep a little perspective in the resting fan; lift the print square to the camera for reading.
+        this.#camera.rotation.x + (raised ? 0 : 0.1),
         raised ? 0 : -outward * 0.066,
       );
     });
@@ -489,7 +490,7 @@ export class BattleTable {
     press.dragging = true;
     const rect = this.#renderer.domElement.getBoundingClientRect();
     piece.root.position.copy(this.#point(event.clientX - rect.left, event.clientY - rect.top, 1.9));
-    piece.root.rotation.set(-0.53, 0, 0);
+    piece.root.rotation.set(this.#camera.rotation.x, 0, 0);
     this.#renderer.domElement.style.cursor = "grabbing";
     this.#requestFrame();
   };

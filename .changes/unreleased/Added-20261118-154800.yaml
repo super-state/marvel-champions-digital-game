@@ -1,3 +1,3 @@
 kind: Added
-body: "Play a repeatable Spider-Man versus Rhino opening hand on a Three.js table at /battle/. Pick a card, choose the other cards to spend, and see their resource amounts before confirming payment."
+body: "Play a repeatable Spider-Man versus Rhino opening hand on a Three.js table at /battle/. The hand fans toward the camera and the hovered card lifts face-on. Pick a card, choose the other cards to spend, and see their resource amounts before confirming payment."
 time: 2026-11-18T15:48:00Z
