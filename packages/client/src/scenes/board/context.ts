@@ -175,6 +175,9 @@ export interface BoardDrawContext {
   readonly actionsHeld?: boolean;
   /** A replay is being watched (#693): no action bar, the transport sits over its zone. */
   readonly replay?: boolean;
+  /** The hand card being placed on the play area. Its engine instance is still in hand. */
+  readonly placing?: InstanceId;
+  placeHandCard(id: InstanceId, from: Rect): void;
   /** While the villain phase is up: when each hand card can answer it (`view/villain-hand-tags.ts`), set by that scene. */
   readonly villainHandTags?: ReadonlyMap<InstanceId, VillainHandTag> | null | undefined;
   /**

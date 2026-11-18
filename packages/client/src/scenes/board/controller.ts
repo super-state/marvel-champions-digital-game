@@ -1038,14 +1038,14 @@ export class BoardController {
    * the phone needs and the desktop does not: at desk widths the card is
    * already legible, and a hold still opens the sheet.
    */
-  tapHandCard(instanceId: InstanceId): void {
+  tapHandCard(instanceId: InstanceId, placed = false): void {
     // Read-only: a tap can still open the card to read it, same as the
     // tabbed layout's own idle behavior below, but never offers to play it.
     // A teammate's hand being looked at (`peekSeat`) is read-only the same way.
     if (
       this.#readOnly ||
       appSession().store.state.peekSeat !== null ||
-      (this.#host.tabbed() && this.#selection.kind === "idle")
+      (!placed && this.#host.tabbed() && this.#selection.kind === "idle")
     ) {
       this.#host.inspect(instanceId);
       return;

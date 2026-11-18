@@ -196,14 +196,15 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel, t
     }
   }
 
+  const cards = ctx.placing ? model.hand.filter((card) => card.instanceId !== ctx.placing) : model.hand;
   const inner: Rect = { x: rect.x + 10, y: top, width: rect.width - 20, height: rect.y + rect.height - top - 8 };
   const fan: false | "expanded" = tabbed ? "expanded" : false;
   const row = handRow(inner, {
-    handCount: model.hand.length,
+    handCount: cards.length,
     tableTiles: payment ? paymentTileCount(payment) : (discard?.helperCards.length ?? 0),
     fan,
     piles: tabbed ? "stacked" : "flank",
-    landscape: model.hand.map((card) => card.landscape),
+    landscape: cards.map((card) => card.landscape),
   });
   const { slots } = row;
   const poses = !tabbed && idle ? slots.map((slot) => handCardPose(slot, row.cardArea.y + row.cardArea.height)) : null;
@@ -223,7 +224,7 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel, t
   }
 
   const drawCards = (scrollX: number): void => {
-    model.hand.forEach((card, index) => {
+    cards.forEach((card, index) => {
       const slot = slots[index];
       if (!slot) return;
       const drawn: Rect = poses?.[index]?.target ?? { ...slot, x: slot.x - scrollX };
@@ -241,7 +242,7 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel, t
     : null;
   if (strip) ctx.frame.handStrip.push(strip);
   const liftLayer = poses ? scene.add.container(0, 0) : null;
-  model.hand.forEach((card, index) => {
+  cards.forEach((card, index) => {
     const slot = slots[index];
     // A card still flying in from the deck leaves its slot empty; its ghost fills it (`BoardMotion#isArriving`).
     if (!slot || ctx.motion.isArriving(card.instanceId)) return;
@@ -257,7 +258,11 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel, t
     ctx.makeTapTarget(
       at,
       card.instanceId,
-      () => ctx.controller.tapHandCard(card.instanceId),
+      () =>
+        ctx.placeHandCard(
+          card.instanceId,
+          ctx.frame.focusRects.get(focusKey({ kind: "card", instanceId: card.instanceId })) ?? at,
+        ),
       hand.drag,
       hover,
       strip ?? undefined,
@@ -294,7 +299,7 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel, t
   drawMyPiles(ctx, row, model);
 }
 
-/** Only the card's face tilts. Its stationary tap zone and its face share a place in the fan's stacking order. */
+/** The card grows above its slot while that slot keeps the same place in the row. */
 function drawLiftableCard(
   ctx: BoardDrawContext,
   layer: Phaser.GameObjects.Container,
@@ -314,6 +319,11 @@ function drawLiftableCard(
   layer.add(cardGroup);
 
   const reducedMotion = appSession().settings.reducedMotion;
+  const boundsOfPrint = (): Rect => {
+    const width = face.width * print.scaleX;
+    const height = face.height * print.scaleY;
+    return { x: print.x - width / 2, y: print.y - height / 2, width, height };
+  };
   let carrying = false;
   let hovered = false;
   const show = (over: boolean, instant = false): void => {
@@ -328,7 +338,7 @@ function drawLiftableCard(
     cardGroup.setDepth(over ? 2_000 + index : index);
     layer.sort("depth");
     scene.tweens.killTweensOf(print);
-    if (instant || reducedMotion || raised) print.setPosition(cx, y).setScale(scale);
+    if (instant || reducedMotion) print.setPosition(cx, y).setScale(scale);
     else
       scene.tweens.add({
         targets: print,
@@ -336,7 +346,7 @@ function drawLiftableCard(
         y,
         scaleX: scale,
         scaleY: scale,
-        duration: 140,
+        duration: raised ? 155 : 140,
         ease: "Cubic.easeOut",
       });
   };
@@ -344,7 +354,7 @@ function drawLiftableCard(
   const target = ctx.makeTapTarget(
     pose.target,
     card.instanceId,
-    () => ctx.controller.tapHandCard(card.instanceId),
+    () => ctx.placeHandCard(card.instanceId, boundsOfPrint()),
     ctx.hand.drag,
     show,
   );
@@ -366,6 +376,8 @@ function drawLiftableCard(
   if (!table || ctx.actionsHeld || ctx.replay || !ctx.marks?.playable.has(card.instanceId)) return;
   let hint: Phaser.GameObjects.Text | undefined;
   let held: ReturnType<typeof liftCardMesh> = null;
+  let gripX = cx;
+  let gripY = cy;
   bindHandLift(scene, target.zone, {
     table,
     ready: () =>
@@ -376,6 +388,8 @@ function drawLiftableCard(
       if (!carrying) {
         carrying = true;
         scene.tweens.killTweensOf(print);
+        gripX = print.x;
+        gripY = print.y;
         cardGroup.setDepth(3_000 + index);
         layer.sort("depth");
         print.setAngle(0).setScale(lifted.width / face.width);
@@ -391,13 +405,13 @@ function drawLiftableCard(
           .setBackgroundColor("#122331");
         cardGroup.add(hint);
       }
-      print.setPosition(cx + dx, cy + dy);
+      print.setPosition(gripX + dx, gripY + dy);
       held?.move(print.x, print.y, dx, dy);
       const text = t(onTable ? "hand.releaseToPlay" : "hand.releaseToReturn");
       if (hint && hint.text !== text) hint.setText(text);
       hint?.setPosition(print.x, Math.max(25, print.y - lifted.height / 2 - 6));
     },
-    settle: () => {
+    settle: (placed) => {
       carrying = false;
       hint?.destroy();
       hint = undefined;
@@ -405,10 +419,10 @@ function drawLiftableCard(
       held = null;
       if (print.active && cardGroup.active) {
         print.setVisible(true);
-        show(hovered);
+        if (!placed) show(hovered);
       }
     },
-    activate: target.activate,
+    activate: () => ctx.placeHandCard(card.instanceId, boundsOfPrint()),
   });
 }
 

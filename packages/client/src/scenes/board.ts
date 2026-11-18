@@ -161,6 +161,8 @@ import type { GuideStripContent } from "../ui/guide-strip.js";
 import { TUTORIAL_LESSONS } from "../guide/tutorial-lessons.js";
 import type { LessonObservation } from "../view/lesson-model.js";
 import { drawHand, HandScroll } from "./board/hand.js";
+import { drawPendingHandCard, movePendingHandCard } from "./board/hand-placement.js";
+import { HAND_PLACEMENT_MS, handPlacementAt, handPlacementSlot } from "../view/hand-placement.js";
 import type { RowDrag } from "../view/hand-scroll.js";
 import { PlayAreaScroll } from "../view/play-area-row.js";
 import {
@@ -242,6 +244,13 @@ export class BoardScene extends Phaser.Scene {
   #details: BoardCardDetails | null = null;
   #detailsRect: Rect | null = null;
   #detailsCard: InstanceId | null = null;
+  #handPlay: {
+    readonly id: InstanceId;
+    readonly game: SessionState["game"];
+    readonly from: Rect;
+    elapsed: number;
+  } | null = null;
+  #pendingPrint: { readonly art: Phaser.GameObjects.Container; readonly slot: Rect } | null = null;
   /** Team-Ups present in the latest state (relevant to this game, both characters in play in any form). */
   #teamUps: readonly TeamUpPair[] = [];
   /** Keys of the present pairs the engine lets a player play cards for now (both showing the hero side). */
@@ -553,6 +562,7 @@ export class BoardScene extends Phaser.Scene {
     )
       this.#draw();
     this.#hand.tick(deltaMs);
+    this.#advanceHandPlay(deltaMs);
     this.#playAreaScroll.row.tick(deltaMs);
     // Checked every frame, not only on a store update: the villain-phase walkthrough and the pending-choice
     // overlay each close themselves (Skip, Continue, an answered decision) without dispatching a command, so a
@@ -573,6 +583,8 @@ export class BoardScene extends Phaser.Scene {
     this.#arena = new ArenaTable(this);
     this.#details = new BoardCardDetails(this, (id) => this.#inspect(id));
     this.#detailsCard = null;
+    this.#handPlay = null;
+    this.#pendingPrint = null;
     this.#detailsRect = null;
     this.#replay = activeReplay();
     this.#replayBarTop = false;
@@ -795,6 +807,8 @@ export class BoardScene extends Phaser.Scene {
       this.#details?.clearFrame();
       this.#details = null;
       this.#detailsRect = null;
+      this.#handPlay = null;
+      this.#pendingPrint = null;
       this.#zoomOn = false;
       this.#hover?.destroy();
       this.#hover = null;
@@ -1550,6 +1564,67 @@ export class BoardScene extends Phaser.Scene {
     this.#draw();
   }
 
+  #placeHandCard(id: InstanceId, from: Rect): void {
+    if (this.#handPlay && this.#handPlay.elapsed < HAND_PLACEMENT_MS) return;
+    const { game, peekSeat } = appSession().store.state;
+    if (
+      !game ||
+      peekSeat !== null ||
+      this.#model?.phase !== "player" ||
+      this.#replay ||
+      this.#controller.readOnly ||
+      this.#controller.selection.kind !== "idle" ||
+      !this.#marks?.playable.has(id) ||
+      this.#logOpen
+    ) {
+      this.#controller.tapHandCard(id);
+      return;
+    }
+    if (this.#layout?.tabbed && this.#activeTab !== "me") {
+      this.#activeTab = "me";
+      this.#tableScroll = 0;
+    }
+    this.#handPlay = { id, game, from, elapsed: 0 };
+    this.#draw();
+    if (!this.#pendingPrint) {
+      this.#handPlay = null;
+      this.#controller.tapHandCard(id);
+    } else if (appSession().settings.reducedMotion) {
+      this.#advanceHandPlay(HAND_PLACEMENT_MS);
+    }
+  }
+
+  #advanceHandPlay(deltaMs: number): void {
+    const play = this.#handPlay;
+    if (!play || play.elapsed >= HAND_PLACEMENT_MS) return;
+    const display = this.#pendingPrint;
+    const active = this.scene.manager.getScenes(true);
+    if (
+      !display ||
+      appSession().store.state.game !== play.game ||
+      this.#controller.selection.kind !== "idle" ||
+      this.#controller.readOnly ||
+      active.slice(active.indexOf(this) + 1).some((scene) => {
+        const key = scene.sys.settings.key;
+        return scene.sys.isVisible() && key !== SCENES.music && !CHROME_SCENES.has(key);
+      })
+    ) {
+      this.#handPlay = null;
+      this.#draw();
+      return;
+    }
+    play.elapsed = Math.min(HAND_PLACEMENT_MS, play.elapsed + deltaMs);
+    movePendingHandCard(display.art, display.slot, handPlacementAt(play.from, display.slot, play.elapsed));
+    if (play.elapsed < HAND_PLACEMENT_MS) return;
+
+    // Landing opens the same play choices and resource selection as a normal activation.
+    this.#controller.tapHandCard(play.id, true);
+    if (this.#handPlay === play && this.#controller.selection.kind === "idle") {
+      this.#handPlay = null;
+      this.#draw();
+    }
+  }
+
   #withDebugSideSchemes(model: BoardModel): BoardModel {
     const pad = this.#debugPad;
     if (!import.meta.env.DEV || !pad) return model;
@@ -1611,6 +1686,15 @@ export class BoardScene extends Phaser.Scene {
     if (!live) return;
     // The table's chrome says the phase the rail is on, not the one the engine has already reached.
     const model: BoardModel = hold ? { ...live, round: hold.round, phase: "villain", stepLabel: hold.stepLabel } : live;
+    const pending = this.#handPlay;
+    const pendingCard =
+      pending &&
+      model.phase === "player" &&
+      (pending.elapsed < HAND_PLACEMENT_MS || this.#controller.selection.kind !== "idle")
+        ? model.hand.find((card) => card.instanceId === pending.id)
+        : undefined;
+    if (!pendingCard) this.#handPlay = null;
+    this.#pendingPrint = null;
 
     // The positions cards held under whatever was drawn last — the only place
     // "where a card came from" can still be read once this redraw rebuilds
@@ -1675,6 +1759,9 @@ export class BoardScene extends Phaser.Scene {
     const scrolling = layout.maxScroll > 0;
     this.#layout = layout;
     this.#villainDockRects = dock ? villainDockRects(dock.request, layout, this.#dockShown.width) : null;
+    const playArea = layout.zones.playArea;
+    const placement =
+      pendingCard && playArea ? handPlacementSlot(playArea, layout.tableWindow, pendingCard.landscape) : null;
 
     const ctx: BoardDrawContext = {
       scene: this,
@@ -1702,6 +1789,8 @@ export class BoardScene extends Phaser.Scene {
       villainHandTags: this.#villainHandTags,
       actionsHeld: this.#villainReplay !== null,
       replay: this.#replay !== null,
+      ...(placement && pendingCard ? { placing: pendingCard.instanceId } : {}),
+      placeHandCard: (id, from) => this.#placeHandCard(id, from),
       makeTapTarget: (rect, id, onTap, drag, onHover, clip) =>
         this.#makeTapTarget(rect, id, onTap, drag, onHover, clip),
       dealtCaptionOf: (ids) => {
@@ -1802,7 +1891,11 @@ export class BoardScene extends Phaser.Scene {
     else if (zones.me) drawCharacter(ctx, zones.me, model.me, { shape: "wide", playerId: model.perspectiveId });
     // The facedown encounter cards dealt to you, tucked in the identity card's corner; after the panel, so the pile takes the pointer.
     if (zones.me) drawDealtPile(ctx, zones.me, compactRow ? "compact" : "wide", model.perspectiveId, model.myDealt);
-    if (zones.playArea) drawPlayArea(ctx, zones.playArea, model, compactRow ? { compact: true } : {});
+    if (zones.playArea)
+      drawPlayArea(ctx, zones.playArea, model, {
+        compact: compactRow,
+        ...(placement ? { placement } : {}),
+      });
     if (zones.team) drawTeam(ctx, zones.team, model);
     this.#rowWheelRect = zones.playArea && this.#playAreaScroll.row.canScroll ? zones.playArea : null;
     if (scrolling) {
@@ -1813,6 +1906,15 @@ export class BoardScene extends Phaser.Scene {
     }
     drawHand(ctx, zones.hand!, model, layout.tableWindow);
     drawActionBar(ctx, zones.actionBar!, model);
+    if (placement && pendingCard && pending) {
+      const art = drawPendingHandCard(ctx, pendingCard, placement);
+      this.#pendingPrint = { art, slot: placement };
+      movePendingHandCard(art, placement, handPlacementAt(pending.from, placement, pending.elapsed));
+      this.#frame.hitRects.set(pendingCard.instanceId, placement);
+      if (pending.elapsed >= HAND_PLACEMENT_MS) {
+        this.#frame.focusRects.set(focusKey({ kind: "card", instanceId: pendingCard.instanceId }), placement);
+      }
+    }
     // After the pinned bands: on a scrolling table they run the full width of the screen, under the docked log.
     const logRect = this.#logOpen ? (zones.log ?? logDockRect(layout, logDockWidthFor(width))) : null;
     if (logRect) {
@@ -2088,8 +2190,19 @@ export class BoardScene extends Phaser.Scene {
         if (this.#focusRegion === "guide") this.#activateGuideFocus();
         // A replay's discard pile opens to read, as its click does; the read-only controller holds every other stop back.
         else if (this.#replay && this.#focus?.kind === "discard" && !this.#logFocused) this.#openMyDiscard();
-        else if (this.#focus && !this.#logFocused) this.#controller.activate(this.#focus);
-        else if (this.#focus === null && !this.#logFocused) this.#focusPrimary();
+        else if (this.#focus && !this.#logFocused) {
+          const id = this.#focus.kind === "card" ? this.#focus.instanceId : null;
+          const origin = id ? this.#frame.focusRects.get(focusKey(this.#focus)) : undefined;
+          if (
+            id &&
+            origin &&
+            this.#controller.selection.kind === "idle" &&
+            this.#marks?.playable.has(id) &&
+            this.#model?.hand.some((card) => card.instanceId === id)
+          )
+            this.#placeHandCard(id, origin);
+          else this.#controller.activate(this.#focus);
+        } else if (this.#focus === null && !this.#logFocused) this.#focusPrimary();
         break;
       case "inspect":
         if (this.#focus?.kind === "card" && !this.#logFocused) this.#inspect(this.#focus.instanceId);
@@ -2149,6 +2262,11 @@ export class BoardScene extends Phaser.Scene {
         // A zone/choice-anchored step never sets a board gate at all (nothing to release above), but §3.10
         // still promises Escape always works there too — see `BoardGuideMount.handleEscape`'s own doc comment.
         if (this.#guide?.handleEscape()) break;
+        if (this.#handPlay && this.#handPlay.elapsed < HAND_PLACEMENT_MS) {
+          this.#handPlay = null;
+          this.#draw();
+          break;
+        }
         // Backing out of the log comes before Pause, like backing out of any other mode.
         if (this.#logFocused || (this.#logOpen && this.#controller.selection.kind === "idle")) {
           this.toggleLog();

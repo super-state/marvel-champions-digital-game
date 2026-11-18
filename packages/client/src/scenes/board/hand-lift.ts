@@ -10,7 +10,7 @@ interface LiftHandlers {
   ready(): boolean;
   /** Pointer displacement from the original press, so a press near a card's corner keeps its grip. */
   carry(dx: number, dy: number, onTable: boolean): void;
-  settle(): void;
+  settle(placed: boolean): void;
   activate(): void;
 }
 
@@ -29,7 +29,8 @@ export function bindHandLift(scene: Phaser.Scene, zone: Phaser.GameObjects.Zone,
         return overlay.sys.isVisible() && key !== SCENES.music && !CHROME_SCENES.has(key);
       });
     };
-    const stop = (): void => {
+    const stop = (): void => finish(false);
+    const finish = (placed: boolean): void => {
       scene.input.off("pointermove", move);
       scene.input.off("pointerup", release);
       scene.input.off("pointerupoutside", outside);
@@ -37,7 +38,7 @@ export function bindHandLift(scene: Phaser.Scene, zone: Phaser.GameObjects.Zone,
       scene.game.events.off("blur", stop);
       scene.events.off("update", check);
       zone.off("destroy", stop);
-      if (carrying) handlers.settle();
+      if (carrying) handlers.settle(placed);
       carrying = false;
     };
     const move = (moved: Phaser.Input.Pointer): void => {
@@ -53,7 +54,8 @@ export function bindHandLift(scene: Phaser.Scene, zone: Phaser.GameObjects.Zone,
     const release = (released: Phaser.Input.Pointer): void => {
       if (released !== pointer) return;
       const play = lift.release(pointer.x, pointer.y, handlers.table, pointer.wasCanceled || blocked());
-      stop();
+      if (play) handlers.carry(pointer.x - lift.x, pointer.y - lift.y, true);
+      finish(play);
       if (play) handlers.activate();
     };
     const outside = (released: Phaser.Input.Pointer): void => {

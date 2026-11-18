@@ -1430,12 +1430,13 @@ export function drawPlayArea(
   ctx: BoardDrawContext,
   rect: Rect,
   model: BoardModel,
-  options: { readonly compact?: boolean } = {},
+  options: { readonly compact?: boolean; readonly placement?: Rect } = {},
 ): void {
   const { scene } = ctx;
   const compact = options.compact === true;
   const g = scene.add.graphics();
   paintPlayZone(g, rect);
+  if (options.placement) rect = { ...rect, width: Math.max(36, options.placement.x - rect.x - 10) };
   // The whole zone takes a sideways drag once the row scrolls: a finger that starts between cards, above or below them
   // or on the caption still scrolls the row. Made first, so every card, arrow and form card drawn after it sits on top
   // and keeps its own press; switched on below once the row is measured.
@@ -1517,6 +1518,7 @@ export function drawPlayArea(
   if (wideCaption) fitText(wideCaption, inner.width, typeRole.label.size);
 
   if (model.myPlayArea.length === 0) {
+    if (options.placement) return;
     const empty = scene.add.graphics();
     paintEmptyPosition(empty, inner);
     const hint = scene.add
