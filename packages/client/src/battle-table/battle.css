@@ -229,10 +229,10 @@ h1 i {
   border-bottom-color: #db8d7b;
 }
 .hand-strip {
-  position: relative;
+  --hand-strip-height: 53px;
   display: flex;
   align-items: center;
-  min-height: 53px;
+  min-height: var(--hand-strip-height);
   padding: 9px clamp(14px, 2vw, 32px);
   gap: 16px;
   background: #131d23;
@@ -403,12 +403,16 @@ h2 {
 }
 .payment-actions {
   display: none;
-  position: absolute;
-  inset: 0;
+  position: fixed;
+  z-index: 2;
+  inset: auto 0 0;
+  min-height: var(--hand-strip-height);
+  padding: 2px 12px calc(2px + env(safe-area-inset-bottom));
   justify-content: center;
   align-items: center;
   gap: 12px;
   background: #111b22;
+  border-top: 1px solid var(--rule);
 }
 #stage:has(#payment:not([hidden])) + .hand-strip > :not(.payment-actions) {
   visibility: hidden;
@@ -488,7 +492,7 @@ h2 {
     height: clamp(290px, 48svh, 540px);
   }
   .hand-strip {
-    min-height: 44px;
+    --hand-strip-height: 44px;
     gap: 10px;
   }
   #instruction {
@@ -539,7 +543,7 @@ h2 {
     min-height: 48px;
   }
   .hand-strip {
-    min-height: 38px;
+    --hand-strip-height: 38px;
   }
   .payment-actions button {
     min-height: 32px;
@@ -547,5 +551,11 @@ h2 {
   }
   #decision {
     padding: 14px;
+  }
+}
+@media (max-height: 425px) {
+  #stage:has(#payment:not([hidden])) {
+    min-height: 0;
+    height: min(clamp(290px, 48svh, 540px), calc(100dvh - 112px - env(safe-area-inset-bottom)));
   }
 }

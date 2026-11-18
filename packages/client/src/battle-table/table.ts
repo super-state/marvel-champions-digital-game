@@ -432,8 +432,9 @@ export class BattleTable {
   }
 
   #tablePose(id: string, x: number, y: number, width: number, elevation: number, pitch: number): void {
-    if (this.#hovered === id && !this.#flights.has(id)) {
-      this.#hoverFootprint = { x, y, width };
+    const hovered = this.#hovered === id;
+    if ((hovered || this.#state?.selected.includes(id)) && !this.#flights.has(id)) {
+      if (hovered) this.#hoverFootprint = { x, y, width };
       this.#pose(id, x, y - width * 0.09, width * 1.065, elevation + 0.65, this.#camera.rotation.x);
     } else {
       this.#pose(id, x, y, width, elevation, pitch);
@@ -474,18 +475,17 @@ export class BattleTable {
     hand.forEach((card, i) => {
       const offset = i - center;
       const outward = center ? offset / center : 0;
-      const selected = state.selected.includes(card.id);
-      const raised = this.#hovered === card.id && !this.#press?.dragging;
-      const lift = cardWidth * ((raised ? 0.17 : 0) + (selected ? 0.12 : 0));
+      const hovered = this.#hovered === card.id && !this.#press?.dragging;
+      const raised = hovered || state.selected.includes(card.id);
       const x = w * 0.5 + offset * cardWidth * spread;
       const restY = baseline + outward ** 2 * cardWidth * 0.045;
-      if (raised) this.#hoverFootprint = { x, y: restY, width: cardWidth };
+      if (hovered) this.#hoverFootprint = { x, y: restY, width: cardWidth };
       this.#pose(
         card.id,
         x,
-        restY - lift,
+        restY - (raised ? cardWidth * 0.17 : 0),
         cardWidth * (raised ? 1.09 : 1),
-        1.34 + i * 0.012 + (raised ? 0.72 : 0) + (selected ? 0.22 : 0),
+        1.34 + i * 0.012 + (raised ? 0.72 : 0),
         // Keep a little perspective in the resting fan; lift the print square to the camera for reading.
         this.#camera.rotation.x + (raised ? 0 : 0.1),
         raised ? 0 : -outward * 0.066,
