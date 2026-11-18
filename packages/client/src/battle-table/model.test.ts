@@ -22,6 +22,29 @@ describe("Peter Parker and Rhino's practice turn", () => {
     return source;
   }
 
+  test("ends the player turn, resolves the enemy turn, and starts the next round", () => {
+    expect(battle.snapshot()).toMatchObject({ turn: "player", round: 1, canEndTurn: true });
+    expect(battle.endTurn()).toBe(true);
+    expect(battle.snapshot()).toMatchObject({
+      turn: "ending",
+      canEndTurn: false,
+      choice: { discardFromHand: true, min: 1 },
+    });
+    expect(battle.endTurn()).toBe(false);
+    const strength = battle.snapshot().choice!.options.find((option) => option.label === "Strength")!;
+    expect(battle.chooseMany([])).toBe(false);
+    expect(battle.chooseMany([strength.id])).toBe(true);
+    expect(battle.snapshot()).toMatchObject({ turn: "enemy", canEndTurn: false });
+    for (let i = 0; i < 12 && battle.snapshot().turn === "enemy"; i++) {
+      const choice = battle.snapshot().choice!;
+      expect(choice).not.toBeNull();
+      expect(battle.chooseMany(choice.options.slice(0, choice.min).map((option) => option.id))).toBe(true);
+    }
+    expect(battle.snapshot()).toMatchObject({ turn: "player", round: 2, canEndTurn: true });
+    expect(battle.snapshot().heroHp).toBeLessThan(10);
+    expect(battle.snapshot().discard.some((card) => card.name === "Strength")).toBe(true);
+  });
+
   test("deals the same visible cards after reset and identifies cards that only pay", () => {
     const opening = battle.snapshot();
     expect(opening.hero.name).toContain("Spider-Man");

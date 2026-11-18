@@ -53,6 +53,9 @@ export interface BattleChoice {
   options: { id: string; label: string; cardId: string | null }[];
   canSkip: boolean;
   canCancel: boolean;
+  min: number;
+  max: number;
+  discardFromHand: boolean;
 }
 
 export interface BattleSnapshot {
@@ -66,6 +69,10 @@ export interface BattleSnapshot {
   discard: BattleCard[];
   payment: BattlePayment | null;
   choice: BattleChoice | null;
+  turn: "player" | "ending" | "enemy" | "finished";
+  round: number;
+  outcome: GameState["outcome"];
+  canEndTurn: boolean;
 }
 
 function apply(state: GameState, command: Command): GameState {
@@ -186,6 +193,9 @@ export class BattleModel {
           options: this.#targetPick.targets.map((id) => ({ id, label: faceUpName(state, id), cardId: id })),
           canSkip: false,
           canCancel: true,
+          min: 1,
+          max: 1,
+          discardFromHand: false,
         }
       : pending
         ? {
@@ -197,6 +207,9 @@ export class BattleModel {
             })),
             canSkip: pending.minSelections === 0,
             canCancel: false,
+            min: pending.minSelections,
+            max: pending.maxSelections,
+            discardFromHand: pending.prompt.kind === "discardDownToHandSize",
           }
         : null;
     const attached = getInstance(state, player.identity.instanceId)?.attachments ?? [];
@@ -210,6 +223,16 @@ export class BattleModel {
       inPlay: [...new Set([...player.playArea, ...attached])].map((id) => this.#card(id)),
       payment,
       choice,
+      turn: state.outcome
+        ? "finished"
+        : state.step.phase === "villain"
+          ? "enemy"
+          : state.step.kind === "turn" && !state.step.ended
+            ? "player"
+            : "ending",
+      round: state.round,
+      outcome: state.outcome,
+      canEndTurn: !!this.#endTurnCommand(),
     };
     return this.#view;
   }
@@ -257,6 +280,18 @@ export class BattleModel {
     return true;
   }
 
+  #endTurnCommand(): Command | undefined {
+    if (this.#subject || this.#actions.kind !== "turn") return;
+    return this.#actions.legal.find((entry) => entry.action.kind === "endTurn")?.example;
+  }
+
+  endTurn(): boolean {
+    const command = this.#endTurnCommand();
+    if (!command) return false;
+    this.#setGame(apply(this.#game, command));
+    return true;
+  }
+
   choose(id: string | null): boolean {
     if (this.#targetPick) {
       const entry = this.#targetPick;
@@ -265,10 +300,16 @@ export class BattleModel {
       this.#targetPick = null;
       return true;
     }
+    return this.chooseMany(id === null ? [] : [id]);
+  }
+
+  chooseMany(ids: readonly string[]): boolean {
     const choice = this.#game.pendingChoice;
     if (
       !choice ||
-      (id === null ? choice.minSelections > 0 : !choice.options.some((option) => option.optionId === id))
+      ids.length < choice.minSelections ||
+      ids.length > choice.maxSelections ||
+      ids.some((id) => !choice.options.some((option) => option.optionId === id))
     ) {
       return false;
     }
@@ -278,7 +319,7 @@ export class BattleModel {
         type: "resolveChoice",
         choiceId: choice.choiceId,
         playerId: choice.playerId,
-        selectedOptionIds: id === null ? [] : [id],
+        selectedOptionIds: ids,
       },
       CORE_DEPS,
     );

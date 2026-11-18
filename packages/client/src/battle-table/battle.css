@@ -247,6 +247,50 @@ h1 i {
   font-size: 14px;
   font-weight: 700;
 }
+#turn-status {
+  margin-left: auto;
+  text-align: right;
+  color: var(--muted);
+  font: clamp(10px, 1vw, 13px)/1.2 var(--mono);
+}
+#turn-status[data-turn="enemy"] {
+  color: #ffb09c;
+}
+#end-turn {
+  flex: 0 0 auto;
+  padding: 7px 13px;
+  color: #241c0e;
+  background: var(--signal);
+  border: 1px solid var(--signal);
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 700;
+}
+#end-turn:enabled:hover {
+  background: #ffdc94;
+}
+#end-turn:disabled {
+  color: #a7afb0;
+  background: #303b40;
+  border-color: #4b5659;
+  cursor: default;
+}
+.choice-help {
+  color: var(--muted);
+  font-size: 14px;
+}
+.option[aria-pressed="true"] {
+  border-color: var(--signal);
+}
+.option.choice-confirm {
+  color: #241c0e;
+  background: var(--signal);
+}
+.option.choice-confirm:disabled {
+  color: #a7afb0;
+  background: #303b40;
+  cursor: default;
+}
 #hand-count {
   font: 12px var(--mono);
   color: var(--muted);

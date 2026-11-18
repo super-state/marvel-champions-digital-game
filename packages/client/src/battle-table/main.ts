@@ -30,6 +30,9 @@ const pileCount = element("discard-count");
 const paymentPanel = element("payment");
 const paymentSubmit = element<HTMLButtonElement>("payment-submit");
 const paymentTitle = element("payment-title");
+const endTurnButton = element<HTMLButtonElement>("end-turn");
+const turnStatus = element("turn-status");
+const choicePicks = new Set<string>();
 let table: BattleTable | undefined;
 let state: Snapshot;
 let staged: BattleCard | null = null;
@@ -98,7 +101,7 @@ function pick(id: string) {
   }
   if (state.choice) {
     const target = state.choice.options.find((option) => option.cardId === id);
-    if (target) choose(target.id);
+    if (target) selectChoice(target.id);
     return;
   }
   const card = state.hand.find((item) => item.id === id);
@@ -161,20 +164,8 @@ function pay() {
   const flights = payment.discards;
   const before = state.villainHp;
   if (!model.pay()) return;
-  discarding = true;
-  restart.disabled = true;
   paymentPanel.hidden = true;
-  anchors.inert = true;
-  for (const id of flights) {
-    const label = labels.get(id);
-    if (label) label.hidden = true;
-  }
-  instruction.textContent = flights.length ? "Discarding payment…" : `Playing ${payment.subject.name}…`;
-  table.animateDiscards(flights, () => {
-    discarding = false;
-    restart.disabled = false;
-    anchors.inert = false;
-    state = model.snapshot();
+  animateDiscards(flights, flights.length ? "Discarding payment…" : `Playing ${payment.subject.name}…`, () => {
     // Keep a resolving event on the mat while the player chooses its target.
     staged =
       state.choice && payment.subject.type === "event" && !state.discard.some((card) => card.id === payment.subject.id)
@@ -184,6 +175,27 @@ function pay() {
     instruction.textContent =
       state.choice?.prompt ??
       (damage > 0 ? `${payment.subject.name} dealt ${damage} damage to Rhino.` : `${payment.subject.name} played.`);
+  });
+}
+
+function animateDiscards(ids: readonly string[], message: string, onComplete: () => void) {
+  if (!table) return;
+  discarding = true;
+  restart.disabled = true;
+  endTurnButton.disabled = true;
+  anchors.inert = true;
+  for (const button of decision.querySelectorAll("button")) button.disabled = true;
+  for (const id of ids) {
+    const label = labels.get(id);
+    if (label) label.hidden = true;
+  }
+  instruction.textContent = message;
+  table.animateDiscards(ids, () => {
+    discarding = false;
+    restart.disabled = false;
+    anchors.inert = false;
+    state = model.snapshot();
+    onComplete();
     render();
   });
 }
@@ -201,15 +213,68 @@ function choose(id: string | null) {
   });
 }
 
+function selectChoice(id: string) {
+  const choice = state.choice;
+  if (discarding || !choice) return;
+  if (!choice.discardFromHand && choice.max <= 1) {
+    choose(id);
+    return;
+  }
+  if (!choicePicks.delete(id) && choicePicks.size < choice.max) choicePicks.add(id);
+  const focusedOption = document.activeElement instanceof HTMLButtonElement && document.activeElement.dataset.option;
+  render();
+  if (focusedOption) decision.querySelector<HTMLButtonElement>(`[data-option="${CSS.escape(focusedOption)}"]`)?.focus();
+}
+
+function confirmChoice() {
+  const choice = state.choice;
+  const picks = [...choicePicks];
+  if (discarding || !choice || !model.chooseMany(picks)) return;
+  const discarded = choice.discardFromHand
+    ? picks.map((id) => choice.options.find((option) => option.id === id)?.cardId ?? id)
+    : [];
+  choicePicks.clear();
+  animateDiscards(discarded, "Discarding cards…", () => {
+    instruction.textContent = state.choice?.prompt ?? "Pick a card to play.";
+  });
+}
+
 function showChoice(choice: NonNullable<Snapshot["choice"]>) {
-  decision.append(make("p", "eyebrow", "Resolve card"), make("h2", "", choice.prompt));
+  const multiple = choice.discardFromHand || choice.max > 1;
+  decision.append(
+    make(
+      "p",
+      "eyebrow",
+      state.turn === "enemy" ? "Enemy turn" : state.turn === "ending" ? "End of turn" : "Resolve card",
+    ),
+    make("h2", "", choice.prompt),
+  );
+  if (multiple && choice.min > 0) {
+    decision.append(
+      make("p", "choice-help", `Choose at least ${choice.min} ${choice.min === 1 ? "card" : "cards"} to continue.`),
+    );
+  }
   function option(id: string | null, text: string) {
     const button = make("button", "option", text);
-    button.onclick = () => choose(id);
+    if (id !== null && multiple) {
+      button.dataset.option = id;
+      button.setAttribute("aria-pressed", String(choicePicks.has(id)));
+    }
+    button.onclick = () => (id === null ? choose(null) : selectChoice(id));
     decision.append(button);
   }
   for (const item of choice.options) option(item.id, item.label);
-  if (choice.canSkip) option(null, "Skip");
+  if (multiple) {
+    const label = choice.discardFromHand
+      ? choicePicks.size
+        ? `Discard ${choicePicks.size} & continue`
+        : "Keep hand"
+      : "Continue";
+    const confirm = make("button", "option choice-confirm", label);
+    confirm.disabled = choicePicks.size < choice.min;
+    confirm.onclick = confirmChoice;
+    decision.append(confirm);
+  } else if (choice.canSkip) option(null, "Skip");
   if (choice.canCancel) {
     const back = make("button", "quiet", "Cancel");
     back.onclick = cancel;
@@ -243,22 +308,24 @@ function synchronizeLabels() {
       (discardOpen ? discardFan : anchors).append(label);
     }
     const source = state.payment?.sources.find((s) => s.cardId === card.id);
+    const target = state.choice?.options.find((option) => option.cardId === card.id);
+    const discardChoice = state.choice?.discardFromHand && target;
     label.disabled = !!state.payment && !source;
     label.dataset.spent = String(!!source?.selected);
-    if (source) label.setAttribute("aria-pressed", String(source.selected));
+    if (source || discardChoice)
+      label.setAttribute("aria-pressed", String(source?.selected ?? choicePicks.has(target!.id)));
     else label.removeAttribute("aria-pressed");
     const hero = card.id === state.hero.id;
     const enemy = card.id === state.villain.id;
     label.className = "anchor" + (discardOpen ? " discard-card" : hero ? " identity" : enemy ? " enemy" : "");
     label.textContent = hero || enemy ? `${card.name} · ${hero ? state.heroHp : state.villainHp} HP` : card.name;
     if (source) label.append(make("span", "resource-value", `+${resourceText(source.icons)}`));
-    const target = state.choice?.options.find((option) => option.cardId === card.id);
     label.setAttribute(
       "aria-label",
       discardOpen
         ? `Inspect ${card.name}`
         : target
-          ? `Choose ${card.name}`
+          ? `${discardChoice ? "Discard" : "Choose"} ${card.name}`
           : source
             ? `${source.selected ? "Remove" : "Spend"} ${card.name}, ${resourceText(source.icons)}`
             : card.playable
@@ -290,6 +357,10 @@ function placeLabels() {
 
 function render() {
   state = model.snapshot();
+  const selected =
+    state.payment?.sources.filter((item) => item.selected).map((item) => item.cardId) ??
+    state.choice?.options.flatMap((option) => (option.cardId && choicePicks.has(option.id) ? [option.cardId] : [])) ??
+    [];
   table?.setCards({
     hero: state.hero,
     villain: state.villain,
@@ -299,7 +370,7 @@ function render() {
     hand: state.hand.filter((card) => card.id !== staged?.id),
     staged,
     paymentSources: state.payment?.sources.map((item) => item.cardId) ?? null,
-    selected: state.payment?.sources.filter((item) => item.selected).map((item) => item.cardId) ?? [],
+    selected,
   });
   discardFan.hidden = !discardOpen;
   synchronizeLabels();
@@ -318,6 +389,19 @@ function render() {
   decision.hidden = !state.choice || discardOpen;
   reader.hidden = !decision.hidden;
   restart.disabled = discarding || !!state.payment;
+  endTurnButton.disabled = !state.canEndTurn || flying || discarding || discardOpen;
+  const turn =
+    state.turn === "enemy"
+      ? "Enemy turn"
+      : state.turn === "ending"
+        ? "Ending your turn"
+        : state.turn === "finished"
+          ? state.outcome?.result === "win"
+            ? "Victory"
+            : "Defeat"
+          : "Your turn";
+  turnStatus.textContent = `Round ${state.round} · ${turn}`;
+  turnStatus.dataset.turn = state.turn;
   if (state.payment) showPayment(state.payment);
   else paymentPanel.hidden = true;
   if (state.choice) showChoice(state.choice);
@@ -327,6 +411,7 @@ function deal() {
   restart.disabled = true;
   flying = false;
   discardOpen = false;
+  choicePicks.clear();
   staged = null;
   model.reset();
   state = model.snapshot();
@@ -359,6 +444,12 @@ function start() {
   }
 }
 restart.onclick = start;
+endTurnButton.onclick = () => {
+  if (endTurnButton.disabled) return;
+  act(() => {
+    if (model.endTurn()) instruction.textContent = model.snapshot().choice?.prompt ?? "";
+  });
+};
 paymentSubmit.onclick = pay;
 element<HTMLButtonElement>("payment-cancel").onclick = cancel;
 pile.onclick = () => setDiscardOpen(!discardOpen);
