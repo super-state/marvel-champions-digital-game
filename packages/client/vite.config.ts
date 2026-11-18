@@ -52,6 +52,7 @@ export default defineConfig(({ command }) => ({
   worker: { format: "es" },
   build: {
     target: "es2022",
+    rolldownOptions: { input: { game: "index.html", battle: "battle/index.html" } },
     // Phaser is large and ships as one chunk; the warning adds nothing here.
     chunkSizeWarningLimit: 2000,
   },
