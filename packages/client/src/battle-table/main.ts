@@ -25,7 +25,8 @@ const preview = element<HTMLImageElement>("preview");
 const decision = element("decision");
 const instruction = element("instruction");
 const restart = element<HTMLButtonElement>("reset");
-const pile = element("discard-label");
+const pile = element<HTMLButtonElement>("discard-label");
+const discardFan = element("discard-fan");
 const pileCount = element("discard-count");
 const lightbox = new PaymentLightbox(toggle, pay, cancel);
 let table: BattleTable | undefined;
@@ -33,6 +34,7 @@ let state: Snapshot;
 let staged: BattleCard | null = null;
 let flying = false;
 let discarding = false;
+let discardOpen = false;
 const labels = new Map<string, HTMLButtonElement>();
 
 function cards() {
@@ -49,8 +51,24 @@ function inspect(id: string | null) {
   }
 }
 
+function setDiscardOpen(open: boolean) {
+  if (discardOpen === open || (open && (flying || discarding || state.payment || !state.discard.length))) return;
+  const restoreFocus = discardFan.contains(document.activeElement);
+  discardOpen = open;
+  render();
+  inspect(state.discard.at(-1)?.id ?? null);
+  if (!open && restoreFocus) pile.focus({ preventScroll: true });
+}
+
 function pick(id: string) {
   if (flying || discarding) return;
+  const choosingCard = state.choice?.options.some((option) => option.cardId === id);
+  if (state.discard.some((card) => card.id === id) && !state.payment && (discardOpen || !choosingCard)) {
+    if (discardOpen) inspect(id);
+    else setDiscardOpen(true);
+    return;
+  }
+  if (discardOpen) return;
   inspect(id);
   if (state.payment) {
     const source = state.payment.sources.find((item) => item.cardId === id);
@@ -179,7 +197,9 @@ function showChoice(choice: NonNullable<Snapshot["choice"]>) {
 }
 
 function synchronizeLabels() {
-  const visible = [state.hero, state.villain, ...state.hand.filter((c) => c.id !== staged?.id), ...state.inPlay];
+  const visible = discardOpen
+    ? state.discard
+    : [state.hero, state.villain, ...state.hand.filter((c) => c.id !== staged?.id), ...state.inPlay];
   for (const [id, label] of labels) {
     if (!visible.some((c) => c.id === id)) {
       label.remove();
@@ -199,24 +219,26 @@ function synchronizeLabels() {
       };
       label.onblur = () => table?.setHovered(null);
       labels.set(card.id, label);
-      anchors.append(label);
+      (discardOpen ? discardFan : anchors).append(label);
     }
     const source = state.payment?.sources.find((s) => s.cardId === card.id);
     label.dataset.spent = String(!!source?.selected);
     const hero = card.id === state.hero.id;
     const enemy = card.id === state.villain.id;
-    label.className = "anchor" + (hero ? " identity" : enemy ? " enemy" : "");
+    label.className = "anchor" + (discardOpen ? " discard-card" : hero ? " identity" : enemy ? " enemy" : "");
     label.textContent = hero || enemy ? `${card.name} · ${hero ? state.heroHp : state.villainHp} HP` : card.name;
     const target = state.choice?.options.find((option) => option.cardId === card.id);
     label.setAttribute(
       "aria-label",
-      target
-        ? `Choose ${card.name}`
-        : source
-          ? `${source.selected ? "Remove" : "Spend"} ${card.name}, ${resourceText(source.icons)}`
-          : card.playable
-            ? `Play ${card.name}, cost ${card.cost}`
-            : `Inspect ${card.name}`,
+      discardOpen
+        ? `Inspect ${card.name}`
+        : target
+          ? `Choose ${card.name}`
+          : source
+            ? `${source.selected ? "Remove" : "Spend"} ${card.name}, ${resourceText(source.icons)}`
+            : card.playable
+              ? `Play ${card.name}, cost ${card.cost}`
+              : `Inspect ${card.name}`,
     );
   }
 }
@@ -224,7 +246,7 @@ function synchronizeLabels() {
 function placeLabels() {
   if (!table) return;
   const discard = table.discardAnchor();
-  pile.style.transform = `translate(${Math.round(discard.x)}px,${Math.round(discard.bottom + 3)}px)`;
+  pile.style.transform = discardOpen ? "" : `translate(${Math.round(discard.x)}px,${Math.round(discard.bottom + 3)}px)`;
   const projected = table.anchors();
   const handIds = new Set(state.hand.filter((card) => card.id !== staged?.id).map((card) => card.id));
   const hand = projected.filter((point) => handIds.has(point.id)).sort((a, b) => a.x - b.x);
@@ -236,7 +258,8 @@ function placeLabels() {
     const node = labels.get(anchor.id);
     if (!node) continue;
     node.style.transform = `translate(${Math.round(anchor.x)}px, ${Math.round(anchor.bottom + 4)}px)`;
-    node.style.setProperty("--card-width", `${handIds.has(anchor.id) ? Math.max(32, width) : 142}px`);
+    const labelWidth = discardOpen ? anchor.width * 0.82 : handIds.has(anchor.id) ? Math.max(32, width) : 142;
+    node.style.setProperty("--card-width", `${labelWidth}px`);
   }
 }
 
@@ -247,15 +270,26 @@ function render() {
     villain: state.villain,
     inPlay: state.inPlay,
     discard: state.discard,
+    discardOpen,
     hand: state.hand.filter((card) => card.id !== staged?.id),
     staged,
     selected: state.payment?.sources.filter((item) => item.selected).map((item) => item.cardId) ?? [],
   });
+  discardFan.hidden = !discardOpen;
   synchronizeLabels();
+  pile.disabled = !state.discard.length || flying || discarding || !!state.payment;
+  pile.setAttribute("aria-expanded", String(discardOpen));
+  const count = state.discard.length;
+  pile.setAttribute(
+    "aria-label",
+    `${discardOpen ? "Stack" : "Inspect"} discard pile, ${count} card${count === 1 ? "" : "s"}`,
+  );
+  instruction.hidden = discardOpen;
+  element("discard-hint").hidden = !discardOpen;
   pileCount.textContent = String(state.discard.length);
   element("hand-count").textContent = String(state.hand.filter((card) => card.id !== staged?.id).length);
   decision.replaceChildren();
-  decision.hidden = !state.choice;
+  decision.hidden = !state.choice || discardOpen;
   reader.hidden = !decision.hidden;
   if (state.payment) lightbox.show(state.payment, cards());
   else lightbox.close();
@@ -265,6 +299,7 @@ function render() {
 function deal() {
   restart.disabled = true;
   flying = false;
+  discardOpen = false;
   staged = null;
   model.reset();
   state = model.snapshot();
@@ -273,6 +308,7 @@ function deal() {
       onPick: pick,
       onHover: inspect,
       onLanded: landed,
+      onDismissDiscard: () => setDiscardOpen(false),
       onDraw: placeLabels,
       onDiscardLanded: (count) => {
         pileCount.textContent = String(count);
@@ -296,4 +332,27 @@ function start() {
   }
 }
 restart.onclick = start;
+pile.onclick = () => setDiscardOpen(!discardOpen);
+document.addEventListener(
+  "click",
+  (event) => {
+    if (
+      !discardOpen ||
+      !(event.target instanceof Element) ||
+      event.target.closest("#space, #discard-label, #discard-fan")
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDiscardOpen(false);
+  },
+  true,
+);
+document.addEventListener("keydown", (event) => {
+  if (discardOpen && event.key === "Escape") {
+    event.preventDefault();
+    setDiscardOpen(false);
+    pile.focus({ preventScroll: true });
+  }
+});
 start();

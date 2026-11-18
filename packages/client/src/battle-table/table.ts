@@ -15,6 +15,7 @@ export interface TableCards {
   readonly inPlay: readonly TableCard[];
   /** In engine order, ending with the visible top card. */
   readonly discard: readonly TableCard[];
+  readonly discardOpen: boolean;
   readonly staged: TableCard | null;
   readonly selected: readonly string[];
 }
@@ -23,6 +24,7 @@ interface Handlers {
   onPick(id: string): void;
   onHover(id: string | null): void;
   onLanded(id: string): void;
+  onDismissDiscard(): void;
   onDiscardLanded?(count: number): void;
   onDraw?(): void;
 }
@@ -244,6 +246,7 @@ export class BattleTable {
 
   setCards(state: TableCards): void {
     const previous = this.#state?.staged?.id;
+    if (this.#state?.discardOpen !== state.discardOpen) this.#hovered = null;
     this.#state = state;
     const cards = [state.hero, state.villain, ...state.inPlay, ...state.hand, ...state.discard];
     if (state.staged) cards.push(state.staged);
@@ -280,6 +283,9 @@ export class BattleTable {
       }
       piece.card = card;
       piece.rim.visible = state.selected.includes(card.id);
+      piece.face.material.color.setHex(
+        state.discardOpen && !state.discard.some((discarded) => discarded.id === card.id) ? 0x848993 : 0xffffff,
+      );
     }
     if (previous !== state.staged?.id) {
       if (previous) this.#flights.delete(previous);
@@ -344,7 +350,7 @@ export class BattleTable {
   }
 
   /** Stage-relative CSS pixel positions for DOM controls, including cards in flight. */
-  anchors(): { id: string; x: number; y: number; bottom: number }[] {
+  anchors() {
     return Array.from(this.#pieces, ([id, { root }]) => ({ id, ...this.#anchor(root) }));
   }
 
@@ -352,17 +358,22 @@ export class BattleTable {
     return this.#anchor(this.#discardSlot);
   }
 
-  #anchor(root: THREE.Group): { x: number; y: number; bottom: number } {
+  #anchor(root: THREE.Group) {
     root.updateMatrixWorld();
     this.#scratch.copy(root.position).project(this.#camera);
     const x = (0.5 + this.#scratch.x / 2) * this.#width;
     const y = (0.5 - this.#scratch.y / 2) * this.#height;
     let bottom = y;
+    let left = x,
+      right = x;
     for (const [cx, cy] of corners) {
       this.#scratch.set(cx, cy, 0.02).applyMatrix4(root.matrixWorld).project(this.#camera);
+      const cornerX = (0.5 + this.#scratch.x / 2) * this.#width;
+      left = Math.min(left, cornerX);
+      right = Math.max(right, cornerX);
       bottom = Math.max(bottom, (0.5 - this.#scratch.y / 2) * this.#height);
     }
-    return { x, y, bottom };
+    return { x, y, bottom, width: right - left };
   }
 
   setHovered(id: string | null): void {
@@ -458,6 +469,10 @@ export class BattleTable {
     const scale = this.#point(pileX + pileWidth, pileY, 0.025).x - base.x;
     this.#discardSlot.position.copy(base);
     this.#discardSlot.scale.setScalar(scale);
+    if (state.discardOpen && state.discard.length) {
+      this.#fanDiscard(state.discard);
+      return;
+    }
     const pileIds = state.discard.map((card) => card.id).concat(this.#discardDeal?.ids ?? []);
     pileIds.forEach((id, i) => {
       const piece = this.#pieces.get(id);
@@ -466,6 +481,39 @@ export class BattleTable {
       position.y += (0.012 + i * 0.023) * scale;
       position.x += Math.min(i, 8) * scale * 0.008;
       piece.target = { position, pitch: flat, roll: 0, scale };
+    });
+  }
+
+  #fanDiscard(cards: readonly TableCard[]): void {
+    const w = this.#width,
+      h = this.#height;
+    const columns = Math.min(cards.length, Math.max(3, Math.floor((w * 0.88) / 125)));
+    const rows = Math.ceil(cards.length / columns);
+    const width = Math.min(
+      190,
+      h * 0.285,
+      (w * 0.86) / (1 + (columns - 1) * 0.88),
+      Math.max(1, (h * 0.84) / rows - 24) / 1.72,
+    );
+    const rowStep = width * 1.72 + 22;
+    cards.forEach((card, index) => {
+      const row = Math.floor(index / columns);
+      const rowSize = Math.min(columns, cards.length - row * columns);
+      const offset = (index % columns) - (rowSize - 1) / 2;
+      const outward = rowSize > 1 ? (2 * offset) / (rowSize - 1) : 0;
+      const raised = this.#hovered === card.id;
+      const x = w * 0.5 + offset * width * 0.88;
+      const y = h * 0.46 + (row - (rows - 1) / 2) * rowStep + outward ** 2 * width * 0.13;
+      if (raised) this.#hoverFootprint = { x, y, width };
+      this.#pose(
+        card.id,
+        x,
+        y - (raised ? width * 0.07 : 0),
+        width * (raised ? 1.045 : 1),
+        2.6 + (index % columns) * 0.075 + (raised ? 0.6 : 0),
+        this.#camera.rotation.x,
+        raised ? 0 : -outward * 0.11,
+      );
     });
   }
 
@@ -544,6 +592,7 @@ export class BattleTable {
     let nearest = Infinity;
     let id: string | null = null;
     for (const piece of this.#pieces.values()) {
+      if (this.#state?.discardOpen && !this.#state.discard.some((card) => card.id === piece.card.id)) continue;
       const [hit] = this.#ray.intersectObject(piece.face, false);
       if (hit && hit.distance < nearest) {
         nearest = hit.distance;
@@ -596,7 +645,10 @@ export class BattleTable {
   readonly #down = (event: PointerEvent): void => {
     if (event.button !== 0 || !event.isPrimary || this.#press || this.#discardDeal) return;
     const id = this.#hit(event);
-    if (!id) return;
+    if (!id) {
+      if (this.#state?.discardOpen) this.#handlers.onDismissDiscard();
+      return;
+    }
     this.#notifyHover(id);
     this.#press = { id, pointer: event.pointerId, x: event.clientX, y: event.clientY, dragging: false };
     this.#renderer.domElement.setPointerCapture(event.pointerId);

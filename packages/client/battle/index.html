@@ -18,12 +18,16 @@
           <div id="stage">
             <div id="space"></div>
             <div id="anchors" aria-label="Cards on the table">
-              <span id="discard-label">Discard <b id="discard-count">0</b></span>
+              <button type="button" id="discard-label" aria-expanded="false" aria-controls="discard-fan" disabled>
+                Discard <b id="discard-count">0</b>
+              </button>
+              <div id="discard-fan" role="group" aria-label="Discarded cards" hidden></div>
             </div>
           </div>
           <div class="hand-strip">
             <div><span class="deck-mark" aria-hidden="true"></span> Your hand <b id="hand-count"></b></div>
             <span id="instruction" role="status">Dealing the opening hand…</span>
+            <span id="discard-hint" hidden>Click or tap outside the fan to close.</span>
           </div>
         </section>
         <aside class="rail" aria-label="Card inspection and choices" id="rail">
