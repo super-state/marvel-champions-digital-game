@@ -229,6 +229,7 @@ h1 i {
   border-bottom-color: #db8d7b;
 }
 .hand-strip {
+  position: relative;
   display: flex;
   align-items: center;
   min-height: 53px;
@@ -360,7 +361,7 @@ h2 {
   justify-content: center;
   gap: 10px;
 }
-.battle:has(#payment:not([hidden])) :is(.mast, .rail, .hand-strip) {
+.battle:has(#payment:not([hidden])) :is(.mast, .rail) {
   filter: brightness(0.55);
 }
 .anchor:disabled {
@@ -401,10 +402,19 @@ h2 {
   transition: transform 180ms ease-out;
 }
 .payment-actions {
-  margin-top: 10px;
-  display: flex;
+  display: none;
+  position: absolute;
+  inset: 0;
   justify-content: center;
+  align-items: center;
   gap: 12px;
+  background: #111b22;
+}
+#stage:has(#payment:not([hidden])) + .hand-strip > :not(.payment-actions) {
+  visibility: hidden;
+}
+#stage:has(#payment:not([hidden])) + .hand-strip .payment-actions {
+  display: flex;
 }
 .payment-actions button {
   min-height: 44px;
@@ -530,6 +540,10 @@ h2 {
   }
   .hand-strip {
     min-height: 38px;
+  }
+  .payment-actions button {
+    min-height: 32px;
+    padding-block: 4px;
   }
   #decision {
     padding: 14px;

@@ -31,16 +31,16 @@
                 <div class="payment-track" aria-hidden="true"><span></span></div>
                 <span id="payment-balance"></span>
               </div>
-              <div class="payment-actions">
-                <button type="button" id="payment-cancel">Cancel</button>
-                <button type="button" id="payment-submit" disabled>Submit</button>
-              </div>
             </section>
           </div>
           <div class="hand-strip">
             <div><span class="deck-mark" aria-hidden="true"></span> Your hand <b id="hand-count"></b></div>
             <span id="instruction" role="status">Dealing the opening hand…</span>
             <span id="discard-hint" hidden>Click or tap outside the fan to close.</span>
+            <footer class="payment-actions" aria-label="Payment actions">
+              <button type="button" id="payment-cancel">Cancel</button>
+              <button type="button" id="payment-submit" disabled>Confirm</button>
+            </footer>
           </div>
         </section>
         <aside class="rail" aria-label="Card inspection and choices" id="rail">
