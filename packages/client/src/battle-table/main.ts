@@ -27,7 +27,6 @@ const instruction = element("instruction");
 const restart = element<HTMLButtonElement>("reset");
 const pile = element<HTMLButtonElement>("discard-label");
 const discardFan = element("discard-fan");
-const discardHint = element("discard-hint");
 const pileCount = element("discard-count");
 const lightbox = new PaymentLightbox(toggle, pay, cancel);
 let table: BattleTable | undefined;
@@ -36,7 +35,6 @@ let staged: BattleCard | null = null;
 let flying = false;
 let discarding = false;
 let discardOpen = false;
-let discardHovered = false;
 const labels = new Map<string, HTMLButtonElement>();
 
 function cards() {
@@ -53,11 +51,10 @@ function inspect(id: string | null) {
   }
 }
 
-function setDiscardOpen(open: boolean, fromHover = false) {
+function setDiscardOpen(open: boolean) {
   if (discardOpen === open || (open && (flying || discarding || state.payment || !state.discard.length))) return;
   const restoreFocus = discardFan.contains(document.activeElement);
   discardOpen = open;
-  discardHovered = open && fromHover;
   render();
   inspect(state.discard.at(-1)?.id ?? null);
   if (!open && restoreFocus) pile.focus({ preventScroll: true });
@@ -249,7 +246,7 @@ function synchronizeLabels() {
 function placeLabels() {
   if (!table) return;
   const discard = table.discardAnchor();
-  pile.style.transform = `translate(${Math.round(discard.x)}px,${Math.round(discard.bottom + 3)}px)`;
+  pile.style.transform = discardOpen ? "" : `translate(${Math.round(discard.x)}px,${Math.round(discard.bottom + 3)}px)`;
   const projected = table.anchors();
   const handIds = new Set(state.hand.filter((card) => card.id !== staged?.id).map((card) => card.id));
   const hand = projected.filter((point) => handIds.has(point.id)).sort((a, b) => a.x - b.x);
@@ -288,9 +285,7 @@ function render() {
     `${discardOpen ? "Stack" : "Inspect"} discard pile, ${count} card${count === 1 ? "" : "s"}`,
   );
   instruction.hidden = discardOpen;
-  discardHint.hidden = !discardOpen;
-  if (discardOpen)
-    discardHint.textContent = discardHovered ? "Move away to close." : "Click or tap outside the fan to close.";
+  element("discard-hint").hidden = !discardOpen;
   pileCount.textContent = String(state.discard.length);
   element("hand-count").textContent = String(state.hand.filter((card) => card.id !== staged?.id).length);
   decision.replaceChildren();
@@ -305,7 +300,6 @@ function deal() {
   restart.disabled = true;
   flying = false;
   discardOpen = false;
-  discardHovered = false;
   staged = null;
   model.reset();
   state = model.snapshot();
@@ -339,19 +333,6 @@ function start() {
 }
 restart.onclick = start;
 pile.onclick = () => setDiscardOpen(!discardOpen);
-document.addEventListener("pointermove", (event) => {
-  if (event.pointerType !== "mouse" || event.buttons || !table) return;
-  const target = event.target;
-  if (!(target instanceof Element)) return;
-  const overDiscard =
-    target.closest("#discard-label, #discard-fan") ||
-    (target.closest("#space") && table.isOverDiscard(event.clientX, event.clientY));
-  if (!discardOpen && overDiscard) setDiscardOpen(true, true);
-  else if (discardHovered && !overDiscard) setDiscardOpen(false);
-});
-document.documentElement.addEventListener("pointerleave", () => {
-  if (discardHovered) setDiscardOpen(false);
-});
 document.addEventListener(
   "click",
   (event) => {

@@ -246,7 +246,6 @@ export class BattleTable {
 
   setCards(state: TableCards): void {
     const previous = this.#state?.staged?.id;
-    const restack = this.#state?.discardOpen && !state.discardOpen;
     if (this.#state?.discardOpen !== state.discardOpen) this.#hovered = null;
     this.#state = state;
     const cards = [state.hero, state.villain, ...state.inPlay, ...state.hand, ...state.discard];
@@ -299,12 +298,6 @@ export class BattleTable {
       }
     }
     this.#layout();
-    if (state.discardOpen || restack) {
-      for (const card of state.discard) {
-        this.#flights.delete(card.id);
-        if (restack) this.#apply(this.#pieces.get(card.id)!, 1);
-      }
-    }
     for (const id of fresh) this.#apply(this.#pieces.get(id)!, 1);
     this.#requestFrame();
   }
@@ -361,33 +354,8 @@ export class BattleTable {
     return Array.from(this.#pieces, ([id, { root }]) => ({ id, ...this.#anchor(root) }));
   }
 
-  discardAnchor() {
+  discardAnchor(): { x: number; y: number; bottom: number } {
     return this.#anchor(this.#discardSlot);
-  }
-
-  /** Keep hover active between the original slot and the cards as they spread. */
-  isOverDiscard(clientX: number, clientY: number): boolean {
-    if (!this.#state?.discard.length) return false;
-    const rect = this.#host.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-    const bounds = this.discardAnchor();
-    let left = bounds.left,
-      right = bounds.right,
-      top = bounds.top,
-      bottom = bounds.bottom;
-    if (this.#state.discardOpen) {
-      for (const card of this.#state.discard) {
-        const piece = this.#pieces.get(card.id);
-        if (!piece) continue;
-        const face = this.#anchor(piece.root);
-        left = Math.min(left, face.left);
-        right = Math.max(right, face.right);
-        top = Math.min(top, face.top);
-        bottom = Math.max(bottom, face.bottom);
-      }
-    }
-    return x >= left - 8 && x <= right + 8 && y >= top - 8 && y <= bottom + 27;
   }
 
   #anchor(root: THREE.Group) {
@@ -396,7 +364,6 @@ export class BattleTable {
     const x = (0.5 + this.#scratch.x / 2) * this.#width;
     const y = (0.5 - this.#scratch.y / 2) * this.#height;
     let bottom = y;
-    let top = y;
     let left = x,
       right = x;
     for (const [cx, cy] of corners) {
@@ -404,17 +371,23 @@ export class BattleTable {
       const cornerX = (0.5 + this.#scratch.x / 2) * this.#width;
       left = Math.min(left, cornerX);
       right = Math.max(right, cornerX);
-      const cornerY = (0.5 - this.#scratch.y / 2) * this.#height;
-      top = Math.min(top, cornerY);
-      bottom = Math.max(bottom, cornerY);
+      bottom = Math.max(bottom, (0.5 - this.#scratch.y / 2) * this.#height);
     }
-    return { x, y, top, bottom, left, right, width: right - left };
+    return { x, y, bottom, width: right - left };
   }
 
   setHovered(id: string | null): void {
     if (this.#hovered === id) return;
+    const previous = this.#hovered;
     this.#hovered = id;
     this.#layout();
+    if (previous && !this.#flights.has(previous) && !(this.#press?.dragging && this.#press.id === previous)) {
+      const piece = this.#pieces.get(previous);
+      if (piece) {
+        this.#apply(piece, 1);
+        piece.root.updateMatrixWorld();
+      }
+    }
     this.#requestFrame();
   }
 
@@ -450,6 +423,15 @@ export class BattleTable {
     piece.target = { position: center, scale: widthPoint.x - center.x, pitch, roll };
   }
 
+  #tablePose(id: string, x: number, y: number, width: number, elevation: number, pitch: number): void {
+    if (this.#hovered === id && !this.#flights.has(id)) {
+      this.#hoverFootprint = { x, y, width };
+      this.#pose(id, x, y - width * 0.09, width * 1.065, elevation + 0.65, this.#camera.rotation.x);
+    } else {
+      this.#pose(id, x, y, width, elevation, pitch);
+    }
+  }
+
   #layout(): void {
     const state = this.#state;
     if (!state) return;
@@ -457,12 +439,20 @@ export class BattleTable {
       h = this.#height;
     const boardWidth = Math.min(w * 0.2, h * 0.22);
     const flat = -Math.PI / 2;
-    this.#pose(state.hero.id, w * 0.255, h * 0.271, boardWidth, 0.045, flat);
-    this.#pose(state.villain.id, w * 0.745, h * 0.271, boardWidth, 0.045, flat);
+    this.#hoverFootprint = null;
+    this.#tablePose(state.hero.id, w * 0.255, h * 0.271, boardWidth, 0.045, flat);
+    this.#tablePose(state.villain.id, w * 0.745, h * 0.271, boardWidth, 0.045, flat);
     const inPlay = state.inPlay.filter((c) => c.id !== state.staged?.id);
     const playWidth = Math.min(boardWidth * 0.8, (w * 0.57) / Math.max(3, inPlay.length));
     inPlay.forEach((card, i) =>
-      this.#pose(card.id, w * 0.43 + (i - (inPlay.length - 1) / 2) * playWidth * 1.1, h * 0.49, playWidth, 0.05, flat),
+      this.#tablePose(
+        card.id,
+        w * 0.43 + (i - (inPlay.length - 1) / 2) * playWidth * 1.1,
+        h * 0.49,
+        playWidth,
+        0.05,
+        flat,
+      ),
     );
     const hand = state.hand.filter((card) => card.id !== state.staged?.id);
     const spread = w < 550 ? 0.73 : 1.03;
@@ -473,7 +463,6 @@ export class BattleTable {
     );
     const center = (hand.length - 1) / 2;
     const baseline = h - Math.min(56, Math.max(39, h * 0.079)) - cardWidth * 0.78;
-    this.#hoverFootprint = null;
     hand.forEach((card, i) => {
       const offset = i - center;
       const outward = center ? offset / center : 0;
@@ -495,7 +484,7 @@ export class BattleTable {
       );
     });
     if (state.staged) {
-      this.#pose(state.staged.id, w * 0.5, h * (inPlay.length ? 0.31 : 0.43), boardWidth, 0.16, flat + 0.1);
+      this.#tablePose(state.staged.id, w * 0.5, h * (inPlay.length ? 0.31 : 0.43), boardWidth, 0.16, flat + 0.1);
     }
     const pileX = w * 0.822;
     const pileY = h * 0.505;
@@ -517,6 +506,10 @@ export class BattleTable {
       position.x += Math.min(i, 8) * scale * 0.008;
       piece.target = { position, pitch: flat, roll: 0, scale };
     });
+    const top = pileIds.at(-1);
+    if (!this.#discardDeal && top && this.#hovered === top && !this.#flights.has(top)) {
+      this.#tablePose(top, pileX, pileY, pileWidth, base.y, flat);
+    }
   }
 
   #fanDiscard(cards: readonly TableCard[]): void {
