@@ -246,6 +246,7 @@ export class BattleTable {
 
   setCards(state: TableCards): void {
     const previous = this.#state?.staged?.id;
+    const restack = this.#state?.discardOpen && !state.discardOpen;
     if (this.#state?.discardOpen !== state.discardOpen) this.#hovered = null;
     this.#state = state;
     const cards = [state.hero, state.villain, ...state.inPlay, ...state.hand, ...state.discard];
@@ -298,6 +299,12 @@ export class BattleTable {
       }
     }
     this.#layout();
+    if (state.discardOpen || restack) {
+      for (const card of state.discard) {
+        this.#flights.delete(card.id);
+        if (restack) this.#apply(this.#pieces.get(card.id)!, 1);
+      }
+    }
     for (const id of fresh) this.#apply(this.#pieces.get(id)!, 1);
     this.#requestFrame();
   }
@@ -354,8 +361,33 @@ export class BattleTable {
     return Array.from(this.#pieces, ([id, { root }]) => ({ id, ...this.#anchor(root) }));
   }
 
-  discardAnchor(): { x: number; y: number; bottom: number } {
+  discardAnchor() {
     return this.#anchor(this.#discardSlot);
+  }
+
+  /** Keep hover active between the original slot and the cards as they spread. */
+  isOverDiscard(clientX: number, clientY: number): boolean {
+    if (!this.#state?.discard.length) return false;
+    const rect = this.#host.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const bounds = this.discardAnchor();
+    let left = bounds.left,
+      right = bounds.right,
+      top = bounds.top,
+      bottom = bounds.bottom;
+    if (this.#state.discardOpen) {
+      for (const card of this.#state.discard) {
+        const piece = this.#pieces.get(card.id);
+        if (!piece) continue;
+        const face = this.#anchor(piece.root);
+        left = Math.min(left, face.left);
+        right = Math.max(right, face.right);
+        top = Math.min(top, face.top);
+        bottom = Math.max(bottom, face.bottom);
+      }
+    }
+    return x >= left - 8 && x <= right + 8 && y >= top - 8 && y <= bottom + 27;
   }
 
   #anchor(root: THREE.Group) {
@@ -364,6 +396,7 @@ export class BattleTable {
     const x = (0.5 + this.#scratch.x / 2) * this.#width;
     const y = (0.5 - this.#scratch.y / 2) * this.#height;
     let bottom = y;
+    let top = y;
     let left = x,
       right = x;
     for (const [cx, cy] of corners) {
@@ -371,9 +404,11 @@ export class BattleTable {
       const cornerX = (0.5 + this.#scratch.x / 2) * this.#width;
       left = Math.min(left, cornerX);
       right = Math.max(right, cornerX);
-      bottom = Math.max(bottom, (0.5 - this.#scratch.y / 2) * this.#height);
+      const cornerY = (0.5 - this.#scratch.y / 2) * this.#height;
+      top = Math.min(top, cornerY);
+      bottom = Math.max(bottom, cornerY);
     }
-    return { x, y, bottom, width: right - left };
+    return { x, y, top, bottom, left, right, width: right - left };
   }
 
   setHovered(id: string | null): void {

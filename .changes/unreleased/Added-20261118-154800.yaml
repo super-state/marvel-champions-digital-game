@@ -1,3 +1,3 @@
 kind: Added
-body: "Play a repeatable Spider-Man versus Rhino opening hand on a Three.js table at /battle/. Pick a card, then select cards to discard in a lightbox showing their resource values. Submit to send them to the discard pile in selection order, or cancel to return the played card to your hand. Click the pile to fan it out for inspection and click outside to stack it again."
+body: "Play a repeatable Spider-Man versus Rhino opening hand on a Three.js table at /battle/. Pick a card, then select cards to discard in a lightbox showing their resource values. Submit to send them to the discard pile in selection order, or cancel to return the played card to your hand. Hover over the discard pile to fan it out. Move away to restack it, or tap to inspect on touch screens."
 time: 2026-11-18T15:48:00Z

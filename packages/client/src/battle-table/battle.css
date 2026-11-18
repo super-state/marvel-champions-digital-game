@@ -167,8 +167,6 @@ h1 i {
   cursor: default;
 }
 #discard-label[aria-expanded="true"] {
-  left: 50%;
-  top: 4%;
   color: var(--paper);
 }
 #discard-label[aria-expanded="true"]::after {
