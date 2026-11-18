@@ -114,9 +114,10 @@ h1 i {
   color: white;
 }
 .arena {
+  --sidebar-width: clamp(300px, 25vw, 415px);
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(300px, 25vw, 415px);
+  grid-template-columns: minmax(0, 1fr) var(--sidebar-width);
 }
 .playfield {
   display: flex;
@@ -405,7 +406,7 @@ h2 {
   display: none;
   position: fixed;
   z-index: 2;
-  inset: auto 0 0;
+  inset: auto var(--sidebar-width) 0 0;
   min-height: var(--hand-strip-height);
   padding: 2px 12px calc(2px + env(safe-area-inset-bottom));
   justify-content: center;
@@ -484,6 +485,7 @@ h2 {
     font-size: 11px;
   }
   .arena {
+    --sidebar-width: 0px;
     display: flex;
     flex-direction: column;
   }
