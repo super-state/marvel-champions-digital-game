@@ -18,6 +18,7 @@ export interface TableCards {
   readonly discardOpen: boolean;
   readonly staged: TableCard | null;
   readonly selected: readonly string[];
+  readonly paymentSources: readonly string[] | null;
 }
 
 interface Handlers {
@@ -162,6 +163,7 @@ export class BattleTable {
   readonly #stockMaterial = new THREE.MeshStandardMaterial({ color: 0xb7b2a2, roughness: 0.87 });
   readonly #glow = new THREE.MeshBasicMaterial({ color: 0xffc66c });
   readonly #mat = new THREE.Group();
+  readonly #cloth = new THREE.MeshStandardMaterial({ roughness: 0.98 });
   readonly #discardSlot = new THREE.Group();
   readonly #observer: ResizeObserver;
   readonly #reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -211,10 +213,8 @@ export class BattleTable {
     binding.position.z = -0.105;
     const print = matPrint(this.#requestFrame);
     print.anisotropy = Math.min(4, this.#renderer.capabilities.getMaxAnisotropy());
-    const cloth = new THREE.Mesh(
-      faceGeometry(surface, 1, 1),
-      new THREE.MeshStandardMaterial({ map: print, roughness: 0.98, metalness: 0 }),
-    );
+    this.#cloth.map = print;
+    const cloth = new THREE.Mesh(faceGeometry(surface, 1, 1), this.#cloth);
     cloth.receiveShadow = true;
     this.#mat.rotation.x = -Math.PI / 2;
     this.#mat.add(binding, cloth);
@@ -283,10 +283,8 @@ export class BattleTable {
       }
       piece.card = card;
       piece.rim.visible = state.selected.includes(card.id);
-      piece.face.material.color.setHex(
-        state.discardOpen && !state.discard.some((discarded) => discarded.id === card.id) ? 0x848993 : 0xffffff,
-      );
     }
+    this.#lightCards(state);
     if (previous !== state.staged?.id) {
       if (previous) this.#flights.delete(previous);
       if (state.staged) {
@@ -311,25 +309,35 @@ export class BattleTable {
     });
   }
 
-  /** The dialog supplies its last displayed scan rectangles before revealing the table. */
-  animateDiscards(cards: readonly { id: string; rect: DOMRect }[], done: () => void): void {
-    const visible = cards.filter(({ id }) => this.#pieces.has(id));
+  #lightCards(state: TableCards): void {
+    this.#cloth.color.setHex(state.paymentSources ? 0x3d444e : 0xffffff);
+    for (const [id, piece] of this.#pieces) {
+      const color =
+        state.paymentSources && !state.paymentSources.includes(id)
+          ? id === state.staged?.id
+            ? 0xa5a5a5
+            : 0x51545b
+          : state.discardOpen && !state.discard.some((card) => card.id === id)
+            ? 0x848993
+            : 0xffffff;
+      piece.face.material.color.setHex(color);
+    }
+  }
+
+  animateDiscards(cards: readonly string[], done: () => void): void {
+    const visible = cards.filter((id) => this.#pieces.has(id));
     if (!visible.length || this.#contextLost || this.#disposed) {
       done();
       return;
     }
-    const canvas = this.#renderer.domElement.getBoundingClientRect();
+    if (this.#state) {
+      this.#state = { ...this.#state, paymentSources: null };
+      this.#lightCards(this.#state);
+    }
     const started = performance.now();
-    this.#discardDeal = { ids: visible.map(({ id }) => id), landed: 0, done };
-    visible.forEach(({ id, rect }, index) => {
+    this.#discardDeal = { ids: visible, landed: 0, done };
+    visible.forEach((id, index) => {
       const piece = this.#pieces.get(id)!;
-      const x = rect.left + rect.width / 2 - canvas.left;
-      const y = rect.top + rect.height / 2 - canvas.top;
-      // A source outside the canvas, e.g. below the table on a phone, lifts from its physical hand slot.
-      if (rect.width > 0 && x >= 0 && x <= canvas.width && y >= 0 && y <= canvas.height) {
-        this.#pose(id, x, y, rect.width, 2.1, this.#camera.rotation.x);
-        this.#apply(piece, 1);
-      }
       piece.rim.visible = false;
       this.#startFlight(id, "discard", started + index * 155);
     });
@@ -468,7 +476,7 @@ export class BattleTable {
       const outward = center ? offset / center : 0;
       const selected = state.selected.includes(card.id);
       const raised = this.#hovered === card.id && !this.#press?.dragging;
-      const lift = raised ? cardWidth * 0.17 : selected ? cardWidth * 0.078 : 0;
+      const lift = cardWidth * ((raised ? 0.17 : 0) + (selected ? 0.12 : 0));
       const x = w * 0.5 + offset * cardWidth * spread;
       const restY = baseline + outward ** 2 * cardWidth * 0.045;
       if (raised) this.#hoverFootprint = { x, y: restY, width: cardWidth };
@@ -477,7 +485,7 @@ export class BattleTable {
         x,
         restY - lift,
         cardWidth * (raised ? 1.09 : 1),
-        1.34 + i * 0.012 + (raised ? 0.72 : selected ? 0.15 : 0),
+        1.34 + i * 0.012 + (raised ? 0.72 : 0) + (selected ? 0.22 : 0),
         // Keep a little perspective in the resting fan; lift the print square to the camera for reading.
         this.#camera.rotation.x + (raised ? 0 : 0.1),
         raised ? 0 : -outward * 0.066,
@@ -620,6 +628,7 @@ export class BattleTable {
     let nearest = Infinity;
     let id: string | null = null;
     for (const piece of this.#pieces.values()) {
+      if (this.#state?.paymentSources && !this.#state.paymentSources.includes(piece.card.id)) continue;
       if (this.#state?.discardOpen && !this.#state.discard.some((card) => card.id === piece.card.id)) continue;
       const [hit] = this.#ray.intersectObject(piece.face, false);
       if (hit && hit.distance < nearest) {

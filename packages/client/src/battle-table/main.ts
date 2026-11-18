@@ -1,7 +1,6 @@
 import "./battle.css";
 import { BattleModel, type BattleCard } from "./model.js";
 import { BattleTable } from "./table.js";
-import { PaymentLightbox, resourceText } from "./payment-lightbox.js";
 
 type Snapshot = ReturnType<BattleModel["snapshot"]>;
 
@@ -28,7 +27,9 @@ const restart = element<HTMLButtonElement>("reset");
 const pile = element<HTMLButtonElement>("discard-label");
 const discardFan = element("discard-fan");
 const pileCount = element("discard-count");
-const lightbox = new PaymentLightbox(toggle, pay, cancel);
+const paymentPanel = element("payment");
+const paymentSubmit = element<HTMLButtonElement>("payment-submit");
+const paymentTitle = element("payment-title");
 let table: BattleTable | undefined;
 let state: Snapshot;
 let staged: BattleCard | null = null;
@@ -39,6 +40,26 @@ const labels = new Map<string, HTMLButtonElement>();
 
 function cards() {
   return [state.hero, state.villain, ...state.hand, ...state.inPlay, ...state.discard];
+}
+
+function resourceText(icons: readonly string[]): string {
+  const counts = new Map<string, number>();
+  for (const icon of icons) counts.set(icon, (counts.get(icon) ?? 0) + 1);
+  return [...counts].map(([icon, n]) => `${n} ${icon}`).join(" + ");
+}
+
+function showPayment(payment: NonNullable<Snapshot["payment"]>) {
+  const opening = paymentPanel.hidden;
+  paymentPanel.hidden = false;
+  element("payment-subject").textContent = `Playing ${payment.subject.name}`;
+  element("payment-total").textContent = `${payment.paid} / ${payment.required}`;
+  paymentPanel.querySelector<HTMLElement>(".payment-track span")!.style.transform =
+    `scaleX(${payment.required ? Math.min(1, payment.paid / payment.required) : 1})`;
+  const left = payment.required - payment.paid;
+  element("payment-balance").textContent =
+    left > 0 ? `${left} more needed` : left < 0 ? `${-left} extra selected` : "Cost covered";
+  paymentSubmit.disabled = !payment.canPay;
+  if (opening) paymentTitle.focus({ preventScroll: true });
 }
 
 function inspect(id: string | null) {
@@ -137,14 +158,14 @@ function cancel() {
 function pay() {
   const payment = state.payment;
   if (discarding || !payment?.canPay || !table) return;
-  const flights = lightbox.discardRects(payment);
+  const flights = payment.discards;
   const before = state.villainHp;
   if (!model.pay()) return;
   discarding = true;
   restart.disabled = true;
-  lightbox.close();
+  paymentPanel.hidden = true;
   anchors.inert = true;
-  for (const { id } of flights) {
+  for (const id of flights) {
     const label = labels.get(id);
     if (label) label.hidden = true;
   }
@@ -222,11 +243,15 @@ function synchronizeLabels() {
       (discardOpen ? discardFan : anchors).append(label);
     }
     const source = state.payment?.sources.find((s) => s.cardId === card.id);
+    label.disabled = !!state.payment && !source;
     label.dataset.spent = String(!!source?.selected);
+    if (source) label.setAttribute("aria-pressed", String(source.selected));
+    else label.removeAttribute("aria-pressed");
     const hero = card.id === state.hero.id;
     const enemy = card.id === state.villain.id;
     label.className = "anchor" + (discardOpen ? " discard-card" : hero ? " identity" : enemy ? " enemy" : "");
     label.textContent = hero || enemy ? `${card.name} · ${hero ? state.heroHp : state.villainHp} HP` : card.name;
+    if (source) label.append(make("span", "resource-value", `+${resourceText(source.icons)}`));
     const target = state.choice?.options.find((option) => option.cardId === card.id);
     label.setAttribute(
       "aria-label",
@@ -273,6 +298,7 @@ function render() {
     discardOpen,
     hand: state.hand.filter((card) => card.id !== staged?.id),
     staged,
+    paymentSources: state.payment?.sources.map((item) => item.cardId) ?? null,
     selected: state.payment?.sources.filter((item) => item.selected).map((item) => item.cardId) ?? [],
   });
   discardFan.hidden = !discardOpen;
@@ -291,8 +317,9 @@ function render() {
   decision.replaceChildren();
   decision.hidden = !state.choice || discardOpen;
   reader.hidden = !decision.hidden;
-  if (state.payment) lightbox.show(state.payment, cards());
-  else lightbox.close();
+  restart.disabled = discarding || !!state.payment;
+  if (state.payment) showPayment(state.payment);
+  else paymentPanel.hidden = true;
   if (state.choice) showChoice(state.choice);
 }
 
@@ -332,6 +359,8 @@ function start() {
   }
 }
 restart.onclick = start;
+paymentSubmit.onclick = pay;
+element<HTMLButtonElement>("payment-cancel").onclick = cancel;
 pile.onclick = () => setDiscardOpen(!discardOpen);
 document.addEventListener(
   "click",
@@ -349,6 +378,11 @@ document.addEventListener(
   true,
 );
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state?.payment && !discarding) {
+    event.preventDefault();
+    cancel();
+    return;
+  }
   if (discardOpen && event.key === "Escape") {
     event.preventDefault();
     setDiscardOpen(false);
