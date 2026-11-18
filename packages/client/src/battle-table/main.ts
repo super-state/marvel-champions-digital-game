@@ -19,7 +19,6 @@ function make<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, 
 
 const model = new BattleModel();
 const anchors = element("anchors");
-const reader = element("reader");
 const preview = element<HTMLImageElement>("preview");
 const decision = element("decision");
 const instruction = element("instruction");
@@ -27,6 +26,9 @@ const restart = element<HTMLButtonElement>("reset");
 const pile = element<HTMLButtonElement>("discard-label");
 const discardFan = element("discard-fan");
 const pileCount = element("discard-count");
+const deckLabel = element("deck-label");
+const deckCount = element("deck-count");
+const handDiscardConfirm = element<HTMLButtonElement>("hand-discard-confirm");
 const paymentPanel = element("payment");
 const paymentSubmit = element<HTMLButtonElement>("payment-submit");
 const paymentTitle = element("payment-title");
@@ -183,6 +185,7 @@ function animateDiscards(ids: readonly string[], message: string, onComplete: ()
   discarding = true;
   restart.disabled = true;
   endTurnButton.disabled = true;
+  handDiscardConfirm.disabled = true;
   anchors.inert = true;
   for (const button of decision.querySelectorAll("button")) button.disabled = true;
   for (const id of ids) {
@@ -247,12 +250,17 @@ function showChoice(choice: NonNullable<Snapshot["choice"]>) {
       "eyebrow",
       state.turn === "enemy" ? "Enemy turn" : state.turn === "ending" ? "End of turn" : "Resolve card",
     ),
-    make("h2", "", choice.prompt),
+    make("h2", "", choice.discardFromHand ? "Choose cards from your hand to discard" : choice.prompt),
   );
   if (multiple && choice.min > 0) {
     decision.append(
       make("p", "choice-help", `Choose at least ${choice.min} ${choice.min === 1 ? "card" : "cards"} to continue.`),
     );
+  }
+  if (choice.discardFromHand) {
+    handDiscardConfirm.textContent = choicePicks.size ? `Discard ${choicePicks.size} & continue` : "Keep hand";
+    handDiscardConfirm.disabled = choicePicks.size < choice.min || discarding;
+    return;
   }
   function option(id: string | null, text: string) {
     const button = make("button", "option", text);
@@ -265,12 +273,7 @@ function showChoice(choice: NonNullable<Snapshot["choice"]>) {
   }
   for (const item of choice.options) option(item.id, item.label);
   if (multiple) {
-    const label = choice.discardFromHand
-      ? choicePicks.size
-        ? `Discard ${choicePicks.size} & continue`
-        : "Keep hand"
-      : "Continue";
-    const confirm = make("button", "option choice-confirm", label);
+    const confirm = make("button", "option choice-confirm", "Continue");
     confirm.disabled = choicePicks.size < choice.min;
     confirm.onclick = confirmChoice;
     decision.append(confirm);
@@ -338,6 +341,8 @@ function synchronizeLabels() {
 function placeLabels() {
   if (!table) return;
   const discard = table.discardAnchor();
+  const deck = table.deckAnchor();
+  deckLabel.style.transform = `translate(${Math.round(deck.x)}px,${Math.round(deck.bottom + 3)}px)`;
   pile.style.transform = discardOpen ? "" : `translate(${Math.round(discard.x)}px,${Math.round(discard.bottom + 3)}px)`;
   const projected = table.anchors();
   const handIds = new Set(state.hand.filter((card) => card.id !== staged?.id).map((card) => card.id));
@@ -366,6 +371,7 @@ function render() {
     villain: state.villain,
     inPlay: state.inPlay,
     discard: state.discard,
+    deckCount: state.deckCount,
     discardOpen,
     hand: state.hand.filter((card) => card.id !== staged?.id),
     staged,
@@ -384,10 +390,15 @@ function render() {
   instruction.hidden = discardOpen;
   element("discard-hint").hidden = !discardOpen;
   pileCount.textContent = String(state.discard.length);
+  deckCount.textContent = String(state.deckCount);
   element("hand-count").textContent = String(state.hand.filter((card) => card.id !== staged?.id).length);
   decision.replaceChildren();
   decision.hidden = !state.choice || discardOpen;
-  reader.hidden = !decision.hidden;
+  const handChoice = !decision.hidden && !!state.choice?.discardFromHand;
+  decision.toggleAttribute("data-hand-choice", handChoice);
+  handDiscardConfirm.hidden = !handChoice;
+  paymentSubmit.hidden = handChoice;
+  element("payment-cancel").hidden = handChoice;
   restart.disabled = discarding || !!state.payment;
   endTurnButton.disabled = !state.canEndTurn || flying || discarding || discardOpen;
   const turn =
@@ -451,6 +462,7 @@ endTurnButton.onclick = () => {
   });
 };
 paymentSubmit.onclick = pay;
+handDiscardConfirm.onclick = confirmChoice;
 element<HTMLButtonElement>("payment-cancel").onclick = cancel;
 pile.onclick = () => setDiscardOpen(!discardOpen);
 document.addEventListener(

@@ -18,6 +18,7 @@
           <div id="stage">
             <div id="space"></div>
             <div id="anchors" aria-label="Cards on the table">
+              <span id="deck-label">Deck <b id="deck-count"></b></span>
               <button type="button" id="discard-label" aria-expanded="false" aria-controls="discard-fan" disabled>
                 Discard <b id="discard-count">0</b>
               </button>
@@ -32,6 +33,7 @@
                 <span id="payment-balance"></span>
               </div>
             </section>
+            <section id="decision" aria-label="Turn decision" hidden></section>
           </div>
           <div class="hand-strip">
             <div><span class="deck-mark" aria-hidden="true"></span> Your hand <b id="hand-count"></b></div>
@@ -39,15 +41,17 @@
             <span id="discard-hint" hidden>Click or tap outside the fan to close.</span>
             <span id="turn-status" role="status"></span>
             <button type="button" id="end-turn" disabled>End Turn</button>
-            <footer class="payment-actions" aria-label="Payment actions">
+            <footer class="payment-actions" aria-label="Turn actions">
               <button type="button" id="payment-cancel">Cancel</button>
               <button type="button" id="payment-submit" disabled>Confirm</button>
+              <button type="button" id="hand-discard-confirm" class="choice-confirm" hidden>
+                Discard &amp; continue
+              </button>
             </footer>
           </div>
         </section>
-        <aside class="rail" aria-label="Card inspection and choices" id="rail">
+        <aside class="rail" aria-label="Card preview" id="rail">
           <div id="reader" class="reader"><img id="preview" alt="" hidden /></div>
-          <section id="decision" hidden></section>
         </aside>
       </div>
     </main>

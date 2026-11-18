@@ -1,3 +1,3 @@
 kind: Added
-body: "Play Spider-Man versus Rhino on a Three.js table at /battle/. Cards lift on hover and snap back when the pointer moves away. Pick a card, then select its resources directly from your hand. Confirm to send the selected cards to the discard pile in order, or cancel to return the played card. Click the pile to fan it out for inspection. Use End Turn to finish any discards and hand play over to Rhino."
+body: "Play Spider-Man versus Rhino on a Three.js table at /battle/. Cards lift on hover and snap back when the pointer moves away. Pick a card, then select its resources directly from your hand. Confirm to send the selected cards to the discard pile in order, or cancel to return the played card. Click the pile to fan it out for inspection. The face-down draw deck and its count sit opposite the discard pile. Use End Turn to hand play over to Rhino and resolve prompts on the playmat."
 time: 2026-11-18T15:48:00Z

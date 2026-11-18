@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { CARD_BACKS } from "../art/art-source.js";
 import { cardRadius } from "../art/card-shape.js";
 import rooftop from "../art/tabletop/rooftop.webp?url";
 
@@ -15,6 +16,7 @@ export interface TableCards {
   readonly inPlay: readonly TableCard[];
   /** In engine order, ending with the visible top card. */
   readonly discard: readonly TableCard[];
+  readonly deckCount: number;
   readonly discardOpen: boolean;
   readonly staged: TableCard | null;
   readonly selected: readonly string[];
@@ -165,6 +167,9 @@ export class BattleTable {
   readonly #mat = new THREE.Group();
   readonly #cloth = new THREE.MeshStandardMaterial({ roughness: 0.98 });
   readonly #discardSlot = new THREE.Group();
+  readonly #deckSlot = new THREE.Group();
+  readonly #deckStock = new THREE.Mesh(this.#stock, this.#stockMaterial);
+  readonly #deckBack = new THREE.Mesh(this.#face, new THREE.MeshBasicMaterial({ toneMapped: false }));
   readonly #observer: ResizeObserver;
   readonly #reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
   #state: TableCards | null = null;
@@ -232,6 +237,10 @@ export class BattleTable {
     this.#discardSlot.rotation.x = -Math.PI / 2;
     this.#discardSlot.add(well, border);
     this.#scene.add(this.#discardSlot);
+    this.#deckSlot.rotation.copy(this.#discardSlot.rotation);
+    this.#deckBack.material.map = this.#texture(CARD_BACKS.player.url);
+    this.#deckSlot.add(well.clone(), border.clone(), this.#deckStock, this.#deckBack);
+    this.#scene.add(this.#deckSlot);
     this.#observer = new ResizeObserver(this.#resize);
     this.#observer.observe(host);
     this.#resize();
@@ -311,6 +320,7 @@ export class BattleTable {
 
   #lightCards(state: TableCards): void {
     this.#cloth.color.setHex(state.paymentSources ? 0x3d444e : 0xffffff);
+    this.#deckBack.material.color.setHex(state.paymentSources ? 0x51545b : 0xffffff);
     for (const [id, piece] of this.#pieces) {
       const color =
         state.paymentSources && !state.paymentSources.includes(id)
@@ -364,6 +374,10 @@ export class BattleTable {
 
   discardAnchor(): { x: number; y: number; bottom: number } {
     return this.#anchor(this.#discardSlot);
+  }
+
+  deckAnchor(): { x: number; bottom: number } {
+    return this.#anchor(this.#deckSlot);
   }
 
   #anchor(root: THREE.Group) {
@@ -501,6 +515,12 @@ export class BattleTable {
     const scale = this.#point(pileX + pileWidth, pileY, 0.025).x - base.x;
     this.#discardSlot.position.copy(base);
     this.#discardSlot.scale.setScalar(scale);
+    this.#deckSlot.position.copy(this.#point(w - pileX, pileY, 0.025));
+    this.#deckSlot.scale.setScalar(scale);
+    const thickness = Math.min(7, Math.max(1, state.deckCount * 0.22));
+    this.#deckStock.visible = this.#deckBack.visible = state.deckCount > 0;
+    this.#deckStock.scale.z = thickness;
+    this.#deckBack.position.z = 0.018 * thickness + 0.002;
     if (state.discardOpen && state.discard.length) {
       this.#fanDiscard(state.discard);
       return;

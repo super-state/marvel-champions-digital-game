@@ -146,7 +146,7 @@ h1 i {
   pointer-events: none;
   overflow: hidden;
 }
-#discard-label {
+:is(#discard-label, #deck-label) {
   position: absolute;
   top: 0;
   left: 0;
@@ -157,6 +157,8 @@ h1 i {
   color: #b8c1c3;
   font: 11px/1.4 var(--mono);
   white-space: nowrap;
+}
+#discard-label {
   border: 1px solid #637279;
   pointer-events: auto;
 }
@@ -184,7 +186,7 @@ h1 i {
   font-size: 13px;
   color: var(--muted);
 }
-#discard-label b {
+:is(#discard-label, #deck-label) b {
   color: var(--paper);
 }
 .anchor {
@@ -336,14 +338,6 @@ h1 i {
   border-radius: 5% / 3.6%;
   filter: drop-shadow(0 14px 18px #05090b87);
 }
-#decision {
-  position: absolute;
-  inset: 0;
-  overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: #56626a transparent;
-  padding: clamp(18px, 2vw, 32px);
-}
 .eyebrow {
   margin: 0;
   text-transform: uppercase;
@@ -381,7 +375,7 @@ h2 {
   background: #27333a;
 }
 
-#payment {
+:is(#payment, #decision) {
   position: absolute;
   z-index: 1;
   top: clamp(12px, 5%, 40px);
@@ -395,10 +389,18 @@ h2 {
   text-align: center;
   box-shadow: 0 6px 24px #0006;
 }
-#payment-title {
+:is(#payment-title, #decision h2) {
   font-size: clamp(23px, 3vw, 40px);
   margin: 5px 0 11px;
   outline: none;
+}
+#decision {
+  max-height: 53%;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+#decision .choice-help {
+  margin: 0;
 }
 .payment-progress {
   display: flex;
@@ -459,10 +461,10 @@ h2 {
   background: #111b22;
   border-top: 1px solid var(--rule);
 }
-#stage:has(#payment:not([hidden])) + .hand-strip > :not(.payment-actions) {
+#stage:has(#payment:not([hidden]), #decision[data-hand-choice]:not([hidden])) + .hand-strip > :not(.payment-actions) {
   visibility: hidden;
 }
-#stage:has(#payment:not([hidden])) + .hand-strip .payment-actions {
+#stage:has(#payment:not([hidden]), #decision[data-hand-choice]:not([hidden])) + .hand-strip .payment-actions {
   display: flex;
 }
 .payment-actions button {
@@ -474,23 +476,23 @@ h2 {
   border-radius: 5px;
   background: #162128;
 }
-#payment-submit {
+:is(#payment-submit, #hand-discard-confirm) {
   min-width: 142px;
   color: #241c0e;
   border-color: var(--signal);
   background: var(--signal);
 }
-#payment-submit:disabled {
+:is(#payment-submit, #hand-discard-confirm):disabled {
   background: #303b40;
   color: #a7afb0;
   border-color: #4b5659;
   cursor: default;
 }
-#payment-submit:enabled:hover {
+:is(#payment-submit, #hand-discard-confirm):enabled:hover {
   background: #ffda91;
 }
 @media (max-width: 650px) {
-  #payment {
+  :is(#payment, #decision) {
     padding: 8px;
   }
   .payment-actions button {
@@ -561,15 +563,6 @@ h2 {
     height: clamp(160px, 52svh - 130px, 340px);
     max-width: 90%;
   }
-  #decision {
-    position: relative;
-    width: 100%;
-    padding: 16px;
-  }
-  .battle:has(#decision:not([hidden])) #stage {
-    height: clamp(230px, 34svh, 370px);
-    min-height: 230px;
-  }
   h2 {
     margin: 3px 0 9px;
   }
@@ -594,9 +587,6 @@ h2 {
   .payment-actions button {
     min-height: 32px;
     padding-block: 4px;
-  }
-  #decision {
-    padding: 14px;
   }
 }
 @media (max-height: 425px) {

@@ -60,6 +60,7 @@ export interface BattleChoice {
 
 export interface BattleSnapshot {
   hand: BattleCard[];
+  deckCount: number;
   hero: BattleCard;
   villain: BattleCard;
   heroHp: number;
@@ -219,6 +220,7 @@ export class BattleModel {
       heroHp: remainingHitPoints(state, player.identity.instanceId, CORE_DEPS) ?? 0,
       villainHp: remainingHitPoints(state, villain.instanceId, CORE_DEPS) ?? 0,
       hand: player.hand.map((id) => this.#card(id)),
+      deckCount: player.deck.length,
       discard: player.discard.map((id) => this.#card(id)).reverse(),
       inPlay: [...new Set([...player.playArea, ...attached])].map((id) => this.#card(id)),
       payment,
