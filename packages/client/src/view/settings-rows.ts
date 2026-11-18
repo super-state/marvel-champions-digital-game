@@ -196,13 +196,13 @@ export function settingsRowInfoOf(settings: Settings, powerSaving = false): read
     {
       id: "hover-hero",
       title: "Preview hero cards",
-      detail: "Show the hero's rules in Card details when you rest the pointer on the hero.",
+      detail: "Show a larger image beside the table when you hover over a hero.",
       on: settings.hoverHeroCard,
     },
     {
       id: "hover-villain",
       title: "Preview villain cards",
-      detail: "Show the villain's rules in Card details when you rest the pointer on the villain.",
+      detail: "Show a larger image beside the table when you hover over a villain.",
       on: settings.hoverVillainCard,
     },
   ];
@@ -725,7 +725,7 @@ export interface CardHoverRowInfo {
 export function cardHoverRowInfoOf(settings: Settings): CardHoverRowInfo {
   return {
     title: "Card previews and zoom",
-    detail: "Set the size of held zoom and image previews. Off also hides Card details beside the table.",
+    detail: "Set the size of held zoom and image previews. Off also hides the card preview beside the table.",
     options: CARD_HOVER_SCALE_VALUES.map((value) => ({ value, label: CARD_HOVER_SCALE_LABELS[value] })),
     selected: settings.cardHoverScale,
   };
