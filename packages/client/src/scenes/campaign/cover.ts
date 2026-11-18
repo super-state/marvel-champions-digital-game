@@ -5,6 +5,7 @@
  * All status/unlock/pips/labels come from `view/campaign-cover-model.ts`; this scene lays it out and wires taps.
  */
 import Phaser from "phaser";
+import { t } from "../../i18n/translate.js";
 import { campaignDefinitionIn, campaignRecordOf } from "../../campaign/pack-campaigns.js";
 import { CARDS_BY_ID } from "../../content/pool.js";
 import { cardDisplayName } from "../../view/hero-names.js";
@@ -136,7 +137,7 @@ export class CampaignCoverScene extends Phaser.Scene {
     const rect: Rect = { x, y, width: 84, height: 38 };
     const button = new McButton(this, {
       kind: "onInk",
-      label: "◂ Saga",
+      label: t("menu.campaign.campaigns"),
       type: typeRole.backLabel,
       rect,
       onClick: () => this.#back(),
@@ -332,7 +333,7 @@ export class CampaignCoverScene extends Phaser.Scene {
       campaignActionButton(this, {
         kind: "onInk",
         rect: dossierRect,
-        title: "Dossier ▸",
+        title: t("menu.campaign.record"),
         subtitle: model.dossierSubtitle,
         subtitleStyle: "label",
         enabled: model.canOpenDossier,
@@ -372,8 +373,8 @@ export class CampaignCoverScene extends Phaser.Scene {
         campaignActionButton(this, {
           kind: "onInk",
           rect: secondRect,
-          title: "Issues ▸",
-          subtitle: `All ${model.totalIssues} issues · reread`,
+          title: t("menu.campaign.chapters"),
+          subtitle: t("menu.campaign.past", { count: model.totalIssues }),
           subtitleStyle: "label",
           enabled: model.canOpenRun,
           onClick: () => goToScreen(this, SCENES.campaignRun, { runId: this.#runId }),
@@ -429,7 +430,7 @@ export class CampaignCoverScene extends Phaser.Scene {
   #ctaFor(model: CoverModel): { title: string; subtitle?: string; enabled: boolean; onClick: () => void } {
     if (!model.hasRun) {
       return {
-        title: "Sign the roster",
+        title: t("menu.campaign.setup"),
         enabled: true,
         onClick: () => goToCampaignStart(this, model.campaignId),
       };
@@ -440,7 +441,7 @@ export class CampaignCoverScene extends Phaser.Scene {
           ? `${model.nextIssueVillain} · "${model.nextIssueTitle}"`
           : undefined;
       return {
-        title: `Read issue #${model.issueNumber}`,
+        title: t("menu.campaign.mission", { number: model.issueNumber }),
         ...(subtitle !== undefined ? { subtitle } : {}),
         enabled: true,
         onClick: () => goToScreen(this, SCENES.campaignOpener, { runId: this.#runId }),

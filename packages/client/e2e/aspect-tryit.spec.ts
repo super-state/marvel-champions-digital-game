@@ -65,6 +65,7 @@ test("Try it works again after conceding a Try it game", async ({ page }) => {
     () => isSceneUp(page, PAUSE),
     "Menu opens Pause",
   );
+  await clickText(page, "Table tools", { sceneKey: PAUSE });
   // The Pause sheet is still sliding in when its buttons first exist, and a click then is swallowed: tap Concede
   // until the confirmation is really up (a retry is what a player does too), then confirm.
   await pressUntil(

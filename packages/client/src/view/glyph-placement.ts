@@ -15,6 +15,7 @@
  */
 
 import type { GlyphSpec } from "./input-glyph-model.js";
+import { t } from "../i18n/translate.js";
 import { rectsOverlap, type Rect } from "./layout.js";
 
 /** Room kept between a button's left edge and its glyph. */
@@ -190,8 +191,15 @@ export function legendSegments(
   activateText = "Select",
 ): readonly LegendSegment[] {
   return [
-    { id: "activate", text: activateText },
-    { id: "inspect", text: zoom ? "Inspect · hold to zoom" : "Inspect" },
+    { id: "activate", text: activateText === "Inspect" ? t("reader.face") : activateText },
+    ...(activateText === "Inspect" && !zoom
+      ? []
+      : [
+          {
+            id: "inspect" as const,
+            text: t(activateText === "Inspect" ? "reader.zoomOnly" : zoom ? "reader.zoom" : "reader.face"),
+          },
+        ]),
     { id: "cancel", text: cancelMeans === "back" ? "Back" : "Pause" },
   ];
 }

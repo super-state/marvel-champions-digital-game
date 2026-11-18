@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { useEnglish, useSpanish } from "../i18n/test-language.js";
 import type { InputEvent } from "./input-mode.js";
 import { PadModeTracker, padModeFor } from "./pad-filters.js";
-import { FILTERS_BREAKPOINT, filtersBehindButton, filtersLabel } from "./filters-layout.js";
+import { filtersLabel } from "./filters-layout.js";
 import type { PadIdentity } from "./pad-family.js";
 
 const PAD = { id: "Xbox Controller" } as unknown as PadIdentity;
@@ -48,16 +48,6 @@ describe("pad mode", () => {
 });
 
 describe("where the filter chips sit", () => {
-  test("behind the Filters button in pad mode at any width, else below the breakpoint only", () => {
-    expect(filtersBehindButton(1440, true)).toBe(true);
-    expect(filtersBehindButton(1440, false)).toBe(false);
-    expect(filtersBehindButton(999, false)).toBe(true);
-    expect(filtersBehindButton(FILTERS_BREAKPOINT, false)).toBe(false);
-    // The tablet reference viewport (1024) and the Steam Deck (1280) keep their chips without a pad.
-    expect(filtersBehindButton(1024, false)).toBe(false);
-    expect(filtersBehindButton(390, false)).toBe(true);
-  });
-
   test("the button says how many filters are set", () => {
     expect(filtersLabel(0, false)).toBe("Filters ▸");
     expect(filtersLabel(2, false)).toBe("Filters (2) ▸");
@@ -67,9 +57,9 @@ describe("where the filter chips sit", () => {
   describe("in Spanish (#390)", () => {
     afterEach(useEnglish);
 
-    test("stays English unless the screen asks, so Take your seats (not translated yet) keeps Filters", () => {
+    test("the disclosure follows the active language", () => {
       useSpanish();
-      expect(filtersLabel(0, false)).toBe("Filters ▸");
+      expect(filtersLabel(0, false)).toBe("Filtros ▸");
       expect(filtersLabel(2, true, "es")).toBe("Filtros (2) ▾");
     });
   });

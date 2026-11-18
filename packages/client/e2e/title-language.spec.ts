@@ -23,20 +23,20 @@ async function setLanguage(page: Page, lang: "en" | "es"): Promise<void> {
 test("the title menu switches to Spanish and back while it is up", async ({ page }, info) => {
   await openApp(page);
   await settle(page);
-  expect(await shown(page, "Trophy Room")).toBe(true);
+  expect(await shown(page, "Play a campaign")).toBe(true);
 
   await setLanguage(page, "es");
-  await waitFor(async () => ((await shown(page, "Sala de logros")) ? true : null), "the Spanish menu", 15_000);
-  expect(await shown(page, "Trophy Room")).toBe(false);
-  expect(await shown(page, "Nueva partida")).toBe(true);
+  await waitFor(async () => ((await shown(page, "Jugar una campaña")) ? true : null), "the Spanish menu", 15_000);
+  expect(await shown(page, "Play a campaign")).toBe(false);
+  expect(await shown(page, "Jugar una partida")).toBe(true);
   expect(await shown(page, "Novedades ↗")).toBe(true);
   await settle(page);
   await page.screenshot({ path: info.outputPath("title-es.png") });
   if (SHOT) await page.screenshot({ path: `${SHOT}/title-es-${info.project.name}.png` });
 
   await setLanguage(page, "en");
-  await waitFor(async () => ((await shown(page, "Trophy Room")) ? true : null), "the English menu again", 15_000);
-  expect(await shown(page, "Sala de logros")).toBe(false);
+  await waitFor(async () => ((await shown(page, "Play a campaign")) ? true : null), "the English menu again", 15_000);
+  expect(await shown(page, "Jugar una campaña")).toBe(false);
 });
 
 test("a player whose language is Spanish opens the game on a Spanish menu", async ({ page }) => {
@@ -47,6 +47,6 @@ test("a player whose language is Spanish opens the game on a Spanish menu", asyn
   });
   await openApp(page);
   await settle(page);
-  expect(await shown(page, "Nueva partida")).toBe(true);
-  expect(await shown(page, "New game")).toBe(false);
+  expect(await shown(page, "Jugar una partida")).toBe(true);
+  expect(await shown(page, "Play a single game")).toBe(false);
 });

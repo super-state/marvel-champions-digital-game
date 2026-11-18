@@ -108,6 +108,7 @@ test("Skip this step, Escape and Stop tutorial all release the player, and the g
   );
   let scenes = await activeScenes(page);
   expect(scenes, "MENU opens Pause").toContain("PauseOverlay");
+  await clickText(page, "Table tools", { sceneKey: "PauseOverlay" });
   await pressUntil(
     page,
     () => clickText(page, "Stop tutorial", { sceneKey: "PauseOverlay" }),
@@ -116,7 +117,7 @@ test("Skip this step, Escape and Stop tutorial all release the player, and the g
   );
   await pressUntil(
     page,
-    () => clickText(page, "Resume", { sceneKey: "PauseOverlay" }),
+    () => clickText(page, "Return to the table", { sceneKey: "PauseOverlay" }),
     async () => !(await isSceneUp(page, "PauseOverlay")),
     "Resume closes Pause",
   );

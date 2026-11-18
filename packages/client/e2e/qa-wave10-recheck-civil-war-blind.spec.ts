@@ -181,6 +181,7 @@ async function playBlindAndResume(page: Page, size: Size, pauseAfterResume: bool
         8000,
       );
       await settle(page);
+      await clickStop(page, "tools", "PauseOverlay");
       await nothingHiddenNow("Pause");
       expect(await allTexts(page), "Pause carries the hidden words").toMatch(/hidden/);
       if (size.width > 600) {

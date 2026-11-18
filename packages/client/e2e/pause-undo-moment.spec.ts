@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { focusRect, isSceneUp, settle, waitFor } from "./helpers.js";
-import { installWave6Helpers, routeStops } from "./wave6-helpers-a.js";
+import { clickStop, installWave6Helpers, routeStops } from "./wave6-helpers-a.js";
 import { openApp } from "./wave6-helpers-b.js";
 import { SHOT, boardUp, facts, press } from "./x-men-helpers.js";
 
@@ -113,22 +113,7 @@ test("a log moment in Pause rewinds like Undo, and a swipe across one doesn't", 
     20000,
   );
   await settle(page);
-  if (phone) {
-    // The phone shows the log in place of Table once its Game log row is open.
-    await waitFor(
-      async () => {
-        if ((await momentStops(page)).length > 0) return true;
-        const stops = (await routeStops(page, PAUSE))?.stops ?? [];
-        // The row sits under the collapsed Quick reference toggle.
-        const row = stops.find((s) => s.key === "quick:jumpLog") ?? stops.find((s) => s.key === "quick-toggle");
-        if (row) await press(page, true, row.rect.x + row.rect.width / 2, row.rect.y + row.rect.height / 2);
-        await settle(page, { quietMs: 300, maxMs: 2000 });
-        return (await momentStops(page)).length > 0 ? true : null;
-      },
-      "the Game log row shows the log",
-      20000,
-    );
-  }
+  await clickStop(page, "full-game-log", PAUSE);
 
   // The two points Undo could reach: after the first move, and the start of the turn (drawn newest first).
   const moments = await waitFor(

@@ -63,7 +63,7 @@ test(`a Mod Store scenario offers Standard II / III, Expert II and skirmish on S
   }
   await waitForScene(page, "Title");
   await settle(page);
-  await clickText(page, "NEW GAME", { sceneKey: "Title" });
+  await clickText(page, "Play a single game", { sceneKey: "Title" });
   await waitForScene(page, "ScenarioSelect");
   await waitFor(
     async () => (await hasStop(page, `scenario:${SCENARIO}`, "ScenarioSelect")) || null,

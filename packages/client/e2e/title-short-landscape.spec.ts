@@ -67,8 +67,8 @@ test("a Title menu too tall for a landscape phone scrolls; a swipe presses nothi
   // New game scrolled half under the logo's rule: a tap on its hidden half, over the logo, presses nothing.
   const before = await activeScenes(page);
   const newGame = await stopRect(page, "new-game");
-  const decks = await stopRect(page, "decks");
-  await scrollMenu(page, phone, decks, Math.round(newGame.height / 2) + 2);
+  const campaign = await stopRect(page, "campaign");
+  await scrollMenu(page, phone, campaign, Math.round(newGame.height / 2) + 2 + 44);
   const half = await stopRect(page, "new-game");
   expect(half.y, "New game has moved up under the rule").toBeLessThan(newGame.y - 4);
   const hidden = { x: half.x + half.width / 2, y: half.y + 3 };
@@ -77,8 +77,8 @@ test("a Title menu too tall for a landscape phone scrolls; a swipe presses nothi
   await settle(page);
   expect(await activeScenes(page), "a tap on a row's hidden part opens nothing").toEqual(before);
 
-  // A swipe that starts on Decks & Collection and lifts on whatever row slides under the finger.
-  await scrollMenu(page, phone, decks, 120);
+  // A swipe that starts on Play a campaign and lifts on whatever row slides under the finger.
+  await scrollMenu(page, phone, campaign, 120);
   expect(await activeScenes(page), "a swipe over the menu opens nothing").toEqual(before);
 
   // Down to Settings: it comes wholly on screen, and a tap on it opens the overlay.
@@ -86,7 +86,7 @@ test("a Title menu too tall for a landscape phone scrolls; a swipe presses nothi
     const rect = await stopRect(page, "settings");
     if (rect.y + rect.height <= height) break;
     // From the lower part of the menu, which stays on screen however far it has scrolled.
-    await scrollMenu(page, phone, { x: decks.x, y: height - 100, width: decks.width, height: 40 }, 120);
+    await scrollMenu(page, phone, { x: campaign.x, y: height - 100, width: campaign.width, height: 40 }, 120);
   }
   const shown = await stopRect(page, "settings");
   expect(shown.y + shown.height, "Settings scrolls into view").toBeLessThanOrEqual(height);

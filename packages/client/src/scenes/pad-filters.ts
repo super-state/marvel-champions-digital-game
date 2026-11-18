@@ -1,27 +1,19 @@
-/**
- * The filter chips' fold on Scenario select and Take your seats (`view/filters-layout.ts` has the rules): behind a
- * Filters button while a controller is in use or below the width breakpoint, opened and closed with Y (pad) or the
- * button. One per scene.
- */
-
+/** Disclosure state for the scenario and hero rosters. A gamepad can toggle filters with Y. */
 import Phaser from "phaser";
 import { onInputDeviceChange, padInputTracked } from "../platform/input-device.js";
 import { appSession } from "../session.js";
-import { filtersBehindButton } from "../view/filters-layout.js";
 import { padModeFor } from "../view/pad-filters.js";
 
 export class PadFilters {
   #opened = false;
-  #lastBehind: boolean | null = null;
 
-  /** `onChange`: pad mode began or ended, so the scene redraws with or without the chips. */
+  /** Redraw the input hints when the player changes devices. */
   constructor(scene: Phaser.Scene, onChange: () => void) {
     let lastPad = this.padMode;
     const off = onInputDeviceChange(() => {
       const now = this.padMode;
       if (now === lastPad) return;
       lastPad = now;
-      this.#opened = false;
       if (scene.sys.isActive()) onChange();
     });
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, off);
@@ -32,19 +24,9 @@ export class PadFilters {
     return padModeFor(padInputTracked(), appSession().settings.glyphSource);
   }
 
-  /** Whether the chips are behind the Filters button at this game width. Crossing the breakpoint shuts them again. */
-  behindButton(gameWidth: number): boolean {
-    const behind = filtersBehindButton(gameWidth, this.padMode);
-    if (behind !== this.#lastBehind) {
-      this.#lastBehind = behind;
-      this.#opened = false;
-    }
-    return behind;
-  }
-
-  /** Whether the chips are folded away right now: behind the button and not opened. */
-  folded(gameWidth: number): boolean {
-    return this.behindButton(gameWidth) && !this.#opened;
+  /** The roster keeps its reading space on every screen until the player asks to filter it. */
+  get folded(): boolean {
+    return !this.#opened;
   }
 
   /** Opens the chips if folded, folds them if open. */
@@ -59,6 +41,5 @@ export class PadFilters {
   /** Back to folded (a new visit to the screen). */
   reset(): void {
     this.#opened = false;
-    this.#lastBehind = null;
   }
 }

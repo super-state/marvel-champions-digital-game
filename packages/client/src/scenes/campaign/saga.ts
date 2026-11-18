@@ -11,6 +11,7 @@
  * or unlock itself.
  */
 import Phaser from "phaser";
+import { t } from "../../i18n/translate.js";
 import { CAMPAIGN_RECORDS } from "../../campaign/campaign-service.js";
 import { customSagaVolumes, packCampaignEntryOf } from "../../campaign/pack-campaigns.js";
 import { packFileArt } from "../../art/pack-art.js";
@@ -205,10 +206,10 @@ export class CampaignSagaScene extends Phaser.Scene {
     // A phone starts on its rows and an upright tablet on the tiles, until the player chooses.
     this.#volumesView = this.#volumesChosen ?? sagaVolumesView(frame.phone ? "list" : "grid");
     const top = drawTopBar(this, {
-      backLabel: frame.phone ? "◂" : "◂ Title",
+      backLabel: t("menu.home"),
       onBack: () => goToScreen(this, SCENES.title),
       hints: this.#hints,
-      title: "The saga",
+      title: t("menu.campaign.choose"),
       right: `${doneVolumeCount(baseRows)} OF ${baseRows.length} COMPLETE · ${openVolumeCount(baseRows)} OPEN`,
     });
     if (top.backRect) this.#stops.set("back", { rect: top.backRect, activate: () => goToScreen(this, SCENES.title) });
@@ -805,7 +806,7 @@ export class CampaignSagaScene extends Phaser.Scene {
     switch (row.status) {
       case "live":
         return {
-          label: "Continue ▸",
+          label: t("menu.campaign.resume"),
           enabled: row.canResume,
           ...(row.incompatibleReason ? { reason: row.incompatibleReason } : {}),
           onClick: () =>
@@ -813,13 +814,13 @@ export class CampaignSagaScene extends Phaser.Scene {
         };
       case "done":
         return {
-          label: "Reread the run",
+          label: t("menu.campaign.story"),
           enabled: row.hasDefinition,
           onClick: () => goToScreen(this, SCENES.campaignRun, { runId: row.runId }),
         };
       case "fresh":
         return {
-          label: row.volume.custom ? "Start campaign ▸" : `Start vol. ${row.volume.number} ▸`,
+          label: t("menu.campaign.open"),
           enabled: true,
           onClick: () => goToScreen(this, SCENES.campaignCover, { campaignId: row.volume.campaignId }),
         };
@@ -844,12 +845,12 @@ export class CampaignSagaScene extends Phaser.Scene {
       const runId = row.lost.runId;
       return [
         {
-          label: "Dossier",
+          label: t("menu.campaign.record"),
           enabled: row.hasDefinition,
           onClick: () => goToScreen(this, SCENES.campaignDossier, { runId }),
         },
         {
-          label: "Reread the run",
+          label: t("menu.campaign.story"),
           enabled: row.hasDefinition,
           onClick: () => goToScreen(this, SCENES.campaignRun, { runId }),
         },
@@ -858,7 +859,7 @@ export class CampaignSagaScene extends Phaser.Scene {
     if (row.status === "live") {
       return [
         {
-          label: "Dossier",
+          label: t("menu.campaign.record"),
           enabled: row.hasDefinition,
           onClick: () => goToScreen(this, SCENES.campaignDossier, { runId: row.runId }),
         },
@@ -872,14 +873,14 @@ export class CampaignSagaScene extends Phaser.Scene {
     if (row.status === "done") {
       const actions: { label: string; enabled: boolean; onClick: () => void }[] = [
         {
-          label: "New run",
+          label: t("menu.campaign.new"),
           enabled: true,
           onClick: () => goToCampaignStart(this, row.volume.campaignId),
         },
       ];
       if (row.wonStandard) {
         actions.push({
-          label: "Expert run ▸",
+          label: t("menu.campaign.expert"),
           enabled: true,
           onClick: () => goToCampaignStart(this, row.volume.campaignId, true),
         });

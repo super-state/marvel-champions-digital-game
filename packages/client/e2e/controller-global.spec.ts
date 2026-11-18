@@ -128,6 +128,10 @@ async function openTitle(page: Page, path = "/"): Promise<void> {
 
 /** The "Controller connected" toast hides the top-bar buttons for a few seconds: wait for the note's stop to be on the route. */
 async function waitForChrome(page: Page, scene: string): Promise<void> {
+  if (scene === "Title") {
+    const tools = await stopRect(page, scene, "shortcuts");
+    await page.mouse.click(tools.x + tools.width / 2, tools.y + tools.height / 2);
+  }
   await page.waitForFunction(
     (key) =>
       (window as unknown as { __mcFocusRoutes: Record<string, () => { key: string }[]> }).__mcFocusRoutes[key]?.().some(
@@ -170,8 +174,10 @@ test("the music note is reachable by the D-pad from Title, and A opens the playe
   }
   expect(await focusOf()).toBe("new-game");
   // Up from the first button reaches the top row.
+  const section = await stepPad(page, DPAD_UP, "Title");
+  expect(section[0]).toMatch(/^section:/);
   const seen = await stepPad(page, DPAD_UP, "Title");
-  expect(seen[0]).toMatch(/^chrome:/);
+  expect(seen[0]).toMatch(/^chrome:|^shortcuts$/);
   // The keyboard settles on the note, and the pad presses it.
   for (let i = 0; i < 4 && (await focusOf()) !== "chrome:music"; i += 1) {
     await page.keyboard.press("ArrowRight");
@@ -201,9 +207,9 @@ test("the whole top row and the notice bar answer the pad on Title", async ({ pa
     await page.keyboard.press("ArrowDown");
     await page.waitForTimeout(150);
   }
-  for (let i = 0; i < 4 && (await focusOf()) !== "chrome:music"; i += 1) {
-    await page.keyboard.press(i === 0 ? "ArrowUp" : "ArrowRight");
-    await page.waitForTimeout(150);
+  for (let i = 0; i < 32 && (await focusOf()) !== "chrome:music"; i += 1) {
+    await page.keyboard.press("Tab");
+    await page.waitForTimeout(100);
   }
   expect(await focusOf()).toBe("chrome:music");
   // The press glyph hangs under a button only while it has focus.
@@ -276,6 +282,8 @@ test("the theme button is a stop on Title only", async ({ page }) => {
       ),
     );
   expect(await keys()).toEqual(expect.arrayContaining(["chrome:theme", "chrome:language"]));
+  const library = await stopRect(page, "Title", "section:library");
+  await page.mouse.click(library.x + library.width / 2, library.y + library.height / 2);
   const decksButton = await stopRect(page, "Title", "decks");
   await page.mouse.click(decksButton.x + decksButton.width / 2, decksButton.y + decksButton.height / 2);
   await page.waitForFunction(

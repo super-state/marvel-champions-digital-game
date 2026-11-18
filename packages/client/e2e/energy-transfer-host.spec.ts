@@ -118,7 +118,9 @@ test.describe("Energy Transfer asks for its host", () => {
       await tapAt(page, cx, cy);
       await waitFor(async () => ((await activeScenes(page)).includes("InspectOverlay") ? true : null), "Inspect opens");
       await settle(page, { quietMs: 300, maxMs: 1500 });
-      const play = (await visibleTexts(page)).find((t) => t.scene === "InspectOverlay" && /^play( it)?$/i.test(t.text));
+      const play = (await visibleTexts(page)).find(
+        (t) => t.scene === "InspectOverlay" && /^play card(?:\s+\d+)?$/i.test(t.text),
+      );
       expect(play, "Inspect offers Play").toBeDefined();
       await tapAt(page, play!.x, play!.y);
     } else {

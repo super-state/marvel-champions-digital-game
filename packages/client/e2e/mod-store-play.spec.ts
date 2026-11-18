@@ -92,7 +92,7 @@ for (const packId of communityHeroPackIds()) {
     }
     await waitForScene(page, "Title");
     await settle(page);
-    await clickText(page, "NEW GAME", { sceneKey: "Title" });
+    await clickText(page, "Play a single game", { sceneKey: "Title" });
     await waitForScene(page, "ScenarioSelect");
     await waitFor(async () => (await hasStop(page, "next", "ScenarioSelect")) || null, "scenario list", 15_000);
     await clickStop(page, "scenario:rhino", "ScenarioSelect");

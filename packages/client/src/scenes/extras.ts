@@ -17,6 +17,7 @@
  */
 import Phaser from "phaser";
 import { accent, hit, ink, signal, surface, typeRole } from "../tokens.js";
+import { tabCells } from "../view/tab-cells.js";
 import { bangers, campaignFrame, drawPicture, drawTopBar, drawnPictureKey } from "../ui/campaign-chrome.js";
 import { destroyChildren } from "../ui/destroy-children.js";
 import { cssOf, textStyle } from "../ui/theme.js";
@@ -87,6 +88,7 @@ export class ExtrasScene extends Phaser.Scene {
   #hints!: GlyphHints;
   #obstacles: Rect[] = [];
   #redrawQueued = false;
+  #linksOpen = false;
   /**
    * The next draw shows a different tab's shelf: its tiles' labels are painted off the main thread and the shelf
    * fades in once they are, so the tap that changes tab isn't held while some forty labels are painted.
@@ -115,6 +117,7 @@ export class ExtrasScene extends Phaser.Scene {
 
   create(data: ExtrasSceneData = {}): void {
     this.#tab = data.tab ?? this.#tab;
+    this.#linksOpen = false;
     this.#redrawQueued = false;
     this.#alive = true;
     this.#pictures = new PictureWait((key) => isPictureSettled(this, key));
@@ -128,7 +131,7 @@ export class ExtrasScene extends Phaser.Scene {
     this.#hints = new GlyphHints(this, () => this.#obstacles);
     this.#route = new FocusRoute(this, {
       blocked: () => this.scene.isActive(SCENES.extrasViewer),
-      onCancel: () => this.#back(),
+      onCancel: () => (this.#linksOpen ? this.#toggleLinks() : this.#back()),
       // LB / RB (and the zone keys) step the tabs along the top; Page Up / Down still page the shelf.
       onTab: (direction) => this.#stepTab(direction),
       onPage: (direction) => this.#list?.scrollByPage(direction),
@@ -305,6 +308,11 @@ export class ExtrasScene extends Phaser.Scene {
     this.#player = null;
   }
 
+  #toggleLinks(): void {
+    this.#linksOpen = !this.#linksOpen;
+    this.#draw();
+  }
+
   #draw(): void {
     if (!this.#alive) return;
     this.#destroyWidgets();
@@ -319,55 +327,25 @@ export class ExtrasScene extends Phaser.Scene {
 
     this.add.rectangle(0, 0, width, height, surface.paper.hex).setOrigin(0, 0);
     const bar = drawTopBar(this, {
-      backLabel: phone ? "◂" : "◂ TITLE",
+      backLabel: phone ? t("menu.back") : t("menu.home"),
       onBack: () => this.#back(),
-      title: "Extras",
-      right: extrasSummaryOf(current),
+      title: t("menu.extras"),
+      ...(phone ? {} : { right: extrasSummaryOf(current), rightInset: 126 }),
+      reserveRight: 114,
     });
     if (bar.back) this.#buttons.push(bar.back);
     if (bar.backRect) stops.set("back", { rect: bar.backRect, activate: () => this.#back() });
 
-    // The Trophy Room, Art & Credits and Open a replay doors: beside the tabs on a wide screen, on a row of their own
-    // above them on a phone. (The Mod Store moved to the main menu: issue #734.)
-    const doorWidth = 150;
-    // The replay door is narrower than the other two beside the tabs, so the tabs keep their room.
-    const replayDoorWidth = 110;
-    const trophyWidth = doorWidth * 2 + replayDoorWidth + 16;
-    const rowGap = 8;
-    // Three doors beside the tab strip leave it too narrow to print every tab's label whole at some widths (measured, not
-    // guessed): then the doors take rows of their own above it, three across, or two to a row on a phone.
     const tabs = extrasTabsOf(current);
-    const widestTab = Math.max(
-      ...tabs.map((tab) => {
-        const probe = this.add.text(
-          0,
-          0,
-          (phone ? tab.name : tab.label).toUpperCase(),
-          textStyle(typeRole.label, surface.ink.hex),
-        );
-        const w = probe.width;
-        probe.destroy();
-        return w;
-      }),
-    );
-    const besideTabsWidth = width - gutter * 2 - trophyWidth - 12;
-    const stackDoors = phone || besideTabsWidth / tabs.length < widestTab + 24;
-    const perRow = phone ? 2 : 3;
-    const doorW = stackDoors ? (width - gutter * 2 - rowGap * (perRow - 1)) / perRow : doorWidth;
-    const stacked = (index: number): Rect => ({
-      x: gutter + (index % perRow) * (doorW + rowGap),
-      y: bar.height + 10 + Math.floor(index / perRow) * (hit.target + rowGap),
-      width: doorW,
-      height: hit.target,
-    });
-    const trophyRect: Rect = stackDoors
-      ? stacked(0)
-      : { x: width - gutter - doorWidth, y: bar.height + 12, width: doorWidth, height: TAB_HEIGHT };
-    const creditsRect: Rect = stackDoors ? stacked(1) : { ...trophyRect, x: trophyRect.x - doorWidth - rowGap };
-    const replayRect: Rect = stackDoors
-      ? stacked(2)
-      : { ...trophyRect, x: creditsRect.x - replayDoorWidth - rowGap, width: replayDoorWidth };
-    const doorsBottom = Math.max(trophyRect.y + trophyRect.height, replayRect.y + replayRect.height);
+    const columns = width < 640 ? Math.min(3, tabs.length) : tabs.length;
+    const tabRect: Rect = {
+      x: gutter,
+      y: bar.height + 12,
+      width: width - 2 * gutter,
+      height: TAB_HEIGHT * Math.ceil(tabs.length / columns),
+    };
+    const more: Rect = { x: width - gutter - 104, y: (bar.height - hit.target) / 2, width: 104, height: hit.target };
+    const linkY = tabRect.y + tabRect.height + 8;
     const openTrophies = (): void => {
       this.scale.off("resize", this.#draw, this);
       goToScreen(this, SCENES.trophyRoom);
@@ -379,36 +357,41 @@ export class ExtrasScene extends Phaser.Scene {
     const openReplayFile = (): void => void this.#openReplayFile();
     this.#buttons.push(
       new McButton(this, {
-        kind: "secondary",
-        label: phone ? t("extras.trophies") : `${t("title.trophyRoom")} ▸`,
-        type: typeRole.label,
-        rect: trophyRect,
-        onClick: openTrophies,
-      }),
-      new McButton(this, {
-        kind: "secondary",
-        label: "Credits ▸",
-        type: typeRole.label,
-        rect: creditsRect,
-        onClick: openCredits,
-      }),
-      new McButton(this, {
-        kind: "secondary",
-        label: `${t(phone ? "replay.title" : "title.openReplay")} ▸`,
-        type: typeRole.label,
-        rect: replayRect,
-        onClick: openReplayFile,
+        kind: "onInk",
+        type: typeRole.rowTitle,
+        rect: more,
+        label: this.#linksOpen ? t("menu.close") : t("menu.extras.tools"),
+        onClick: () => this.#toggleLinks(),
       }),
     );
-    stops.set("trophies", { rect: trophyRect, activate: openTrophies });
-    stops.set("credits", { rect: creditsRect, activate: openCredits });
-    stops.set("replay", { rect: replayRect, activate: openReplayFile });
-
-    const tabRect: Rect = stackDoors
-      ? { x: gutter, y: doorsBottom + 8, width: width - gutter * 2, height: TAB_HEIGHT }
-      : { x: gutter, y: bar.height + 12, width: width - gutter * 2 - trophyWidth - 12, height: TAB_HEIGHT };
+    stops.set("links", { rect: more, activate: () => this.#toggleLinks() });
+    this.#obstacles.push(more, tabRect);
+    if (this.#linksOpen) {
+      const links = [
+        { id: "trophies", label: t("title.home.achievements"), go: openTrophies },
+        { id: "credits", label: t("menu.extras.credits"), go: openCredits },
+        { id: "replay", label: t("title.openReplay"), go: openReplayFile },
+      ];
+      const w = Math.min(180, (tabRect.width - 16) / 3);
+      links.forEach((link, index) => {
+        const rect = { x: gutter + index * (w + 8), y: linkY, width: w, height: hit.target };
+        this.#buttons.push(
+          new McButton(this, {
+            kind: "secondary",
+            type: typeRole.rowTitle,
+            rect,
+            label: link.label,
+            onClick: link.go,
+            wrap: true,
+          }),
+        );
+        this.#obstacles.push(rect);
+        stops.set(link.id, { rect, activate: link.go });
+      });
+    }
     this.#tabs = new McTabs(this, {
       rect: tabRect,
+      columns,
       tabs: tabs.map((tab) => ({ id: tab.id, label: phone ? tab.name : tab.label })),
       activeId: this.#tab,
       onSelect: (id) => this.#select(id as ExtrasTab),
@@ -420,18 +403,18 @@ export class ExtrasScene extends Phaser.Scene {
       ({ width }) => ({ x: tabRect.x + tabRect.width - width, y: tabRect.y + tabRect.height + 11 }),
       { avoidObstacles: true },
     );
-    this.#obstacles.push(trophyRect, creditsRect, replayRect, tabRect);
+
     if (bar.back) this.#hints.button(bar.back, ["cancel"], "paper");
-    const tabWidth = tabRect.width / tabs.length;
+    const cells = tabCells(tabRect, tabs.length, columns);
     tabs.forEach((tab, index) => {
       stops.set(`tab:${tab.id}`, {
-        rect: { x: tabRect.x + index * tabWidth, y: tabRect.y, width: tabWidth, height: tabRect.height },
+        rect: cells[index]!,
         activate: () => this.#select(tab.id),
       });
     });
 
     // 22px under the strip: room for the LB / RB hint (14px tall) in the gap.
-    let listTop = tabRect.y + tabRect.height + 22;
+    let listTop = (this.#linksOpen ? linkY + hit.target : tabRect.y + tabRect.height) + 22;
     // The Music tab opens on the expanded player: what is playing, how far in, Shuffle and Next.
     const playerStops: string[] = [];
     if (this.#tab === "music") {
@@ -518,9 +501,8 @@ export class ExtrasScene extends Phaser.Scene {
 
     const order = [
       ...(bar.backRect ? ["back"] : []),
-      "trophies",
-      "credits",
-      "replay",
+      "links",
+      ...(this.#linksOpen ? ["trophies", "credits", "replay"] : []),
       ...EXTRAS_TABS.map((tab) => `tab:${tab.id}`),
       ...playerStops,
     ];

@@ -686,3 +686,45 @@ export function pauseLayoutRects(layout: PauseLayout): readonly Rect[] {
     layout.concede,
   ];
 }
+export type PauseHomeId = "resume" | "rules-reference" | "full-game-log" | "tools" | "settings" | "save-quit";
+
+/** Keep the frequent return action and the exit full width. Short or wide devices can pair the four other topics. */
+export function pauseHomeLayout(width: number, height: number) {
+  const inset = width < 480 || height < 450 ? 12 : 24;
+  const sheetWidth = Math.min(720, width - 2 * inset);
+  const columns = sheetWidth >= 610 || (width > height && sheetWidth >= 450) ? 2 : 1;
+  const pad = sheetWidth < 440 || height < 450 ? 12 : 22;
+  const gap = height < 450 ? 4 : 7;
+  const header = height < 450 ? 54 : 78;
+  const count = columns === 2 ? 4 : 6;
+  const room = height - 2 * inset - header - pad - (count - 1) * gap;
+  const rowHeight = Math.max(hit.target, Math.min(68, Math.floor(room / count)));
+  const contentHeight = count * rowHeight + (count - 1) * gap;
+  const sheetHeight = Math.min(header + contentHeight + pad, height - 2 * inset);
+  const sheet: Rect = {
+    x: (width - sheetWidth) / 2,
+    y: (height - sheetHeight) / 2,
+    width: sheetWidth,
+    height: sheetHeight,
+  };
+  const viewport: Rect = {
+    x: sheet.x + pad,
+    y: sheet.y + header,
+    width: sheetWidth - 2 * pad,
+    height: sheetHeight - header - pad,
+  };
+  const ids: readonly PauseHomeId[] = ["resume", "rules-reference", "full-game-log", "tools", "settings", "save-quit"];
+  const entries = ids.map((id, index) => {
+    const paired = columns === 2 && index > 0 && index < ids.length - 1;
+    const row = paired ? 1 + Math.floor((index - 1) / 2) : index === ids.length - 1 ? count - 1 : index;
+    const cellWidth = paired ? (viewport.width - gap) / 2 : viewport.width;
+    const rect: Rect = {
+      x: viewport.x + (paired ? ((index - 1) % 2) * (cellWidth + gap) : 0),
+      y: viewport.y + row * (rowHeight + gap),
+      width: cellWidth,
+      height: rowHeight,
+    };
+    return { id, rect };
+  });
+  return { sheet, viewport, entries, contentHeight };
+}

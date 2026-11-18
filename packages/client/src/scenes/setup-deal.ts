@@ -56,6 +56,8 @@
  */
 
 import Phaser from "phaser";
+import { t } from "../i18n/translate.js";
+import { onLanguageChange } from "../language-change.js";
 import type { InstanceId, PendingChoice } from "@mc/engine";
 import { gameDeps, gameCardsById } from "../content/game-deps.js";
 import { accent, dotGrid, ink, signal, statHue, surface, typeRole, type TypeSpec } from "../tokens.js";
@@ -239,6 +241,12 @@ export class SetupDealScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.events.once(
+      "shutdown",
+      onLanguageChange(() => {
+        if (this.sys.isActive()) this.#draw();
+      }),
+    );
     holdGameArt(this);
     this.#version = -1;
     this.#handedOff = false;
@@ -468,7 +476,7 @@ export class SetupDealScene extends Phaser.Scene {
       .text(
         titleRow.x,
         titleRow.y + titleRow.height / 2,
-        "Setting up the table",
+        t("setup.opening"),
         textStyle(typeRole.screenTitle, surface.paper.hex),
       )
       .setOrigin(0, 0.5);
@@ -490,13 +498,19 @@ export class SetupDealScene extends Phaser.Scene {
   }
 
   /** A Bangers section label with a rule running to the column's own right edge (D06's "YOUR OPENING HAND — …"/"OTHER SEATS"). */
-  #sectionHeader(x: number, y: number, width: number, text: string): void {
+  #sectionHeader(x: number, y: number, width: number, text: string, hint?: string): void {
     const title = this.add.text(x, y, text, textStyle(SECTION_HEADER_TYPE, surface.paper.hex)).setOrigin(0, 0.5);
-    fitText(title, width * 0.7, SECTION_HEADER_TYPE.size);
+    let end = x + width;
+    if (hint) {
+      const note = this.add.text(end, y, hint, textStyle(typeRole.emphasis, surface.paper.hex)).setOrigin(1, 0.5);
+      fitText(note, width * 0.43, typeRole.emphasis.size);
+      end -= note.width + 10;
+    }
+    fitText(title, Math.min(width * 0.7, end - x - 8), SECTION_HEADER_TYPE.size);
     const ruleX = x + title.width + 12;
-    if (ruleX < x + width) {
+    if (ruleX < end) {
       const rule = this.add.graphics();
-      rule.fillStyle(surface.paper.hex, 0.3).fillRect(ruleX, y, x + width - ruleX, 1);
+      rule.fillStyle(surface.paper.hex, 0.3).fillRect(ruleX, y, end - ruleX, 1);
     }
   }
 
@@ -600,7 +614,8 @@ export class SetupDealScene extends Phaser.Scene {
         layout.handLabel.x,
         layout.handLabel.y + layout.handLabel.height / 2,
         layout.handLabel.width,
-        `Your opening hand — ${decider.name}`,
+        t("setup.handOf", { name: decider.name }),
+        t("setup.holdRead"),
       );
       this.#drawOpeningHand(layout.handRow, decider);
       if (withCommit) this.#drawCommit(layout.commitRow, decider, mulliganChoice, layout.formFactor === "phone");
@@ -981,8 +996,9 @@ export class SetupDealScene extends Phaser.Scene {
   /** "Mulligan N" / "Keep all N" — compact controls, not two column-spanning slabs, plus the mulligan rule's own helper text beside them where there's room (D06). Phone (P13) swaps the order: "Keep all" left, "Mulligan" right, since that's what the phone tile itself draws. */
   #drawCommit(rect: Rect, decider: SetupSeatStatus, choice: PendingChoice, phoneOrder: boolean): void {
     const canCommit = canConfirmChoice(choice, this.#selected.length);
-    const mulliganLabel = this.#selected.length > 0 ? `Mulligan ${this.#selected.length}` : "Mulligan";
-    const keepLabel = `Keep all ${decider.handSize}`;
+    const mulliganLabel =
+      this.#selected.length > 0 ? t("setup.replaceCount", { n: this.#selected.length }) : t("setup.replace");
+    const keepLabel = t("setup.keepHand", { n: decider.handSize });
 
     const mulliganWidth = Math.min(200, rect.width * 0.4);
     const keepWidth = Math.min(150, rect.width * 0.32);
@@ -997,7 +1013,7 @@ export class SetupDealScene extends Phaser.Scene {
 
     this.#buttons.push(
       new McButton(this, {
-        kind: "primary",
+        kind: this.#selected.length ? "primary" : "secondary",
         label: mulliganLabel,
         type: typeRole.barTitle,
         rect: mulliganRect,
@@ -1012,7 +1028,7 @@ export class SetupDealScene extends Phaser.Scene {
 
     this.#buttons.push(
       new McButton(this, {
-        kind: "quiet",
+        kind: this.#selected.length ? "secondary" : "primary",
         label: keepLabel,
         type: typeRole.barTitle,
         rect: keepRect,
@@ -1037,7 +1053,7 @@ export class SetupDealScene extends Phaser.Scene {
           .text(
             noteX,
             rect.y + rect.height / 2,
-            "One mulligan per player: discard any number, draw back up, shuffle the discards in.",
+            t("setup.dealHint"),
             textStyle(typeRole.body, surface.paper.hex, ink.secondary),
           )
           .setOrigin(0, 0.5)

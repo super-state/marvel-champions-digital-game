@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import { clickText, pressAt, settle, waitFor } from "./helpers.js";
+import { openHomeDecks, pressAt, settle, waitFor } from "./helpers.js";
 import { installWave6Helpers, routeStops, screens, visibleTexts, waitForScene, type Stop } from "./wave6-helpers-a.js";
 import { hook } from "./wave6-helpers-b.js";
 
@@ -23,7 +23,7 @@ export async function openDecks(page: Page): Promise<void> {
   await page.goto("/?unlock=all");
   await waitForScene(page, "Title", 30000);
   await settle(page);
-  await clickText(page, "Decks", { sceneKey: "Title" });
+  await openHomeDecks(page);
   await waitForScene(page, "Decks", 15000);
   await settle(page);
 }

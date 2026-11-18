@@ -70,8 +70,8 @@ test("Slingshot's hand Action is offered on a tap, pays with another card, and p
     await settle(page, { quietMs: 300, maxMs: 1500 });
     const sheet = await texts(page, "InspectOverlay");
     expect(
-      sheet.some((t) => /^play it$/i.test(t)),
-      "Inspect still offers Play it",
+      sheet.some((t) => /^play card$/i.test(t)),
+      "The reader offers a normal play alongside her ability",
     ).toBe(true);
     const action = (await visibleTexts(page)).find(
       (t) => t.scene === "InspectOverlay" && /slingshot — spend 1 energy/i.test(t.text),

@@ -14,7 +14,8 @@ import { bakedKeyOf, coverFit, ensureBakedPictureLoaded, ensurePictureLoaded, ty
 import { graySlotOf } from "../art/grayscale.js";
 import { currentRenderScale } from "./render-scale.js";
 import { ART_CATALOG } from "../art/scenario-art.js";
-import { accent, border, hit, ink, signal, surface, typeRole, type TypeSpec } from "../tokens.js";
+import { accent, border, hit, ink, signal, surface, tabletop, typeRole, type TypeSpec } from "../tokens.js";
+import { t } from "../i18n/translate.js";
 import { formFactorFor, type FormFactor, type Rect } from "../view/layout.js";
 import { cssOf, fontFamilyOf, textStyle } from "./theme.js";
 import type { GlyphHints } from "./glyph-hints.js";
@@ -92,7 +93,8 @@ const BACK_GLYPH_ROOM = 64;
 export function drawTopBar(scene: Phaser.Scene, options: TopBarOptions): TopBar {
   const frame = campaignFrame(scene);
   const height = frame.topBar;
-  scene.add.rectangle(0, 0, frame.width, height, surface.ink.hex).setOrigin(0, 0);
+  scene.add.rectangle(0, 0, frame.width, height, tabletop.rail).setOrigin(0, 0);
+  scene.add.rectangle(0, height - 2, frame.width, 2, tabletop.brass).setOrigin(0, 0);
   const pad = frame.phone ? 12 : 22;
   let x = pad;
   let back: McButton | null = null;
@@ -101,19 +103,22 @@ export function drawTopBar(scene: Phaser.Scene, options: TopBarOptions): TopBar 
     // With hints the button also holds the Cancel glyph beside its word (B, or Esc as a keycap) inside its own edge,
     // so it never hangs over the button's border; a phone layout carries no glyph.
     const glyphRoom = options.hints && !frame.phone ? BACK_GLYPH_ROOM : 0;
-    const labelWidth = Math.max(
-      frame.phone ? hit.target : 64,
-      estimateBangersWidth(options.backLabel, 22) + 26 + glyphRoom,
-    );
+    const destination = options.backLabel.replace(/^[◂‹←]\s*/, "").trim();
+    const backText = !destination
+      ? t("menu.back")
+      : destination.toLowerCase() === "title"
+        ? t("menu.home")
+        : destination;
+    const labelWidth = Math.max(frame.phone ? hit.target : 64, backText.length * 8 + 24 + glyphRoom);
     backRect = {
       x,
       y: (height - hit.target) / 2,
-      width: frame.phone && options.backLabel.length <= 2 ? hit.target : labelWidth,
+      width: Math.min(labelWidth, frame.width * 0.34),
       height: hit.target,
     };
     back = new McButton(scene, {
       kind: "onInk",
-      label: options.backLabel,
+      label: backText,
       type: typeRole.backLabel,
       rect: backRect,
       onClick: options.onBack,
@@ -136,12 +141,13 @@ export function drawTopBar(scene: Phaser.Scene, options: TopBarOptions): TopBar 
       .text(
         frame.width - pad - (options.rightInset ?? 0),
         height / 2,
-        options.right.toUpperCase(),
+        options.right,
         textStyle(typeRole.label, surface.paper.hex, ink.meta),
       )
       .setOrigin(1, 0.5)
-      .setLetterSpacing(1.1);
-    rightWidth = right.width + 16;
+      .setLetterSpacing(0.35);
+    fitText(right, Math.max(24, (frame.width - x) * 0.42 - (options.rightInset ?? 0)), typeRole.label.size);
+    rightWidth = right.width + 16 + (options.rightInset ?? 0);
   }
   rightWidth = Math.max(rightWidth, options.reserveRight ?? 0);
   const title = scene.add
@@ -590,7 +596,7 @@ export function ruleHeading(
   const heading = scene.add.text(x, y, text.toUpperCase(), textStyle(bangers(size), color));
   const ruleX = x + heading.width + 12;
   if (ruleX < x + width) {
-    scene.add.rectangle(ruleX, y + heading.height / 2, x + width - ruleX, 3, color).setOrigin(0, 0.5);
+    scene.add.rectangle(ruleX, y + heading.height / 2, x + width - ruleX, 1, color, 0.32).setOrigin(0, 0.5);
   }
   return y + heading.height + 12;
 }

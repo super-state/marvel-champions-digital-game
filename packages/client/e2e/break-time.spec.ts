@@ -225,16 +225,10 @@ test("Break Time's Inspect shows 3 per player × 2 players as 6", async ({ page 
   await settle(page, { quietMs: 400, maxMs: 2000 });
   const texts = (await visibleTexts(page)).filter((t) => t.scene === "InspectOverlay").map((t) => t.text.trim());
   const lower = texts.map((t) => t.toLowerCase().replace(/\s+/g, " "));
-  expect(lower, "the badge leads with the scaled price").toContain("6");
-  expect(
-    lower.some((t) => t.includes("3 per player")),
-    "the printed rate",
-  ).toBe(true);
-  expect(lower, "the player count").toContain("× 2 players");
-  expect(
-    lower.some((t) => /^play( it)?$/.test(t)) && lower.filter((t) => t === "6").length >= 2,
-    "Play carries the price",
-  ).toBe(true);
+  expect(lower, "the reader explains the scaled price, rate and player count together").toContain(
+    "6 · 3 per player · × 2 players",
+  );
+  expect(lower, "Play carries the current price").toContain("play card 6");
   if (SHOT) await page.screenshot({ path: `${SHOT}/per-player-cost-${info.project.name}.png` });
 });
 

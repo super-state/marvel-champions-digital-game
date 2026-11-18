@@ -67,7 +67,8 @@ describe("schemeCss", () => {
   test("maps hex and rgba strings, keeping alpha", () => {
     const dark = schemeColor(surface.ink.hex, "text", "dark");
     expect(schemeCss(surface.ink.css, "text", "dark")).toBe(`#${dark.toString(16).padStart(6, "0")}`);
-    expect(schemeCss("rgba(20,17,14,0.5)", "text", "dark")).toBe(
+    const ink = surface.ink.hex;
+    expect(schemeCss(`rgba(${ink >> 16},${(ink >> 8) & 255},${ink & 255},0.5)`, "text", "dark")).toBe(
       `rgba(${(dark >> 16) & 0xff},${(dark >> 8) & 0xff},${dark & 0xff},0.5)`,
     );
     expect(schemeCss("#fff", "fill", "dark")).not.toBe("#fff");

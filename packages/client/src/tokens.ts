@@ -1,19 +1,9 @@
 /**
  * The one place the design system lives, as plain data.
  *
- * Every value is transcribed from `Marvel Champions game screens/Components.dc.html`
- * (the design canvas that is the source of truth for the client's look). Colors
- * are Phaser-style `0xRRGGBB` numbers with a `css` twin for the few DOM-backed
- * bits (rexUI's text input, the page background). Nothing here imports Phaser,
- * so view models and tests can read tokens without a canvas.
- *
- * The design decisions these tokens serve, from section 06 of that canvas:
- *  - One red per screen: `accent.heroRed` marks the single forward action
- *    (Continue / Start game / End turn) plus the live round chip. Nothing else.
- *  - Borders, not shadows: depth is border weight and ground swaps. The only
- *    shadow in the system is the red selection ring.
- *  - Dim, don't hide: illegal choices stay in place at `ink.illegal`.
- *  - Numbers before prose: anything recalculated each round is Bangers 17px+.
+ * Navy navigation and warm paper frame the printed cards. Brass marks a screen's
+ * forward action. Card frames, threats, and status effects retain their printed hues.
+ * Values are shared by Phaser, the reader, DOM inputs, and the color-scheme bridge.
  */
 
 /** A color in both the forms the client needs. */
@@ -27,9 +17,9 @@ const token = (hex: number): Token => ({ hex, css: `#${hex.toString(16).padStart
 /** Section 01 — surfaces. Five grounds; depth comes from swapping between them. */
 export const surface = {
   /** Canvas behind screens. Never inside a screen. */
-  void: token(0x0e0c0a),
+  void: token(0x0b151e),
   /** All text, all borders, chrome bars, action bar. */
-  ink: token(0x14110e),
+  ink: token(0x172b39),
   /** Default screen ground; also the text color on dark grounds. */
   paper: token(0xf4efe3),
   /** Recessed strips: tab rails, seat rows, settings groups. */
@@ -40,7 +30,7 @@ export const surface = {
    * Ink text or an ink icon on a hue (caution yellow, an aspect color): ink to the eye, but one step off `ink` so dark
    * mode (`view/color-scheme.ts`), which turns ink text light, leaves it dark on its bright ground.
    */
-  inkOnHue: token(0x14110f),
+  inkOnHue: token(0x122331),
   /**
    * A bright mark on an ink ground (a bar's track, a scroll thumb, a chart column): paper to the eye, but one step off
    * `paper` so dark mode, which turns paper fills into a charcoal ground, leaves it bright.
@@ -135,9 +125,9 @@ export const statHue = {
  */
 export const ink = {
   body: 1.0,
-  secondary: 0.75,
-  label: 0.6,
-  meta: 0.5,
+  secondary: 0.85,
+  label: 0.77,
+  meta: 0.68,
   disabled: 0.4,
   /** "Dim, don't hide": present but illegal this instant. */
   illegal: 0.38,
@@ -216,7 +206,7 @@ export const typeRole = {
   /** A setup-flow page's own title beside its Back button ("CHOOSE A SCENARIO", "TAKE YOUR SEATS" — D02/D03). */
   pageTitle: display(28, 0.9),
   /** The Back button's own label, smaller than the page title beside it. */
-  backLabel: display(18, 0.9),
+  backLabel: { family: font.body, size: 14, weight: 700, lineHeight: 1.2, letterSpacing: 0, uppercase: false },
   /** A shelf/panel section header ("CORE SET", "SCENARIO STAGES", a stage box's "I · KLAW"). */
   sectionHeader: display(18, 0.9),
   /** A scenario card's own villain-name footer (D02) — the single largest word on the roster. */
@@ -235,14 +225,14 @@ export const typeRole = {
   /** An aspect stamp ("JUSTICE") — on a hero card's art and on the aspect filter chips that match it. */
   stamp: display(15, 0.9, 1.2),
   /** Public Sans 9/800, 1.2px tracking, uppercase. */
-  label: { family: font.body, size: 9, weight: 800, lineHeight: 1.2, letterSpacing: 1.2, uppercase: true },
+  label: { family: font.body, size: 11, weight: 700, lineHeight: 1.2, letterSpacing: 0.5, uppercase: true },
   /** Strong row title, 11/800. */
-  rowTitle: { family: font.body, size: 11, weight: 800, lineHeight: 1.25, letterSpacing: 0, uppercase: false },
+  rowTitle: { family: font.body, size: 14, weight: 700, lineHeight: 1.25, letterSpacing: 0, uppercase: false },
   /** A full-width menu button's label (title screen, game-over side column): a row title sized to read at desk distance. */
   menuButton: { family: font.body, size: 16, weight: 800, lineHeight: 1.25, letterSpacing: 0, uppercase: false },
-  emphasis: { family: font.body, size: 11, weight: 700, lineHeight: 1.4, letterSpacing: 0, uppercase: false },
+  emphasis: { family: font.body, size: 13, weight: 700, lineHeight: 1.4, letterSpacing: 0, uppercase: false },
   /** Rules text, card effects, advisory copy. Two sentences maximum on the table. */
-  body: { family: font.body, size: 11, weight: 400, lineHeight: 1.45, letterSpacing: 0, uppercase: false },
+  body: { family: font.body, size: 14, weight: 400, lineHeight: 1.45, letterSpacing: 0, uppercase: false },
   /** Specs, tokens, version stamps only. */
   mono: { family: font.mono, size: 11, weight: 400, lineHeight: 1.4, letterSpacing: 0, uppercase: false },
 } as const satisfies Record<string, TypeSpec>;

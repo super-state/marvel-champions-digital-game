@@ -79,7 +79,7 @@ describe("controls rows", () => {
 
   it("reads Y as Inspect, hold to zoom, and shows the swap on a Switch layout", () => {
     const xboxRows = padRowsOf("xbox", false);
-    expect(xboxRows.find((r) => r.id === "inspect")!.action).toBe("Inspect · hold to zoom");
+    expect(xboxRows.find((r) => r.id === "inspect")!.action).toBe("Read card · hold to zoom");
     expect(xboxRows.find((r) => r.id === "inspect")!.glyphs[0]).toMatchObject({ label: "Y" });
     // On a Switch with the swap, the confirm meaning sits on the button labelled A.
     expect(padRowsOf("nintendo", true).find((r) => r.id === "activate")!.glyphs[0]).toMatchObject({ label: "A" });

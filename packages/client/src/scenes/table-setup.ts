@@ -36,8 +36,12 @@ import {
   currentDeps,
   currentPool,
 } from "../content/pool.js";
-import { accent, dotGrid, hit, ink, surface, typeRole } from "../tokens.js";
+import { accent, dotGrid, hit, ink, surface, tabletop, typeRole } from "../tokens.js";
 import { cssOf, textStyle } from "../ui/theme.js";
+import { t } from "../i18n/translate.js";
+import { onLanguageChange } from "../language-change.js";
+import { drawSetupHeading } from "../ui/setup-heading.js";
+import { matchReviewLayout } from "../view/match-review-layout.js";
 import { McButton, McTextInput, dashedRect, fitText, label, paintDotGrid, sectionHeader } from "../ui/widgets.js";
 import { McScrollRegion } from "../ui/scroll-region.js";
 import { CARD_BACKS, artFor } from "../art/art-source.js";
@@ -195,6 +199,8 @@ const POOL_SET_NAMES: ReadonlyMap<string, string> = new Map(
 
 export interface TableSetupData {
   readonly draft: SetupDraft;
+  /** Direct links into encounter configuration can open the options editor. */
+  readonly openOptions?: boolean;
 }
 
 interface SeatCell {
@@ -283,6 +289,8 @@ export class TableSetupScene extends Phaser.Scene {
   #draft!: SetupDraft;
   #savedDecks: readonly Deck[] = [];
   #seedText = "";
+  #optionsOpen = false;
+  #reviewScroll = new VariableListScroll();
   #buttons: McButton[] = [];
   #stops = new Map<string, FocusStop>();
   #seedInput: McTextInput | null = null;
@@ -342,9 +350,17 @@ export class TableSetupScene extends Phaser.Scene {
   init(data: TableSetupData): void {
     this.#draft = data.draft;
     this.#seedText = String(data.draft.seed);
+    this.#optionsOpen = data.openOptions ?? false;
+    this.#reviewScroll.reset();
   }
 
   create(): void {
+    this.events.once(
+      "shutdown",
+      onLanguageChange(() => {
+        if (this.sys.isActive()) this.#rebuild();
+      }),
+    );
     rebuildOnPackChange(this, () => this.#rebuild());
     this.cameras.main.setBackgroundColor(cssOf(surface.paper.hex));
     appSession().music?.playTitle();
@@ -385,6 +401,10 @@ export class TableSetupScene extends Phaser.Scene {
         this.scene.isActive(SCENES.setCards) ||
         (this.#seedInput?.focused ?? false),
       onCancel: () => this.#back(),
+      onScroll: (_dx, dy) => this.#compactRegion?.scrollByPx(dy),
+      onPage: (direction) => {
+        if (this.#compactRegion) this.#compactRegion.scrollByPx(direction * this.#compactRegion.rect.height * 0.8);
+      },
       // Hold Y (or E) enlarges the focused set's picture, as the desktop hover does; a tap opens its cards.
       onInspectZoom: (zooming) => this.#setZoom(zooming),
       zoomEnabled: () => cardHoverFactor(appSession().settings.cardHoverScale) !== null,
@@ -414,6 +434,12 @@ export class TableSetupScene extends Phaser.Scene {
 
   #back(): void {
     if (this.#starting || this.#leaving) return;
+    if (this.#optionsOpen) {
+      this.#optionsOpen = false;
+      this.#rebuild();
+      this.#route?.focusKey("options");
+      return;
+    }
     this.#leaving = true;
     this.scale.off("resize", this.#rebuild, this);
     goToScreen(this, SCENES.seats, { draft: this.#draft } satisfies SeatsData);
@@ -459,6 +485,14 @@ export class TableSetupScene extends Phaser.Scene {
     this.#modularRegion?.destroy();
     this.#modularRegion = null;
     this.#modularViewportRect = null;
+    this.#compactRegion?.destroy();
+    this.#compactRegion = null;
+    this.#compactLayout = null;
+    this.#compactViewport = null;
+    if (!this.#optionsOpen) {
+      this.#seedInput?.destroy();
+      this.#seedInput = null;
+    }
     const kept = this.#seedInput ? [this.#seedInput.gameObject] : [];
     for (const node of kept) this.children.remove(node);
     destroyChildren(this);
@@ -581,6 +615,11 @@ export class TableSetupScene extends Phaser.Scene {
     // conservative estimate against roughly a third of the body width (`view/layout.ts`'s own "estimate before a
     // live text object exists" rule; three side-by-side panels at wide, one full-width panel at narrow, so a third
     // of the column is the tighter, safer bound either way).
+    if (!this.#optionsOpen) {
+      this.#drawReview(scenario, deckOptions, players, encounterDeckSize);
+      return;
+    }
+
     const nemesisPanelWidthEstimate = Math.max(160, width / 3.4 - 24);
     const nemesisLines = nemesisStandby
       ? estimateWrappedLines(nemesisStandby.sentence, nemesisPanelWidthEstimate, 5.4) + 1
@@ -629,9 +668,6 @@ export class TableSetupScene extends Phaser.Scene {
       );
       return;
     }
-    this.#compactRegion?.destroy();
-    this.#compactRegion = null;
-    this.#compactViewport = null;
 
     // Ground: paper body (dot grid) under the ink header on wide, where the body is a real paper page beside the
     // ink sidebar; on narrow the whole page is ink (no room for two grounds — `table-setup-layout.ts`'s own doc
@@ -670,7 +706,7 @@ export class TableSetupScene extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: "onInk",
-        label: "◂ Seats",
+        label: t("setup.backReview"),
         type: typeRole.backLabel,
         rect: layout.back,
         onClick: back,
@@ -679,19 +715,7 @@ export class TableSetupScene extends Phaser.Scene {
     );
     this.#hints.button(this.#buttons.at(-1)!, ["cancel"], "ink");
     this.#stops.set("back", { rect: layout.back, activate: back });
-    const titleX = layout.back.x + layout.back.width + 16;
-    const title = this.add
-      .text(titleX, layout.headerBar.height / 2, "Set the table", textStyle(typeRole.pageTitle, surface.paper.hex))
-      .setOrigin(0, 0.5);
-    fitText(title, layout.step.x - titleX - 12, typeRole.pageTitle.size);
-    this.add
-      .text(
-        layout.step.x + layout.step.width,
-        layout.headerBar.height / 2,
-        "STEP 4 OF 4",
-        textStyle(typeRole.label, surface.paper.hex, ink.label),
-      )
-      .setOrigin(1, 0.5);
+    drawSetupHeading(this, layout.back, layout.headerBar, t("setup.options"), 2);
 
     // The body's own text color: ink on the wide layout's paper body, paper on the narrow layout's ink page. The
     // sidebar/"game you'll get" block is always on ink (the sidebar on wide, the same ink page on narrow), so its
@@ -876,7 +900,7 @@ export class TableSetupScene extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: "primary",
-        label: this.#starting ? "Dealing it out…" : "Deal it out",
+        label: t(this.#starting ? "setup.starting" : "setup.start"),
         type: typeRole.barTitle,
         rect: layout.dealItOut,
         enabled: !this.#starting && this.#dealBlocked === null,
@@ -916,6 +940,143 @@ export class TableSetupScene extends Phaser.Scene {
   // above. Every row is drawn at its own real, full height — nothing here trims to fit; `McScrollRegion` makes
   // the difference up by moving the page instead.
   // -----------------------------------------------------------------------------------------------------------
+
+  #drawReview(
+    scenario: Scenario,
+    deckOptions: readonly DeckOption[],
+    players: readonly ReturnType<typeof corePlayerForSeat>[],
+    deckSize: number,
+  ): void {
+    const { width, height } = this.scale.gameSize;
+    const heroes = this.#seatCells(deckOptions);
+    const view = matchReviewLayout(width, height, heroes.length);
+    const { top, readingX, readingWidth, art } = view;
+    this.add.rectangle(0, 0, width, height, surface.paper.hex).setOrigin(0);
+    this.add.rectangle(0, 0, width, view.header.height, tabletop.rail).setOrigin(0);
+    const back = () => this.#back();
+    this.#buttons.push(
+      new McButton(this, {
+        kind: "onInk",
+        rect: view.back,
+        type: typeRole.emphasis,
+        label: t("setup.backHeroes"),
+        onClick: back,
+      }),
+    );
+    this.#stops.set("back", { rect: view.back, activate: back });
+    drawSetupHeading(this, view.back, view.header, t("setup.review"), 2);
+
+    this.#compactRegion = new McScrollRegion(this, {
+      rect: view.viewport,
+      heights: [view.contentHeight],
+      scroll: this.#reviewScroll,
+    });
+    this.#compactViewport = view.viewport;
+    const region = this.#compactRegion;
+    const villain = scenario.villainCardId as string;
+    const unknown = hasRandomChosenVillain(scenario);
+    // A blind encounter uses its back, and a random villain stays hidden until the deal.
+    const concealed = unknown || this.#cwSummary !== null;
+    const artUrl = concealed
+      ? CARD_BACKS.encounter.url
+      : (villainArtFor(ART_CATALOG, scenario.id as string, () => 0)?.url ??
+        artFor(currentCardsById().get(villain), { kind: "villainStage", sideIndex: 0, stageIndex: 0 })?.url);
+    const modes = draftModes(this.#draft);
+    const difficulty = difficultyLabelOf({ difficulty: this.#draft.difficulty, ...(modes ? { modes } : {}) });
+    const error =
+      this.#dealBlocked ??
+      (parseSeed(this.#seedText) === null
+        ? t("setup.seedProblem")
+        : players.length === 0
+          ? t("setup.blockedDeck")
+          : "");
+    this.#captureInto(region.content, () => {
+      this.add.rectangle(art.x, art.y, art.width, art.height, tabletop.plate).setOrigin(0);
+      if (artUrl) this.#thumbs.push({ rect: art, url: artUrl, parent: region.content, alpha: 1, done: false });
+      const titleWidth = view.wide ? readingWidth : art.x - readingX - 10;
+      label(this, readingX, top + 5, t("setup.stageFoe"), typeRole.emphasis, surface.ink.hex, ink.secondary);
+      const foe = scenarioDetailOf(scenario, currentCardsById(), currentEncounterSets()).displayName;
+      const title = this.add.text(readingX, top + 30, foe, textStyle(typeRole.villainTitle, surface.ink.hex));
+      fitText(title, titleWidth, view.wide ? 46 : 30);
+      const infoY = top + (view.wide ? 87 : 116);
+      const fieldWidth = (readingWidth - 12) / 2;
+      const field = (x: number, name: string, value: string) => {
+        const key = label(this, x, infoY, name, typeRole.rowTitle, surface.ink.hex, ink.secondary);
+        fitText(key, fieldWidth, typeRole.rowTitle.size);
+        const line = this.add.text(x, infoY + 22, value, textStyle(typeRole.emphasis, surface.ink.hex));
+        fitText(line, fieldWidth, 16);
+      };
+      field(readingX, t("setup.difficulty"), difficulty ?? "—");
+      field(
+        readingX + fieldWidth + 12,
+        t("setup.encounterDeck"),
+        deckSize > 0 ? t("setup.deckSize", { n: deckSize }) : "—",
+      );
+      const teamY = top + (view.wide ? 160 : 170);
+      label(this, readingX, teamY, t("setup.team"), typeRole.sectionHeader, surface.ink.hex);
+      heroes.forEach((hero, index) => {
+        const rowY = teamY + 30 + view.heroHeight * index;
+        this.add.rectangle(readingX, rowY, readingWidth, view.heroHeight - 4, surface.card.hex).setOrigin(0);
+        const size = view.heroHeight - 12;
+        const identity = hero.identityCardId ? currentCardsById().get(hero.identityCardId) : undefined;
+        drawHeroAvatar(this, { x: readingX + 4, y: rowY + 4, width: size, height: size }, identity, surface.ink.hex);
+        const nameX = readingX + size + 14;
+        const player = label(
+          this,
+          nameX,
+          rowY + 4,
+          hero.selected ? t("setup.firstPlayer") : t("setup.player", { n: index + 1 }),
+          typeRole.rowTitle,
+          surface.ink.hex,
+          ink.secondary,
+        );
+        const name = this.add.text(
+          nameX,
+          player.y + player.height + 2,
+          hero.name,
+          textStyle(typeRole.emphasis, surface.ink.hex),
+        );
+        fitText(name, readingX + readingWidth - nameX - 8, 16);
+      });
+      const statusY = teamY + 42 + heroes.length * view.heroHeight;
+      this.#status = this.add
+        .text(readingX, statusY, error || t("setup.optionsHint"), textStyle(typeRole.body, surface.ink.hex))
+        .setWordWrapWidth(readingWidth - 8);
+    });
+
+    const options = () => {
+      if (this.#starting || this.#leaving) return;
+      this.#optionsOpen = true;
+      this.#rebuild();
+      this.#route?.focusKey(`difficulty:${this.#draft.difficulty}`);
+    };
+    const start = () => {
+      if (!error) void this.#start(players);
+    };
+    this.#buttons.push(
+      new McButton(this, {
+        kind: "secondary",
+        rect: view.options,
+        type: typeRole.emphasis,
+        label: t("setup.options"),
+        onClick: options,
+      }),
+    );
+    this.#stops.set("options", { rect: view.options, activate: options });
+    const action = new McButton(this, {
+      kind: "primary",
+      rect: view.start,
+      type: typeRole.menuButton,
+      label: t(this.#starting ? "setup.starting" : "setup.start"),
+      enabled: !this.#starting && !error,
+      onClick: start,
+    });
+    this.#buttons.push(action);
+    this.#stops.set("deal-it-out", { rect: view.start, activate: start });
+    if (!error) forwardHint(this.#hints, action, "paper");
+    this.#route?.set(["back", "options", "deal-it-out"], this.#stops);
+    this.#fillThumbs();
+  }
 
   #drawCompact(
     width: number,
@@ -1119,19 +1280,7 @@ export class TableSetupScene extends Phaser.Scene {
       }),
     );
     this.#stops.set("back", { rect: layout.back, activate: back });
-    const titleX = layout.back.x + layout.back.width + 12;
-    const title = this.add
-      .text(titleX, layout.headerBar.height / 2, "Set the table", textStyle(typeRole.pageTitle, surface.paper.hex))
-      .setOrigin(0, 0.5);
-    fitText(title, layout.step.x - titleX - 8, typeRole.pageTitle.size);
-    this.add
-      .text(
-        layout.step.x + layout.step.width,
-        layout.headerBar.height / 2,
-        "4/4",
-        textStyle(typeRole.label, surface.paper.hex, ink.label),
-      )
-      .setOrigin(1, 0.5);
+    drawSetupHeading(this, layout.back, layout.headerBar, t("setup.options"), 2);
   }
 
   #drawCompactRow(id: string, rect: Rect, layout: TableSetupCompactLayout, data: CompactRowData): void {
@@ -1746,7 +1895,7 @@ export class TableSetupScene extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: "primary",
-        label: this.#starting ? "Dealing it out…" : "Deal it out",
+        label: t(this.#starting ? "setup.starting" : "setup.start"),
         type: typeRole.barTitle,
         rect: layout.dealItOut,
         enabled: !this.#starting && this.#dealBlocked === null,

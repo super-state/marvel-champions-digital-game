@@ -1,140 +1,56 @@
 /**
- * The Inspect overlay: one card, whole.
- *
- * The table caps rules text at two lines on purpose (Components.dc.html section
- * 06, "numbers before prose"), which only works if the full wording is always
- * one gesture away. This is that gesture's destination, and it runs in parallel
- * over Board so the table stays visible behind the scrim.
- *
- * **Rebuilt to D08/P14 (owner feedback, 2026-09-18): "The inspect screen looks
- * better in the screenshots with more info showing."** Two shapes, chosen by
- * `view/inspect-layout.ts#inspectLayout` (its own doc comment has the D08/T06
- * tablet reasoning):
- *  - **Panels** (every non-phone form factor, tablet included): a paper card
- *    panel — cost chip, Bangers name, type line, the scan, rules text, resource
- *    pips, set/collector footer — beside an ink "Rules & state" panel: "right
- *    now" (the engine's own playable/unplayable sentence, enriched with the
- *    open payment's resources-committed count when one exists for this exact
- *    card), "timing" (ability-header glossary entries — honestly empty for
- *    most cards; see `view/inspect-model.ts#timingEntriesFor`'s own comment
- *    for why), tappable keyword chips (open Rules at that term), "this card,
- *    this game" (the accumulated per-instance history), and PLAY IT / USE AS
- *    RESOURCE.
- *  - **Sheet** (phone only): a bottom sheet over the dimmed board — a grab
- *    handle, a scrolling body (thumbnail, name, type, keyword chips, rules
- *    text, then the same keyword definitions and "this game" history folded
- *    into the same scroll — see the note in `#drawSheetContent`), and a sticky
- *    footer (PLAY N / PAY WITH, then FULL RULES TEXT / CLOSE). "Full rules
- *    text" expands the sheet to the full viewport height.
- *
- * Everything on the card face comes from `@mc/content`; everything on the
- * rules/state side comes from the engine (`legalActions`, the glossary, and
- * the client's own accumulated card-history fold, `view/card-history.ts`,
- * read off the live Board scene). This scene decides nothing — it only asks
- * `view/inspect-model.ts` and draws the answer.
- *
- * Z-ORDER VS. THE PENDING-CHOICE OVERLAY (`scenes/choice.ts`)
- * ---------------------------------------------------------------------------
- * `scenes/villain-phase.ts` calls `this.scene.bringToTop(SCENES.choice)` on
- * every store update while a choice is open, so the sheet the player must
- * *act* on always wins over the walkthrough that only narrates
- * (`villain-phase.ts`'s own doc comment). `bringToTop` doesn't just set a
- * z-index, it splices the scene to the tail of the Scene Manager's render
- * list — a standing position that survives until something moves it again.
- * So the first villain-phase decision of a game leaves `SCENES.choice`
- * sitting above `SCENES.inspect`'s ordinary (registration-order) position for
- * the rest of the session, in or out of the villain phase — the bug where
- * Inspect, opened by right-clicking a card inside an open choice (e.g.
- * Black Panther's discard search), rendered *behind* the choice sheet that
- * launched it.
- *
- * Here the priority is the opposite of the villain-phase/choice one: Inspect
- * was just opened *deliberately* by the player to read the very card the
- * choice is asking about, so it must win. `#rebuild` re-asserts
- * `bringToTop(SCENES.inspect)` every time it runs — i.e. on every store
- * update this scene is subscribed to, the same cadence `villain-phase.ts`
- * uses for its own claim — so whichever of the two fires last for a given
- * tick decides the frame, and `SessionStore.subscribe` notifies listeners in subscription
- * order (a `Set`, iterated in insertion order): Inspect always subscribes
- * *after* Choice/VillainPhase, because it is only ever launched from a click
- * inside one of them, so its claim always runs last and wins. Dismissing
- * Inspect only stops the Inspect scene (`#close`); it never touches Choice,
- * so the choice sheet — never stopped, only briefly drawn-under — is exactly
- * what reappears once Inspect closes.
+ * Read the current wording, examine the scan, or look up a card's live state. All three pages share the same
+ * controls and the same model. Reading a card during a decision leaves that decision open underneath the reader.
  */
-
-import { pickedCardOf } from "../view/payment-model.js";
-import type { PerPlayerCost } from "../view/per-player-cost.js";
 import Phaser from "phaser";
+import type { AnyCard, CardId } from "@mc/content";
 import { cardOf, getInstance, type InstanceId } from "@mc/engine";
-import { cardPlaySectionOf, deckInsightsNow, type CardPlaySection } from "../progression/card-play.js";
-import { POOL_STATS_NAMES } from "../view/player-stats-names.js";
-import type { AnyCard, CardId, ResourceIconType } from "@mc/content";
-import { currentCardsById } from "../content/pool.js";
+import { cardArt } from "../art/card-art.js";
+import type { ArtSource, CardFace } from "../art/art-source.js";
 import { gameDeps } from "../content/game-deps.js";
-import { cardArt, drawArt } from "../art/card-art.js";
-import { cardRadius, fillCard, paintCardStock, strokeCard } from "../ui/card-stock.js";
-import type { CardFace } from "../art/art-source.js";
-import { appSession } from "../session.js";
+import { currentCardsById } from "../content/pool.js";
 import { guidePrefs } from "../guide/guide-store.js";
-import { accent, border, hit, ink, minType, signal, surface, typeRole } from "../tokens.js";
-import { caseOf, cssOf, textStyle } from "../ui/theme.js";
-import { McButton, McScrollPanel, fitText, label, paintDotGrid } from "../ui/widgets.js";
+import { t } from "../i18n/translate.js";
+import { onLanguageChange } from "../language-change.js";
+import { cardPlaySectionOf, deckInsightsNow, type CardPlaySection } from "../progression/card-play.js";
+import { activeReplay } from "../replay/replay-mode.js";
+import { appSession } from "../session.js";
+import { surface, tabletop, typeRole } from "../tokens.js";
+import { drawReadingText, drawReadingDetails, drawReadingScan } from "../ui/card-reader.js";
+import { destroyChildren } from "../ui/destroy-children.js";
+import { GuideStampGlide } from "../ui/guide-glide-run.js";
+import { drawGuideStrip, GUIDE_STRIP_HEIGHT } from "../ui/guide-strip.js";
+import type { GlyphHints } from "../ui/glyph-hints.js";
 import { McScrollRegion } from "../ui/scroll-region.js";
-import { onTap, tapId } from "../ui/tap.js";
-import { estimateWrappedLines, formFactorFor, isTabbed, type Rect } from "../view/layout.js";
-import { pointInRect } from "../view/drag-gesture.js";
-import {
-  SHEET_CONTENT_PAD,
-  thumbSizeFor,
-  stackedScanSize,
-  cardFaceContentHeight,
-  DESKTOP_ART_ASPECT,
-  cardFaceLayout,
-  compactRulesRect,
-  inspectLayout,
-  rulesPanelMode,
-  sheetPlayPayWidths,
-  sheetTextColumn,
-  type CardFaceContent,
-  type InspectLayout,
-} from "../view/inspect-layout.js";
-import type { ArtSource } from "../art/art-source.js";
+import { cssOf, textStyle } from "../ui/theme.js";
 import { OverlayMotion } from "../ui/transitions.js";
+import { McButton, fitText, type McButtonOptions } from "../ui/widgets.js";
+import { faceOf } from "../view/board-model.js";
 import { emptyCardHistoryLog } from "../view/card-history.js";
+import type { ReaderPage } from "../view/card-reading.js";
+import { readingLayout } from "../view/inspect-layout.js";
+import { cardSideToggle, printedIdentitySide, type CardSideToggle } from "../view/card-side-toggle.js";
+import type { GamepadIntent } from "../view/gamepad.js";
+import { legalEntriesOf } from "../view/highlights.js";
 import {
   cardInspectModel,
   referenceInspectModel,
   inspectModel,
-  statLineOf,
-  type CampaignNotice,
   type InspectModel,
   type InspectPayment,
 } from "../view/inspect-model.js";
-import { tuckedSiblings, type CardLink } from "../view/inspect-notes.js";
-import { cardSideToggle, printedIdentitySide, type CardSideToggle } from "../view/card-side-toggle.js";
-import { faceOf } from "../view/board-model.js";
-import { linearIntent, type GamepadIntent } from "../view/gamepad.js";
+import { tuckedSiblings } from "../view/inspect-notes.js";
+import { formFactorFor, isTabbed, type Rect } from "../view/layout.js";
+import { pickedCardOf } from "../view/payment-model.js";
+import { POOL_STATS_NAMES } from "../view/player-stats-names.js";
 import { PressArm } from "../view/press-arm.js";
-import { VariableListScroll } from "../view/variable-list-scroll.js";
-import { bindGamepad, bindKeyboard } from "./board/input.js";
-import type { BoardScene } from "./board.js";
-import type { RulesSceneData } from "./rules.js";
-import { SCENES } from "./keys.js";
-import { destroyChildren } from "../ui/destroy-children.js";
-import type { GlyphHints } from "../ui/glyph-hints.js";
-import { createHints } from "./campaign/pad-hints.js";
-import { inputDevice, onInputDeviceChange } from "../platform/input-device.js";
-import { glyphSetOf } from "../view/input-mode.js";
-import { glyphsForShortcut } from "../view/input-glyph-model.js";
-import { GuideStampGlide } from "../ui/guide-glide-run.js";
-import type { TeamUpNotice } from "../view/team-up-model.js";
-import { drawGuideStrip, GUIDE_STRIP_HEIGHT } from "../ui/guide-strip.js";
 import { tableGame } from "../view/table-game.js";
-import { legalEntriesOf } from "../view/highlights.js";
-
-/** One "Your play" line's height. */
-const YOUR_PLAY_LINE = 18;
+import { VariableListScroll } from "../view/variable-list-scroll.js";
+import type { BoardScene } from "./board.js";
+import { bindGamepad, bindKeyboard } from "./board/input.js";
+import { createHints } from "./campaign/pad-hints.js";
+import { SCENES } from "./keys.js";
+import type { RulesSceneData } from "./rules.js";
 
 /** What the caller hands over when it launches this overlay. */
 export interface InspectData {
@@ -169,110 +85,22 @@ export interface InspectData {
   readonly note?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Panels-mode constants (D08). Shared between the sizing pass (`#rebuild`'s
-// `cardFaceContentHeight`/`#rulesContentHeight` calls, made before either
-// panel's final rect exists) and the actual draw, so the two can never
-// disagree about how tall a panel needs to be.
-// ---------------------------------------------------------------------------
-
-/** Inner padding of the "Spent for good" campaign notice. */
-const CAMPAIGN_NOTICE_PAD = 12;
-
-/** D08's own 14px padding, 16px `gap` on the ink "Rules & state" panel's own flex column. */
-const RULES_PAD = 22;
-const RULES_SECTION_GAP = 16;
-/** "Damage on this card" and its one 16px line ("3/5 damage"). */
-const DAMAGE_SECTION_HEIGHT = 38;
-/** The wave 8 note sections (hit point floor, resource icons, area): one wrapped paragraph per note. */
-const NOTE_FONT = 13;
-const NOTE_LINE_HEIGHT = 18;
-/** The title row plus as many wrapped lines as `inner` pixels hold of 13px bold text (about 7.2px a character). */
-const noteSectionHeight = (inner: number, lines: readonly string[]): number =>
-  16 +
-  lines.reduce((sum, line) => sum + Math.max(1, Math.ceil((line.length * 7.2) / Math.max(60, inner))), 0) *
-    NOTE_LINE_HEIGHT +
-  4;
-/** The notes beside damage and threat that wave 8 adds, each with the title its section carries. */
-function extraNotesOf(model: InspectModel): readonly { readonly title: string; readonly lines: readonly string[] }[] {
-  return [
-    ...(model.hitPointFloorNote ? [{ title: "hit points", lines: [model.hitPointFloorNote] }] : []),
-    ...(model.resourceIconNote ? [{ title: "resource icons", lines: [model.resourceIconNote] }] : []),
-    ...(model.attackBarNote ? [{ title: "attacks", lines: [model.attackBarNote] }] : []),
-    ...(model.reverseNote ? [{ title: "other side", lines: [model.reverseNote] }] : []),
-    ...(model.forcedNote ? [{ title: "forced action", lines: [model.forcedNote] }] : []),
-    ...(model.areaNotes.length > 0 ? [{ title: "where it is", lines: model.areaNotes }] : []),
-  ];
+interface ReaderStop {
+  id: string;
+  rect: Rect;
+  inScroll?: boolean;
+  run(): void;
 }
-/** One outlined chip on the sheet: a keyword or trait that opens its rules, or a card that opens in Inspect. */
-interface ChipItem {
-  readonly text: string;
-  readonly glossaryId?: string | null;
-  readonly onTap?: () => void;
+interface ReaderAction {
+  label: string;
+  run(): void;
+  enabled?: boolean;
+  reason?: string;
+  guide?: boolean;
 }
 
-/** The "cost" section for a per player icon: its label row, then a 52px badge beside the two lines of words. */
-const COST_SECTION_HEIGHT = 16 + 52;
-
-/** The "RULES & STATE" title row, Bangers 24px, plus its own leading room. */
-const RULES_TITLE_HEIGHT = 30;
-/** The card panel's own `padding:14px`/`gap:10px` text block (matches `view/inspect-layout.ts`'s own `TEXT_PAD`/`TEXT_GAP`, duplicated here since that file stays a pure-layout module with no text drawing of its own). */
-const CARD_TEXT_PAD = 14;
-const CARD_TEXT_GAP = 10;
-/** D08's own `line-height:1.6` at 12px for "This card, this game" — the height of one unwrapped history row. */
-const HISTORY_LINE_HEIGHT = 12 * 1.6;
-/** "This card, this game": the round-tag column ("12.04") the wrapped text hangs beside, and the gap between rows. */
-const HISTORY_TAG_WIDTH = 42;
-const HISTORY_ROW_GAP = 4;
-
-/**
- * How many rows `count` chip-shaped labels wrap into at `width`, without a live Phaser text object to measure — the
- * same "conservative width estimate, no canvas" trade `view/layout.ts#estimateWrappedLines` makes, generalized from
- * a wrapped sentence to a wrapped row of chips. Used only by the *sizing* pass (`#rulesContentHeight`); the actual
- * draw (`#drawChips`) measures each chip's real Phaser text width and wraps for real, so this only has to be close,
- * not exact — and errs high (a wider average character) so the sizing pass reserves at least as much room as the
- * real draw is likely to need, not less.
- */
-function estimateChipRows(items: readonly string[], width: number): number {
-  const CHIP_CHAR_WIDTH = 7;
-  const CHIP_PADDING = 16;
-  const CHIP_GAP = 7;
-  let x = 0;
-  let rows = 1;
-  for (const item of items) {
-    const chipWidth = item.length * CHIP_CHAR_WIDTH + CHIP_PADDING;
-    if (x > 0 && x + chipWidth > width) {
-      rows += 1;
-      x = 0;
-    }
-    x += chipWidth + CHIP_GAP;
-  }
-  return rows;
-}
-
-// ---------------------------------------------------------------------------
-// Sheet-mode constants (P14). The whole scrolling body is one `McScrollRegion`
-// (`#drawSheetContent`'s own doc comment), so — unlike the panels-mode block
-// above — nothing here needs a separate sizing pass: every gap below is used
-// exactly once, at draw time, by the section it names.
-// ---------------------------------------------------------------------------
-
-/** P14's own 11px gap between the header row / keywords box / this-game block. */
-const SHEET_ROW_GAP = 11;
-
-/** "energy" → "E", the letter drawn inside a resource pip so its type is never color-only (this design's own rule). */
-function resourcePipGlyph(icon: ResourceIconType): string {
-  switch (icon) {
-    case "physical":
-      return "P";
-    case "mental":
-      return "M";
-    case "energy":
-      return "E";
-    case "wild":
-      return "W";
-  }
-}
+const PAGES: readonly ReaderPage[] = ["text", "scan", "details"];
+const BUTTON_TYPE = { ...typeRole.body, size: 15, weight: 700 } as const;
 
 export class InspectOverlay extends Phaser.Scene {
   #instanceId: InstanceId | null = null;
@@ -280,57 +108,21 @@ export class InspectOverlay extends Phaser.Scene {
   #choice: InspectData["choice"] = undefined;
   #card: InspectData["card"] = undefined;
   #reference: InspectData["reference"] = undefined;
-  #note: string | undefined = undefined;
-  #buttons: McButton[] = [];
-  #scrollPanels: McScrollPanel[] = [];
-  #unsubscribe: (() => void) | null = null;
-  /** Phone only — "Full rules text" grows the sheet to the full viewport (P14's own instruction). Resets on step/reopen. */
-  #expanded = false;
-  /**
-   * Presses of the side toggle since the sheet opened: a main scheme's A/B sides (issue #295), an identity's Hero,
-   * Alter-Ego and extra forms (issue #532). Resets on step/reopen.
-   */
+  #note: string | undefined;
+  #page: ReaderPage = "text";
+  #actionsOpen = false;
   #sideStep = 0;
-  /**
-   * Phone only — the sheet's own scroll position (`ui/scroll-region.ts`'s convention: caller-owned, persisted
-   * across rebuilds so an ordinary store-driven redraw doesn't snap the sheet back to the top). Reset on step/reopen,
-   * same as `#expanded`.
-   */
   #sheetScroll = new VariableListScroll();
-  /** Phone only — destroyed and rebuilt every `#rebuild` (`#drawSheetContent`'s own doc comment on why), same lifecycle `table-setup.ts#compactRegion` already follows for the identical widget. */
   #sheetRegion: McScrollRegion | null = null;
-  /**
-   * Arms a dismiss on this sheet's own down+up (`view/press-arm.ts`), shared
-   * by the scrim and the card panel: the gesture that *opened* the sheet
-   * (a right-click or a hold) began on whatever card was under it, before
-   * this scrim existed, so its matching pointerup never counts as a down
-   * seen here — the sheet would otherwise vanish the instant you let go of
-   * the press that opened it. The sheet's buttons (`McButton`) carry their
-   * own `PressArm` for the identical reason.
-   */
-  #dismissArm = new PressArm();
-  /** The B glyph on the close control and the closing line, while a controller is in use. */
-  #hints!: GlyphHints;
-  /** Whether the last draw worded its close controls for a controller. */
-  #padWording = false;
-  /** What the sheet's primary button does this rebuild — what Enter presses. Null when there is none. */
+  #stops: ReaderStop[] = [];
+  #focus: string | null = null;
+  #ring: Phaser.GameObjects.Graphics | null = null;
   #primaryAction: (() => void) | null = null;
-  /** The panels' own rise-and-fade entrance/exit (`ui/transitions.ts`) — a fresh instance per open, so stepping ◂ ▸ through siblings (an ordinary rebuild, not a reopen) never replays it. */
+  #dismissArm = new PressArm();
   #motion = new OverlayMotion();
-  /**
-   * The card instance the guide wants a `TRY THIS` stamp on (guided mode G7b, `docs/guided-mode.md` §4 "Left for
-   * G7"), set by `BoardGuideMount#draw` via `setGuidePick` — never anything this scene decides for itself, the
-   * same split `scenes/choice.ts#setGuidePick` already draws for the defend sheet. On a tabbed layout a hand tap
-   * opens Inspect before the payment bar, covering the board's own callout/spotlight entirely, so this is the
-   * one place left to show both the stamp (on the Play/Play it button, wherever this card's step wants it tapped
-   * next) and a compact guide strip (`ui/guide-strip.ts`, reused from the villain-phase/defend-sheet overlays).
-   */
+  #hints!: GlyphHints;
   #guidePickInstanceId: InstanceId | null = null;
-  /** This opening's `TRY THIS` stamp, gliding in from the board's highlight (#552). */
   #guideStamp = new GuideStampGlide();
-  /** This rebuild's own Play/Play it button rect, once `#isGuidePick()` stamped it — headless click-through hook
-   * only (`__mcInspectDebug`, below), the same "debug accessor only" role `scenes/board/guide-mount.ts#debugPanelRects`
-   * plays. `null` on a rebuild with no stamp. */
   #lastPlayRect: Rect | null = null;
 
   constructor() {
@@ -371,33 +163,9 @@ export class InspectOverlay extends Phaser.Scene {
     );
   }
 
-  /** The "Your play" section's height in the rules panel. */
-  #yourPlayHeight(): number {
-    return this.#yourPlay ? 16 + this.#yourPlay.lines.length * YOUR_PLAY_LINE : 0;
-  }
-
-  /** Draws "Your play" at `y` in `color`, label left and value right; returns where it ends. */
-  #drawYourPlay(x: number, y: number, width: number, color: number, labelAlpha: number): number {
-    const play = this.#yourPlay;
-    if (!play) return y;
-    label(this, x, y, play.title, typeRole.label, color, labelAlpha);
-    let ty = y + 16;
-    for (const line of play.lines) {
-      const name = this.add.text(x, ty, line.label, textStyle(typeRole.body, color, 0.85)).setFontSize(12);
-      const value = this.add
-        .text(x + width, ty, line.value, textStyle(typeRole.rowTitle, color, 1))
-        .setOrigin(1, 0)
-        .setFontSize(12);
-      fitText(value, Math.max(40, width - name.width - 10), 12);
-      ty += YOUR_PLAY_LINE;
-    }
-    return ty;
-  }
-
   create(data: InspectData): void {
     this.#guideStamp = new GuideStampGlide();
     this.#instanceId = data.instanceId ?? null;
-    // Opened on a card with cards under it (or on one of those): ◂ ▸ step through the host and what is tucked under it.
     const game = tableGame(appSession().store.state.game);
     this.#siblings =
       data.siblings ??
@@ -406,165 +174,167 @@ export class InspectOverlay extends Phaser.Scene {
     this.#card = data.card;
     this.#reference = data.reference;
     this.#note = data.note;
-    this.#expanded = false;
-    this.#sideStep = 0;
-    this.#sheetScroll = new VariableListScroll();
+    this.#resetCard();
     this.#motion = new OverlayMotion();
     this.#hints = createHints(this);
-    // The close wording follows the input in use: a pad press (or a key) redraws the sheet when that changes it.
-    const offInput = onInputDeviceChange(() => {
-      if (this.#padInUse() !== this.#padWording && this.sys.isActive()) this.#rebuild();
-    });
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, offInput);
-
     const { store } = appSession();
-    // Only a card in a game can change underneath the sheet.
-    if (!this.#card && !this.#reference) this.#unsubscribe = store.subscribe(() => this.#rebuild());
-    const onResize = (): void => this.#rebuild();
-    /**
-     * The resize listener MUST be removed on shutdown.
-     *
-     * `this.scale` is the *game's* emitter, not the scene's, so it outlives
-     * every scene and keeps whatever is registered on it. An overlay that is
-     * launched and stopped on every decision therefore added a listener per
-     * open, each closure retaining a dead scene and, through it, the game
-     * state, the view models and the card-art textures — a heap that reached
-     * 3.5 GB in one session. It also crashed: a resize would eventually reach
-     * a torn-down scene and draw into systems that no longer exist.
-     */
-    this.scale.on("resize", onResize, this);
-    // A scan that arrives while the sheet is open should appear in it.
-    const artOff = cardArt(this).onArrived(() => this.#rebuild());
-
-    // The same five intents the Board and the choice sheet speak, so a pad
-    // works here too. Both of those are blocked while this sheet is open.
+    const rebuild = () => this.#rebuild();
+    const offStore = !data.card && !data.reference ? store.subscribe(rebuild) : undefined;
+    const offArt = cardArt(this).onArrived(rebuild);
+    const offLanguage = onLanguageChange(rebuild);
+    this.scale.on("resize", rebuild);
     const binding = {
-      blocked: () => false,
+      blocked: () => this.#motion.leaving,
       onIntent: (intent: GamepadIntent) => this.#onIntent(intent),
-      // The right stick reads long rules text: the phone sheet's one scrolling body, or the card panel's own text when
-      // it overflowed. "View" has no meaning here (a card is already the whole screen), so it is left unhandled.
       onScroll: (_dx: number, dy: number) => {
-        if (this.#motion.leaving) return;
-        if (this.#sheetRegion) this.#sheetRegion.scrollByPx(dy);
-        else for (const panel of this.#scrollPanels) panel.scrollByPx(dy);
+        this.#sheetRegion?.scrollByPx(dy);
+        this.#drawFocus();
       },
     };
     bindKeyboard(this, binding);
     bindGamepad(this, binding);
-
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.scale.off("resize", onResize, this);
-      this.#unsubscribe?.();
-      this.#unsubscribe = null;
-      artOff();
-      // `McScrollRegion` binds its own listeners on `scene.input`/`scene.events` (`ui/scroll-region.ts`'s own doc
-      // comment); `#rebuild` destroys and rebuilds it on every redraw, but nothing else runs after the scene's very
-      // last draw, so the region from that draw is only ever cleaned up here.
+      this.scale.off("resize", rebuild);
+      offArt();
+      offLanguage();
+      offStore?.();
       this.#sheetRegion?.destroy();
       this.#sheetRegion = null;
-      // Clear the headless click-through hook with the scene — otherwise a script that polls `__mcInspectDebug`
-      // after the sheet closes would keep reading the last frame's rects and believe the sheet is still open.
       if (import.meta.env.DEV) delete (window as unknown as { __mcInspectDebug?: unknown }).__mcInspectDebug;
     });
-
-    // Headless click-through hook only (never referenced by product code) — mirrors `scenes/choice.ts`'s own
-    // `__mcChoiceDebug`, so a guided run's paying-for-cards step (guided mode G7b, `docs/guided-mode.md` §4 "Left
-    // for G7") can be driven with a real pointer click on the sheet's own Play button instead of a hardcoded
-    // pixel guess.
     if (import.meta.env.DEV) {
       (window as unknown as { __mcInspectDebug?: unknown }).__mcInspectDebug = {
         playRect: () => this.#lastPlayRect,
         guidePickInstanceId: () => this.#guidePickInstanceId,
         guideStampRect: () => this.#guideStamp.shownRect(this),
+        page: () => this.#page,
+        stops: () => this.#stops.map((s) => [s.id, this.#stopRect(s)]),
       };
     }
-
     this.#loadYourPlay();
     this.#rebuild();
   }
 
-  /** Whether the hints are the controller's right now (the close wording says B, not Esc or click). */
-  #padInUse(): boolean {
-    const settings = appSession().settings;
-    return glyphSetOf(inputDevice(), settings.inputGlyphs, settings.glyphSource) === "pad";
+  #resetCard(): void {
+    this.#actionsOpen = false;
+    this.#page = "text";
+    this.#sideStep = 0;
+    this.#sheetScroll.reset();
+    this.#focus = null;
   }
 
   #close(): void {
     this.#motion.exit(this, () => this.scene.stop());
   }
 
-  /**
-   * ◂ ▸ (and Tab) step through the list the sheet was opened from, Enter or
-   * Space presses the primary button — Select, the first ability, or Play it —
-   * and Escape closes. `inspect` steps the side toggle (a scheme's A/B sides, an identity's forms) when the sheet has
-   * one, and means nothing otherwise: this already is Inspect.
-   */
+  #showPage(page: ReaderPage): void {
+    if (this.#page === page && !this.#actionsOpen) return;
+    this.#actionsOpen = false;
+    this.#page = page;
+    this.#focus = this.#focus ? page : null;
+    this.#sheetScroll.reset();
+    this.#rebuild();
+  }
+
+  #stopRect(stop: ReaderStop): Rect {
+    return stop.inScroll ? { ...stop.rect, y: stop.rect.y - this.#sheetScroll.offsetPx } : stop.rect;
+  }
+
+  #drawFocus(): void {
+    const ring = this.#ring;
+    if (!ring) return;
+    ring.clear();
+    const stop = this.#stops.find((s) => s.id === this.#focus);
+    if (!stop) return;
+    const r = this.#stopRect(stop);
+    const view = this.#sheetRegion?.rect;
+    if (stop.inScroll && view && (r.y < view.y || r.y + r.height > view.y + view.height)) return;
+    ring.lineStyle(3, tabletop.gold).strokeRoundedRect(r.x + 2, r.y + 2, r.width - 4, r.height - 4, 5);
+    ring.lineStyle(1, tabletop.shadow).strokeRoundedRect(r.x + 4, r.y + 4, r.width - 8, r.height - 8, 4);
+  }
+
+  #cycleFocus(step: number): void {
+    const controls = this.#stops;
+    if (!controls.length) return;
+    const at = controls.findIndex((s) => s.id === this.#focus);
+    const target =
+      controls[at < 0 ? (step > 0 ? 0 : controls.length - 1) : (at + step + controls.length) % controls.length]!;
+    this.#focus = target.id;
+    if (target.inScroll && this.#sheetRegion) {
+      const r = this.#stopRect(target),
+        view = this.#sheetRegion.rect;
+      if (r.y < view.y) this.#sheetRegion.scrollByPx(r.y - view.y);
+      else if (r.y + r.height > view.y + view.height)
+        this.#sheetRegion.scrollByPx(r.y + r.height - view.y - view.height);
+    }
+    this.#drawFocus();
+  }
+
   #onIntent(intent: GamepadIntent): void {
-    // The overlay is on its way out — a second Escape, or a stray Enter during the fade, does nothing.
-    if (this.#motion.leaving) return;
-    // Inspect has one control row and the ◂ ▸ card stepper: the arrows step cards, as they always did.
-    switch (linearIntent(intent)) {
+    switch (intent) {
       case "next":
-        this.#step(1);
+      case "down":
+        this.#cycleFocus(1);
         break;
       case "previous":
-        this.#step(-1);
+      case "up":
+        this.#cycleFocus(-1);
         break;
-      case "activate":
-        this.#primaryAction?.();
+      case "left":
+      case "right": {
+        const dir = intent === "right" ? 1 : -1;
+        if (this.#siblings.length > 1) this.#step(dir);
+        else this.#cycleFocus(dir);
         break;
+      }
+      case "pageNext":
+      case "pagePrevious": {
+        const offset = intent === "pageNext" ? 1 : -1;
+        if (this.#sheetRegion) this.#sheetRegion.scrollByPx(offset * this.#sheetRegion.rect.height * 0.8);
+        else this.#cycleFocus(offset);
+        this.#drawFocus();
+        break;
+      }
+      case "home":
+        this.#sheetRegion?.scrollByPx(-1e6);
+        this.#drawFocus();
+        break;
+      case "end":
+        this.#sheetRegion?.scrollByPx(1e6);
+        this.#drawFocus();
+        break;
+      case "activate": {
+        const stop = this.#stops.find((s) => s.id === this.#focus);
+        if (stop) stop.run();
+        else this.#primaryAction?.();
+        break;
+      }
       case "cancel":
         this.#close();
         break;
       case "inspect":
-        if (this.#sideToggle()) this.#stepSide();
+        if (!this.#model()?.hidden && this.#sideToggle()) this.#stepSide();
         break;
       default:
         break;
     }
   }
 
-  /**
-   * The cards attached to this one, and the one it is attached to, as rows of chips that open them: a touch screen has
-   * no ◂ ▸ key, so a tap is how the second attachment on a small tile is reached, and the way back to the host.
-   */
-  #linkRows(model: InspectModel): readonly { readonly heading: string; readonly items: readonly ChipItem[] }[] {
-    const links = model.attached;
-    if (!links) return [];
-    const item = (link: CardLink): ChipItem => ({ text: link.name, onTap: () => this.#openCard(link.instanceId) });
-    return [
-      ...(links.host ? [{ heading: "attached to", items: [item(links.host)] }] : []),
-      ...(links.attachments.length > 0 ? [{ heading: "attached", items: links.attachments.map(item) }] : []),
-    ];
-  }
-
-  /** Opens another card's sheet in place (a link from the host to an attachment, or back), stepping through its group. */
   #openCard(id: InstanceId): void {
     if (id === this.#instanceId) return;
     const game = tableGame(appSession().store.state.game);
     if (!this.#siblings.includes(id) && game) this.#siblings = [...tuckedSiblings(game, id)];
     this.#instanceId = id;
-    this.#expanded = false;
-    this.#sideStep = 0;
-    this.#sheetScroll = new VariableListScroll();
+    this.#resetCard();
     this.#loadYourPlay();
     this.#rebuild();
   }
 
-  /** ◂ ▸ through whatever list the overlay was opened from. */
   #step(direction: number): void {
     if (this.#siblings.length < 2 || !this.#instanceId) return;
-    const at = this.#siblings.indexOf(this.#instanceId);
-    if (at < 0) return;
-    const next = this.#siblings[(at + direction + this.#siblings.length) % this.#siblings.length];
-    if (next) {
-      this.#instanceId = next;
-      this.#expanded = false;
-      this.#sideStep = 0;
-      this.#sheetScroll = new VariableListScroll();
-      this.#loadYourPlay();
-      this.#rebuild();
-    }
+    const idx = this.#siblings.indexOf(this.#instanceId);
+    const next = this.#siblings[(idx + direction + this.#siblings.length) % this.#siblings.length];
+    if (idx >= 0 && next) this.#openCard(next);
   }
 
   /** The live Board scene, when one is running underneath — the source of the card-history fold and the open payment, neither of which lives on the store. */
@@ -590,135 +360,316 @@ export class InspectOverlay extends Phaser.Scene {
     return this.#guidePickInstanceId !== null && this.#instanceId === this.#guidePickInstanceId;
   }
 
+  #button(id: string, opts: McButtonOptions, inScroll = false): McButton {
+    const control = new McButton(this, opts);
+    if (opts.enabled !== false) this.#stops.push({ id, rect: opts.rect, run: opts.onClick, inScroll });
+    return control;
+  }
+
   #rebuild(): void {
-    // The overlay is fading out; its own display list is what's being tweened to alpha 0, so redrawing it now would
-    // both fight the tween and reset every object back to opaque mid-exit.
     if (this.#motion.leaving) return;
     const model = this.#model();
     if (!model) return;
-
-    // See the "Z-ORDER VS. THE PENDING-CHOICE OVERLAY" note at the top of
-    // this file: re-claimed every rebuild so a later villain-phase/choice
-    // claim in the same tick never wins.
+    // While a decision is open the villain sequence re-raises its choice. The deliberately opened reader wins until closed.
     this.scene.bringToTop(SCENES.inspect);
-
-    this.#hints.reset();
-    this.#padWording = this.#padInUse();
-    for (const button of this.#buttons) button.destroy();
-    this.#buttons = [];
-    for (const panel of this.#scrollPanels) panel.destroy();
-    this.#scrollPanels = [];
-    // Must be destroyed *before* `destroyChildren` below, not left for it: `McScrollRegion` binds its own listeners
-    // on `scene.input`/`scene.events` (`ui/scroll-region.ts`'s own doc comment), which `destroyChildren` — a plain
-    // walk over the display list — never touches. Left alive, those listeners would go on firing against a
-    // container `destroyChildren` had already torn down.
     this.#sheetRegion?.destroy();
     this.#sheetRegion = null;
+    this.#hints.reset();
     destroyChildren(this);
-    this.#dismissArm = new PressArm();
+    this.#ring = null;
+    this.#stops = [];
     this.#primaryAction = null;
     this.#lastPlayRect = null;
-
+    this.#dismissArm = new PressArm();
     const { width, height } = this.scale.gameSize;
-    // Guided mode G7b (`docs/guided-mode.md` §4 "Left for G7"): a tabbed hand tap opens Inspect before the target
-    // action happens, covering the board's own callout/spotlight entirely — a compact bottom strip
-    // (`ui/guide-strip.ts`, the same widget the villain-phase walkthrough and defend sheet already reuse for the
-    // identical reason) takes a fixed slice of the height instead, only while this sheet's own subject is the
-    // card the current step is teaching (`#isGuidePick`).
-    const formFactor = formFactorFor(width, height);
     const guideStrip =
-      this.#isGuidePick() && isTabbed(formFactor) ? (this.#boardScene()?.inspectStripContent() ?? null) : null;
-    const stripHeight = guideStrip ? GUIDE_STRIP_HEIGHT : 0;
-    const layoutHeight = height - stripHeight;
-    // Two passes for panels mode: the first learns each panel's own (content-independent) width; the second, after
-    // measuring both panels' natural content height at that width, gets the final centered rect pair
-    // (`view/inspect-layout.ts`'s own header comment on why the pure layout functions can't do this in one call).
-    const inspectCard = appSession().settings.inspectCard;
-    const provisional = inspectLayout(
-      { x: 0, y: 0, width, height: layoutHeight },
-      { expanded: this.#expanded, inspectCard },
+      this.#isGuidePick() && isTabbed(formFactorFor(width, height)) ? this.#boardScene()?.inspectStripContent() : null;
+    const actions = this.#actions(model);
+    if (actions.length < 2) this.#actionsOpen = false;
+    const side = model.hidden ? null : this.#sideToggle();
+    const layout = readingLayout(
+      width,
+      height - (guideStrip ? GUIDE_STRIP_HEIGHT : 0),
+      Boolean(actions.length || side),
     );
-    const layout: InspectLayout =
-      provisional.mode === "panels"
-        ? inspectLayout(
-            { x: 0, y: 0, width, height: layoutHeight },
-            {
-              expanded: this.#expanded,
-              inspectCard,
-              cardContentHeight: cardFaceContentHeight(
-                provisional.card.width,
-                this.#cardFaceContent(model, provisional.card.width),
-              ),
-              rulesContentHeight: this.#rulesContentHeight(provisional.rules.width, model),
-            },
-          )
-        : provisional;
-
-    // The scrim is a dismiss target as well as a scrim: the design says "click
-    // anywhere to dismiss", so the whole backdrop takes the tap. On phone the
-    // backdrop is P14's own dimmed *board* (Board keeps drawing underneath, at
-    // reduced opacity through this scrim) rather than the panels' purpose-built
-    // felt ground, so it reads noticeably lighter there.
-    const scrim = this.add.graphics();
-    scrim.fillStyle(surface.void.hex, layout.mode === "sheet" ? 0.72 : 0.9).fillRect(0, 0, width, height);
-    const dotGrid =
-      layout.mode === "panels"
-        ? paintDotGrid(this, { x: 0, y: 0, width, height }, "ink", { spacing: 8, radius: 1, alpha: 0.13 }).setAlpha(0.7)
-        : null;
-    // Dismiss on a *fresh* press, not on the release of the press that opened
-    // the sheet. Inspect opens on pointerdown (a right-click or a hold), so the
-    // matching pointerup lands on a scrim that did not exist when the gesture
-    // began — which made the sheet vanish the moment you let go.
+    const { frame, header, tabs, footer, body } = layout;
+    const scrim = this.add.graphics().fillStyle(tabletop.shadow, 0.83).fillRect(0, 0, width, height);
     this.add
       .zone(0, 0, width, height)
-      .setOrigin(0, 0)
+      .setOrigin(0)
       .setInteractive()
       .on("pointerdown", () => this.#dismissArm.down())
       .on("pointerup", () => {
         if (this.#dismissArm.up()) this.#close();
       });
+    const from = this.children.list.length;
+    const g = this.add.graphics();
+    g.fillStyle(tabletop.rail).fillRoundedRect(frame.x, frame.y, frame.width, frame.height, layout.compact ? 0 : 10);
+    g.fillStyle(tabletop.brass).fillRect(header.x, header.y, header.width, 3);
+    this.add.zone(frame.x, frame.y, frame.width, frame.height).setOrigin(0).setInteractive();
 
-    if (layout.mode === "panels") {
-      // Everything `#drawPanels` adds from here on is the entrance's "panels" set — the card panel, the rules
-      // panel and the hint row beneath them, whichever objects those end up being (`ui/transitions.ts`'s own
-      // "simplest: pass `children.list.slice(from)`" suggestion).
-      const from = this.children.list.length;
-      this.#drawPanels(layout, model);
-      const panels = this.children.list.slice(from);
-      this.#motion.enter(this, { scrim: [scrim, ...(dotGrid ? [dotGrid] : [])], panels });
+    const pad = layout.compact ? 8 : 15;
+    const right = header.x + header.width - pad;
+    const h = 44,
+      cy = header.y + (header.height - h) / 2;
+    const close = this.#button("close", {
+      kind: "tableAction",
+      label: t("reader.close"),
+      type: BUTTON_TYPE,
+      rect: { x: right - 74, y: cy, width: 74, height: h },
+      onClick: () => this.#close(),
+    });
+    this.#hints.button(close, ["cancel"], "ink", { when: (set) => set === "pad" });
+    const stepping =
+      this.#siblings.length > 1 && this.#instanceId !== null && this.#siblings.includes(this.#instanceId);
+    let titleEnd = close.rect.x - 8;
+    if (stepping) {
+      const at = this.#siblings.indexOf(this.#instanceId!);
+      const count = at + 1 + " / " + this.#siblings.length;
+      const countWidth = layout.compact ? 42 : 55;
+      const navWidth = layout.compact ? h : 124;
+      const navX = titleEnd - navWidth * 2 - countWidth;
+      const stepButton = (id: string, word: string, x: number, dir: number) =>
+        this.#button(id, {
+          kind: "tableAction",
+          label: word,
+          type: { ...BUTTON_TYPE, size: layout.compact ? 22 : 14 },
+          rect: { x, y: cy, width: navWidth, height: h },
+          onClick: () => this.#step(dir),
+        });
+      stepButton("previous", layout.compact ? "‹" : "‹  " + t("reader.previous"), navX, -1);
+      this.add
+        .text(navX + navWidth + countWidth / 2, cy + h / 2, count, textStyle(BUTTON_TYPE, tabletop.lettering))
+        .setOrigin(0.5);
+      stepButton("next", layout.compact ? "›" : t("reader.next") + "  ›", navX + navWidth + countWidth, 1);
+      titleEnd = navX - 6;
+    }
+    const title = this.add
+      .text(header.x + pad + 5, header.y + header.height / 2, t("reader.title"), {
+        ...textStyle(typeRole.barTitle, tabletop.lettering),
+        fontSize: layout.compact ? "24px" : "29px",
+      })
+      .setOrigin(0, 0.5);
+    fitText(title, Math.max(1, titleEnd - title.x), layout.compact ? 24 : 29);
+
+    const pages = model.art ? PAGES : PAGES.filter((page) => page !== "scan");
+    const tabWidth = tabs.width / pages.length;
+    pages.forEach((page, index) => {
+      const box = { x: tabs.x + index * tabWidth, y: tabs.y, width: tabWidth, height: tabs.height };
+      this.#button(page, {
+        kind: "tableAction",
+        label: t(`reader.${page}`),
+        rect: box,
+        type: BUTTON_TYPE,
+        selected: this.#page === page,
+        onClick: () => this.#showPage(page),
+      });
+      if (page === this.#page)
+        this.add
+          .graphics()
+          .fillStyle(tabletop.gold)
+          .fillRect(box.x + 1, box.y + box.height - 4, box.width - 2, 3);
+    });
+
+    const note = this.#note;
+    const now = this.#choice ? "" : this.#rightNowSentence(model);
+    const settings = appSession().settings;
+    const openScan = () => {
+      if (model.art) this.#showPage("scan");
+    };
+    if (this.#actionsOpen && actions.length > 1) {
+      this.#drawActionList(body, actions);
+    } else if (this.#page === "scan") {
+      drawReadingScan(this, model, body);
+    } else if (this.#page === "details") {
+      const attached = model.attached;
+      const links = [
+        ...(attached?.host ? [{ heading: t("reader.attachedTo"), cards: [attached.host] }] : []),
+        ...(attached?.attachments.length ? [{ heading: t("reader.attached"), cards: attached.attachments }] : []),
+      ].map((group) => ({
+        heading: group.heading,
+        links: group.cards.map((c) => ({ label: c.name, run: () => this.#openCard(c.instanceId) })),
+      }));
+      this.#sheetRegion = drawReadingDetails(this, layout, model, this.#sheetScroll, {
+        now: note || now,
+        how: guidePrefs().level === "off" ? null : model.howItWorks,
+        yourPlay: model.hidden ? null : this.#yourPlay,
+        largeText: settings.largeCardText,
+        links,
+        openScan,
+        onScroll: () => this.#drawFocus(),
+        openRules: (id) => this.#openRulesAt(id),
+        registerLink: (rect, run) => this.#stops.push({ id: "link" + this.#stops.length, rect, run, inScroll: true }),
+      });
     } else {
-      // Same "slice off what this draw added" trick as panels mode, just with a bigger rise (P14's own bottom
-      // sheet travels further than a centered panel does) and no dot grid (the sheet's own scrim is the dimmed
-      // board, not the panels' felt ground).
-      const from = this.children.list.length;
-      const contentHeight = this.#drawSheet(layout, model);
-      // The collapsed sheet hugs its content (P14), and the content can only be measured by drawing it: so when the
-      // measured height asks for a different sheet, this pass is thrown away and drawn again at the final size —
-      // within the same frame, so the player never sees the first one.
-      const hugged = inspectLayout(
-        { x: 0, y: 0, width, height: layoutHeight },
-        { expanded: this.#expanded, sheetContentHeight: contentHeight, inspectCard },
-      );
-      if (hugged.mode === "sheet" && hugged.sheet.height !== layout.sheet.height) {
-        // `#drawSheet` assigned the region; the compiler still has it narrowed to the `null` set at the top.
-        (this.#sheetRegion as McScrollRegion | null)?.destroy();
-        this.#sheetRegion = null;
-        for (const object of this.children.list.slice(from)) object.destroy();
-        this.#drawSheet(hugged, model);
-      }
-      const panels = this.children.list.slice(from);
-      this.#motion.enter(this, { scrim: [scrim], panels, rise: 40 });
+      const usefulNow = model.status.playable === false || model.priceNote || model.resourceNote ? now : "";
+      this.#sheetRegion = drawReadingText(this, layout, model, this.#sheetScroll, {
+        largeText: settings.largeCardText,
+        smallScan: settings.inspectCard === "sideBySide",
+        now: usefulNow,
+        note,
+        openScan,
+        onScroll: () => this.#drawFocus(),
+      });
     }
 
-    if (guideStrip) drawGuideStrip(this, { x: 0, y: height - stripHeight, width, height: stripHeight }, guideStrip);
-
+    if (footer.height) {
+      const available = {
+        x: footer.x + pad,
+        y: footer.y + 8,
+        width: footer.width - pad * 2,
+        height: footer.height - 16,
+      };
+      const sideWidth = side && actions.length ? Math.min(170, available.width * 0.37) : side ? available.width : 0;
+      if (side) {
+        const sideBtn = this.#button("flip", {
+          kind: "tableAction",
+          label: side.label,
+          type: BUTTON_TYPE,
+          rect: { ...available, x: available.x + available.width - sideWidth, width: sideWidth },
+          wrap: true,
+          onClick: () => this.#stepSide(),
+        });
+        this.#hints.button(sideBtn, ["inspect"], "ink", { when: (set) => set === "pad" });
+      }
+      if (actions.length) {
+        const row = { ...available, width: available.width - (sideWidth ? sideWidth + 6 : 0) };
+        if (this.#actionsOpen || (actions.length > 1 && row.width / actions.length < 135) || actions.length > 3) {
+          const toggle = () => {
+            this.#actionsOpen = !this.#actionsOpen;
+            this.#focus = null;
+            this.#sheetScroll.reset();
+            this.#rebuild();
+          };
+          this.#button("actions", {
+            kind: "tableCommit",
+            label: t(this.#actionsOpen ? "reader.back" : "reader.actions"),
+            type: BUTTON_TYPE,
+            rect: row,
+            onClick: toggle,
+          });
+          this.#primaryAction = toggle;
+        } else {
+          const buttonWidth = (row.width - (actions.length - 1) * 6) / actions.length;
+          actions.forEach((action, index) =>
+            this.#actionButton(action, index, {
+              ...row,
+              x: row.x + index * (buttonWidth + 6),
+              width: buttonWidth,
+            }),
+          );
+        }
+      }
+    }
+    this.#ring = this.add.graphics();
+    this.#drawFocus();
+    const panels = this.children.list.slice(from);
+    this.#motion.enter(this, { scrim: [scrim], panels });
+    if (guideStrip)
+      drawGuideStrip(this, { x: 0, y: height - GUIDE_STRIP_HEIGHT, width, height: GUIDE_STRIP_HEIGHT }, guideStrip);
     this.cameras.main.setBackgroundColor(cssOf(surface.void.hex, 0));
   }
 
-  /**
-   * The sheet's subject: a card in a game, or a card from the content alone.
-   * Null when there is neither, which is the one case worth drawing nothing for.
-   */
+  #drawActionList(rect: Rect, actions: readonly ReaderAction[]): void {
+    this.add.graphics().fillStyle(surface.paper.hex).fillRect(rect.x, rect.y, rect.width, rect.height);
+    const start = this.children.list.length;
+    const pad = 16,
+      buttonHeight = 48;
+    for (const [i, action] of actions.entries())
+      this.#actionButton(
+        action,
+        i,
+        {
+          x: rect.x + pad,
+          y: rect.y + pad + i * (buttonHeight + 8),
+          width: rect.width - pad * 2,
+          height: buttonHeight,
+        },
+        true,
+      );
+    const items = this.children.list.slice(start);
+    this.#sheetRegion = new McScrollRegion(this, {
+      rect,
+      scroll: this.#sheetScroll,
+      heights: [2 * pad + actions.length * (buttonHeight + 8)],
+      clipInteractive: true,
+    });
+    this.#sheetRegion.content.add(items);
+    this.#sheetRegion.syncInteractivity();
+  }
+
+  #actionButton(action: ReaderAction, index: number, rect: Rect, inScroll = false): void {
+    this.#button(
+      "action" + index,
+      {
+        kind: index === 0 ? "tableCommit" : "tableAction",
+        label: action.label,
+        rect,
+        type: BUTTON_TYPE,
+        wrap: true,
+        onClick: action.run,
+        ...(action.enabled === false ? { enabled: false } : {}),
+        ...(action.reason ? { reason: action.reason } : {}),
+      },
+      inScroll,
+    );
+    if (!this.#primaryAction && action.enabled !== false) this.#primaryAction = action.run;
+    if (action.guide && this.#isGuidePick()) {
+      this.#drawGuideStamp(rect);
+      this.#lastPlayRect = rect;
+    }
+  }
+
+  #actions(model: InspectModel): readonly ReaderAction[] {
+    if (this.#note || activeReplay()) return [];
+    if (this.#choice) {
+      const { optionId, label } = this.#choice;
+      return [
+        {
+          label,
+          run: () => {
+            this.#close();
+            this.game.events.emit("mc-choice-toggle", optionId);
+          },
+        },
+      ];
+    }
+    if (model.hidden || appSession().store.state.peekSeat !== null) return [];
+    if (model.abilities.length) return this.#abilityButtons(model);
+    const id = this.#instanceId;
+    if (!id) return [];
+    const hand = this.#isHandCard();
+    const actions: ReaderAction[] = [];
+    if (model.status.playable === true || (hand && model.status.playable === false)) {
+      const cost = model.currentCost;
+      actions.push({
+        label: cost === null ? t("reader.play") : t("reader.play") + "   " + cost,
+        run: () => {
+          this.#close();
+          this.game.events.emit("mc-play-card", id);
+        },
+        enabled: model.status.playable === true,
+        reason: model.status.message,
+        guide: model.status.playable === true,
+      });
+    }
+    if (hand && model.resourceIcons.length)
+      actions.push({
+        label: t("reader.use"),
+        enabled: model.canPayAsResource,
+        reason: t("reader.unpaid"),
+        run: () => {
+          this.#close();
+          this.#boardScene()?.payWithCard(id);
+        },
+      });
+    return actions;
+  }
+
+  #openRulesAt(id: string): void {
+    this.#close();
+    this.scene.launch(SCENES.rules, { initialTab: "glossary", initialQuery: id } satisfies RulesSceneData);
+  }
   #model(): InspectModel | null {
     if (this.#reference) return referenceInspectModel(this.#reference);
     if (this.#card)
@@ -778,362 +729,11 @@ export class InspectOverlay extends Phaser.Scene {
 
   #stepSide(): void {
     this.#sideStep += 1;
+    this.#sheetScroll.reset();
+    this.#focus = null;
     this.#rebuild();
   }
 
-  // ---------------------------------------------------------------------
-  // Panels mode (D08): desktop and tablet, both orientations.
-  // ---------------------------------------------------------------------
-
-  #drawPanels(layout: Extract<InspectLayout, { mode: "panels" }>, model: InspectModel): void {
-    this.#drawCardPanel(layout.card, model);
-    this.#drawRulesPanel(layout.rules, model);
-    const hintStyle = { ...typeRole.label, size: 11, letterSpacing: 1.6 };
-    const stepper = this.#siblings.length > 1 ? "◂ previous card · next ▸ · " : "";
-    if (this.#padWording) {
-      // A controller closes with B: the glyph stands where "click anywhere" was, after the card stepper's words.
-      const cx = layout.hint.x + layout.hint.width / 2;
-      const cy = layout.hint.y + layout.hint.height / 2;
-      const lead = label(this, cx, cy, stepper, hintStyle, surface.paper.hex, ink.meta).setOrigin(0, 0.5);
-      const word = label(this, cx, cy, "to close", hintStyle, surface.paper.hex, ink.meta).setOrigin(0, 0.5);
-      this.#hints.custom(
-        (set, snapshot) => (set === "pad" ? glyphsForShortcut("cancel", snapshot.state, snapshot.settings) : null),
-        18,
-        ({ full }) => {
-          const total = lead.width + full + 6 + word.width;
-          const x = cx - total / 2;
-          lead.setPosition(x, cy);
-          return { x: x + lead.width, y: cy };
-        },
-        { ground: "ink", word },
-      );
-      return;
-    }
-    const hint =
-      this.#siblings.length > 1 ? "◂ previous card · next ▸ · click anywhere to dismiss" : "click anywhere to dismiss";
-    label(
-      this,
-      layout.hint.x + layout.hint.width / 2,
-      layout.hint.y + layout.hint.height / 2,
-      hint,
-      { ...typeRole.label, size: 11, letterSpacing: 1.6 },
-      surface.paper.hex,
-      ink.meta,
-    ).setOrigin(0.5);
-  }
-
-  /** A hard-offset drop shadow, the one shadow shape D08 draws besides the selection ring — D08's own 14px offset at 0.5 alpha. */
-  #drawShadow(rect: Rect, offset = 14): void {
-    const shadow = this.add.graphics();
-    shadow.fillStyle(0x000000, 0.5).fillRect(rect.x + offset, rect.y + offset, rect.width, rect.height);
-  }
-
-  /**
-   * The card panel's rules-text/printed-text/flavor/pips content, measured once and shared by both the sizing pass
-   * (`#rebuild`'s `cardFaceContentHeight` call, made before this panel's final rect exists) and the actual draw
-   * (`#drawCardPanel`), so the two can never disagree about how tall the panel needs to be.
-   */
-  #cardFaceContent(model: InspectModel, width: number): CardFaceContent {
-    // `largeCardText` (Settings, docs/phase4-screen-gaps.md §3 "W4") is read here rather than app-wide: this
-    // sheet's whole job is reading a card's full text closely, which is exactly the accessibility need that
-    // setting names (`settings.ts`'s own doc comment).
-    const bodySize = appSession().settings.largeCardText ? 17 : 14;
-    const bodyWidth = Math.max(1, width - CARD_TEXT_PAD * 2);
-    // A desktop gets the taller art band (`view/inspect-layout.ts`'s `DESKTOP_ART_ASPECT`): the scan is what the
-    // player opened this to read, and a big monitor has the height for it. Tablets keep D08's band.
-    const { width: viewportWidth, height: viewportHeight } = this.scale.gameSize;
-    const desktop = formFactorFor(viewportWidth, viewportHeight) === "desktop";
-    // A landscape scan (a main scheme) gets a band as tall as the card, not the portrait-friendly desktop band.
-    const key = cardArt(this).request(this, model.art);
-    const scan = key && this.textures.exists(key) ? this.textures.get(key).getSourceImage() : null;
-    const landscape = scan !== null && scan.width > scan.height;
-    return {
-      ...(landscape ? { artAspect: scan.height / scan.width } : desktop ? { artAspect: DESKTOP_ART_ASPECT } : {}),
-      bodySize,
-      rulesTextLines: estimateWrappedLines(model.rulesText, bodyWidth, bodySize * 0.5),
-      // +1 for the block's own "PRINTED TEXT (superseded by errata)" label line.
-      printedTextLines: model.printedText ? estimateWrappedLines(model.printedText, bodyWidth, 11 * 0.5) + 1 : 0,
-      flavorLines: model.flavor ? estimateWrappedLines(model.flavor, bodyWidth, 11 * 0.5) : 0,
-      hasStats: model.stats.length > 0,
-      hasIcons: model.resourceIcons.length > 0,
-    };
-  }
-
-  /** The card face: everything `@mc/content` prints on it. */
-  #drawCardPanel(rect: Rect, model: InspectModel): void {
-    const g = this.add.graphics();
-    fillCard(g, { ...rect, x: rect.x + 5, y: rect.y + 9 }, surface.ink.hex, 0.6);
-    fillCard(g, rect, surface.paper.hex);
-    strokeCard(g, rect, 2, surface.ink.hex);
-    // The card panel carries no controls, so it dismisses like the scrim does.
-    this.add
-      .zone(rect.x, rect.y, rect.width, rect.height)
-      .setOrigin(0, 0)
-      .setInteractive()
-      .on("pointerdown", () => this.#dismissArm.down())
-      .on("pointerup", () => {
-        if (this.#dismissArm.up()) this.#close();
-      });
-
-    const content = this.#cardFaceContent(model, rect.width);
-    const face = cardFaceLayout(rect, content);
-
-    // Header: a full-header-height Hero Red cost block, the name in Bangers (shrinking rather than clipping — a
-    // long name is common on later sets), the type line under it, a full-width rule under the whole header.
-    let nameLeft = rect.x + 14;
-    if (model.cost !== null) {
-      const chip: Rect = { x: rect.x, y: rect.y, width: 62, height: face.header.height };
-      const chipG = this.add.graphics();
-      chipG.fillStyle(accent.heroRed.hex, 1).fillRoundedRect(chip.x, chip.y, chip.width, chip.height, {
-        tl: cardRadius(rect.width, rect.height),
-        tr: 0,
-        br: 0,
-        bl: 0,
-      });
-      // A per player cost: the scaled price leads and "2 PER PLAYER" sits under it (design 08B / L06B).
-      const perPlayer = model.perPlayerCost;
-      this.add
-        .text(chip.x + chip.width / 2, chip.y + (perPlayer ? 20 : chip.height / 2), String(model.cost), {
-          ...textStyle(typeRole.screenTitle, surface.paper.hex),
-          fontSize: perPlayer ? "30px" : "44px",
-        })
-        .setOrigin(0.5);
-      if (perPlayer) {
-        label(
-          this,
-          chip.x + chip.width / 2,
-          chip.y + chip.height - 6,
-          `${perPlayer.rate} per\nplayer`,
-          typeRole.label,
-          surface.paper.hex,
-          1,
-        )
-          .setFontSize(9)
-          .setAlign("center")
-          .setOrigin(0.5, 1);
-      }
-      nameLeft = chip.x + chip.width + 14;
-    }
-    const nameWidth = Math.max(10, rect.x + rect.width - 14 - nameLeft);
-    const name = this.add
-      .text(nameLeft, rect.y + 10, model.name, { ...textStyle(typeRole.barTitle, surface.ink.hex), fontSize: "36px" })
-      .setLetterSpacing(0.5);
-    fitText(name, nameWidth, 36);
-    label(
-      this,
-      nameLeft,
-      rect.y + 10 + name.height + 2,
-      model.typeLine,
-      typeRole.label,
-      surface.ink.hex,
-      ink.label,
-    ).setWordWrapWidth(nameWidth);
-    this.#fillRule(face.headerRule);
-
-    if (face.art) {
-      const frame = this.add.graphics();
-      frame.fillStyle(surface.parchment.hex, 1).fillRect(face.art.x, face.art.y, face.art.width, face.art.height);
-      const key = cardArt(this).request(this, model.art);
-      if (!drawArt(this, key, face.art)) {
-        label(
-          this,
-          face.art.x + face.art.width / 2,
-          face.art.y + face.art.height / 2,
-          model.hidden ? "facedown" : "no scan",
-          typeRole.label,
-          surface.ink.hex,
-          ink.meta,
-        ).setOrigin(0.5);
-      }
-      if (face.artRule) this.#fillRule(face.artRule);
-    }
-
-    if (face.stats && model.stats.length > 0) {
-      this.add
-        .text(face.stats.x, face.stats.y, statLineOf(model.stats), textStyle(typeRole.stat, surface.ink.hex))
-        .setLetterSpacing(1);
-    }
-
-    this.#drawCardTextBlock(face.scroll, model, content);
-
-    this.#fillRule(face.footerRule);
-    label(this, rect.x + 14, face.footer.y + 9, model.footerLeft, typeRole.label, surface.ink.hex, ink.label);
-    label(
-      this,
-      rect.x + rect.width - 14,
-      face.footer.y + 9,
-      model.footerRight,
-      typeRole.label,
-      surface.ink.hex,
-      ink.label,
-    ).setOrigin(1, 0);
-  }
-
-  /**
-   * The rules-text/printed-text/flavor/resource-pips block — D08's own `padding:14px`/`gap:10px` column. Plain
-   * stacked text (and pip graphics) when the measured content fits `outer` — D08 draws no scrollbar on an
-   * ordinary card — or a `McScrollPanel` filling `outer` verbatim when it wouldn't ("only fall back to a scroll
-   * panel when the measured text would not fit the maximum panel height").
-   */
-  #drawCardTextBlock(outer: Rect, model: InspectModel, content: CardFaceContent): void {
-    if (outer.height <= 0) return;
-    const inner: Rect = {
-      x: outer.x + CARD_TEXT_PAD,
-      y: outer.y + CARD_TEXT_PAD,
-      width: Math.max(0, outer.width - CARD_TEXT_PAD * 2),
-      height: Math.max(0, outer.height - CARD_TEXT_PAD * 2),
-    };
-    const needed =
-      content.rulesTextLines * content.bodySize * 1.45 +
-      (content.printedTextLines > 0 ? CARD_TEXT_GAP + content.printedTextLines * 11 * 1.45 : 0) +
-      (content.flavorLines > 0 ? CARD_TEXT_GAP + content.flavorLines * 11 * 1.4 : 0) +
-      (content.hasIcons ? CARD_TEXT_GAP + 26 : 0);
-
-    // A 1px tolerance: the ordinary case is `needed` landing *exactly* at `inner.height` (the panel was sized to
-    // this content in the first place, via `cardFaceContentHeight`'s own copy of this same arithmetic), and a bare
-    // `>` flips into the scroll fallback on nothing but float noise between the two independently-summed totals —
-    // found reading a tablet-portrait screenshot during D08 verification, 2026-09-21: an ordinary short Interrupt
-    // card scrolling for no visible reason, `needed` and `inner.height` differing by 6e-14px.
-    if (needed > inner.height + 1) {
-      let text = model.rulesText;
-      if (model.printedText) text += `\n\nPRINTED TEXT (superseded by errata)\n${model.printedText}`;
-      if (model.flavor) text += `\n\n${model.flavor}`;
-      if (model.resourceIcons.length > 0) text += `\n\n${this.#resourcePipLabel(model)}`;
-      const panel = new McScrollPanel(this, { rect: outer, text, type: { ...typeRole.body, size: content.bodySize } });
-      this.#scrollPanels.push(panel);
-      return;
-    }
-
-    let y = inner.y;
-    const rules = this.add
-      .text(inner.x, y, model.rulesText, {
-        ...textStyle(typeRole.body, surface.ink.hex),
-        fontSize: `${content.bodySize}px`,
-      })
-      .setWordWrapWidth(inner.width);
-    y += rules.height + CARD_TEXT_GAP;
-
-    if (model.printedText) {
-      label(this, inner.x, y, "printed text (superseded by errata)", typeRole.label, surface.ink.hex, ink.meta);
-      y += 14;
-      const printed = this.add
-        .text(inner.x, y, model.printedText, textStyle(typeRole.body, surface.ink.hex, ink.secondary))
-        .setFontSize(11)
-        .setWordWrapWidth(inner.width);
-      y += printed.height + CARD_TEXT_GAP;
-    }
-
-    if (model.flavor) {
-      const flavor = this.add
-        .text(inner.x, y, model.flavor, {
-          ...textStyle(typeRole.body, surface.ink.hex, 0.65),
-          fontSize: "11px",
-          fontStyle: "italic",
-        })
-        .setWordWrapWidth(inner.width);
-      y += flavor.height + CARD_TEXT_GAP;
-    }
-
-    if (model.resourceIcons.length > 0) {
-      model.resourceIcons.forEach((icon, index) => {
-        const box: Rect = { x: inner.x + index * 24, y, width: 18, height: 18 };
-        const pip = this.add.graphics();
-        pip.fillStyle(accent.heroRed.hex, 1).fillRect(box.x, box.y, box.width, box.height);
-        this.add
-          .text(box.x + box.width / 2, box.y + box.height / 2, resourcePipGlyph(icon), {
-            ...textStyle(typeRole.label, surface.paper.hex),
-            fontSize: "10px",
-          })
-          .setOrigin(0.5);
-      });
-      label(
-        this,
-        inner.x + model.resourceIcons.length * 24 + 4,
-        y + 4,
-        this.#resourcePipLabel(model),
-        typeRole.label,
-        surface.ink.hex,
-        ink.label,
-      );
-    }
-  }
-
-  /** "Generates 2 energy when spent" — the resource pips grouped by type, so two energy pips read as "2 energy" rather than "energy, energy". */
-  #resourcePipLabel(model: InspectModel): string {
-    const counts = new Map<ResourceIconType, number>();
-    for (const icon of model.resourceIcons) counts.set(icon, (counts.get(icon) ?? 0) + 1);
-    const parts = [...counts.entries()].map(([type, count]) => `${count} ${type}`);
-    return `generates ${parts.join(", ")} when spent`;
-  }
-
-  #fillRule(rect: Rect): void {
-    const g = this.add.graphics();
-    g.fillStyle(surface.ink.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
-  }
-
-  /**
-   * The ink "Rules & state" panel's own natural (unclamped) content height at `width` — what `#rebuild` measures
-   * (before this panel's final rect exists) and hands to `inspectLayout` as `rulesContentHeight`. Mirrors
-   * `#drawRulesPanel`'s own section order and spacing exactly (`RULES_PAD`/`RULES_SECTION_GAP`/`RULES_TITLE_HEIGHT`
-   * are the same module constants both use), so the two can never disagree about how tall the panel needs to be.
-   */
-  #rulesContentHeight(width: number, model: InspectModel): number {
-    const inner = Math.max(1, width - RULES_PAD * 2);
-    const blocks = [RULES_TITLE_HEIGHT, ...this.#rulesSectionHeights(inner, model)];
-    // History assumes its full, untruncated height here (the natural/unclamped case); if the pair ends up clamped
-    // smaller than that, `#drawHistory` truncates to whatever room is actually left at draw time instead of
-    // reopening this circular "height depends on height" problem.
-    if (model.history.length > 0) {
-      const descWidth = Math.max(1, inner - HISTORY_TAG_WIDTH);
-      const rows = model.history.reduce(
-        (sum, line) => sum + estimateWrappedLines(line.text, descWidth, 12 * 0.5) * 15 + 2 + HISTORY_ROW_GAP,
-        0,
-      );
-      blocks.push(16 + rows);
-    }
-    blocks.push(hit.primary);
-    return RULES_PAD * 2 + blocks.reduce((sum, block) => sum + block, 0) + RULES_SECTION_GAP * (blocks.length - 1);
-  }
-
-  /** "Right now" / "Timing" / "Keywords on this card" / "Traits", whichever apply, in D08's own order. */
-  #rulesSectionHeights(inner: number, model: InspectModel): number[] {
-    const heights: number[] = [];
-    if (this.#sideToggle()) heights.push(hit.target);
-    if (model.teamUpNotice) heights.push(this.#teamUpNoticeHeight(inner, model.teamUpNotice));
-    if (model.campaignNotice) heights.push(this.#campaignNoticeHeight(inner, model.campaignNotice));
-    if ((model.status.message || model.priceNote || model.resourceNote) && !this.#choice)
-      heights.push(this.#rightNowHeight(inner, model));
-    if (model.perPlayerCost) heights.push(COST_SECTION_HEIGHT);
-    if (this.#howItWorks(model)) heights.push(this.#howItWorksHeight(inner, model));
-    if (model.timing.length > 0) heights.push(this.#timingHeight(inner, model));
-    if (model.damageNote) heights.push(DAMAGE_SECTION_HEIGHT);
-    if (model.threatNote) heights.push(DAMAGE_SECTION_HEIGHT);
-    if (model.counterNote) heights.push(DAMAGE_SECTION_HEIGHT);
-    for (const note of extraNotesOf(model)) heights.push(noteSectionHeight(inner, note.lines));
-    for (const row of this.#linkRows(model))
-      heights.push(
-        16 +
-          estimateChipRows(
-            row.items.map((item) => item.text),
-            inner,
-          ) *
-            28,
-      );
-    if (model.keywordChips.length > 0)
-      heights.push(
-        16 +
-          estimateChipRows(
-            model.keywordChips.map((chip) => chip.text),
-            inner,
-          ) *
-            28,
-      );
-    if (model.traits.length > 0) heights.push(16 + estimateChipRows(model.traits, inner) * 28);
-    if (this.#yourPlay) heights.push(this.#yourPlayHeight());
-    return heights;
-  }
-
-  /** "Playable. Cost 3 — you have 2 resources committed, 1 short. Legal targets: …" — the engine's own sentence, never this scene's invention. */
   #rightNowSentence(model: InspectModel): string {
     const sentence = [
       model.status.message,
@@ -1149,413 +749,6 @@ export class InspectOverlay extends Phaser.Scene {
     return sentence.charAt(0).toUpperCase() + sentence.slice(1);
   }
 
-  /** The "cost" section for a per player icon (design 08B): the scaled price in a Hero Red badge, the printed rate and the player count beside it. */
-  #drawPerPlayerCost(x: number, y: number, cost: PerPlayerCost, scaled: number | null): void {
-    label(this, x, y, "cost", typeRole.label, surface.paper.hex, ink.meta);
-    const badge: Rect = { x, y: y + 16, width: 52, height: 52 };
-    this.add.graphics().fillStyle(accent.heroRed.hex, 1).fillRect(badge.x, badge.y, badge.width, badge.height);
-    this.add
-      .text(badge.x + badge.width / 2, badge.y + badge.height / 2, String(scaled ?? cost.rate), {
-        ...textStyle(typeRole.screenTitle, surface.paper.hex),
-        fontSize: "36px",
-      })
-      .setOrigin(0.5);
-    const textX = badge.x + badge.width + 14;
-    this.add.text(textX, badge.y + 10, caseOf(typeRole.label, cost.rateLabel), {
-      ...textStyle(typeRole.label, surface.paper.hex),
-      fontSize: "12px",
-      fontStyle: "700",
-    });
-    if (cost.countLabel) label(this, textX, badge.y + 29, cost.countLabel, typeRole.label, surface.paper.hex, ink.meta);
-  }
-
-  #rightNowHeight(inner: number, model: InspectModel): number {
-    const lines = estimateWrappedLines(this.#rightNowSentence(model), inner - 26, 12 * 0.5);
-    return 16 + lines * (12 * 1.5) + 22;
-  }
-
-  /** "Right now" — the engine's own sentence, merged with the legal-target list into one Hero Red callout, exactly as D08 draws it. */
-  #drawRightNow(x: number, y: number, width: number, model: InspectModel): void {
-    label(this, x, y, "right now", typeRole.label, surface.paper.hex, ink.meta);
-    const boxTop = y + 16;
-    const text = this.add
-      .text(x + 13, boxTop + 11, this.#rightNowSentence(model), textStyle(typeRole.body, surface.paper.hex))
-      .setFontSize(12)
-      .setLineSpacing(6)
-      .setWordWrapWidth(width - 26);
-    const box: Rect = { x, y: boxTop, width, height: text.height + 22 };
-    const callout = this.add.graphics();
-    callout.fillStyle(accent.heroRed.hex, 0.2).fillRect(box.x, box.y, box.width, box.height);
-    callout.lineStyle(3, accent.heroRed.hex, 1).strokeRect(box.x, box.y, box.width, box.height);
-    this.children.bringToTop(text);
-  }
-
-  /** The "How this works" note (guided mode section 3.14): shown at the Full and Hints guide levels, never at Off. */
-  #howItWorks(model: InspectModel): string | null {
-    return guidePrefs().level === "off" ? null : model.howItWorks;
-  }
-
-  #howItWorksHeight(inner: number, model: InspectModel): number {
-    const lines = estimateWrappedLines(this.#howItWorks(model) ?? "", inner - 26, 12 * 0.5);
-    return 16 + lines * (12 * 1.5) + 22;
-  }
-
-  /** "How this works" — a one-line paraphrase for a card whose wording is easy to misread, in a labeled blue callout (the label, not the color, says what it is). */
-  #drawHowItWorks(x: number, y: number, width: number, model: InspectModel): void {
-    label(this, x, y, "how this works", typeRole.label, surface.paper.hex, ink.meta);
-    const boxTop = y + 16;
-    const text = this.add
-      .text(x + 13, boxTop + 11, this.#howItWorks(model) ?? "", textStyle(typeRole.body, surface.paper.hex))
-      .setFontSize(12)
-      .setLineSpacing(6)
-      .setWordWrapWidth(width - 26);
-    const box: Rect = { x, y: boxTop, width, height: text.height + 22 };
-    const callout = this.add.graphics();
-    callout.fillStyle(signal.cost.hex, 0.2).fillRect(box.x, box.y, box.width, box.height);
-    callout.lineStyle(3, signal.cost.hex, 1).strokeRect(box.x, box.y, box.width, box.height);
-    this.children.bringToTop(text);
-  }
-
-  #timingHeight(inner: number, model: InspectModel): number {
-    let height = 16;
-    for (const entry of model.timing) {
-      const lines = estimateWrappedLines(`${entry.definition} (${entry.citeLabel})`, inner, 12 * 0.5);
-      height += 16 + lines * (12 * 1.55) + 12;
-    }
-    return height;
-  }
-
-  /** "Timing" — see `view/inspect-model.ts#timingEntriesFor`'s own comment on why most cards show nothing here. */
-  #drawTiming(x: number, y: number, width: number, model: InspectModel): void {
-    label(this, x, y, "timing", typeRole.label, surface.paper.hex, ink.meta);
-    let ty = y + 16;
-    for (const entry of model.timing) {
-      const heading = this.add.text(x, ty, entry.label, {
-        ...textStyle(typeRole.body, surface.paper.hex),
-        fontSize: "12px",
-        fontStyle: "700",
-      });
-      ty += heading.height + 2;
-      const body = this.add
-        .text(x, ty, `${entry.definition} (${entry.citeLabel})`, textStyle(typeRole.body, surface.paper.hex, 0.85))
-        .setFontSize(12)
-        .setLineSpacing(7)
-        .setWordWrapWidth(width);
-      ty += body.height + 12;
-    }
-  }
-
-  /**
-   * "This card, this game" — plain lines, oldest-shown-first, truncated to whatever room `#drawRulesPanel` actually
-   * has left rather than scrolled: a `McScrollPanel` always draws a visible track, even over three lines that never
-   * need to move, which is worse than not scrolling at all (item 7 of the owner's own list). A history longer than
-   * fits keeps its most recent lines and gets a leading "… N earlier" line instead.
-   */
-  #drawHistory(x: number, y: number, width: number, available: number, model: InspectModel): void {
-    if (available - 16 < HISTORY_LINE_HEIGHT) return;
-    label(this, x, y, "this card, this game", typeRole.label, surface.paper.hex, ink.meta);
-    // Round tag in its own column, text wrapped beside it (a hanging indent), and every row advanced by its real
-    // measured height: a combat line ("Crossbones hit Spider-Woman for 3 (ATK 1 + 2 boost - 0 defense) · …") wraps
-    // to two or three rows, and a fixed one-row advance drew the next line straight over its tail.
-    const descX = x + HISTORY_TAG_WIDTH;
-    const descWidth = Math.max(1, width - HISTORY_TAG_WIDTH);
-    const budget = available - 16;
-    const style = textStyle(typeRole.body, surface.paper.hex, 0.85);
-    const makeRow = (tag: string, text: string) => {
-      const tagText = this.add.text(x, 0, tag, style).setFontSize(12);
-      const desc = this.add.text(descX, 0, text, style).setFontSize(12).setLineSpacing(3).setWordWrapWidth(descWidth);
-      return { parts: [tagText, desc], height: Math.max(tagText.height, desc.height) + HISTORY_ROW_GAP };
-    };
-    // Newest first until the room runs out; whatever is left over collapses into one leading "… N earlier" row.
-    const rows: ReturnType<typeof makeRow>[] = [];
-    let used = 0;
-    for (let i = model.history.length - 1; i >= 0; i--) {
-      const line = model.history[i]!;
-      const row = makeRow(line.roundTag, line.text);
-      const reserve = i > 0 ? HISTORY_LINE_HEIGHT : 0;
-      if (used + row.height + reserve > budget) {
-        for (const part of row.parts) part.destroy();
-        rows.unshift(makeRow("", `… ${i + 1} earlier`));
-        break;
-      }
-      rows.unshift(row);
-      used += row.height;
-    }
-    let ty = y + 16;
-    for (const row of rows) {
-      for (const part of row.parts) part.setY(ty);
-      ty += row.height;
-    }
-  }
-
-  /** "Rules & state": the engine's verdict, timing, keywords, this card's own history, and the one useful action. */
-  #drawRulesPanel(fullRect: Rect, model: InspectModel): void {
-    // A card with nothing to say beside an open choice (a printed card in the Civil War builder) gets no heading and
-    // no tall empty box: only the choice buttons, in a strip at the card's foot.
-    const sectionCount = this.#rulesSectionHeights(Math.max(1, fullRect.width - RULES_PAD * 2), model).length;
-    const mode = rulesPanelMode(
-      sectionCount,
-      model.history.length,
-      Boolean(this.#choice) && !this.#note,
-      model.instanceId === ("" as InstanceId) && !this.#note,
-    );
-    const compact = mode === "compact";
-    const rect = compact ? compactRulesRect(fullRect, RULES_PAD, hit.primary) : fullRect;
-    this.#drawShadow(rect);
-    const g = this.add.graphics();
-    g.fillStyle(surface.ink.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
-    g.lineStyle(5, surface.paper.hex, 1).strokeRect(rect.x, rect.y, rect.width, rect.height);
-    this.add.zone(rect.x, rect.y, rect.width, rect.height).setOrigin(0, 0).setInteractive();
-
-    const pad = RULES_PAD;
-    const inner = rect.width - pad * 2;
-
-    if (!compact) {
-      this.add
-        .text(rect.x + pad, rect.y + pad, caseOf(typeRole.barTitle, "Rules & state"), {
-          ...textStyle(typeRole.barTitle, surface.paper.hex),
-          fontSize: "24px",
-        })
-        .setLetterSpacing(1);
-      const escWidth = 50;
-      // A controller closes with B, so the button says "Close" and wears the B glyph instead of "Esc".
-      const closeWidth = this.#padWording ? 96 : escWidth;
-      const closeButton = new McButton(this, {
-        kind: "onInk",
-        label: this.#padWording ? "Close" : "Esc",
-        type: { ...typeRole.label, size: 11 },
-        rect: { x: rect.x + rect.width - pad - closeWidth, y: rect.y + pad - 3, width: closeWidth, height: 28 },
-        onClick: () => this.#close(),
-      });
-      this.#buttons.push(closeButton);
-      this.#hints.button(closeButton, ["cancel"], "ink", { when: (set) => set === "pad" });
-    }
-
-    const buttonsTop = rect.y + rect.height - pad - hit.primary;
-    let y = rect.y + pad + RULES_TITLE_HEIGHT + RULES_SECTION_GAP;
-    // A printed card with nothing to add still gets its panel, saying so, so the sheet keeps one shape card to card.
-    if (!compact && sectionCount === 0 && model.history.length === 0)
-      this.add
-        .text(rect.x + pad, y, "No traits, keywords or rules notes on this card.", {
-          ...textStyle(typeRole.body, surface.paper.hex, 0.75),
-          fontSize: "13px",
-        })
-        .setWordWrapWidth(inner);
-
-    // A main scheme's other side (issue #295), an identity's other sides (issue #532): a secondary button, never the
-    // Enter default (`#primaryAction` below). A pad steps it with the Inspect button, whose glyph it wears.
-    const sideToggle = this.#sideToggle();
-    if (sideToggle) {
-      const sideButton = new McButton(this, {
-        kind: "onInk",
-        label: sideToggle.label,
-        type: typeRole.label,
-        rect: { x: rect.x + pad, y, width: inner, height: hit.target },
-        onClick: () => this.#stepSide(),
-      });
-      this.#buttons.push(sideButton);
-      this.#hints.button(sideButton, ["inspect"], "ink", { when: (set) => set === "pad" });
-      y += hit.target + RULES_SECTION_GAP;
-    }
-
-    // The Team-Up callout leads everything: it is why this card can (or cannot yet) be played at all.
-    if (model.teamUpNotice) {
-      y = this.#drawTeamUpNotice(rect.x + pad, y, inner, model.teamUpNotice) + RULES_SECTION_GAP;
-    }
-
-    // "Spent for good" next: the one thing on this card a player cannot take back, even by losing and retrying.
-    if (model.campaignNotice) {
-      y = this.#drawCampaignNotice(rect.x + pad, y, inner, model.campaignNotice, null) + RULES_SECTION_GAP;
-    }
-
-    // "Right now" — skipped while this card *is* the answer to an open decision: "a decision is open, answer it
-    // first" is unhelpful when answering it is exactly what the button below does.
-    if ((model.status.message || model.priceNote || model.resourceNote) && !this.#choice) {
-      this.#drawRightNow(rect.x + pad, y, inner, model);
-      y += this.#rightNowHeight(inner, model) + RULES_SECTION_GAP;
-    }
-
-    // The per player cost, below the verdict it explains: the scaled price in a badge, the printed rate beside it.
-    if (model.perPlayerCost) {
-      this.#drawPerPlayerCost(rect.x + pad, y, model.perPlayerCost, model.cost);
-      y += COST_SECTION_HEIGHT + RULES_SECTION_GAP;
-    }
-
-    if (this.#howItWorks(model)) {
-      this.#drawHowItWorks(rect.x + pad, y, inner, model);
-      y += this.#howItWorksHeight(inner, model) + RULES_SECTION_GAP;
-    }
-
-    if (model.timing.length > 0) {
-      this.#drawTiming(rect.x + pad, y, inner, model);
-      y += this.#timingHeight(inner, model) + RULES_SECTION_GAP;
-    }
-
-    // "3/5 damage" on Crossbones' Armor, Ice Wall, Avengers Tower: a card with no HP plate to say it.
-    if (model.damageNote) {
-      label(this, rect.x + pad, y, "damage on this card", typeRole.label, surface.paper.hex, ink.meta);
-      this.add.text(rect.x + pad, y + 16, model.damageNote, {
-        ...textStyle(typeRole.body, surface.paper.hex),
-        fontSize: "16px",
-        fontStyle: "700",
-      });
-      y += DAMAGE_SECTION_HEIGHT + RULES_SECTION_GAP;
-    }
-
-    // "2 threat" on Peter Parker after Curtain Call, on a Paparazzi: threat a card holds that is not a scheme's.
-    if (model.threatNote) {
-      label(this, rect.x + pad, y, "threat on this card", typeRole.label, surface.paper.hex, ink.meta);
-      this.add.text(rect.x + pad, y + 16, model.threatNote, {
-        ...textStyle(typeRole.body, surface.paper.hex),
-        fontSize: "16px",
-        fontStyle: "700",
-      });
-      y += DAMAGE_SECTION_HEIGHT + RULES_SECTION_GAP;
-    }
-
-    // "3 ratings counters" on MaGog's crowds, "2 time counters" on Quinjet: the board's tally, spelled out.
-    if (model.counterNote) {
-      label(this, rect.x + pad, y, "counters on this card", typeRole.label, surface.paper.hex, ink.meta);
-      this.add.text(rect.x + pad, y + 16, model.counterNote, {
-        ...textStyle(typeRole.body, surface.paper.hex),
-        fontSize: "16px",
-        fontStyle: "700",
-      });
-      y += DAMAGE_SECTION_HEIGHT + RULES_SECTION_GAP;
-    }
-
-    // Wave 8: a hit point floor ("considered to have at least 1"), icons a rule gives the card, and what the mission
-    // area means for it. Wrapped, since a sentence is longer than a count.
-    for (const note of extraNotesOf(model)) {
-      label(this, rect.x + pad, y, note.title, typeRole.label, surface.paper.hex, ink.meta);
-      this.add
-        .text(rect.x + pad, y + 16, note.lines.join("\n"), {
-          ...textStyle(typeRole.body, surface.paper.hex),
-          fontSize: `${NOTE_FONT}px`,
-          fontStyle: "700",
-        })
-        .setWordWrapWidth(inner)
-        .setLineSpacing(3);
-      y += noteSectionHeight(inner, note.lines) + RULES_SECTION_GAP;
-    }
-
-    // "Attached" / "Attached to": the cards hanging on this one, each a chip that opens it, and the host a chip back.
-    for (const row of this.#linkRows(model)) {
-      y = this.#drawChips(rect, y, inner, row.heading, row.items) + RULES_SECTION_GAP;
-    }
-
-    // "Keywords on this card" / "Traits" — chips a tap opens the Rules overlay at.
-    if (model.keywordChips.length > 0) {
-      y =
-        this.#drawChips(
-          rect,
-          y,
-          inner,
-          "keywords on this card",
-          model.keywordChips.map((chip) => ({ text: chip.text, glossaryId: chip.glossaryId })),
-        ) + RULES_SECTION_GAP;
-    }
-    if (model.traits.length > 0) {
-      y =
-        this.#drawChips(
-          rect,
-          y,
-          inner,
-          "traits",
-          model.traits.map((trait) => ({ text: trait, glossaryId: null })),
-        ) + RULES_SECTION_GAP;
-    }
-
-    // "Your play" (#529): this card in your finished games, when there is room above the history.
-    if (this.#yourPlay && y + this.#yourPlayHeight() <= buttonsTop - RULES_SECTION_GAP) {
-      y = this.#drawYourPlay(rect.x + pad, y, inner, surface.paper.hex, ink.meta) + RULES_SECTION_GAP;
-    }
-
-    if (model.history.length > 0) {
-      this.#drawHistory(rect.x + pad, y, inner, Math.max(0, buttonsTop - RULES_SECTION_GAP - y), model);
-    }
-
-    // Why this card cannot be chosen, where the choice buttons would be.
-    if (this.#note) {
-      const box: Rect = { x: rect.x + pad, y: buttonsTop, width: inner, height: hit.primary };
-      const callout = this.add.graphics();
-      callout.fillStyle(accent.heroRed.hex, 0.2).fillRect(box.x, box.y, box.width, box.height);
-      callout.lineStyle(3, accent.heroRed.hex, 1).strokeRect(box.x, box.y, box.width, box.height);
-      this.add
-        .text(box.x + box.width / 2, box.y + box.height / 2, this.#note, textStyle(typeRole.body, surface.paper.hex))
-        .setOrigin(0.5)
-        .setWordWrapWidth(box.width - 20)
-        .setMaxLines(2);
-      return;
-    }
-
-    // Answering the open decision, when the sheet was opened from one.
-    if (this.#choice) {
-      const { optionId, label: choiceLabel } = this.#choice;
-      const buttonWidth = (inner - 9) / 2;
-      const choose = (): void => {
-        this.#close();
-        this.game.events.emit("mc-choice-toggle", optionId);
-      };
-      this.#primaryAction = choose;
-      this.#buttons.push(
-        new McButton(this, {
-          kind: "primary",
-          label: choiceLabel,
-          type: typeRole.barTitle,
-          rect: { x: rect.x + pad, y: buttonsTop, width: buttonWidth, height: hit.primary },
-          onClick: choose,
-        }),
-      );
-      this.#buttons.push(
-        new McButton(this, {
-          kind: "quiet",
-          label: "Cancel",
-          type: typeRole.label,
-          rect: { x: rect.x + pad + 9 + buttonWidth, y: buttonsTop, width: buttonWidth, height: hit.primary },
-          onClick: () => this.#close(),
-        }),
-      );
-      return;
-    }
-
-    // A card in play with a usable action ability: one button per ability, checked *before* "Play it" below.
-    // `model.status.playable` is also true for these (`statusOf` finds either a `playCard` or a `useAbility` match
-    // and doesn't tell them apart), so without this order a card with an ability and no play of its own would show
-    // "Play it" and silently do nothing when tapped — `#playCard` only ever looks for a `playCard` entry.
-    if (model.abilities.length > 0) {
-      const uses = this.#abilityButtons(model);
-      const area: Rect = { x: rect.x + pad, y: buttonsTop, width: inner, height: hit.primary };
-      const rowHeight = uses.length === 1 ? area.height : Math.max(hit.target, area.height / uses.length);
-      uses.forEach((use, index) => {
-        const rowRect: Rect = {
-          x: area.x,
-          y: area.y + area.height - (uses.length - index) * (rowHeight + 4),
-          width: area.width,
-          height: rowHeight,
-        };
-        if (index === 0) this.#primaryAction = use.run;
-        this.#buttons.push(
-          new McButton(this, {
-            kind: index === 0 ? "primary" : "secondary",
-            label: use.label,
-            type: uses.length === 1 ? typeRole.barTitle : typeRole.label,
-            rect: rowRect,
-            onClick: use.run,
-          }),
-        );
-      });
-      return;
-    }
-
-    this.#drawPlayAndPayButtons(rect, model, { x: rect.x + pad, y: buttonsTop, width: inner, height: hit.primary });
-  }
-
-  /**
-   * One button per usable ability, led by "Play it" for a hand card whose play is listed too: Slingshot (50013) is an
-   * ally to play for 3 as well as "Spend a [energy] resource → put Slingshot into play from your hand" (issue #634),
-   * and with only the ability buttons a phone, whose tap opens this sheet, had no way to play her.
-   */
   #abilityButtons(model: InspectModel): readonly { readonly label: string; readonly run: () => void }[] {
     const instanceId = this.#instanceId;
     const actions = appSession().store.state.legal?.actions;
@@ -1568,7 +761,7 @@ export class InspectOverlay extends Phaser.Scene {
         (entry) => entry.action.kind === "playCard" && entry.action.instanceId === instanceId,
       );
     const play = {
-      label: "Play it",
+      label: t("reader.play"),
       run: (): void => {
         this.#close();
         if (instanceId) this.game.events.emit("mc-play-card", instanceId);
@@ -1597,802 +790,6 @@ export class InspectOverlay extends Phaser.Scene {
     const { game, perspectiveId } = appSession().store.state;
     if (!game || perspectiveId === null) return false;
     return game.players.find((player) => player.playerId === perspectiveId)?.hand.includes(instanceId) ?? false;
-  }
-
-  /** PLAY IT / USE AS RESOURCE — the design's own pair (D08), split when both apply, either one full-width alone. */
-  #drawPlayAndPayButtons(rect: Rect, model: InspectModel, area: Rect): void {
-    const showPlay = model.status.playable === true;
-    const showPay = model.resourceIcons.length > 0 && this.#isHandCard();
-    if (!showPlay && !showPay) return;
-    const gap = showPlay && showPay ? 9 : 0;
-    const width = showPlay && showPay ? (area.width - gap) / 2 : area.width;
-    let x = area.x;
-
-    const play = (): void => {
-      const instanceId = this.#instanceId;
-      this.#close();
-      if (instanceId) this.game.events.emit("mc-play-card", instanceId);
-    };
-    const payWith = (): void => {
-      const instanceId = this.#instanceId;
-      this.#close();
-      if (instanceId) this.#boardScene()?.payWithCard(instanceId);
-    };
-
-    if (showPlay) {
-      this.#primaryAction = play;
-      const playRect: Rect = { x, y: area.y, width, height: area.height };
-      this.#buttons.push(
-        new McButton(this, {
-          kind: "primary",
-          label: "Play it",
-          ...(model.perPlayerCost && model.currentCost !== null ? { value: String(model.currentCost) } : {}),
-          type: typeRole.barTitle,
-          rect: playRect,
-          onClick: play,
-        }),
-      );
-      // Guided mode G7b — same stamp as the phone sheet's own Play button (`#drawSheetFooter`'s own comment).
-      if (this.#isGuidePick()) {
-        this.#drawGuideStamp(playRect);
-        this.#lastPlayRect = playRect;
-      }
-      x += width + gap;
-    }
-    if (showPay) {
-      const enabled = model.canPayAsResource;
-      if (enabled && !showPlay) this.#primaryAction = payWith;
-      this.#buttons.push(
-        new McButton(this, {
-          kind: "onInk",
-          label: "Use as resource",
-          type: showPlay ? typeRole.label : typeRole.barTitle,
-          rect: { x, y: area.y, width, height: area.height },
-          onClick: payWith,
-          enabled,
-          ...(enabled ? {} : { reason: "Open a card to pay for first" }),
-        }),
-      );
-    }
-  }
-
-  /**
-   * A labeled row of tappable chips (keywords → the Rules overlay at that term; traits carry no `glossaryId` and
-   * are plain text-in-a-box). Returns the next y, just past the chips' own last row — the caller adds
-   * `RULES_SECTION_GAP` before whatever comes next, the same convention every other section here follows.
-   * Deliberately raw graphics rather than `McButton` per chip: the design's chip is a transparent outline, and
-   * every widget skin (`ui/theme.ts#skin`) fills its control — a `McButton` chip would read as a small filled block
-   * instead. Each chip still answers only a tap (`onTap`, its own press and release), so a chip that appears
-   * mid-rebuild is never accidentally activated by the release of the gesture that opened this sheet (the exact
-   * hazard `#dismissArm`'s own comment documents for the scrim).
-   */
-  #drawChips(rect: Rect, top: number, inner: number, heading: string, items: readonly ChipItem[]): number {
-    if (items.length === 0) return top;
-    label(this, rect.x + RULES_PAD, top, heading, typeRole.label, surface.paper.hex, ink.meta);
-    let x = rect.x + RULES_PAD;
-    let y = top + 16;
-    let rows = 1;
-    for (const item of items) {
-      const text = this.add.text(
-        x + 8,
-        y + 5,
-        caseOf(typeRole.label, item.text),
-        textStyle(typeRole.label, surface.paper.hex),
-      );
-      const chipWidth = text.width + 16;
-      if (x + chipWidth > rect.x + RULES_PAD + inner) {
-        x = rect.x + RULES_PAD;
-        y += 28;
-        rows += 1;
-        text.setPosition(x + 8, y + 5);
-      }
-      const chip = this.add.graphics();
-      chip.lineStyle(2, surface.paper.hex, 1).strokeRect(x, y, chipWidth, 22);
-      this.children.bringToTop(text);
-      if (item.glossaryId || item.onTap) {
-        const glossaryId = item.glossaryId ?? null;
-        const zone = this.add.zone(x, y, chipWidth, 22).setOrigin(0, 0).setInteractive({ useHandCursor: true });
-        // A tap, not any release: press and release both on the chip (`ui/tap.ts`).
-        onTap(
-          zone,
-          () => {
-            if (item.onTap) item.onTap();
-            else if (glossaryId) this.#openRulesAt(glossaryId, item.text);
-          },
-          tapId("inspect-chip", { x, y, width: chipWidth, height: 22 }, item.text),
-        );
-      }
-      x += chipWidth + 7;
-    }
-    return top + 16 + rows * 28;
-  }
-
-  #teamUpNoticeHeight(inner: number, notice: TeamUpNotice): number {
-    const textWidth = inner - CAMPAIGN_NOTICE_PAD * 2;
-    const body = estimateWrappedLines(notice.text, textWidth, 13 * 0.5) * (13 * 1.45);
-    const lines = notice.lines.reduce(
-      (sum, line) => sum + estimateWrappedLines(line, textWidth, 13 * 0.5) * (13 * 1.45) + 4,
-      0,
-    );
-    return CAMPAIGN_NOTICE_PAD * 2 + 20 + body + lines + 4;
-  }
-
-  /**
-   * The Team-Up callout: the accent color, a heavy border and a TEAM-UP label so it reads before anything else on
-   * the panel. A pair that is active (or about to be) is filled in Hero Red with paper text; one still waiting on a
-   * partner is the same box in ink with a red border, quieter but the same shape. Returns the bottom y.
-   */
-  #drawTeamUpNotice(x: number, y: number, width: number, notice: TeamUpNotice): number {
-    const pad = CAMPAIGN_NOTICE_PAD;
-    const textWidth = width - pad * 2;
-    const loud = notice.kind === "active" || notice.kind === "completes";
-    const box = this.add.graphics();
-    const heading = this.add.text(
-      x + pad,
-      y + pad,
-      caseOf(typeRole.label, loud ? `★ ${notice.heading}` : notice.heading),
-      {
-        ...textStyle(typeRole.label, surface.paper.hex),
-        fontSize: "14px",
-        fontStyle: "700",
-      },
-    );
-    let ty = y + pad + Math.max(20, heading.height + 4);
-    const parts: Phaser.GameObjects.Text[] = [heading];
-    const body = this.add
-      .text(x + pad, ty, notice.text, textStyle(typeRole.body, surface.paper.hex))
-      .setFontSize(13)
-      .setLineSpacing(4)
-      .setWordWrapWidth(textWidth);
-    parts.push(body);
-    ty += body.height;
-    for (const line of notice.lines) {
-      const row = this.add
-        .text(x + pad, ty + 4, line, { ...textStyle(typeRole.body, surface.paper.hex), fontStyle: "700" })
-        .setFontSize(13)
-        .setWordWrapWidth(textWidth);
-      parts.push(row);
-      ty += row.height + 4;
-    }
-    const height = ty + pad - y;
-    box.fillStyle(loud ? accent.heroRed.hex : surface.ink.hex, 1).fillRect(x, y, width, height);
-    box.lineStyle(border.object, accent.heroRed.hex, 1).strokeRect(x, y, width, height);
-    for (const part of parts) this.children.bringToTop(part);
-    return y + height;
-  }
-
-  #campaignNoticeHeight(inner: number, notice: CampaignNotice): number {
-    const textWidth = inner - CAMPAIGN_NOTICE_PAD * 2;
-    const body = estimateWrappedLines(notice.text, textWidth, 13 * 0.5) * (13 * 1.45);
-    const link = estimateWrappedLines(`${notice.linkLabel} →`, textWidth, 12 * 0.5) * (12 * 1.45);
-    return CAMPAIGN_NOTICE_PAD * 2 + 20 + body + 8 + link + 8;
-  }
-
-  /**
-   * "Spent for good" — a caution-amber box with ink text on either ground (the signal palette's advisory colour,
-   * ink on it), a heavy border so it reads before anything else, and a tappable link to the rule in the Rules
-   * glossary. `clip` is the phone sheet's scrolling viewport, the same guard `#drawSheetHeaderChips` uses so a
-   * scrolled-away link never wins a tap. Returns the bottom y.
-   */
-  #drawCampaignNotice(
-    x: number,
-    y: number,
-    width: number,
-    notice: CampaignNotice,
-    clip: (() => Rect | null) | null,
-  ): number {
-    const pad = CAMPAIGN_NOTICE_PAD;
-    const textWidth = width - pad * 2;
-    const box = this.add.graphics();
-    const heading = this.add.text(x + pad, y + pad, caseOf(typeRole.label, notice.heading), {
-      ...textStyle(typeRole.label, signal.caution.hex),
-      color: cssOf(surface.inkOnHue.hex),
-      fontSize: "14px",
-      fontStyle: "700",
-    });
-    let ty = y + pad + Math.max(20, heading.height + 4);
-    const body = this.add
-      .text(x + pad, ty, notice.text, {
-        ...textStyle(typeRole.body, signal.caution.hex),
-        color: cssOf(surface.inkOnHue.hex),
-      })
-      .setFontSize(13)
-      .setLineSpacing(4)
-      .setWordWrapWidth(textWidth);
-    ty += body.height + 8;
-    const link = this.add
-      .text(x + pad, ty + 4, `${notice.linkLabel} →`, {
-        ...textStyle(typeRole.body, signal.caution.hex),
-        color: cssOf(surface.inkOnHue.hex),
-        fontStyle: "700",
-      })
-      .setFontSize(12)
-      .setWordWrapWidth(textWidth);
-    const linkHeight = link.height + 8;
-    const underline = this.add.graphics();
-    underline.lineStyle(1, surface.inkOnHue.hex, 1);
-    underline.lineBetween(
-      x + pad,
-      ty + 4 + link.height + 1,
-      x + pad + Math.min(link.width, textWidth),
-      ty + 4 + link.height + 1,
-    );
-    ty += linkHeight;
-    const height = ty + pad - y;
-    box.fillStyle(signal.caution.hex, 1).fillRect(x, y, width, height);
-    box.lineStyle(border.object, surface.inkOnHue.hex, 1).strokeRect(x, y, width, height);
-    for (const part of [heading, body, link, underline]) this.children.bringToTop(part);
-
-    // The tap target is the full hit height, centred on the link and spilling into the box's padding, so the box
-    // itself stays as tight as its text.
-    const zoneY = ty - linkHeight / 2 - hit.target / 2;
-    const zone = this.add.zone(x, zoneY, width, hit.target).setOrigin(0, 0).setInteractive({ useHandCursor: true });
-    // A tap, not any release: press and release both on the link (`ui/tap.ts`).
-    onTap(
-      zone,
-      (pointer) => {
-        const rect = clip?.() ?? null;
-        if (rect && !pointInRect(pointer.x, pointer.y, rect)) return;
-        this.#openRulesAt(notice.rulesQuery, notice.linkLabel);
-      },
-      tapId("inspect-notice", { x, y: zoneY, width, height: hit.target }, notice.linkLabel),
-    );
-    return y + height;
-  }
-
-  #openRulesAt(glossaryId: string, displayText: string): void {
-    // The glossary is searched by its own display name, not the value-instantiated chip text ("Retaliate 1" would
-    // not match the entry's own "Retaliate X") — `glossaryId` is the keyword's bare name (`KeywordName`), which
-    // `rulesGlossaryOf`/`rulesGlossaryPoolOf` (`view/rules-reference.ts`) both search on via the entry's own
-    // `displayName`, so the query here is deliberately the id rather than the drawn chip text.
-    void displayText;
-    // Closes this sheet first, rather than launching Rules alongside it: `#rebuild` re-claims `bringToTop` on
-    // every store update (the "Z-ORDER VS. THE PENDING-CHOICE OVERLAY" note at the top of this file), so a Rules
-    // overlay merely launched *underneath* an open Inspect would render invisibly behind it — found verifying this
-    // exact flow in the browser, where the glossary opened at the right term but nothing showed until Inspect was
-    // separately dismissed. The player asked to go read a term, not to peek at it through a gap.
-    this.#close();
-    this.scene.launch(SCENES.rules, { initialTab: "glossary", initialQuery: glossaryId } satisfies RulesSceneData);
-  }
-
-  // ---------------------------------------------------------------------
-  // Sheet mode (P14): phone only.
-  // ---------------------------------------------------------------------
-
-  /** Draws the whole sheet; returns its body's measured content height, for `#rebuild`'s content-hugging pass. */
-  #drawSheet(layout: Extract<InspectLayout, { mode: "sheet" }>, model: InspectModel): number {
-    const { sheet, handle, content, footer, footerPrimaryRow, footerQuietRow } = layout;
-
-    const g = this.add.graphics();
-    g.fillStyle(surface.paper.hex, 1).fillRect(sheet.x, sheet.y, sheet.width, sheet.height);
-    g.lineStyle(border.object, surface.paper.hex, 1).strokeRect(sheet.x, sheet.y, sheet.width, sheet.height);
-    // The sheet swallows every tap inside it — it has scrolling content and controls of its own, so "tap anywhere
-    // to dismiss" only applies to the dimmed board sliver above it (the scrim zone `#rebuild` already drew) and
-    // the explicit Close button in the footer.
-    this.add.zone(sheet.x, sheet.y, sheet.width, sheet.height).setOrigin(0, 0).setInteractive();
-
-    const handlePill: Rect = {
-      x: sheet.x + sheet.width / 2 - 22,
-      y: handle.y + handle.height / 2 - 2,
-      width: 44,
-      height: 4,
-    };
-    const pill = this.add.graphics();
-    pill.fillStyle(surface.ink.hex, 0.35).fillRect(handlePill.x, handlePill.y, handlePill.width, handlePill.height);
-
-    const contentHeight = this.#drawSheetContent(content, model, layout.stacked);
-    this.#drawSheetFooter(footer, footerPrimaryRow, footerQuietRow, model);
-    return contentHeight;
-  }
-
-  /**
-   * The sheet's whole scrolling body, in one `McScrollRegion` (`ui/scroll-region.ts`) — P14's own single
-   * `overflow-y:auto` flex column: thumbnail/name/type/chips/rules text, then — only when there's something to
-   * say — a red "right now" callout, a bordered parchment "keywords" box, and "this game" history rows, each its
-   * own real shape rather than three sections folded into one string.
-   *
-   * Drawn top to bottom in one pass, each element measured for real as it's added rather than pre-measured, the
-   * same thing `#drawCardTextBlock` already does for the panels' card face text. The total is returned, because
-   * the collapsed sheet hugs it: `#rebuild` draws once to measure and, if that asks for a different sheet height,
-   * draws again at the final size within the same frame. Once the last element lands, the accumulated
-   * height becomes the region's one logical "row" (`heights` is only ever read for scroll math, never for
-   * drawing), and everything drawn so far is reparented into it — the "eagerly draw at the scroll region's real
-   * screen position, then move it into the masked/translated layer" trick `table-setup.ts#captureInto` already
-   * uses for the identical widget.
-   */
-  #drawSheetContent(rect: Rect, model: InspectModel, stacked: boolean): number {
-    const before = this.children.list.length;
-    const pad = SHEET_CONTENT_PAD;
-    // Portrait phone (#358): the scan spans the sheet and the text runs full width beneath it.
-    const column = stacked ? { x: pad, width: Math.max(1, rect.width - pad * 2) } : sheetTextColumn(rect.width);
-    const textLeft = rect.x + column.x;
-    const textWidth = column.width;
-
-    const key = cardArt(this).request(this, model.art);
-    const scan = key && this.textures.exists(key) ? this.textures.get(key).getSourceImage() : null;
-    const thumb: Rect = {
-      x: rect.x + pad,
-      y: rect.y,
-      ...(stacked ? stackedScanSize(rect.width, scan) : thumbSizeFor(scan)),
-    };
-    const frame = this.add.graphics();
-    paintCardStock(frame, thumb);
-    if (!drawArt(this, key, thumb)) {
-      label(
-        this,
-        thumb.x + thumb.width / 2,
-        thumb.y + thumb.height / 2,
-        model.hidden ? "facedown" : "no scan",
-        typeRole.label,
-        surface.ink.hex,
-        ink.meta,
-      ).setOrigin(0.5);
-    }
-
-    // Name: "fit to width" (a shrinking single line, `fitText`), not a wrap — the same treatment the panels' card
-    // panel gives its own name, for a name too long to fit even a hero's own longest printed one.
-    let ty = stacked ? thumb.y + thumb.height + SHEET_ROW_GAP : rect.y;
-    const name = this.add
-      .text(textLeft, ty, caseOf(typeRole.barTitle, model.name), {
-        ...textStyle(typeRole.barTitle, surface.ink.hex),
-        fontSize: "26px",
-      })
-      .setLetterSpacing(0.4);
-    fitText(name, textWidth, 26);
-    ty += name.height + 3;
-    const typeLine = label(this, textLeft, ty, model.typeLine, typeRole.label, surface.ink.hex, ink.label);
-    typeLine.setWordWrapWidth(textWidth);
-    ty += typeLine.height + 7;
-
-    // The live stats, HP first among what a player opens this to read (issue #635): the scan prints only the card's
-    // starting numbers, and the board's own tile can be too small to read them on a phone.
-    if (model.stats.length > 0) {
-      const stats = this.add
-        .text(textLeft, ty, statLineOf(model.stats), textStyle(typeRole.stat, surface.ink.hex))
-        .setLetterSpacing(1)
-        .setWordWrapWidth(textWidth);
-      ty += stats.height + 7;
-    }
-
-    // A per player cost (design 14B): the scaled price in a red badge, "2 PER PLAYER × 2 PLAYERS" beside it.
-    if (model.perPlayerCost) {
-      const cost = model.perPlayerCost;
-      const badge = 40;
-      this.add.graphics().fillStyle(accent.heroRed.hex, 1).fillRect(textLeft, ty, badge, badge);
-      this.add
-        .text(textLeft + badge / 2, ty + badge / 2, String(model.cost), {
-          ...textStyle(typeRole.screenTitle, surface.paper.hex),
-          fontSize: "28px",
-        })
-        .setOrigin(0.5);
-      this.add.text(textLeft + badge + 10, ty + 5, caseOf(typeRole.label, cost.rateLabel), {
-        ...textStyle(typeRole.label, surface.ink.hex),
-        fontSize: "11px",
-        fontStyle: "700",
-      });
-      if (cost.countLabel)
-        label(this, textLeft + badge + 10, ty + 22, cost.countLabel, typeRole.label, surface.ink.hex, ink.meta);
-      ty += badge + 7;
-    }
-
-    if (model.damageNote) {
-      const note = label(this, textLeft, ty, model.damageNote, typeRole.label, accent.heroRed.hex, ink.body);
-      ty += note.height + 7;
-    }
-
-    if (model.threatNote) {
-      const note = label(this, textLeft, ty, model.threatNote, typeRole.label, accent.heroRed.hex, ink.body);
-      ty += note.height + 7;
-    }
-
-    if (model.counterNote) {
-      const note = label(this, textLeft, ty, model.counterNote, typeRole.label, accent.heroRed.hex, ink.body);
-      note.setWordWrapWidth(textWidth);
-      ty += note.height + 7;
-    }
-
-    for (const extra of extraNotesOf(model)) {
-      const note = label(this, textLeft, ty, extra.lines.join("\n"), typeRole.label, accent.heroRed.hex, ink.body);
-      note.setWordWrapWidth(textWidth);
-      ty += note.height + 7;
-    }
-
-    for (const row of this.#linkRows(model)) {
-      label(this, textLeft, ty, row.heading, typeRole.label, accent.heroRed.hex, ink.body);
-      ty = this.#drawSheetHeaderChips(textLeft, ty + 14, textWidth, row.items) + 7;
-    }
-
-    if (model.keywordChips.length > 0) {
-      ty = this.#drawSheetHeaderChips(textLeft, ty, textWidth, model.keywordChips) + 7;
-    }
-
-    const bodySize = appSession().settings.largeCardText ? 16 : minType.phoneBody + 1;
-    const rules = this.add
-      .text(textLeft, ty, model.rulesText, textStyle(typeRole.body, surface.ink.hex))
-      .setFontSize(bodySize)
-      .setLineSpacing(3)
-      .setWordWrapWidth(textWidth);
-    ty += rules.height;
-
-    if (model.printedText) {
-      ty += 8;
-      const errataLabel = label(
-        this,
-        textLeft,
-        ty,
-        "printed text (superseded by errata)",
-        typeRole.label,
-        surface.ink.hex,
-        ink.meta,
-      );
-      errataLabel.setWordWrapWidth(textWidth);
-      ty += errataLabel.height + 4;
-      const printed = this.add
-        .text(textLeft, ty, model.printedText, textStyle(typeRole.body, surface.ink.hex, ink.secondary))
-        .setFontSize(Math.max(minType.phoneBody, 10))
-        .setWordWrapWidth(textWidth);
-      ty += printed.height;
-    }
-    if (model.flavor) {
-      ty += 8;
-      const flavor = this.add
-        .text(textLeft, ty, model.flavor, {
-          ...textStyle(typeRole.body, surface.ink.hex, 0.65),
-          fontSize: "11px",
-          fontStyle: "italic",
-        })
-        .setWordWrapWidth(textWidth);
-      ty += flavor.height;
-    }
-
-    let y = Math.max(thumb.y + thumb.height, ty) + SHEET_ROW_GAP;
-
-    // The Team-Up callout leads the full-width rows, ahead of even "Spent for good".
-    if (model.teamUpNotice) {
-      y = this.#drawTeamUpNotice(rect.x + pad, y, rect.width - pad * 2, model.teamUpNotice) + SHEET_ROW_GAP;
-    }
-
-    // "Spent for good" next: the one thing on this card a player cannot take back.
-    if (model.campaignNotice) {
-      const clip = () => this.#sheetRegion?.rect ?? null;
-      y = this.#drawCampaignNotice(rect.x + pad, y, rect.width - pad * 2, model.campaignNotice, clip) + SHEET_ROW_GAP;
-    }
-
-    // "Right now" — only for a card the player cannot play right now, with the engine's own sentence
-    // (`#rightNowSentence`, shared verbatim with panels mode) as the reason. A playable card's footer already says
-    // so (an enabled PLAY button); a redundant "Playable." callout on every ordinary card would bury the one case
-    // this box exists for. A card whose resources depend on the table (Band Together) shows it too, for what it's
-    // worth right now.
-    if ((model.status.playable === false || model.resourceNote) && this.#rightNowSentence(model)) {
-      y = this.#drawSheetRightNow(rect.x + pad, y, rect.width - pad * 2, model) + SHEET_ROW_GAP;
-    }
-
-    if (model.keywordDefinitions.length > 0) {
-      y = this.#drawSheetKeywords(rect.x + pad, y, rect.width - pad * 2, model) + SHEET_ROW_GAP;
-    }
-
-    if (this.#yourPlay) {
-      y = this.#drawYourPlay(rect.x + pad, y, rect.width - pad * 2, surface.ink.hex, ink.meta) + SHEET_ROW_GAP;
-    }
-
-    if (model.history.length > 0) {
-      y = this.#drawSheetHistory(rect.x + pad, y, rect.width - pad * 2, model);
-    }
-
-    const contentHeight = Math.max(1, y - rect.y);
-    const added = this.children.list.slice(before);
-    this.#sheetRegion = new McScrollRegion(this, {
-      rect,
-      heights: [contentHeight],
-      scroll: this.#sheetScroll,
-      clipInteractive: true,
-    });
-    this.#sheetRegion.content.add(added);
-    // The chips and the campaign link hold still unless wholly inside the viewport, so one scrolled up under the
-    // handle never swallows the tap that dismisses the sheet.
-    this.#sheetRegion.syncInteractivity();
-    return contentHeight;
-  }
-
-  /**
-   * The header's own keyword chip row, wrapping to more rows as needed — the design's outline chip, a tap target
-   * into the Rules glossary at that term (`#openRulesAt`). Returns the bottom y, past the last row.
-   *
-   * Each tap is gated on the chip's *current* on-screen position (`#sheetRegion`'s own viewport rect, not the
-   * position it was drawn at): these chips live inside the scrolling region, so a chip scrolled out of view still
-   * exists at its own (now off-screen) world position, and Phaser's hit-testing doesn't know about the region's
-   * mask — only about where the object actually is. Without the check, a chip scrolled out through the top of the
-   * sheet could sit exactly where the dimmed board's "tap anywhere to dismiss" scrim is, and win the tap instead of
-   * it (the same "clip" hazard `McButton`'s own `clip` option exists for, in a virtualized list).
-   */
-  #drawSheetHeaderChips(x: number, y: number, width: number, chips: readonly ChipItem[]): number {
-    let cx = x;
-    let cy = y;
-    for (const chip of chips) {
-      const text = this.add
-        .text(cx + 6, cy + 3, caseOf(typeRole.label, chip.text), textStyle(typeRole.label, surface.ink.hex))
-        .setFontSize(9);
-      const chipWidth = text.width + 12;
-      if (cx > x && cx + chipWidth > x + width) {
-        cx = x;
-        cy += 22;
-        text.setPosition(cx + 6, cy + 3);
-      }
-      const box = this.add.graphics();
-      box.lineStyle(border.detail, surface.ink.hex, 1).strokeRect(cx, cy, chipWidth, 18);
-      this.children.bringToTop(text);
-      if (chip.glossaryId || chip.onTap) {
-        const glossaryId = chip.glossaryId ?? null;
-        const zone = this.add.zone(cx, cy, chipWidth, 18).setOrigin(0, 0).setInteractive({ useHandCursor: true });
-        // A tap, not any release: press and release both on the chip (`ui/tap.ts`).
-        onTap(
-          zone,
-          (pointer) => {
-            const clip = this.#sheetRegion?.rect ?? null;
-            if (clip && !pointInRect(pointer.x, pointer.y, clip)) return;
-            if (chip.onTap) chip.onTap();
-            else if (glossaryId) this.#openRulesAt(glossaryId, chip.text);
-          },
-          tapId("inspect-sheet-chip", { x: cx, y: cy, width: chipWidth, height: 18 }, chip.text),
-        );
-      }
-      cx += chipWidth + 6;
-    }
-    return cy + 18;
-  }
-
-  /** "Right now" — the phone sheet's own red callout, straight off `#rightNowSentence`, drawn on paper rather than panels' ink ground (border-and-tint, never a shadow, per the design's own depth model). */
-  #drawSheetRightNow(x: number, y: number, width: number, model: InspectModel): number {
-    label(this, x, y, "right now", typeRole.label, accent.heroRed.hex, 1);
-    const boxTop = y + 16;
-    const text = this.add
-      .text(x + 13, boxTop + 11, this.#rightNowSentence(model), textStyle(typeRole.body, surface.ink.hex))
-      .setFontSize(12)
-      .setLineSpacing(4)
-      .setWordWrapWidth(width - 26);
-    const boxHeight = text.height + 22;
-    const box = this.add.graphics();
-    box.fillStyle(accent.heroRed.hex, 0.16).fillRect(x, boxTop, width, boxHeight);
-    box.lineStyle(border.object, accent.heroRed.hex, 1).strokeRect(x, boxTop, width, boxHeight);
-    this.children.bringToTop(text);
-    return boxTop + boxHeight;
-  }
-
-  /**
-   * The bordered parchment "keywords" box: every keyword this card prints, with the glossary's own definition
-   * (P14's own boxed shape, distinct from the header's tappable chips above it, which name the keywords but don't
-   * define them).
-   */
-  #drawSheetKeywords(x: number, y: number, width: number, model: InspectModel): number {
-    const padX = 11;
-    const padY = 10;
-    const gap = 7;
-    const bodyWidth = width - padX * 2;
-    const heading = label(this, x + padX, y + padY, "keywords", typeRole.label, surface.ink.hex, ink.meta);
-    let ty = y + padY + heading.height + gap;
-    const texts: Phaser.GameObjects.Text[] = [heading];
-    model.keywordDefinitions.forEach((entry, index) => {
-      if (index > 0) ty += 6;
-      const term = this.add.text(x + padX, ty, `${entry.label} —`, {
-        ...textStyle(typeRole.body, surface.ink.hex),
-        fontSize: "11px",
-        fontStyle: "700",
-      });
-      const def = this.add
-        .text(x + padX + term.width + 5, ty, entry.definition, textStyle(typeRole.body, surface.ink.hex))
-        .setFontSize(Math.max(minType.phoneBody, 10.5))
-        .setLineSpacing(3)
-        .setWordWrapWidth(Math.max(1, bodyWidth - term.width - 5));
-      texts.push(term, def);
-      ty += Math.max(term.height, def.height);
-    });
-    const boxHeight = ty - y + padY;
-    const box = this.add.graphics();
-    box.fillStyle(surface.parchment.hex, 1).fillRect(x, y, width, boxHeight);
-    box.lineStyle(border.object, surface.ink.hex, 1).strokeRect(x, y, width, boxHeight);
-    for (const t of texts) this.children.bringToTop(t);
-    return y + boxHeight;
-  }
-
-  /**
-   * "This game" — every accumulated history line for this instance, each with its own round tag and a 3px left
-   * rule (P14's own boxless list, distinct from the bordered Keywords box above it).
-   */
-  #drawSheetHistory(x: number, y: number, width: number, model: InspectModel): number {
-    const heading = label(this, x, y, "this game", typeRole.label, surface.ink.hex, ink.meta);
-    let ty = y + heading.height + 6;
-    const tagWidth = 34;
-    const rowPadX = 9;
-    for (const line of model.history) {
-      const rowTop = ty;
-      const tag = this.add.text(x + rowPadX, rowTop + 3, line.roundTag, {
-        ...textStyle(typeRole.label, surface.ink.hex, ink.meta),
-        fontSize: "9px",
-        fontStyle: "800",
-      });
-      const desc = this.add
-        .text(x + rowPadX + tagWidth + rowPadX, rowTop + 3, line.text, textStyle(typeRole.body, surface.ink.hex))
-        .setFontSize(Math.max(minType.phoneBody, 10.5))
-        .setLineSpacing(3)
-        .setWordWrapWidth(Math.max(1, width - rowPadX * 2 - tagWidth));
-      const rowHeight = Math.max(tag.height, desc.height) + 6;
-      const rule = this.add.graphics();
-      rule.fillStyle(surface.ink.hex, 1).fillRect(x, rowTop, border.object, rowHeight);
-      ty = rowTop + rowHeight + 6;
-    }
-    return ty - 6;
-  }
-
-  #drawSheetFooter(footer: Rect, primaryRow: Rect, quietRow: Rect, model: InspectModel): void {
-    const g = this.add.graphics();
-    g.fillStyle(surface.ink.hex, 1).fillRect(footer.x, footer.y, footer.width, footer.height);
-    this.add.zone(footer.x, footer.y, footer.width, footer.height).setOrigin(0, 0).setInteractive();
-
-    // "Dim, don't hide": PLAY stays in place (disabled, with the engine's own reason) for a hand card that cannot be
-    // played this instant, and PAY WITH stays whenever this card could ever be paid with — the same convention
-    // `#drawPlayAndPayButtons` follows for panels mode. Neither is omitted just because now is not the moment.
-    // A card in play with a usable ability gets its ability buttons instead, as in panels mode (`#drawButtons`):
-    // `status.playable` is true for a `useAbility` match too, and Aunt May's sheet offered "Play 1", which sent a
-    // play for a card already in play and did nothing.
-    const canPlay = model.status.playable === true;
-    const showPlay = canPlay || (model.status.playable === false && this.#isHandCard());
-    const showPay = model.resourceIcons.length > 0 && this.#isHandCard();
-    if (this.#choice) {
-      // Opened from an open decision (a campaign briefing's role-building, Seats, Scenario select): the sheet offers
-      // that answer directly, the phone's twin of the panels' Select button.
-      const { optionId, label: choiceLabel } = this.#choice;
-      const choose = (): void => {
-        this.#close();
-        this.game.events.emit("mc-choice-toggle", optionId);
-      };
-      this.#primaryAction = choose;
-      this.#buttons.push(
-        new McButton(this, {
-          kind: "primary",
-          label: choiceLabel,
-          type: typeRole.rowTitle,
-          rect: primaryRow,
-          onClick: choose,
-        }),
-      );
-    } else if (this.#note) {
-      this.#buttons.push(
-        new McButton(this, {
-          kind: "primary",
-          label: "Can't choose this",
-          type: typeRole.rowTitle,
-          rect: primaryRow,
-          onClick: () => undefined,
-          enabled: false,
-          reason: this.#note,
-        }),
-      );
-    } else if (model.abilities.length > 0) {
-      const uses = this.#abilityButtons(model);
-      const gap = 6;
-      const width = (primaryRow.width - gap * (uses.length - 1)) / uses.length;
-      uses.forEach((use, index) => {
-        if (index === 0) this.#primaryAction = use.run;
-        this.#buttons.push(
-          new McButton(this, {
-            kind: index === 0 ? "primary" : "onInk",
-            label: use.label,
-            type: uses.length === 1 ? typeRole.rowTitle : typeRole.label,
-            rect: { x: primaryRow.x + index * (width + gap), y: primaryRow.y, width, height: primaryRow.height },
-            onClick: use.run,
-          }),
-        );
-      });
-    } else if (showPlay || showPay) {
-      const gap = showPlay && showPay ? 6 : 0;
-      // P14's own 1.4:1 split when both show; either one alone takes the full row.
-      const split = sheetPlayPayWidths(primaryRow.width, gap);
-      const playWidth = showPlay && showPay ? split.play : primaryRow.width;
-      const payWidth = showPlay && showPay ? split.pay : primaryRow.width;
-      let x = primaryRow.x;
-      const play = (): void => {
-        const instanceId = this.#instanceId;
-        this.#close();
-        if (instanceId) this.game.events.emit("mc-play-card", instanceId);
-      };
-      const payWith = (): void => {
-        const instanceId = this.#instanceId;
-        this.#close();
-        if (instanceId) this.#boardScene()?.payWithCard(instanceId);
-      };
-      if (showPlay) {
-        if (canPlay) this.#primaryAction = play;
-        const playRect: Rect = { x, y: primaryRow.y, width: playWidth, height: primaryRow.height };
-        this.#buttons.push(
-          new McButton(this, {
-            kind: "primary",
-            label: "Play",
-            ...(model.currentCost !== null ? { value: String(model.currentCost) } : {}),
-            type: typeRole.rowTitle,
-            rect: playRect,
-            onClick: play,
-            enabled: canPlay,
-            ...(canPlay || !model.status.message ? {} : { reason: model.status.message }),
-          }),
-        );
-        // Guided mode G7b: the sheet's own `TRY THIS` stamp on Play, mirroring `ChoiceOverlay`'s own
-        // `#guidePickInstanceId` stamp — see `#guidePickInstanceId`'s own doc comment for why this scene draws
-        // its own tag rather than relying on Board's (a later-launched scene renders above it).
-        if (canPlay && this.#isGuidePick()) {
-          this.#drawGuideStamp(playRect);
-          this.#lastPlayRect = playRect;
-        }
-        x += playWidth + gap;
-      }
-      if (showPay) {
-        const enabled = model.canPayAsResource;
-        if (enabled && !canPlay) this.#primaryAction = payWith;
-        this.#buttons.push(
-          new McButton(this, {
-            kind: "onInk",
-            label: "Pay with",
-            type: typeRole.rowTitle,
-            rect: { x, y: primaryRow.y, width: payWidth, height: primaryRow.height },
-            onClick: payWith,
-            enabled,
-            ...(enabled ? {} : { reason: "Open a card to pay for first" }),
-          }),
-        );
-      }
-    }
-
-    // A facedown card has no rules text to expand: Close is the only button, across the whole row.
-    if (model.hidden) {
-      this.#buttons.push(
-        new McButton(this, {
-          kind: "onInk",
-          label: "Close",
-          type: typeRole.label,
-          rect: quietRow,
-          onClick: () => this.#close(),
-        }),
-      );
-      return;
-    }
-    // The side toggle (issues #295, #532) takes a third of the quiet row; it is never the primary action.
-    const sideToggle = this.#sideToggle();
-    const quietCount = sideToggle ? 3 : 2;
-    const quietWidth = (quietRow.width - 6 * (quietCount - 1)) / quietCount;
-    if (sideToggle) {
-      const sideButton = new McButton(this, {
-        kind: "onInk",
-        label: sideToggle.label,
-        type: typeRole.label,
-        rect: { x: quietRow.x + quietWidth * 2 + 12, y: quietRow.y, width: quietWidth, height: quietRow.height },
-        onClick: () => this.#stepSide(),
-        wrap: true,
-      });
-      this.#buttons.push(sideButton);
-      this.#hints.button(sideButton, ["inspect"], "ink", { when: (set) => set === "pad" });
-    }
-    this.#buttons.push(
-      new McButton(this, {
-        kind: "onInk",
-        label: this.#expanded ? "Collapse" : "Full rules text",
-        type: typeRole.label,
-        rect: { x: quietRow.x, y: quietRow.y, width: quietWidth, height: quietRow.height },
-        wrap: true,
-        onClick: () => {
-          this.#expanded = !this.#expanded;
-          this.#rebuild();
-        },
-      }),
-    );
-    this.#buttons.push(
-      new McButton(this, {
-        kind: "onInk",
-        label: "Close",
-        type: typeRole.label,
-        rect: { x: quietRow.x + quietWidth + 6, y: quietRow.y, width: quietWidth, height: quietRow.height },
-        wrap: true,
-        onClick: () => this.#close(),
-      }),
-    );
   }
 }
 

@@ -4,7 +4,7 @@ import { installWave6Helpers } from "./wave6-helpers-a.js";
 import { openApp } from "./wave6-helpers-b.js";
 import { SHOTS, startOnBoard } from "./qa-wave10-recheck-helpers.js";
 import { bringIntoView, facts, playFromHand, press } from "./x-men-helpers.js";
-import { focusRect } from "./helpers.js";
+import { clickText, focusRect } from "./helpers.js";
 
 /**
  * Issue #292: Finesse ("Hero Resource: Exhaust Finesse → generate a [wild] resource for an aspect card") can't pay for
@@ -144,6 +144,7 @@ for (const size of SIZES) {
           "the menu control opens Pause",
         );
         await settle(page, { quietMs: 400, maxMs: 2000 });
+        await clickText(page, "Table tools", { sceneKey: "PauseOverlay" });
         expect(await hasText(page, "Aspect card", "PauseOverlay")).toBe(true);
         if (SHOTS) await page.screenshot({ path: `${SHOTS}/finesse-pause-rules-${size.name}.png` });
       }

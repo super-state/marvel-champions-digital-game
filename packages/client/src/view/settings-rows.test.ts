@@ -428,10 +428,10 @@ describe("villain phase rows", () => {
 });
 
 describe("inspect card row (#358)", () => {
-  test("offers Large card and Side by side with the selected one marked", () => {
+  test("offers both phone reading layouts with the saved choice marked", () => {
     const info = inspectCardRowInfoOf(BASE);
-    expect(info.title).toBe("Inspect card");
-    expect(info.options.map((o) => o.label)).toEqual(["Large card", "Side by side"]);
+    expect(info.title).toBe("Phone card reader");
+    expect(info.options.map((o) => o.label)).toEqual(["Text first", "Text and thumbnail"]);
     expect(info.selected).toBe("large");
     expect(inspectCardRowInfoOf({ ...BASE, inspectCard: "sideBySide" }).selected).toBe("sideBySide");
   });

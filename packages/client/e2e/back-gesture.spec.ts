@@ -26,7 +26,8 @@ test.describe("Back steps back a screen (#480)", () => {
     await settle(page);
     expect(await trapped(page), "the game keeps a history entry of its own").toBe(true);
 
-    await clickText(page, "Trophy Room", { sceneKey: "Title" });
+    await clickText(page, "My record", { sceneKey: "Title" });
+    await clickText(page, "Achievements", { sceneKey: "Title" });
     await waitForScene(page, "TrophyRoom");
     await settle(page);
     await back(page);

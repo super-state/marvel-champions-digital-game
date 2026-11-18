@@ -57,7 +57,7 @@ const sheet = {
 async function startNewGame(page: Page): Promise<void> {
   await waitForScene(page, "Title", 30000);
   await settle(page);
-  await clickText(page, "NEW GAME", { sceneKey: "Title" });
+  await clickText(page, "Play a single game", { sceneKey: "Title" });
   await waitForScene(page, "ScenarioSelect");
   await waitFor(async () => (await hasStop(page, "next", "ScenarioSelect")) || null, "scenario list", 15000);
 }
@@ -225,12 +225,12 @@ test.describe("Same-name hero and ally conflicts", () => {
       "Inspect says why it cannot be played",
     ).not.toHaveLength(0);
     expect(
-      await findVisibleText(page, "Use as resource", "InspectOverlay"),
-      "Use as resource is offered",
+      await findVisibleText(page, "Spend for resources", "InspectOverlay"),
+      "Spending the card for resources is offered",
     ).not.toHaveLength(0);
     await pressKey(page, "Escape");
     await waitFor(
-      async () => ((await findVisibleText(page, "Use as resource", "InspectOverlay")).length === 0 ? true : null),
+      async () => ((await findVisibleText(page, "Spend for resources", "InspectOverlay")).length === 0 ? true : null),
       "Inspect closes",
     );
 

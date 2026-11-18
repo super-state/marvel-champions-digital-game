@@ -1,31 +1,5 @@
-/**
- * The Title menu (docs/phase4-screen-gaps.md §3 W2, D01/P01), composition
- * read off `docs/design-renders/ScreensDesktop_00-01.png` and
- * `ScreensPhone_00.png`:
- *
- * - **Tablet/desktop**: the screen splits in two down a thin red rule. The
- *   left ~45% is an **ink** art panel (dot-grid texture, art is a future
- *   drop-in slot — nothing but ground today). The right panel is **paper**:
- *   a small red eyebrow label, the Bangers "MARVEL CHAMPIONS" logo, a black
- *   rule, then the menu stacked full-width inside that panel — Continue (the
- *   one red fill on the screen, when there's a game to pick up), New game,
- *   Decks & Collection, Campaign, Extras (the comics, art and music play has opened), Settings
- *   (dashed/dimmed until W4 lands it). A footer row sits at the paper panel's
- *   own bottom, card-pool coverage on the left and the build version on the
- *   right, one line, split apart rather than stacked.
- * - **Phone**: no split — the whole screen is **ink**, top to bottom. The
- *   logo and menu draw over it directly (white text, light-stroke boxes
- *   instead of paper cards), Continue is still the one red fill, and the
- *   footer is "Settings" on the left / version on the right (Settings is a
- *   menu row on tablet/desktop, but the mock demotes it to a footer link on
- *   phone; this build keeps it a full row at every size for one focus order
- *   to describe, and notes the phone footer's own "Settings" link as a
- *   difference still open).
- *
- * This replaces `view/title-layout.ts`, which laid out the old one-page
- * Title-plus-setup screen before W2 split the setup flow onto its own
- * screens.
- */
+/** Layout for the illustrated home, its Play / Collection / My record sections and saved games. */
+import { homeDestinations, type HomeSection, type HomeDestination } from "./home-navigation.js";
 import { hit } from "../tokens.js";
 import type { Rect } from "./layout.js";
 import { setupMetrics } from "./setup-metrics.js";
@@ -144,6 +118,7 @@ export interface TitleMenuLayoutInput {
   readonly width: number;
   readonly height: number;
   readonly continuable: boolean;
+  readonly section?: HomeSection;
   /** True when a newer release is on offer (`platform/update-check.ts`): reserves the update banner. */
   readonly update?: boolean;
   /** The Civil War box is open: a "Civil War!" row directly under Campaign. */
@@ -186,23 +161,8 @@ export interface TitleMenuLayout {
   readonly gamesPanelList: Rect | null;
   /** "In-progress games (N)", a menu row that opens the list full screen: a phone, or a split screen too short for the panel. */
   readonly gamesRow: Rect | null;
-  readonly newGame: Rect;
-  readonly decks: Rect;
-  readonly campaign: Rect;
-  /** "Civil War!", directly under Campaign; null until the Civil War box is unlocked. */
-  readonly civilWar: Rect | null;
-  /** "Extras", the left half of its row. */
-  readonly extras: Rect;
-  /** "Past games" (#706): finished games to watch, share or export; the right half of the Extras row. */
-  readonly pastGames: Rect;
-  /** "Trophy Room": achievements, rank and lifetime points, right under Extras; the left half of its row. */
-  readonly trophies: Rect;
-  /** "Your stats", the right half of the Trophy Room's row: the two read the same history. */
-  readonly stats: Rect;
-  /** "How to play" (guided mode G6c, `docs/guided-mode.md` §4): opens the learning hub; the left half of its row. */
-  readonly howToPlay: Rect;
-  /** "Mod Store", the right half of How to play's row (issue #734): the store is a main-menu item of its own. */
-  readonly modStore: Rect;
+  readonly tabs: Rect;
+  readonly destinations: Readonly<Partial<Record<HomeDestination, Rect>>>;
   readonly settings: Rect;
   /**
    * The rank badge (docs/achievements.md): a corner plate with the rank, lifetime points and the bar to the next
@@ -230,16 +190,8 @@ export function titleMenuLayoutRects(layout: TitleMenuLayout): readonly Rect[] {
     ...(layout.continueRow ? [layout.continueRow] : []),
     ...(layout.gamesPanel ? [layout.gamesPanel] : []),
     ...(layout.gamesRow ? [layout.gamesRow] : []),
-    layout.newGame,
-    layout.decks,
-    layout.campaign,
-    ...(layout.civilWar ? [layout.civilWar] : []),
-    layout.extras,
-    layout.pastGames,
-    layout.trophies,
-    layout.stats,
-    layout.howToPlay,
-    layout.modStore,
+    layout.tabs,
+    ...Object.values(layout.destinations),
     layout.settings,
     layout.rankBadge,
     ...(layout.quit ? [layout.quit] : []),
@@ -283,7 +235,8 @@ function underNoticeBar(input: TitleMenuLayoutInput, inset: number): TitleMenuLa
   const shifted = Object.fromEntries(
     Object.entries(below).map(([key, value]) => [key, isRect(value) ? shift(value) : value]),
   ) as unknown as TitleMenuLayout;
-  return { ...shifted, noticeBar: { x: 0, y: 0, width: input.width, height: inset } };
+  const destinations = Object.fromEntries(Object.entries(below.destinations).map(([key, rect]) => [key, shift(rect)]));
+  return { ...shifted, destinations, noticeBar: { x: 0, y: 0, width: input.width, height: inset } };
 }
 
 const bottomOf = (layout: TitleMenuLayout): number =>
@@ -345,7 +298,7 @@ function titleMenuLayoutAt(
     ? { x: artPanel!.width + DIVIDER_WIDTH, y: 0, width: width - artPanel!.width - DIVIDER_WIDTH, height }
     : { x: 0, y: 0, width, height };
 
-  const column = Math.min(menuPanel.width - pad * 2, 520);
+  const column = Math.min(menuPanel.width - pad * 2, 680);
   const left = menuPanel.x + (menuPanel.width - column) / 2;
 
   const titleSize =
@@ -378,20 +331,23 @@ function titleMenuLayoutAt(
   const rule: Rect = { x: left, y, width: column, height: 2 };
   y += 2 + gap;
 
+  const section = input.section ?? "play";
+  const tabs: Rect = { x: left, y, width: column, height: hit.target };
+  y += tabs.height + gap;
   let continueRow: Rect | null = null;
-  if (input.continuable) {
+  if (input.continuable && section === "play") {
     continueRow = { x: left, y, width: column, height: primary };
     y += primary + gap;
   }
 
   // The games list: a panel in the art panel when it fits (between the update banner and the rank badge), else a menu row.
-  const gameCount = input.games ?? 0;
+  const gameCount = section === "play" || (section === "records" && split) ? (input.games ?? 0) : 0;
   let gamesPanel: Rect | null = null;
   let gamesPanelList: Rect | null = null;
   let gamesRow: Rect | null = null;
   const rankBadgeTop = height - pad - RANK_BADGE_HEIGHT;
   if (gameCount >= 1) {
-    if (split) {
+    if (split && section === "records") {
       const top = updateBanner ? updateBanner.y + updateBanner.height + pad : pad;
       const bottom = rankBadgeTop - pad;
       const rowsHeight = (rows: number): number => rows * (GAME_ROW_HEIGHT + GAME_ROW_GAP) - GAME_ROW_GAP;
@@ -411,40 +367,23 @@ function titleMenuLayoutAt(
         };
       }
     }
-    if (!gamesPanel) {
+    if (!gamesPanel && section === "play") {
       gamesRow = { x: left, y, width: column, height: hit.target };
       y += hit.target + gap;
     }
   }
 
-  const newGame: Rect = { x: left, y, width: column, height: primary };
-  y += primary + gap;
-  const decks: Rect = { x: left, y, width: column, height: hit.target };
-  y += hit.target + gap;
-  const campaign: Rect = { x: left, y, width: column, height: hit.target };
-  y += hit.target + gap;
-  let civilWar: Rect | null = null;
-  if (input.civilWar === true) {
-    civilWar = { x: left, y, width: column, height: hit.target };
-    y += hit.target + gap;
+  const destinations: Partial<Record<HomeDestination, Rect>> = {};
+  const rowHeight = compact ? 48 : short ? 60 : 75;
+  for (const id of homeDestinations(section, input.civilWar)) {
+    destinations[id] = { x: left, y, width: column, height: rowHeight };
+    y += rowHeight + Math.min(gap, 7);
   }
-  const halfColumn = Math.floor((column - 10) / 2);
-  const extras: Rect = { x: left, y, width: halfColumn, height: hit.target };
-  const pastGames: Rect = { x: left + column - halfColumn, y, width: halfColumn, height: hit.target };
+  y += gap;
+  const utilityWidth = input.quit ? (column - 8) / 2 : column;
+  const settings: Rect = { x: left, y, width: utilityWidth, height: hit.target };
+  const quit = input.quit ? { ...settings, x: left + column - utilityWidth } : null;
   y += hit.target + gap;
-  const trophies: Rect = { x: left, y, width: halfColumn, height: hit.target };
-  const stats: Rect = { x: left + column - halfColumn, y, width: halfColumn, height: hit.target };
-  y += hit.target + gap;
-  const howToPlay: Rect = { x: left, y, width: halfColumn, height: hit.target };
-  const modStore: Rect = { x: left + column - halfColumn, y, width: halfColumn, height: hit.target };
-  y += hit.target + gap;
-  const settings: Rect = { x: left, y, width: column, height: hit.target };
-  y += hit.target + gap;
-  let quit: Rect | null = null;
-  if (input.quit === true) {
-    quit = { x: left, y, width: column, height: hit.target };
-    y += hit.target + gap;
-  }
 
   // The rank badge: at the art panel's bottom-left on a split screen; in one column (a phone) it sits at the foot of the
   // menu, just above the footer (cards live, release notes), not up by the title (owner, 2026-10-20).
@@ -494,16 +433,8 @@ function titleMenuLayoutAt(
     gamesPanel,
     gamesPanelList,
     gamesRow,
-    newGame,
-    decks,
-    campaign,
-    civilWar,
-    extras,
-    pastGames,
-    trophies,
-    stats,
-    howToPlay,
-    modStore,
+    tabs,
+    destinations,
     settings,
     rankBadge,
     quit,

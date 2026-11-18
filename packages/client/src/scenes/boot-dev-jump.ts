@@ -144,7 +144,13 @@ export async function devScreenJump(): Promise<{ readonly key: string; readonly 
   const padHold = params.get("padhold");
   if (padHold === "lt" || padHold === "rt") (globalThis as { __devPadHold?: string }).__devPadHold = padHold;
 
-  if (screen === "scenario-select" || screen === "seats" || screen === "table-setup" || screen === "set-cards") {
+  if (
+    screen === "scenario-select" ||
+    screen === "seats" ||
+    screen === "match-review" ||
+    screen === "table-setup" ||
+    screen === "set-cards"
+  ) {
     // `&scenario=<id>&deck=<precon deck id>`: which scenario/precon this dev jump seats, for screenshotting a
     // specific setup screen (Standard II/Expert II, The Hood's own modular choice) without clicking through
     // Scenario select/Seats by hand. Falls back to the original fixed Rhino/first-precon draft when either param
@@ -175,7 +181,7 @@ export async function devScreenJump(): Promise<{ readonly key: string; readonly 
     if (screen === "scenario-select")
       return { key: SCENES.scenarioSelect, data: { draft } satisfies ScenarioSelectData };
     if (screen === "seats") return { key: SCENES.seats, data: { draft } satisfies SeatsData };
-    return { key: SCENES.setup, data: { draft } satisfies TableSetupData };
+    return { key: SCENES.setup, data: { draft, openOptions: screen !== "match-review" } satisfies TableSetupData };
   }
 
   // `?screen=name-conflict`: the "Cards that can't be played" sheet over Take your seats for Quicksilver (Order and

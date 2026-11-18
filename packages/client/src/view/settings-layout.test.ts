@@ -108,7 +108,9 @@ describe("settingsLayout", () => {
       expect(rectsOverlap(header!, tabs!)).toBe(false);
       expect(rectsOverlap(tabs!, body!)).toBe(false);
       expect(tabs!.y).toBeGreaterThanOrEqual(header!.y + header!.height);
-      expect(body!.y).toBeGreaterThanOrEqual(tabs!.y + tabs!.height);
+      if (layout.columns === 1 && body!.x > tabs!.x) {
+        expect(body!.x).toBeGreaterThan(tabs!.x + tabs!.width);
+      } else expect(body!.y).toBeGreaterThanOrEqual(tabs!.y + tabs!.height);
       expect(body!.y + body!.height).toBeLessThanOrEqual(layout.panel.y + layout.panel.height + 0.001);
     });
 

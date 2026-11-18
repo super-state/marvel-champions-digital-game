@@ -361,7 +361,7 @@ test.describe("portrait phone, 360x788", () => {
       return game.instances[id].damage as number;
     });
     const texts = (await visibleTexts(page)).filter((t) => t.scene === "InspectOverlay").map((t) => t.text);
-    expect(texts.some((t) => t.includes(`HP ${6 - hp}/6`))).toBe(true);
+    expect(texts.some((t) => t.includes(`Hit points ${6 - hp}/6`))).toBe(true);
     if (SHOT) await page.screenshot({ path: `${SHOT}/issue-635-inspect.png` });
   });
 });

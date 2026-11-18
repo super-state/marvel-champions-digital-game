@@ -6,6 +6,7 @@
  */
 
 import type Phaser from "phaser";
+import { t } from "../i18n/translate.js";
 import { ink, surface, typeRole } from "../tokens.js";
 import type { GlyphHints } from "../ui/glyph-hints.js";
 import { McButton, label } from "../ui/widgets.js";
@@ -42,7 +43,7 @@ export function drawFiltersControl(
   hints.button(button, ["inspect"], "paper", { when: (set) => set === "pad" });
   if (!inspectHint) return;
   // View opens the Inspect sheet here, because Y is the filters' (the keyboard's Inspect key is unchanged).
-  const word = label(scene, 0, 0, "Inspect", typeRole.label, surface.ink.hex, ink.label).setOrigin(0, 0.5);
+  const word = label(scene, 0, 0, t("reader.face"), typeRole.label, surface.ink.hex, ink.label).setOrigin(0, 0.5);
   hints.inline(rect.x - GAP - INSPECT_WIDTH + 4, rect.y + rect.height / 2, ["peek"], 16, {
     ground: "paper",
     word,

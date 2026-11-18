@@ -273,7 +273,7 @@ const PAD_ROWS: readonly PadRowDef[] = [
     action: "Move focus to the guide",
     note: "On the table, when the guide is showing. On a decision with Decline: Decline",
   },
-  { id: "inspect", index: 3, action: "Inspect · hold to zoom", note: "Where a card has focus" },
+  { id: "inspect", index: 3, action: "Read card · hold to zoom", note: "Where a card has focus" },
   {
     id: "pagePrevious",
     index: 4,

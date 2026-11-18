@@ -203,6 +203,8 @@ import { noteDeckFeat } from "../progression/deck-feats.js";
 import { refreshUnlocks } from "../progression/progression.js";
 import { appSession, campaignService, deckStorage } from "../session.js";
 import { cardSizeFactor } from "../settings.js";
+import { t } from "../i18n/translate.js";
+import { onLanguageChange } from "../language-change.js";
 import { deckBuilderRowSizes, type DeckBuilderRowSizes } from "../view/deck-builder-rows.js";
 import {
   campaignDeckContextWithGrants,
@@ -435,8 +437,6 @@ const QUICK_FILTERS: readonly {
   })),
 ];
 
-/** Under this height the narrow layout folds the pool's filters behind the Filters chip, as a phone does. */
-const FOLD_FILTERS_BELOW_HEIGHT = 700;
 /** The search row's Card/List toggle, ?, Clear and their gaps, plus a field that can still show a query. */
 const SEARCH_ROW_MIN_WIDTH = 92 + hit.target * 2 + CHIP_GAP * 3 + 160;
 /** The wide left rail's Cost curve / Odds tabs: shorter than a touch target, as only a mouse reaches them there. */
@@ -521,7 +521,7 @@ export class DeckBuilderScene extends Phaser.Scene {
   /** A phone folds the pool's filters behind a Filters chip; whether it is open. */
   #filtersOpen = false;
   /** The last narrow draw's tab-row facts the focus order reads. */
-  #narrowFolded = false;
+
   /** The wide rail's "Your deck" list scrolls in its own region once it outgrows the rail; its offset persists. */
   #yourDeckRegion: McScrollRegion | null = null;
   #yourDeckScroll = new VariableListScroll();
@@ -575,6 +575,12 @@ export class DeckBuilderScene extends Phaser.Scene {
   }
 
   create(data: DeckBuilderSceneData = {}): void {
+    this.events.once(
+      "shutdown",
+      onLanguageChange(() => {
+        if (this.sys.isActive()) this.#rebuild();
+      }),
+    );
     rebuildOnPackChange(this, () => this.#rebuild());
     this.cameras.main.setBackgroundColor(cssOf(surface.paper.hex));
     this.#rows = deckBuilderRowSizes(cardSizeFactor(appSession().settings.cardSize));
@@ -874,7 +880,7 @@ export class DeckBuilderScene extends Phaser.Scene {
           tab: this.#tab,
           tabs: DECK_BUILDER_TABS,
           campaign: this.#campaign !== null,
-          filtersFolded: this.#narrowFolded,
+          filtersFolded: true,
           filtersOpen: this.#filtersOpen,
           filterTextEntered: this.#filterText !== "",
           aspectIds: [...SELECTABLE_ASPECTS],
@@ -906,13 +912,8 @@ export class DeckBuilderScene extends Phaser.Scene {
         showPreconClear: !this.#campaign,
         showDelete: !this.#campaign && this.#savedDeck !== null,
         railIds: this.#railStops,
-        filterExtraIds: [
-          ...(this.#filterText ? ["filter-clear"] : []),
-          "filter-help",
-          "pool-view",
-          ...(this.#narrowFolded ? ["filters-toggle"] : []),
-        ],
-        filtersFolded: this.#narrowFolded,
+        filterExtraIds: [...(this.#filterText ? ["filter-clear"] : []), "filter-help", "pool-view", "filters-toggle"],
+        filtersFolded: true,
         filtersOpen: this.#filtersOpen,
         rewardIds: (this.#campaignModel?.rewards ?? []).map((reward, at) => `${at}:${reward.cardId as string}`),
       }),
@@ -1088,47 +1089,28 @@ export class DeckBuilderScene extends Phaser.Scene {
     // Pool: the search row, the filters (behind a chip on a phone), and the list filling what is left.
     y = this.#drawFilterInput(left, y, column);
     const pool = this.#browsablePool(deck);
-    const folded = this.#filtersFold();
-    this.#narrowFolded = folded;
+
     const countText = `${pool.length} card${pool.length === 1 ? "" : "s"}`;
-    if (folded) {
-      this.#drawFiltersToggle({ x: left, y, width: Math.min(column * 0.55, 200), height: hit.target });
-      label(this, left + column, y + hit.target / 2, countText, typeRole.label, surface.ink.hex, ink.meta).setOrigin(
-        1,
-        0.5,
-      );
-      y += hit.target + 12;
-      if (this.#filtersOpen) {
-        // The panel takes the list's place; the count above updates as the chips are pressed.
-        const rect: Rect = { x: left, y, width: column, height: Math.max(hit.target * 2, height - y - pad) };
-        const inner = column - NARROW_SCROLLBAR_GUTTER;
-        this.#drawNarrowRegion(rect, this.#filtersScroll, (at) => {
-          let next = this.#drawTypeFilters(left, at, inner);
-          next = this.#drawQuickFilters(left, next, inner, deck);
-          return this.#drawPackAndSort(left, next, inner, deck);
-        });
-        return pool;
-      }
-    } else {
-      y = this.#drawTypeFilters(left, y, column);
-      y = this.#drawQuickFilters(left, y, column, deck);
-      y = this.#drawPackAndSort(left, y, column, deck);
-      label(this, left, y, `pool — ${countText}`, typeRole.label, surface.ink.hex, ink.label);
-      y += 16;
+    this.#drawFiltersToggle({ x: left, y, width: Math.min(column * 0.55, 200), height: hit.target });
+    label(this, left + column, y + hit.target / 2, countText, typeRole.label, surface.ink.hex, ink.meta).setOrigin(
+      1,
+      0.5,
+    );
+    y += hit.target + 12;
+    if (this.#filtersOpen) {
+      // The panel takes the list's place; the count above updates as the chips are pressed.
+      const rect: Rect = { x: left, y, width: column, height: Math.max(hit.target * 2, height - y - pad) };
+      const inner = column - NARROW_SCROLLBAR_GUTTER;
+      this.#drawNarrowRegion(rect, this.#filtersScroll, (at) => {
+        let next = this.#drawTypeFilters(left, at, inner);
+        next = this.#drawQuickFilters(left, next, inner, deck);
+        return this.#drawPackAndSort(left, next, inner, deck);
+      });
+      return pool;
     }
     const listRect: Rect = { x: left, y, width: column, height: Math.max(this.#rows.cardRowHeight, height - y - pad) };
     this.#drawPoolList(listRect, deck, pool);
     return pool;
-  }
-
-  /**
-   * Whether the filters sit behind a "Filters" chip: everywhere but a desktop-size screen, so a tablet's pool gets the
-   * height (issue #631). Anything short folds them too: drawn open on a landscape phone they would push the list off
-   * the screen.
-   */
-  #filtersFold(): boolean {
-    const { width, height } = this.scale.gameSize;
-    return formFactorFor(width, height) !== "desktop" || height < FOLD_FILTERS_BELOW_HEIGHT;
   }
 
   /** The "Filters" chip: opens the filters in the pool list's place, and counts how many are on. */
@@ -1142,7 +1124,7 @@ export class DeckBuilderScene extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: "secondary",
-        label: `${this.#filtersOpen ? "▾" : "▸"} Filters${active > 0 ? ` · ${active}` : ""}`,
+        label: `${t("library.builderFilters")}${active > 0 ? ` (${active})` : ""} ${this.#filtersOpen ? "▾" : "▸"}`,
         type: typeRole.label,
         rect,
         selected: active > 0,
@@ -1248,8 +1230,6 @@ export class DeckBuilderScene extends Phaser.Scene {
     const { height } = this.scale.gameSize;
     const pad = 40;
     const bottom = height - pad;
-    const folded = this.#filtersFold();
-    this.#narrowFolded = folded;
 
     const leftX = left;
     const midX = leftX + LEFT_RAIL_WIDTH + RAIL_GAP;
@@ -1259,10 +1239,6 @@ export class DeckBuilderScene extends Phaser.Scene {
     // Left rail: aspect, filter, cost curve.
     let leftY = top;
     leftY = this.#drawAspectPicker(leftX, leftY, LEFT_RAIL_WIDTH, deck, false);
-    if (!folded) {
-      leftY = this.#drawTypeFilters(leftX, leftY, LEFT_RAIL_WIDTH);
-      leftY = this.#drawPackAndSort(leftX, leftY, LEFT_RAIL_WIDTH, deck);
-    }
     // The cost curve and the odds share the rail's last room behind two tabs (issue #531).
     const tabWidth = (LEFT_RAIL_WIDTH - CHIP_GAP) / 2;
     for (const [i, tab] of (["curve", "odds"] as const).entries()) {
@@ -1312,45 +1288,29 @@ export class DeckBuilderScene extends Phaser.Scene {
     const pool = this.#browsablePool(deck);
     const countText = `${pool.length} card${pool.length === 1 ? "" : "s"}`;
     let midY = top;
-    label(
-      this,
-      midX,
-      midY,
-      folded ? `card pool — ${countText}` : "card pool",
-      typeRole.label,
-      surface.ink.hex,
-      ink.label,
-    );
+    label(this, midX, midY, `${t("library.poolTitle")} · ${countText}`, typeRole.label, surface.ink.hex, ink.label);
     midY += 16;
-    if (folded) {
-      // The search, then the chip that opens everything else in the list's place: one row, where the field keeps a
-      // usable width even with its Clear button showing.
-      const chipWidth = 150;
-      const searchWidth = midWidth - chipWidth - CHIP_GAP;
-      if (searchWidth >= SEARCH_ROW_MIN_WIDTH) {
-        this.#drawFiltersToggle({ x: midX + searchWidth + CHIP_GAP, y: midY, width: chipWidth, height: hit.target });
-        midY = this.#drawFilterInput(midX, midY, searchWidth);
-      } else {
-        midY = this.#drawFilterInput(midX, midY, midWidth);
-        this.#drawFiltersToggle({ x: midX, y: midY, width: chipWidth, height: hit.target });
-        midY += hit.target + CHIP_GAP;
-      }
-      if (this.#filtersOpen) {
-        const rect: Rect = { x: midX, y: midY, width: midWidth, height: Math.max(hit.target * 2, bottom - midY) };
-        const inner = midWidth - NARROW_SCROLLBAR_GUTTER;
-        this.#drawNarrowRegion(rect, this.#filtersScroll, (at) => {
-          let next = this.#drawTypeFilters(midX, at, inner);
-          next = this.#drawQuickFilters(midX, next, inner, deck);
-          return this.#drawPackAndSort(midX, next, inner, deck);
-        });
-        return pool;
-      }
+    // The search, then the chip that opens everything else in the list's place: one row, where the field keeps a
+    // usable width even with its Clear button showing.
+    const chipWidth = 150;
+    const searchWidth = midWidth - chipWidth - CHIP_GAP;
+    if (searchWidth >= SEARCH_ROW_MIN_WIDTH) {
+      this.#drawFiltersToggle({ x: midX + searchWidth + CHIP_GAP, y: midY, width: chipWidth, height: hit.target });
+      midY = this.#drawFilterInput(midX, midY, searchWidth);
     } else {
       midY = this.#drawFilterInput(midX, midY, midWidth);
-      // The quick filters sit under the search here: the left rail has no room left for them.
-      midY = this.#drawQuickFilters(midX, midY - 4, midWidth, deck) - 4;
-      label(this, midX, midY, countText, typeRole.label, surface.ink.hex, ink.meta);
-      midY += 16;
+      this.#drawFiltersToggle({ x: midX, y: midY, width: chipWidth, height: hit.target });
+      midY += hit.target + CHIP_GAP;
+    }
+    if (this.#filtersOpen) {
+      const rect: Rect = { x: midX, y: midY, width: midWidth, height: Math.max(hit.target * 2, bottom - midY) };
+      const inner = midWidth - NARROW_SCROLLBAR_GUTTER;
+      this.#drawNarrowRegion(rect, this.#filtersScroll, (at) => {
+        let next = this.#drawTypeFilters(midX, at, inner);
+        next = this.#drawQuickFilters(midX, next, inner, deck);
+        return this.#drawPackAndSort(midX, next, inner, deck);
+      });
+      return pool;
     }
     const listRect: Rect = {
       x: midX,
@@ -2750,7 +2710,17 @@ ${entry.detail}`,
   }
 
   /** The pool, virtualized: `McVirtualList` owns which rows are live game objects; every card still gets a focus stop regardless of whether it's currently drawn. */
-  #drawPoolList(listRect: Rect, deck: Deck, pool: readonly AnyCard[]): void {
+  #drawPoolList(area: Rect, deck: Deck, pool: readonly AnyCard[]): void {
+    let listRect = area;
+    if (pool.length && area.height > 140) {
+      const hint = this.add.text(area.x + 3, area.y, t("reader.library"), {
+        ...textStyle(typeRole.body, surface.ink.hex, 0.84),
+        fontSize: "13px",
+        wordWrap: { width: area.width - 6 },
+      });
+      const offset = hint.height + 7;
+      listRect = { ...area, y: area.y + offset, height: area.height - offset };
+    }
     if (pool.length === 0) {
       const searched = this.#filterText.trim();
       this.add

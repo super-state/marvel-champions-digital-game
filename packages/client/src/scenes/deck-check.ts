@@ -69,6 +69,8 @@
  */
 import { isDesktopType } from "../ui/desktop-type.js";
 import Phaser from "phaser";
+import { t } from "../i18n/translate.js";
+import { onLanguageChange } from "../language-change.js";
 import type { CoreAspect, Deck } from "@mc/content";
 import { POOL_VERSION, currentCardsById, currentDeps, currentPool } from "../content/pool.js";
 import { artFor } from "../art/art-source.js";
@@ -261,6 +263,12 @@ export class DeckCheckScene extends Phaser.Scene {
   }
 
   create(data: DeckCheckSceneData): void {
+    this.events.once(
+      "shutdown",
+      onLanguageChange(() => {
+        if (this.sys.isActive()) this.#rebuild();
+      }),
+    );
     this.cameras.main.setBackgroundColor(cssOf(surface.paper.hex));
     this.#deck = data.deck;
     this.#returnTo = data.returnTo ?? { scene: SCENES.decks };
@@ -373,7 +381,7 @@ export class DeckCheckScene extends Phaser.Scene {
       )
       .setOrigin(0, 0);
 
-    const backLabel = this.#returnTo.scene === SCENES.seats ? "◂ Seats" : "◂ Back";
+    const backLabel = this.#returnTo.scene === SCENES.seats ? t("setup.backHeroes") : t("scenario.back");
     const goBack = (): void => {
       goToScreen(this, this.#returnTo.scene, this.#returnTo.data);
     };
@@ -462,11 +470,11 @@ export class DeckCheckScene extends Phaser.Scene {
       this.#buttons.push(
         new McButton(this, {
           kind: "primary",
-          label: "Start game ▸",
+          label: t("setup.review"),
           type: typeRole.barTitle,
           rect: layout.startGame,
           enabled: canStart,
-          ...(canStart ? {} : { reason: "Setup flow isn't built yet — coming with the title-menu rework (W2)." }),
+          ...(canStart ? {} : { reason: t("setup.blockedDeck") }),
           onClick: () => this.#onStartGame?.(this),
         }),
       );
@@ -544,7 +552,7 @@ export class DeckCheckScene extends Phaser.Scene {
     fitText(title, layout.meta.x - titleX - 12, typeRole.pageTitle.size);
 
     const count = this.#verdict?.count ?? deckCountText(stats);
-    const metaWords = inFlow ? "3/4" : `${count.toUpperCase()} · ${status.text.toUpperCase()}`;
+    const metaWords = inFlow ? t("setup.optional") : `${count.toUpperCase()} · ${status.text.toUpperCase()}`;
     const metaText = this.add
       .text(
         layout.meta.x + layout.meta.width,
@@ -743,11 +751,11 @@ export class DeckCheckScene extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: "primary",
-        label: "Start game ▸",
+        label: t("setup.review"),
         type: typeRole.barTitle,
         rect: startGameRect,
         enabled: canStart,
-        ...(canStart ? {} : { reason: "Setup flow isn't built yet — coming with the title-menu rework (W2)." }),
+        ...(canStart ? {} : { reason: t("setup.blockedDeck") }),
         onClick: () => this.#onStartGame?.(this),
       }),
     );

@@ -42,6 +42,7 @@ test("issue #791: a Manual adjust that defeats the villain leaves an unobstructe
     await page.waitForTimeout(1200);
   }
   await waitForScene(page, "PauseOverlay");
+  await clickStop(page, "tools", "PauseOverlay");
   await clickStop(page, "manual-adjust", "PauseOverlay");
   await waitForScene(page, SCENE);
 

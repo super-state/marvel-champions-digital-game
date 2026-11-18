@@ -112,6 +112,12 @@ export async function findText(page: Page, substr: string, sceneKey?: string): P
   );
 }
 
+/** Opens the deck collection from its home tab, using the same destinations shown to the player. */
+export async function openHomeDecks(page: Page): Promise<void> {
+  await clickText(page, "Collection", { sceneKey: "Title" });
+  await clickText(page, "Cards and decks", { sceneKey: "Title" });
+}
+
 /** Clicks a text match, preferring short exact-ish button labels over long incidental copy that happens to
  * contain the substring — the same heuristic the scratchpad `clickText` used. Polls briefly for the text to
  * appear rather than assuming the caller already waited exactly long enough (scene transitions/animations vary).
@@ -569,7 +575,7 @@ export async function startTutorialFromTitle(page: Page): Promise<void> {
     20000,
   );
 
-  await clickText(page, "NEW GAME", {
+  await clickText(page, "Play a single game", {
     until: () => hasText(page, "Learn as you play"),
     untilLabel: "New game opens the chooser",
   });

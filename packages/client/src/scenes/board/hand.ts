@@ -155,7 +155,7 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel, t
       // The deck and discard counts moved onto the piles themselves (`piles.ts`).
       // `handLimit` is the real hand; the strip can also carry cards played "as if in your hand" (`HandCardView.from`).
       // The hand size beside it, so a hand already at a small hand size (Iron Man's 1) reads as full (#150).
-      `hand ${model.handLimit} · size ${model.myHandSize}`,
+      t("reader.handCount", { count: model.handLimit, size: model.myHandSize }),
       typeRole.label,
       surface.paper.hex,
       ink.label,
@@ -180,6 +180,17 @@ export function drawHand(ctx: BoardDrawContext, rect: Rect, model: BoardModel, t
       // The word sits after the glyph's full width and stays put as the glyph closes: nothing shifts.
       const word = label(scene, 0, 0, "Zones", typeRole.label, surface.paper.hex, ink.label).setOrigin(0, 0.5);
       ctx.hints.inline(zonesX, rect.y + 4 + caption.height / 2, ["zonePrevious", "zoneNext"], 14, { word });
+    }
+    if (noteLeft === null && model.hand.length) {
+      const left = tabbed ? caption.x + caption.width + 10 : zonesX + 160;
+      const right = rect.x + rect.width - 10;
+      const hint = scene.add
+        .text(right, rect.y + 2, t(tabbed ? "reader.handTouch" : "reader.handMouse"), {
+          ...textStyle(typeRole.body, surface.paper.hex),
+          fontSize: "12px",
+        })
+        .setOrigin(1, 0);
+      hint.setVisible(hint.width <= right - left);
     }
   }
 

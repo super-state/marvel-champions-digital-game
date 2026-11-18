@@ -56,7 +56,7 @@ test("Scenario select and Take your seats start empty, focused on the topmost ti
   await settle(page);
   // The ring on arrival is for a pad (or key) player: wake the pad before the New game press.
   await padWake(page);
-  await clickText(page, "NEW GAME", { sceneKey: "Title" });
+  await clickText(page, "Play a single game", { sceneKey: "Title" });
   await waitForScene(page, "ScenarioSelect");
   await waitFor(async () => (await hasStop(page, "scenario:rhino", "ScenarioSelect")) || null, "scenario list", 15000);
   await settle(page);
@@ -122,7 +122,7 @@ test("Spider-Man (Pick a deck) as the first pick: focus returns to his tile afte
   await waitForScene(page, "Title", 30000);
   await settle(page);
   await padWake(page);
-  await clickText(page, "NEW GAME", { sceneKey: "Title" });
+  await clickText(page, "Play a single game", { sceneKey: "Title" });
   await waitForScene(page, "ScenarioSelect");
   await waitFor(async () => (await hasStop(page, "scenario:rhino", "ScenarioSelect")) || null, "scenario list", 15000);
   await clickStop(page, "scenario:rhino", "ScenarioSelect");
@@ -165,7 +165,7 @@ test("Back from Seats returns focus to the picked villain, not the top tile", as
   await waitForScene(page, "Title", 30000);
   await settle(page);
   await padWake(page);
-  await clickText(page, "NEW GAME", { sceneKey: "Title" });
+  await clickText(page, "Play a single game", { sceneKey: "Title" });
   await waitForScene(page, "ScenarioSelect");
   await waitFor(async () => (await hasStop(page, "scenario:rhino", "ScenarioSelect")) || null, "scenario list", 15000);
   await settle(page);
@@ -196,7 +196,7 @@ test.describe("phone, second visit", () => {
     await waitForScene(page, "Title", 30000);
     await settle(page);
     const visit = async (): Promise<void> => {
-      await clickText(page, "NEW GAME", { sceneKey: "Title" });
+      await clickText(page, "Play a single game", { sceneKey: "Title" });
       await waitForScene(page, "ScenarioSelect");
       await waitFor(
         async () => (await hasStop(page, "scenario:rhino", "ScenarioSelect")) || null,

@@ -1,5 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
-import { activeScenes, clickText, pressHookStop, pressKey, settle, trackPageErrors, waitFor } from "./helpers.js";
+import {
+  activeScenes,
+  clickText,
+  openHomeDecks,
+  pressHookStop,
+  pressKey,
+  settle,
+  trackPageErrors,
+  waitFor,
+} from "./helpers.js";
 import { dealToFirstTurn, findVisibleText, gameFacts, hook, openApp, type Rect } from "./wave6-helpers-b.js";
 
 /**
@@ -61,7 +70,7 @@ async function shot(page: Page, name: string): Promise<void> {
 
 async function openDecks(page: Page, query: string): Promise<void> {
   await openApp(page, query);
-  await clickText(page, "Decks");
+  await openHomeDecks(page);
   await waitFor(async () => ((await activeScenes(page)).includes("Decks") ? true : null), "Decks opens", 8000);
   await waitFor(async () => ((await offers(page)).length > 0 ? true : null), "the community decks are listed", 15000);
   // The first visit's deck statuses come from the search worker (#226); the rows say "Checking…" until it answers.

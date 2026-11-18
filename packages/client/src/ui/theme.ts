@@ -10,7 +10,7 @@
  */
 
 import type Phaser from "phaser";
-import { accent, border, font, ink, surface, tabletop, type TypeSpec } from "../tokens.js";
+import { font, ink, surface, tabletop, type TypeSpec } from "../tokens.js";
 import type { FaceFont } from "../art/card-face.js";
 
 /**
@@ -87,98 +87,35 @@ export function skin(kind: WidgetKind, state: WidgetState): Skin {
       );
     }
     case "primary":
-      switch (state) {
-        case "hover":
-          return solid(accent.redDeep.hex, surface.paper.hex, accent.redDeep.hex, border.object);
-        case "unavailable":
-          return {
-            ...solid(surface.paper.hex, surface.ink.hex, surface.ink.hex, border.object),
-            textAlpha: ink.disabled,
-          };
-        default:
-          return solid(accent.heroRed.hex, surface.paper.hex, accent.heroRed.hex, border.object);
-      }
-    case "secondary":
-      switch (state) {
-        case "hover":
-          // Ground and ink swap; nothing moves.
-          return solid(surface.ink.hex, surface.paper.hex, surface.ink.hex, border.control);
-        case "selected":
-          return solid(surface.ink.hex, surface.paper.hex, surface.ink.hex, border.control);
-        case "unavailable":
-          return {
-            ...solid(surface.paper.hex, surface.ink.hex, surface.ink.hex, border.control),
-            textAlpha: ink.disabled,
-          };
-        default:
-          return solid(surface.paper.hex, surface.ink.hex, surface.ink.hex, border.control);
-      }
-    case "quiet":
-      switch (state) {
-        case "hover":
-          return {
-            ...solid(surface.parchment.hex, surface.ink.hex, surface.ink.hex, border.detail),
-            textAlpha: ink.body,
-          };
-        case "unavailable":
-          return {
-            ...solid(surface.paper.hex, surface.ink.hex, surface.ink.hex, border.detail),
-            textAlpha: ink.disabled,
-            dashed: true,
-          };
-        default:
-          return {
-            ...solid(surface.paper.hex, surface.ink.hex, surface.ink.hex, border.detail),
-            textAlpha: ink.secondary,
-          };
-      }
-    case "onInk":
-      switch (state) {
-        case "hover":
-          // Ability buttons invert to red to preview the target-select mode.
-          return solid(accent.heroRed.hex, surface.paper.hex, accent.heroRed.hex, border.control);
-        case "selected":
-          return solid(accent.heroRed.hex, surface.paper.hex, accent.heroRed.hex, border.control);
-        case "unavailable":
-          return {
-            ...solid(surface.ink.hex, surface.paper.hex, surface.paper.hex, border.control),
-            textAlpha: ink.disabled,
-          };
-        default:
-          return {
-            ...solid(surface.ink.hex, surface.paper.hex, surface.paper.hex, border.control),
-            textAlpha: ink.body,
-          };
-      }
-    case "card":
-      switch (state) {
-        case "hover":
-          return solid(surface.card.hex, surface.ink.hex, accent.heroRed.hex, border.object);
-        case "selected":
-          return solid(surface.card.hex, surface.ink.hex, accent.heroRed.hex, border.object);
-        case "unavailable":
-          // Present but illegal this instant: 38% ink, still exactly in place.
-          return {
-            ...solid(surface.card.hex, surface.ink.hex, surface.ink.hex, border.object),
-            fillAlpha: ink.illegal,
-            textAlpha: ink.illegal,
-          };
-        default:
-          return solid(surface.card.hex, surface.ink.hex, surface.ink.hex, border.object);
-      }
-    case "rail":
-      if (state === "selected")
-        // Active tab = ink fill, not an underline.
-        return solid(surface.ink.hex, surface.paper.hex, surface.ink.hex, border.detail);
       if (state === "unavailable")
-        // A tab locked for the tutorial (guided mode G8 part 2, `docs/guided-mode.md` §3.11): "stay visible,
-        // dashed" — the same locked-slot mark every other kind's own `unavailable` uses.
-        return {
-          ...solid(surface.parchment.hex, surface.ink.hex, surface.ink.hex, border.detail),
-          textAlpha: ink.disabled,
-          dashed: true,
-        };
-      return { ...solid(surface.parchment.hex, surface.ink.hex, surface.ink.hex, border.detail), textAlpha: ink.label };
+        return { ...solid(surface.parchment.hex, surface.ink.hex, tabletop.edge, 1), textAlpha: 0.52 };
+      return solid(state === "hover" ? tabletop.gold : tabletop.brass, surface.inkOnHue.hex, tabletop.brass, 1);
+    case "onInk":
+      if (state === "unavailable")
+        return { ...solid(tabletop.rail, tabletop.secondary, tabletop.edge, 1), textAlpha: 0.6 };
+      return solid(
+        state === "rest" ? tabletop.plate : tabletop.raised,
+        tabletop.lettering,
+        state === "rest" ? tabletop.edge : tabletop.gold,
+        1,
+      );
+    case "secondary":
+    case "quiet":
+    case "card":
+    case "rail": {
+      const rail = kind === "rail";
+      const fill = rail || kind === "quiet" ? surface.parchment.hex : surface.card.hex;
+      if (state === "unavailable")
+        return { ...solid(fill, surface.ink.hex, tabletop.edge, 1), textAlpha: 0.55, dashed: rail || kind === "quiet" };
+      if (state === "selected") return solid(tabletop.plate, tabletop.lettering, tabletop.brass, 2);
+      if (state === "hover" && kind !== "card") return solid(tabletop.raised, tabletop.lettering, tabletop.edge, 1);
+      return solid(
+        fill,
+        surface.ink.hex,
+        state === "hover" ? tabletop.brass : tabletop.edge,
+        state === "hover" ? 2 : 1,
+      );
+    }
   }
 }
 

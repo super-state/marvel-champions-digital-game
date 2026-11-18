@@ -202,7 +202,7 @@ test.describe("Deadpool, 'Pool aspect: flows 1, 7 and 8", () => {
     await press(page, "Decks", "back");
     await waitForScene(page, "Title", 15000);
     await settle(page);
-    await clickText(page, "NEW GAME", { sceneKey: "Title" });
+    await clickText(page, "Play a single game", { sceneKey: "Title" });
     await waitForScene(page, "ScenarioSelect", 15000);
     await waitFor(
       async () => ((await hasStop(page, "scenario:rhino", "ScenarioSelect")) ? true : null),

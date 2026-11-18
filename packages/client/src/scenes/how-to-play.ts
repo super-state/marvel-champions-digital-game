@@ -30,17 +30,20 @@
  * `backTo`, since it is always where a "How to play"-style flow starts from.
  */
 import Phaser from "phaser";
-import { dotGrid, ink, signal, surface, typeRole, type TypeSpec } from "../tokens.js";
+import { cardId } from "@mc/content";
+import { t } from "../i18n/translate.js";
+import type { InspectData } from "./inspect.js";
+import { ink, signal, surface, tabletop, typeRole, type TypeSpec } from "../tokens.js";
 import { cssOf, textStyle } from "../ui/theme.js";
 import { GlyphHints } from "../ui/glyph-hints.js";
 import { hintCancelInHeader } from "../ui/header-cancel-hint.js";
-import { McButton, label, paintDotGrid } from "../ui/widgets.js";
+import { McButton, label } from "../ui/widgets.js";
 import { McScrollRegion } from "../ui/scroll-region.js";
 import { onTap } from "../ui/tap.js";
 import { VariableListScroll } from "../view/variable-list-scroll.js";
 import type { Rect } from "../view/layout.js";
 import {
-  continueLearningLabel,
+  howToPlayFocusOrder,
   continueLearningLesson,
   howToPlayContentLayout,
   howToPlayHeaderLayout,
@@ -95,6 +98,7 @@ export class HowToPlayScene extends Phaser.Scene {
     this.#hints = new GlyphHints(this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.#hints.dispose());
     this.#route = new FocusRoute(this, {
+      blocked: () => this.scene.isActive(SCENES.inspect) || this.scene.isActive(SCENES.rules),
       onCancel: () => this.#leave(),
       // Start is "forward": it presses Continue learning, the hub's one primary action.
       primary: () => "continue-learning",
@@ -118,12 +122,6 @@ export class HowToPlayScene extends Phaser.Scene {
     const content = howToPlayContentLayout(width, height, modules);
 
     this.add.rectangle(0, 0, width, height, surface.paper.hex).setOrigin(0, 0);
-    paintDotGrid(
-      this,
-      { x: 0, y: header.header.height, width, height: height - header.header.height },
-      "paper",
-      dotGrid.onPaper,
-    );
 
     this.#hints.reset();
     this.#drawHeader(header);
@@ -153,7 +151,7 @@ export class HowToPlayScene extends Phaser.Scene {
         this,
         content.basicsLabel.x,
         viewport.y + content.basicsLabel.y,
-        "THE BASICS",
+        t("menu.learn.lessons"),
         SECTION_LABEL_TYPE,
         surface.ink.hex,
         ink.secondary,
@@ -178,7 +176,7 @@ export class HowToPlayScene extends Phaser.Scene {
         this,
         content.aspectsLabel.x,
         viewport.y + content.aspectsLabel.y,
-        "ASPECTS",
+        t("menu.learn.aspects"),
         SECTION_LABEL_TYPE,
         surface.ink.hex,
         ink.secondary,
@@ -203,23 +201,44 @@ export class HowToPlayScene extends Phaser.Scene {
         this,
         content.referenceLabel.x,
         viewport.y + content.referenceLabel.y,
-        "REFERENCE",
+        t("menu.learn.actions"),
         SECTION_LABEL_TYPE,
         surface.ink.hex,
         ink.secondary,
       );
     });
-    {
-      const screenRect = toScreen(content.referenceRow);
-      this.#captureInto(container, () => this.#drawReferenceRow(screenRect));
-      const activate = (): void => this.#openReference();
-      const zone = this.add
-        .zone(screenRect.x, screenRect.y, screenRect.width, screenRect.height)
-        .setOrigin(0, 0)
-        .setInteractive({ useHandCursor: true });
-      onTap(zone, activate);
-      container.add(zone);
-      stops.set("reference", this.#bodyStop(content.referenceRow, content.referenceScrollIndex, activate));
+    const actions = [
+      {
+        key: "sample",
+        label: t("menu.learn.sample"),
+        rect: content.sample,
+        index: content.sampleScrollIndex,
+        run: () => this.#openSample(),
+      },
+      {
+        key: "reference",
+        label: t("menu.learn.reference"),
+        rect: content.referenceRow,
+        index: content.referenceScrollIndex,
+        run: () => this.#openReference(),
+      },
+    ];
+    for (const action of actions) {
+      this.#captureInto(container, () => {
+        this.#buttons.push(
+          new McButton(this, {
+            kind: "secondary",
+            type: typeRole.rowTitle,
+            label: action.label,
+            rect: toScreen(action.rect),
+            onClick: action.run,
+            wrap: true,
+            clip: () => this.#region?.rect ?? null,
+            suppressClick: () => this.#region?.isDragSuppressingClick ?? false,
+          }),
+        );
+      });
+      stops.set(action.key, this.#bodyStop(action.rect, action.index, action.run));
     }
 
     if (content.boxesLabel) {
@@ -229,7 +248,7 @@ export class HowToPlayScene extends Phaser.Scene {
           this,
           boxesLabel.x,
           viewport.y + boxesLabel.y,
-          "NEW IN EACH BOX",
+          t("menu.learn.boxes"),
           SECTION_LABEL_TYPE,
           surface.ink.hex,
           ink.secondary,
@@ -266,21 +285,13 @@ export class HowToPlayScene extends Phaser.Scene {
         lessons: () => modules.lessons.map((l, i) => ({ id: l.id, ...onScreen(content.lessonRows[i]!) })),
         aspects: () => modules.aspects.map((a, i) => ({ id: a.aspect, ...onScreen(content.aspectRows[i]!) })),
         reference: () => onScreen(content.referenceRow),
+        sample: () => onScreen(content.sample),
+        tutorial: () => onScreen(content.continueLearning),
         boxes: () => modules.boxes.map((b, i) => ({ id: b.id, title: b.title, ...onScreen(content.boxRows[i]!) })),
       };
     }
 
-    this.#route?.set(
-      [
-        "close",
-        ...modules.lessons.map((l) => `lesson:${l.id}`),
-        ...modules.aspects.map((a) => `aspect:${a.aspect}`),
-        "reference",
-        ...modules.boxes.map((b) => `box:${b.id}`),
-        "continue-learning",
-      ],
-      stops,
-    );
+    this.#route?.set(howToPlayFocusOrder(modules), stops);
   }
 
   /** Runs `draw`, then reparents everything it just added into `container` — the "eagerly draw, then move into the scrolled/masked layer" trick `McScrollRegion` relies on (its own doc comment), same as `scenes/settings.ts#captureInto`. */
@@ -305,20 +316,19 @@ export class HowToPlayScene extends Phaser.Scene {
     const g = this.add.graphics();
     g.fillStyle(surface.ink.hex, 1).fillRect(0, 0, this.scale.gameSize.width, header.header.height);
 
-    this.add
-      .text(header.close.x + header.close.width / 2, header.close.y + header.close.height / 2, "×", {
-        ...textStyle(typeRole.barTitle, surface.paper.hex),
-        fontSize: "26px",
-      })
-      .setOrigin(0.5);
-    const zone = this.add
-      .zone(header.close.x, header.close.y, header.close.width, header.close.height)
-      .setOrigin(0, 0)
-      .setInteractive({ useHandCursor: true });
-    onTap(zone, () => this.#leave(), "close");
+    this.#buttons.push(
+      new McButton(this, {
+        rect: header.close,
+        kind: "onInk",
+        type: typeRole.backLabel,
+        label: t("menu.home"),
+        onClick: () => this.#leave(),
+      }),
+    );
+    g.fillStyle(tabletop.brass).fillRect(0, header.header.height - 2, header.header.width, 2);
 
     const title = this.add
-      .text(header.title.x, header.header.height / 2, "HOW TO PLAY", {
+      .text(header.title.x, header.header.height / 2, t("title.howToPlay"), {
         ...textStyle(TITLE_TYPE, surface.paper.hex),
         fontSize: "22px",
       })
@@ -366,12 +376,14 @@ export class HowToPlayScene extends Phaser.Scene {
         .text(
           statusX + statusWidth,
           rect.y + rect.height / 2,
-          "✓ Done",
+          `✓ ${t("menu.learn.done")}`,
           textStyle(ROW_DETAIL_TYPE, surface.ink.hex, ink.secondary),
         )
         .setOrigin(1, 0.5);
     } else if (lesson.recommended) {
-      const stampLabel = this.add.text(0, 0, "NEXT", textStyle(STAMP_TYPE, surface.inkOnHue.hex)).setVisible(false);
+      const stampLabel = this.add
+        .text(0, 0, t("menu.learn.next"), textStyle(STAMP_TYPE, surface.inkOnHue.hex))
+        .setVisible(false);
       const stampWidth = stampLabel.width + 16;
       const stampHeight = 20;
       const sx = rect.x + rect.width - stampWidth - 12;
@@ -396,7 +408,7 @@ export class HowToPlayScene extends Phaser.Scene {
   #drawAspectRow(rect: Rect, aspect: AspectRowInfo): void {
     const g = this.add.graphics();
     g.fillStyle(surface.card.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
-    g.lineStyle(1.5, surface.ink.hex, 1).strokeRect(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2);
+    g.lineStyle(1, tabletop.edge, 0.45).strokeRoundedRect(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2);
 
     const pad = 16;
     this.add.text(rect.x + pad, rect.y + 12, aspect.name, textStyle(ROW_TITLE_TYPE, surface.ink.hex));
@@ -409,7 +421,7 @@ export class HowToPlayScene extends Phaser.Scene {
         .text(
           rect.x + rect.width - 12,
           rect.y + rect.height / 2,
-          "✓ Done",
+          `✓ ${t("menu.learn.done")}`,
           textStyle(ROW_DETAIL_TYPE, surface.ink.hex, ink.secondary),
         )
         .setOrigin(1, 0.5);
@@ -423,33 +435,22 @@ export class HowToPlayScene extends Phaser.Scene {
     }
   }
 
-  #drawReferenceRow(rect: Rect): void {
-    const g = this.add.graphics();
-    g.fillStyle(surface.card.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
-    g.lineStyle(1.5, surface.ink.hex, 1).strokeRect(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2);
-    const pad = 16;
-    this.add.text(rect.x + pad, rect.y + 12, "Rules & glossary", textStyle(ROW_TITLE_TYPE, surface.ink.hex));
-    this.add
-      .text(
-        rect.x + pad,
-        rect.y + 38,
-        "Every keyword and the full rules reference, searchable.",
-        textStyle(ROW_DETAIL_TYPE, surface.ink.hex, ink.secondary),
-      )
-      .setWordWrapWidth(rect.width - pad * 2 - 40);
-    this.add
-      .text(rect.x + rect.width - 12, rect.y + rect.height / 2, "▸", {
-        ...textStyle(typeRole.barTitle, surface.ink.hex),
-        fontSize: "18px",
-      })
-      .setOrigin(1, 0.5);
+  #openSample(): void {
+    if (this.scene.isActive(SCENES.inspect)) return;
+    this.input.enabled = false;
+    this.scene.launch(SCENES.inspect, {
+      card: { cardId: cardId("01005"), face: { kind: "front" } },
+    } satisfies InspectData);
+    this.scene.get(SCENES.inspect).events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.enabled = true;
+    });
   }
 
   /** A "New in this box" row: the page's title, its entry/Try-it count, and a quiet "▸". */
   #drawBoxRow(rect: Rect, box: BoxRowInfo): void {
     const g = this.add.graphics();
     g.fillStyle(surface.card.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
-    g.lineStyle(1.5, surface.ink.hex, 1).strokeRect(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2);
+    g.lineStyle(1, tabletop.edge, 0.45).strokeRoundedRect(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2);
     const pad = 16;
     this.add
       .text(rect.x + pad, rect.y + 12, box.title, textStyle(ROW_TITLE_TYPE, surface.ink.hex))
@@ -472,7 +473,13 @@ export class HowToPlayScene extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: "primary",
-        label: this.#starting ? "Suiting up…" : continueLearningLabel(modules),
+        label: this.#starting
+          ? t("menu.learn.preparing")
+          : modules.recommendedLessonIndex === null
+            ? t("menu.learn.replay")
+            : modules.recommendedLessonIndex === 0
+              ? t("menu.learn.start")
+              : t("menu.learn.continue"),
         type: typeRole.barTitle,
         rect,
         enabled: !this.#starting,

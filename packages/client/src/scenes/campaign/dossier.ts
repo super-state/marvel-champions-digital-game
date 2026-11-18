@@ -4,6 +4,7 @@
  * over the real `CampaignRecord` and `CampaignDefinition`; Issues reuses `campaignRunModel`'s rows.
  */
 import Phaser from "phaser";
+import { t } from "../../i18n/translate.js";
 import type { AnyCard } from "@mc/content";
 import { CARDS_BY_ID } from "../../content/pool.js";
 import { heroFaceDisplayName } from "../../view/hero-names.js";
@@ -264,10 +265,10 @@ export class CampaignDossierScene extends Phaser.Scene {
     const order: string[] = [];
 
     const top = drawTopBar(this, {
-      backLabel: "◂ Cover",
+      backLabel: t("menu.campaign.overview"),
       onBack: () => this.#back(),
       hints: this.#hints,
-      title: "Dossier",
+      title: t("menu.campaign.record"),
       right: loaded
         ? loaded.lostLine
           ? loaded.lostLine

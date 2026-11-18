@@ -61,10 +61,10 @@ describe("guideChooserLayout", () => {
     expect(guideChooserLayout(1440, 900).wide).toBe(true);
   });
 
-  it("gives every wide layout a Back button and every narrow one none", () => {
+  it("keeps a visible Back button at every width", () => {
     expect(guideChooserLayout(1024, 768).back.width).toBeGreaterThan(0);
     expect(guideChooserLayout(1440, 900).back.width).toBeGreaterThan(0);
-    expect(guideChooserLayout(390, 844).back.width).toBe(0);
+    expect(guideChooserLayout(390, 844).back.width).toBeGreaterThan(0);
   });
 
   it("reserves a lesson-chips row on wide layouts only", () => {
@@ -74,8 +74,7 @@ describe("guideChooserLayout", () => {
 });
 
 describe("guideChooserFocusOrder", () => {
-  it("walks the three options, then Back (wide) or not (narrow), then Suit up", () => {
-    expect(guideChooserFocusOrder(false)).toEqual(["option:full", "option:hints", "option:off", "suit-up"]);
-    expect(guideChooserFocusOrder(true)).toEqual(["option:full", "option:hints", "option:off", "back", "suit-up"]);
+  it("walks the three options, Back, and Continue", () => {
+    expect(guideChooserFocusOrder()).toEqual(["option:full", "option:hints", "option:off", "back", "suit-up"]);
   });
 });

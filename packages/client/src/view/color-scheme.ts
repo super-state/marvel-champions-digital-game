@@ -24,20 +24,17 @@
  * which is what makes that reverse lookup safe.
  */
 
+import { surface } from "../tokens.js";
+
 export type ColorScheme = "light" | "dark";
 export type ColorChannel = "fill" | "line" | "text";
-
-const INK = 0x14110e;
-const PAPER = 0xf4efe3;
-const PARCHMENT = 0xeae3d3;
-const CARD = 0xffffff;
 
 /** Light value to dark value, per channel. A color not listed is the same in both schemes. */
 const DARK: Readonly<Record<ColorChannel, ReadonlyMap<number, number>>> = {
   fill: new Map([
-    [PAPER, 0x3a342d],
-    [PARCHMENT, 0x2e2924],
-    [CARD, 0x48413a],
+    [surface.paper.hex, 0x263c49],
+    [surface.parchment.hex, 0x1d313e],
+    [surface.card.hex, 0x324b59],
     // The campaign book's own off-white grounds (Briefing, Dossier, Run, Market), drawn as raw hexes there.
     [0xfffaf0, 0x443d36],
     [0xf2ece0, 0x37312b],
@@ -45,10 +42,10 @@ const DARK: Readonly<Record<ColorChannel, ReadonlyMap<number, number>>> = {
     [0xe4dcc6, 0x2b2621],
     [0xd9d2bd, 0x26221d],
     // `surface.inkMark`.
-    [0x14110c, 0xd8cfbd],
+    [surface.inkMark.hex, 0xc7d4d3],
   ]),
-  line: new Map([[INK, 0xd8cfbd]]),
-  text: new Map([[INK, 0xf0e9db]]),
+  line: new Map([[surface.ink.hex, 0xb8c9ce]]),
+  text: new Map([[surface.ink.hex, 0xf0e9db]]),
 };
 
 const LIGHT: Readonly<Record<ColorChannel, ReadonlyMap<number, number>>> = {

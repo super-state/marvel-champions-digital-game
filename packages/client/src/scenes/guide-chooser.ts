@@ -16,13 +16,14 @@
  * next New game.
  */
 import Phaser from "phaser";
-import { accent, dotGrid, surface, typeRole, type TypeSpec } from "../tokens.js";
+import { dotGrid, surface, tabletop, typeRole, type TypeSpec } from "../tokens.js";
+import { setThemeSlot } from "../ui/theme-slot.js";
 import { cssOf, textStyle } from "../ui/theme.js";
 import { t } from "../i18n/translate.js";
 import { onLanguageChange } from "../language-change.js";
 import { GlyphHints } from "../ui/glyph-hints.js";
 import { onTap } from "../ui/tap.js";
-import { McButton, paintDotGrid } from "../ui/widgets.js";
+import { McButton, fitText, paintDotGrid } from "../ui/widgets.js";
 import { TITLE_ART, coverFit, pickTitleArt, type TitleArt } from "../art/title-art.js";
 import { ensurePictureLoaded } from "../art/pictures.js";
 import {
@@ -74,6 +75,7 @@ export class GuideChooserScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off("resize", this.#rebuild, this);
       unsubscribeLanguage();
+      setThemeSlot(this.scene.key, null);
       this.#hints.dispose();
     });
     this.#selected = "full";
@@ -116,6 +118,7 @@ export class GuideChooserScene extends Phaser.Scene {
       .setDepth(ART_SCRIM_DEPTH);
 
     this.#drawBanner(layout);
+    setThemeSlot(this.scene.key, { x: width - 56, y: 16, width: 38, height: 30 });
 
     this.add
       .text(layout.subtitle.x, layout.subtitle.y, t("guide.subtitle"), {
@@ -163,32 +166,19 @@ export class GuideChooserScene extends Phaser.Scene {
     );
     stops.set("suit-up", { rect: layout.suitUp, activate: () => this.#chooseGuide() });
 
-    this.#route?.set(guideChooserFocusOrder(layout.wide), stops);
+    this.#route?.set(guideChooserFocusOrder(), stops);
     this.#drawArt();
   }
 
   #drawBanner(layout: GuideChooserLayout): void {
-    const g = this.add.graphics().setDepth(BANNER_DEPTH);
-    g.fillStyle(surface.ink.hex, 1).fillRect(
-      layout.banner.x + 3,
-      layout.banner.y + 3,
-      layout.banner.width,
-      layout.banner.height,
-    );
-    g.fillStyle(0xf2b01e, 1).fillRect(layout.banner.x, layout.banner.y, layout.banner.width, layout.banner.height);
-    g.lineStyle(3, surface.ink.hex, 1).strokeRect(
-      layout.banner.x,
-      layout.banner.y,
-      layout.banner.width,
-      layout.banner.height,
-    );
-    this.add
-      .text(layout.banner.x + layout.banner.width / 2, layout.banner.y + layout.banner.height / 2, t("guide.title"), {
-        ...textStyle(typeRole.barTitle, surface.ink.hex),
-        fontSize: "22px",
+    const title = this.add
+      .text(layout.banner.x, layout.banner.y + layout.banner.height / 2, t("guide.title"), {
+        ...textStyle(typeRole.pageTitle, layout.wide ? surface.ink.hex : tabletop.lettering),
+        fontSize: "30px",
       })
-      .setOrigin(0.5, 0.5)
+      .setOrigin(0, 0.5)
       .setDepth(BANNER_DEPTH);
+    fitText(title, layout.banner.width, 30);
   }
 
   #drawOption(
@@ -200,19 +190,20 @@ export class GuideChooserScene extends Phaser.Scene {
     const option = GUIDE_CHOOSER_OPTIONS.find((o) => o.value === value)!;
     const selected = this.#selected === value;
     const g = this.add.graphics();
-    g.fillStyle(surface.card.hex, 1).fillRect(rect.x, rect.y, rect.width, rect.height);
-    g.lineStyle(selected ? 3 : 1.5, selected ? accent.heroRed.hex : surface.ink.hex, 1).strokeRect(
+    g.fillStyle(surface.card.hex).fillRoundedRect(rect.x, rect.y, rect.width, rect.height, 7);
+    g.lineStyle(selected ? 2 : 1, selected ? tabletop.brass : tabletop.edge, selected ? 1 : 0.48).strokeRoundedRect(
       rect.x,
       rect.y,
       rect.width,
       rect.height,
+      7,
     );
 
     const padX = 20;
     const radioCx = rect.x + padX + RADIO_RADIUS;
     const radioCy = rect.y + 26;
     g.lineStyle(2, surface.ink.hex, 1).strokeCircle(radioCx, radioCy, RADIO_RADIUS);
-    if (selected) g.fillStyle(accent.heroRed.hex, 1).fillCircle(radioCx, radioCy, RADIO_RADIUS - 4);
+    if (selected) g.fillStyle(tabletop.brass).fillCircle(radioCx, radioCy, RADIO_RADIUS - 4);
 
     const textLeft = radioCx + RADIO_RADIUS + 12;
     this.add.text(textLeft, rect.y + 14, t(option.labelKey), {
@@ -229,12 +220,12 @@ export class GuideChooserScene extends Phaser.Scene {
       const stampPad = 10;
       const stampHeight = 20;
       const stampLabel = this.add
-        .text(0, 0, t("guide.recommended"), textStyle({ ...typeRole.label, size: 9 }, surface.paper.hex))
+        .text(0, 0, t("guide.recommended"), textStyle({ ...typeRole.label, size: 9 }, surface.inkOnHue.hex))
         .setVisible(false);
       const stampWidth = stampLabel.width + stampPad * 2;
       const sx = rect.x + rect.width - stampWidth - 10;
       const sy = rect.y + 10;
-      g.fillStyle(accent.heroRed.hex, 1).fillRect(sx, sy, stampWidth, stampHeight);
+      g.fillStyle(tabletop.gold).fillRoundedRect(sx, sy, stampWidth, stampHeight, 4);
       stampLabel
         .setPosition(sx + stampWidth / 2, sy + stampHeight / 2)
         .setOrigin(0.5, 0.5)

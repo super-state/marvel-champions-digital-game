@@ -1,7 +1,13 @@
 import { hit } from "../tokens.js";
 import { describe, expect, test } from "vitest";
 import { rectsOverlap } from "./layout.js";
-import { pauseLayout, pauseLayoutRects, PAUSE_PHONE_MAX_WIDTH, type PauseLayoutInput } from "./pause-layout.js";
+import {
+  pauseHomeLayout,
+  pauseLayout,
+  pauseLayoutRects,
+  PAUSE_PHONE_MAX_WIDTH,
+  type PauseLayoutInput,
+} from "./pause-layout.js";
 
 /** docs/phase4-screen-gaps.md §0/§5's own size list for this fidelity pass: desktop, tablet portrait/landscape, and phone. */
 const WIDE_SIZES = [
@@ -375,6 +381,33 @@ describe("pauseLayout with a blind Civil War sheet", () => {
       const plain = pauseLayout({ x: 0, y: 0, width, height }, input(8));
       expect(plain.blindSheet).toBeNull();
       expect(pauseLayout({ x: 0, y: 0, width, height }, { ...input(8), blindLineCount: 0 })).toEqual(plain);
+    }
+  });
+});
+
+describe("the game menu", () => {
+  test.each([
+    [1440, 900],
+    [390, 844],
+    [568, 320],
+    [320, 290],
+  ])("keeps every destination inside the sheet or its scroll area at %i x %i", (width, height) => {
+    const { entries, viewport, contentHeight, sheet } = pauseHomeLayout(width, height);
+    expect(entries.map((item) => item.id)).toEqual([
+      "resume",
+      "rules-reference",
+      "full-game-log",
+      "tools",
+      "settings",
+      "save-quit",
+    ]);
+    expect(sheet.y + sheet.height).toBeLessThanOrEqual(height);
+    for (const [i, item] of entries.entries()) {
+      expect(item.rect.height).toBeGreaterThanOrEqual(44);
+      expect(item.rect.x).toBeGreaterThanOrEqual(viewport.x);
+      expect(item.rect.x + item.rect.width).toBeLessThanOrEqual(viewport.x + viewport.width);
+      expect(item.rect.y + item.rect.height).toBeLessThanOrEqual(viewport.y + contentHeight);
+      for (const other of entries.slice(i + 1)) expect(rectsOverlap(item.rect, other.rect)).toBe(false);
     }
   });
 });

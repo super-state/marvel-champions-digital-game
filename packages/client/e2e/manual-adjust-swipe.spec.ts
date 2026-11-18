@@ -53,6 +53,7 @@ test("issue #791: a swipe of the Manual adjust list that lifts on a row or on Do
     await page.waitForTimeout(1200);
   }
   await waitForScene(page, "PauseOverlay");
+  await clickStop(page, "tools", "PauseOverlay");
   if (phone) await clickStop(page, "quick-toggle", "PauseOverlay");
   await clickStop(page, phone ? "quick:manualAdjust" : "manual-adjust", "PauseOverlay");
   await waitForScene(page, SCENE);

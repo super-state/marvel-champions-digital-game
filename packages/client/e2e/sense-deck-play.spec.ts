@@ -55,7 +55,7 @@ test("the Sense deck's top card offers Play it, which runs Superhuman Senses", a
   await pressAt(page, pile.x + pile.width / 2, pile.y + pile.height / 2);
   await waitFor(async () => ((await activeScenes(page)).includes("InspectOverlay") ? true : null), "Inspect", 10_000);
   await settle(page, { quietMs: 300, maxMs: 1500 });
-  await clickText(page, "Play it", { sceneKey: "InspectOverlay" });
+  await clickText(page, "Play card", { sceneKey: "InspectOverlay" });
   await settle(page, { quietMs: 500, maxMs: 4000 });
 
   const after = await waitFor(async () => {

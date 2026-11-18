@@ -100,6 +100,7 @@ export interface SettingsContentLayout {
 }
 
 export interface SettingsLayout {
+  readonly columns: number;
   readonly panel: Rect;
   readonly header: Rect;
   /** The tab rail, under the header. */
@@ -111,12 +112,25 @@ export interface SettingsLayout {
   readonly content: SettingsContentLayout;
 }
 
-export function settingsLayout(bounds: Rect, sections: readonly SettingsSectionSpec[]): SettingsLayout {
-  const { panel, header, body } = overlayPanelLayout(bounds, HEADER_HEIGHT, 0);
-  const x = body.x + 16;
-  const width = Math.max(0, body.width - 32);
-  const tabs: Rect = { x, y: body.y + TABS_GAP, width, height: TABS_HEIGHT };
-  const bodyTop = tabs.y + tabs.height + TABS_GAP / 2;
+export function settingsLayout(
+  bounds: Rect,
+  sections: readonly SettingsSectionSpec[],
+  tabCount = 6,
+  searching = false,
+): SettingsLayout {
+  const { panel, header, body } = overlayPanelLayout(bounds, HEADER_HEIGHT, 0, 1040);
+  const sidebar = !searching && bounds.width >= 900 && body.height >= tabCount * TABS_HEIGHT + 32;
+  const columns = searching || sidebar ? 1 : Math.max(1, Math.min(tabCount, Math.floor((body.width - 32) / 104)));
+  const sideWidth = 164;
+  const tabs: Rect = {
+    x: body.x + 16,
+    y: body.y + TABS_GAP,
+    width: sidebar ? sideWidth : Math.max(0, body.width - 32),
+    height: searching ? TABS_HEIGHT : TABS_HEIGHT * Math.ceil(tabCount / columns),
+  };
+  const x = sidebar ? tabs.x + tabs.width + 28 : body.x + 16;
+  const width = Math.max(0, body.x + body.width - 16 - x);
+  const bodyTop = sidebar ? tabs.y : tabs.y + tabs.height + TABS_GAP / 2;
   const onDesktop = formFactorFor(bounds.width, bounds.height) === "desktop";
 
   const slots: Rect[] = [];
@@ -150,6 +164,7 @@ export function settingsLayout(bounds: Rect, sections: readonly SettingsSectionS
   const bodyRoom: Rect = { x, y: bodyTop, width, height: Math.max(0, body.y + body.height - bodyTop - 8) };
 
   return {
+    columns,
     panel,
     header,
     tabs,
@@ -170,7 +185,7 @@ function placeItem(
   const base = { id: spec.id, kind: spec.kind, control: null, stacked: false, tiles: [] as readonly Rect[], slot };
   switch (spec.kind) {
     case "toggle":
-      return { ...base, row: { x, y, width, height: toggleRowHeight(spec.detail, width, onDesktop) } };
+      return { ...base, row: { x, y, width, height: toggleRowHeight(spec.detail, width, onDesktop, 13) } };
     case "level":
       return { ...base, row: { x, y, width, height: GUIDE_LEVEL_ROW_HEIGHT } };
     case "segmented": {
@@ -181,6 +196,7 @@ function placeItem(
         spec.detail,
         beside ? width - (spec.controlWidth - 84) : width + 100,
         onDesktop,
+        13,
       );
       const height = beside ? Math.max(textHeight, 44) : textHeight + 40;
       const controlWidth = Math.min(spec.controlWidth, width - 4);
@@ -193,7 +209,7 @@ function placeItem(
       const stacked = width < STACK_TILES_BELOW;
       // The detail runs the full row width (no control beside it), so size it as a toggle row with the control's
       // 100px reservation given back; the tiles then follow it.
-      const textHeight = toggleRowHeight(spec.detail, width + 100, onDesktop) - 8;
+      const textHeight = toggleRowHeight(spec.detail, width + 100, onDesktop, 13) - 8;
       const tilesTop = y + textHeight + 4;
       const count = Math.max(1, spec.count);
       const tileWidth = stacked ? width : (width - 2 - TILE_GAP * (count - 1)) / count;

@@ -121,7 +121,7 @@ describe("screen focus routes", () => {
     ]);
   });
 
-  test("the Decks screen (W9b, D14): wide reaches the list, the card pool and the selected deck's stats-pane actions in one route", () => {
+  test("the desktop library focuses the active browser and keeps the selected deck reachable", () => {
     const base = {
       showMarvelCdbImport: false,
       deckIds: ["p1", "s1", "s2"],
@@ -138,6 +138,8 @@ describe("screen focus routes", () => {
     expect(decksFocusOrder(base)).toEqual([
       "back",
       "player-stats",
+      "tab:decks",
+      "tab:cards",
       "new-deck",
       "deck-search",
       "filters-toggle",
@@ -151,10 +153,6 @@ describe("screen focus routes", () => {
       "ie-export",
       "paste-field",
       "paste-import",
-      "pool-chip:aspect:aggression",
-      "pool-chip:cost",
-      "pool-card:c1",
-      "pool-card:c2",
       "card-back",
       "card-inspect",
       "pane:deck",
@@ -167,6 +165,10 @@ describe("screen focus routes", () => {
       "stats-duplicate",
       "stats-play",
     ]);
+    const browsingCards = decksFocusOrder({ ...base, activeTab: "cards" });
+    expect(browsingCards).toContain("pool-card:c2");
+    expect(browsingCards).toContain("stats-play");
+    expect(browsingCards).not.toContain("deck:p1");
     // The quick-filter chips are collapsed behind "Filters" by default — no chip stop until it's expanded.
     expect(decksFocusOrder({ ...base, filtersExpanded: false })).not.toContain("deck-chip:aspect:justice");
     expect(decksFocusOrder({ ...base, filtersExpanded: false })).toContain("filters-toggle");
@@ -239,6 +241,7 @@ describe("screen focus routes", () => {
       "back",
       "player-stats",
       ...tabs,
+      "pool-search",
       "pool-chip:cost",
       "pool-card:c1",
     ]);
@@ -617,7 +620,7 @@ describe("screen focus routes", () => {
 
   test("the Title lists each in-progress game's row then its Watch and Remove right after Continue; the question replaces them", () => {
     const withGames = titleMenuFocusOrder({ continuable: true, gameIds: ["a", "b"] });
-    expect(withGames.slice(0, 8)).toEqual([
+    expect(withGames.slice(3, 11)).toEqual([
       "continue",
       "game:a",
       "game-watch:a",
@@ -627,13 +630,13 @@ describe("screen focus routes", () => {
       "game-remove:b",
       "new-game",
     ]);
-    expect(titleMenuFocusOrder({ continuable: true, gameIds: ["a", "b"], removeConfirm: true }).slice(0, 4)).toEqual([
+    expect(titleMenuFocusOrder({ continuable: true, gameIds: ["a", "b"], removeConfirm: true }).slice(3, 7)).toEqual([
       "continue",
       "remove-keep",
       "remove-confirm",
       "new-game",
     ]);
-    expect(titleMenuFocusOrder({ continuable: true, gamesRow: true }).slice(0, 3)).toEqual([
+    expect(titleMenuFocusOrder({ continuable: true, gamesRow: true }).slice(3, 6)).toEqual([
       "continue",
       "games-row",
       "new-game",
@@ -641,33 +644,37 @@ describe("screen focus routes", () => {
     expect(gamesListFocusOrder([], false)).toEqual([]);
   });
 
-  test("the Title menu (W2's D01) is Continue (when there's one), New game, Decks, Campaign, Extras, Settings, then the footer's Release notes link", () => {
+  test("home tabs only focus the entries currently on screen", () => {
+    const sections = ["section:play", "section:library", "section:records"];
+    const utility = ["settings", "release-notes"];
     expect(titleMenuFocusOrder({ continuable: false })).toEqual([
+      ...sections,
       "new-game",
-      "decks",
       "campaign",
-      "extras",
-      "past-games",
-      "trophies",
-      "stats",
       "how-to-play",
-      "mod-store",
-      "settings",
-      "release-notes",
+      ...utility,
     ]);
     expect(titleMenuFocusOrder({ continuable: true })).toEqual([
+      ...sections,
       "continue",
       "new-game",
-      "decks",
       "campaign",
-      "extras",
-      "past-games",
-      "trophies",
-      "stats",
       "how-to-play",
+      ...utility,
+    ]);
+    expect(titleMenuFocusOrder({ continuable: true, section: "library" })).toEqual([
+      ...sections,
+      "decks",
+      "extras",
       "mod-store",
-      "settings",
-      "release-notes",
+      ...utility,
+    ]);
+    expect(titleMenuFocusOrder({ continuable: true, section: "records" })).toEqual([
+      ...sections,
+      "past-games",
+      "stats",
+      "trophies",
+      ...utility,
     ]);
   });
 
@@ -687,7 +694,7 @@ describe("screen focus routes", () => {
     expect(titleMenuFocusOrder({ continuable: false, civilWar: false })).not.toContain("civil-war");
     const open = titleMenuFocusOrder({ continuable: true, civilWar: true });
     expect(open.indexOf("civil-war")).toBe(open.indexOf("campaign") + 1);
-    expect(open[open.indexOf("civil-war") + 1]).toBe("extras");
+    expect(open[open.indexOf("civil-war") + 1]).toBe("how-to-play");
   });
 
   test("Past games: Back, the filters and the file button, each game's row, then the details' four actions", () => {
@@ -755,23 +762,9 @@ describe("screen focus routes", () => {
   });
 
   test("the Title's update banner buttons come last, so the menu's first stop is still the first", () => {
-    expect(titleMenuFocusOrder({ continuable: true, updateActions: ["update-notes", "update-download"] })).toEqual([
-      "continue",
-      "new-game",
-      "decks",
-      "campaign",
-      "extras",
-      "past-games",
-      "trophies",
-      "stats",
-      "how-to-play",
-      "mod-store",
-      "settings",
-      "release-notes",
-      "update-notes",
-      "update-download",
-      "update-dismiss",
-    ]);
+    expect(
+      titleMenuFocusOrder({ continuable: true, updateActions: ["update-notes", "update-download"] }).slice(-3),
+    ).toEqual(["update-notes", "update-download", "update-dismiss"]);
     // No banner, no close button stop.
     expect(titleMenuFocusOrder({ continuable: false, updateActions: [] })).not.toContain("update-dismiss");
   });

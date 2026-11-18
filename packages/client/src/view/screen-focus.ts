@@ -8,6 +8,7 @@
  * A stop is a string key; the scene maps each key to the control it drew.
  */
 
+import { homeDestinations, HOME_SECTIONS, type HomeSection } from "./home-navigation.js";
 import { UPDATE_DISMISS_ID } from "./app-version.js";
 
 export interface TitleFocusInput {
@@ -115,7 +116,11 @@ export function decksFocusOrder(input: DecksFocusInput): readonly string[] {
     ...(input.importOpen === "marvelcdb" && input.showMarvelCdbImport ? ["marvelcdb-field", "marvelcdb-import"] : []),
   ];
   const poolGroup = input.hasSelection
-    ? [...input.poolChipIds.map((id) => `pool-chip:${id}`), ...input.poolCardIds.map((id) => `pool-card:${id}`)]
+    ? [
+        "pool-search",
+        ...input.poolChipIds.map((id) => `pool-chip:${id}`),
+        ...input.poolCardIds.map((id) => `pool-card:${id}`),
+      ]
     : [];
   const statsGroup = !input.hasSelection
     ? []
@@ -137,7 +142,15 @@ export function decksFocusOrder(input: DecksFocusInput): readonly string[] {
           "stats-play",
         ];
   // "Your stats" sits on the header bar beside Back.
-  if (input.wide) return ["back", "player-stats", ...listGroup, ...poolGroup, ...statsGroup];
+  if (input.wide)
+    return [
+      "back",
+      "player-stats",
+      "tab:decks",
+      "tab:cards",
+      ...(input.activeTab === "cards" ? poolGroup : listGroup),
+      ...statsGroup,
+    ];
   const tabs = ["tab:decks", "tab:cards", "tab:stats"];
   const activeGroup = input.activeTab === "decks" ? listGroup : input.activeTab === "cards" ? poolGroup : statsGroup;
   return ["back", "player-stats", ...tabs, ...activeGroup];
@@ -461,6 +474,7 @@ export function settingsFocusOrder(rowIds: readonly string[]): readonly string[]
  */
 export function titleMenuFocusOrder(input: {
   readonly continuable: boolean;
+  readonly section?: HomeSection;
   /** The Civil War box is open: "civil-war" follows Campaign. */
   readonly civilWar?: boolean;
   /** The desktop app: "quit" follows Settings. */
@@ -476,20 +490,13 @@ export function titleMenuFocusOrder(input: {
   /** The "In-progress games (N)" menu row (a phone) is drawn: a stop after Continue. */
   readonly gamesRow?: boolean;
 }): readonly string[] {
+  const section = input.section ?? "play";
   return [
-    ...(input.continuable ? ["continue"] : []),
+    ...HOME_SECTIONS.map((id) => `section:${id}`),
+    ...(section === "play" && input.continuable ? ["continue"] : []),
     ...gamesListFocusOrder(input.gameIds ?? [], input.removeConfirm === true),
     ...(input.gamesRow ? ["games-row"] : []),
-    "new-game",
-    "decks",
-    "campaign",
-    ...(input.civilWar ? ["civil-war"] : []),
-    "extras",
-    "past-games",
-    "trophies",
-    "stats",
-    "how-to-play",
-    "mod-store",
+    ...homeDestinations(section, input.civilWar),
     "settings",
     ...(input.quit ? ["quit"] : []),
     ...(input.discord ? ["discord"] : []),

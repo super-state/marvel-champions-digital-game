@@ -43,22 +43,19 @@ import type { CardSize } from "../settings.js";
 import { playableScenarioOffer } from "@mc/cards";
 import { gameEncounterSets, gameScenarios } from "../content/game-deps.js";
 import { gameDeps } from "../content/game-deps.js";
-import { accent, hit, ink, signal, status, surface, typeRole, type TypeSpec } from "../tokens.js";
+import { accent, hit, ink, signal, status, surface, tabletop, typeRole, type TypeSpec } from "../tokens.js";
 import { caseOf, textStyle } from "../ui/theme.js";
 import { applyTextResolution, drawnDensity } from "../platform/screen-settings.js";
-import {
-  McButton,
-  McTextInput,
-  addRowTapZone,
-  fitText,
-  label,
-  paintDotGrid,
-  paintOnFrame,
-  paintPanel,
-} from "../ui/widgets.js";
+import { McButton, McTextInput, addRowTapZone, fitText, label, paintOnFrame, paintPanel } from "../ui/widgets.js";
 import { McScrollRegion } from "../ui/scroll-region.js";
 import { onTap } from "../ui/tap.js";
+import { drawMenuEntry } from "../ui/menu-entry.js";
+import { t, type MessageKey } from "../i18n/translate.js";
+import { onLanguageChange } from "../language-change.js";
+import { captureIntoRegion } from "../ui/scroll-capture.js";
 import {
+  pauseHomeLayout,
+  type PauseHomeId,
   pauseLayout,
   type PausePhoneLowerContent,
   type PausePhoneLayout,
@@ -111,7 +108,15 @@ interface QuickReferenceRow {
 }
 
 /** The wide menu's own Bangers size — smaller than a bar title, still the display face, matching D13's own read of "RESUME"/"SETTINGS" etc. */
-const MENU_BUTTON_TYPE: TypeSpec = { ...typeRole.barTitle, size: 18 };
+const MENU_BUTTON_TYPE: TypeSpec = { ...typeRole.menuButton, size: 15 };
+const HOME_COPY: Record<PauseHomeId, readonly [MessageKey, MessageKey]> = {
+  resume: ["pause.resume", "pause.resumeDetail"],
+  "rules-reference": ["pause.rules", "pause.rulesDetail"],
+  "full-game-log": ["pause.log", "pause.logDetail"],
+  tools: ["pause.tools", "pause.toolsDetail"],
+  settings: ["title.settings", "pause.settingsDetail"],
+  "save-quit": ["pause.save", "pause.saveDetail"],
+};
 
 type GuideNonLevelRow = Extract<GuideRowInfo, { kind: "action" | "toggle" }>;
 
@@ -125,6 +130,8 @@ export class PauseOverlay extends Phaser.Scene {
   #buttons: McButton[] = [];
   #searchInput: McTextInput | null = null;
   #query = "";
+  #details: "tools" | "full-game-log" | null = null;
+  #homeScroll = new VariableListScroll();
   #route: FocusRoute | null = null;
   #confirmingConcede = false;
   /** Wide: "Full game log" swaps the right panel's header/grid/jump-box group for the fuller retained log (`view/pause-layout.ts`'s own `rightContent`). Phone: the "Game log" row swaps the Table/Guide group for the same log box. */
@@ -146,6 +153,8 @@ export class PauseOverlay extends Phaser.Scene {
     this.#motion = new OverlayMotion();
     this.#confirmingConcede = false;
     this.#logExpanded = false;
+    this.#details = null;
+    this.#homeScroll = new VariableListScroll();
     this.#quickExpanded = false;
     this.#query = "";
     const { store } = appSession();
@@ -153,6 +162,7 @@ export class PauseOverlay extends Phaser.Scene {
     // The standalone Settings overlay (or another Pause) can change the same live guide prefs while this one is
     // open behind/beside it — redraw so it never shows a stale level/toggle.
     this.#unsubscribeGuide = onGuidePrefsChange(() => this.#draw());
+    const offLanguage = onLanguageChange(() => this.#draw());
     const onResize = (): void => this.#draw();
     this.scale.on("resize", onResize, this);
     this.#route = new FocusRoute(this, {
@@ -166,9 +176,15 @@ export class PauseOverlay extends Phaser.Scene {
         this.scene.isActive(SCENES.controls) ||
         this.scene.isActive(SCENES.inspect) ||
         (this.#searchInput?.focused ?? false),
-      onCancel: () => (this.#confirmingConcede ? this.#setConfirmingConcede(false) : this.#resume()),
+      primary: () => (this.#details === null ? "resume" : null),
+      onCancel: () => {
+        if (this.#confirmingConcede) this.#setConfirmingConcede(false);
+        else if (this.#details) this.#backToMenu();
+        else this.#resume();
+      },
     });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      offLanguage();
       this.scale.off("resize", onResize, this);
       this.#unsubscribe?.();
       this.#unsubscribe = null;
@@ -267,7 +283,7 @@ export class PauseOverlay extends Phaser.Scene {
         if (this.scene.isActive(overlay) || this.scene.isSleeping(overlay)) this.scene.stop(overlay);
       }
       if (this.scene.isActive(SCENES.board)) this.scene.stop(SCENES.board);
-      this.scene.start(SCENES.title, {});
+      this.scene.start(SCENES.title, { section: "play" });
     });
   }
 
@@ -380,6 +396,96 @@ export class PauseOverlay extends Phaser.Scene {
     return rows;
   }
 
+  #openDetails(page: "tools" | "full-game-log"): void {
+    this.#details = page;
+    this.#logExpanded = page === "full-game-log";
+    this.#draw();
+  }
+
+  #backToMenu(): void {
+    const from = this.#details;
+    this.#details = null;
+    this.#confirmingConcede = false;
+    this.#query = "";
+    this.#quickExpanded = false;
+    this.#logExpanded = false;
+    this.#draw();
+    if (from) this.#route?.focusKey(from);
+  }
+
+  #drawHome(width: number, height: number): void {
+    this.#searchInput?.destroy();
+    this.#searchInput = null;
+    destroyChildren(this);
+    const { game, perspectiveId, config } = appSession().store.state;
+    const { sheet, viewport, entries, contentHeight } = pauseHomeLayout(width, height);
+    const scrim = this.add.graphics().fillStyle(tabletop.shadow, 0.76).fillRect(0, 0, width, height);
+    addPressShield(this, { x: 0, y: 0, width, height });
+    const panelFrom = this.children.list.length;
+    const pad = viewport.x - sheet.x;
+    const g = this.add.graphics();
+    g.fillStyle(tabletop.rail).fillRoundedRect(sheet.x, sheet.y, sheet.width, sheet.height, 8);
+    g.lineStyle(1, tabletop.brass, 0.85).strokeRoundedRect(sheet.x, sheet.y, sheet.width, sheet.height, 8);
+    const compact = height < 450;
+    const heading = this.add
+      .text(
+        viewport.x,
+        sheet.y + (compact ? 5 : 10),
+        t("pause.heading"),
+        textStyle(typeRole.pageTitle, tabletop.lettering),
+      )
+      .setFontSize(compact ? 24 : 32);
+    const status = this.add.text(
+      viewport.x,
+      heading.y + heading.height - 1,
+      game && perspectiveId ? this.#wideStatusLine(game, perspectiveId, config) : t("pause.nogame"),
+      textStyle(typeRole.body, tabletop.secondary),
+    );
+    fitText(status, sheet.width - 2 * pad, compact ? 12 : 14);
+    const heights = [contentHeight];
+    const region =
+      contentHeight > viewport.height
+        ? new McScrollRegion(this, { rect: viewport, heights, scroll: this.#homeScroll, clipInteractive: true })
+        : null;
+    this.#lowerRegion = region;
+    const fromIndex = this.children.list.length;
+    const actions: Record<PauseHomeId, () => void> = {
+      resume: () => this.#resume(),
+      "rules-reference": () => this.#openRules({ initialTab: "glossary" }),
+      "full-game-log": () => this.#openDetails("full-game-log"),
+      tools: () => this.#openDetails("tools"),
+      settings: () => this.scene.launch(SCENES.settings),
+      "save-quit": () => this.#saveAndQuit(),
+    };
+    const stops = new Map<string, FocusStop>();
+    for (const { id, rect } of entries) {
+      const [name, detail] = HOME_COPY[id];
+      const activate = actions[id];
+      drawMenuEntry(this, rect, { name: t(name), detail: t(detail), primary: id === "resume", onClick: activate });
+      stops.set(id, { rect, activate });
+    }
+    if (region) {
+      captureIntoRegion(this, {
+        region,
+        heights,
+        scroll: this.#homeScroll,
+        fromIndex,
+        stops,
+        stopsBefore: new Set(),
+        viewportTop: viewport.y,
+        viewportBottom: viewport.y + viewport.height,
+        bottom: viewport.y + contentHeight,
+        padBottom: 0,
+      });
+      region.syncInteractivity();
+    }
+    this.#route?.set(
+      entries.map(({ id }) => id),
+      stops,
+    );
+    this.#motion.enter(this, { scrim: [scrim], panels: this.children.list.slice(panelFrom) });
+  }
+
   #draw(): void {
     // Answered its own exit already (Resume, Save & quit) — a store update or
     // resize mid-fade must not redraw over the outgoing sheet.
@@ -394,6 +500,10 @@ export class PauseOverlay extends Phaser.Scene {
     const { game, perspectiveId, config } = store.state;
     const { width, height } = this.scale.gameSize;
 
+    if (this.#details === null) {
+      this.#drawHome(width, height);
+      return;
+    }
     const allQuickRows = this.#quickReferenceRows(game);
     // A typed search's row is the way to run it, so the rows stay open while there is a query.
     const quickReferenceExpanded = this.#quickExpanded || this.#query.trim().length > 0;
@@ -447,13 +557,16 @@ export class PauseOverlay extends Phaser.Scene {
     if (layout.kind === "wide") {
       this.#drawWide(layout, keywordEntries, game, perspectiveId, config, stops);
       this.#route?.set(
-        pauseFocusOrder({
-          kind: "wide",
-          keywordIds: keywordEntries.slice(0, layout.keywordGrid.shown).map((entry) => entry.id),
-          momentIds: this.#momentIds,
-          confirmingConcede: this.#confirmingConcede,
-          guidedRunActive,
-        }),
+        [
+          "back-menu",
+          ...pauseFocusOrder({
+            kind: "wide",
+            keywordIds: keywordEntries.slice(0, layout.keywordGrid.shown).map((entry) => entry.id),
+            momentIds: this.#momentIds,
+            confirmingConcede: this.#confirmingConcede,
+            guidedRunActive,
+          }),
+        ],
         stops,
       );
     } else {
@@ -512,25 +625,28 @@ export class PauseOverlay extends Phaser.Scene {
       .fillRect(layout.sheet.x + 8, layout.sheet.y + 8, layout.sheet.width, layout.sheet.height);
 
     const leftG = this.add.graphics();
-    leftG.fillStyle(surface.ink.hex, 1).fillRect(layout.left.x, layout.left.y, layout.left.width, layout.left.height);
+    leftG.fillStyle(tabletop.rail, 1).fillRect(layout.left.x, layout.left.y, layout.left.width, layout.left.height);
     leftG
-      .lineStyle(4, surface.paper.hex, 1)
+      .lineStyle(1, tabletop.brass, 1)
       .strokeRect(layout.left.x, layout.left.y, layout.left.width, layout.left.height);
-    paintDotGrid(this, layout.left, "ink", { spacing: 8, radius: 1, alpha: 0.08 });
 
     const rightG = this.add.graphics();
     rightG
       .fillStyle(surface.paper.hex, 1)
       .fillRect(layout.right.x, layout.right.y, layout.right.width, layout.right.height);
     rightG
-      .lineStyle(4, surface.ink.hex, 1)
+      .lineStyle(1, tabletop.edge, 1)
       .strokeRect(layout.right.x, layout.right.y, layout.right.width, layout.right.height);
-    paintDotGrid(this, layout.right, "paper", { spacing: 6, radius: 1, alpha: 0.1 });
 
-    this.add.text(layout.title.x, layout.title.y, caseOf(typeRole.barTitle, "Paused"), {
-      ...textStyle(typeRole.barTitle, surface.paper.hex),
-      fontSize: "30px",
-    });
+    const backRect = { x: layout.title.x + layout.title.width - 70, y: layout.title.y, width: 70, height: 32 };
+    this.#menuButton(stops, "back-menu", "onInk", t("pause.back"), backRect, () => this.#backToMenu());
+    const detailsHeading = this.add.text(
+      layout.title.x,
+      layout.title.y,
+      this.#logExpanded ? t("pause.log") : t("pause.tools"),
+      textStyle(typeRole.pageTitle, tabletop.lettering),
+    );
+    fitText(detailsHeading, layout.title.width - backRect.width - 8, 25);
     const statusText =
       game && perspectiveId ? this.#wideStatusLine(game, perspectiveId, config) : "No game in progress.";
     const statusLabel = label(
@@ -545,7 +661,7 @@ export class PauseOverlay extends Phaser.Scene {
     fitText(statusLabel, layout.status.width, 11);
     if (game && perspectiveId) this.#drawBlindSheet(layout.blindSheet, game, perspectiveId, config);
 
-    this.#menuButton(stops, "resume", "primary", "Resume", layout.menu.resume, () => this.#resume());
+    this.#menuButton(stops, "resume", "primary", t("pause.resume"), layout.menu.resume, () => this.#resume());
     this.#menuButton(
       stops,
       "full-game-log",
@@ -618,7 +734,15 @@ export class PauseOverlay extends Phaser.Scene {
   ): void {
     stops.set(id, { rect, activate: onClick });
     this.#buttons.push(
-      new McButton(this, { kind, label: text, type: MENU_BUTTON_TYPE, rect, onClick, selected, enabled: true }),
+      new McButton(this, {
+        kind: kind === "primary" ? "tableCommit" : "tableAction",
+        label: text,
+        type: MENU_BUTTON_TYPE,
+        rect,
+        onClick,
+        selected,
+        enabled: true,
+      }),
     );
   }
 
@@ -918,13 +1042,10 @@ export class PauseOverlay extends Phaser.Scene {
     stops: Map<string, FocusStop>,
   ): readonly string[] {
     const panel = this.add.graphics();
+    panel.fillStyle(tabletop.rail, 1).fillRect(layout.panel.x, layout.panel.y, layout.panel.width, layout.panel.height);
     panel
-      .fillStyle(surface.ink.hex, 1)
-      .fillRect(layout.panel.x, layout.panel.y, layout.panel.width, layout.panel.height);
-    panel
-      .lineStyle(4, surface.paper.hex, 1)
+      .lineStyle(1, tabletop.brass, 1)
       .strokeRect(layout.panel.x, layout.panel.y, layout.panel.width, layout.panel.height);
-    paintDotGrid(this, layout.panel, "ink", { spacing: 8, radius: 1, alpha: 0.08 });
 
     this.#drawHeader(layout.header, layout.closeButton, layout.blindSheet, game, perspectiveId, config, stops);
 
@@ -957,7 +1078,7 @@ export class PauseOverlay extends Phaser.Scene {
 
     if (this.#confirmingConcede) this.#drawPhoneConcedeConfirm(layout, stops);
     else {
-      this.#button(stops, "resume", "primary", "Resume", layout.resume, () => this.#resume());
+      this.#button(stops, "resume", "primary", t("pause.resume"), layout.resume, () => this.#resume());
       this.#button(stops, "save-quit", "secondary", "Save & quit", layout.saveQuit, () => this.#saveAndQuit());
       this.#button(stops, "concede", "quiet", "Concede", layout.concede, () => this.#setConfirmingConcede(true));
     }
@@ -973,7 +1094,7 @@ export class PauseOverlay extends Phaser.Scene {
     config: SessionState["config"],
     stops: Map<string, FocusStop>,
   ): void {
-    this.add.text(rect.x + 16, rect.y + 10, caseOf(typeRole.barTitle, "Paused"), {
+    this.add.text(rect.x + 16, rect.y + 10, this.#logExpanded ? t("pause.log") : t("pause.tools"), {
       ...textStyle(typeRole.barTitle, surface.paper.hex),
       fontSize: "26px",
     });
@@ -997,13 +1118,13 @@ export class PauseOverlay extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: "secondary",
-        label: "✕",
-        type: typeRole.rowTitle,
+        label: "‹",
+        type: typeRole.menuButton,
         rect: closeRect,
-        onClick: () => this.#resume(),
+        onClick: () => this.#backToMenu(),
       }),
     );
-    stops.set("close", { rect: closeRect, activate: () => this.#resume() });
+    stops.set("close", { rect: closeRect, activate: () => this.#backToMenu() });
     const rule = this.add.graphics();
     rule.fillStyle(surface.paper.hex, 0.4).fillRect(rect.x, rect.y + rect.height - 2, rect.width, 2);
   }
@@ -1639,9 +1760,9 @@ export class PauseOverlay extends Phaser.Scene {
     stops.set(id, { rect, activate: onClick });
     this.#buttons.push(
       new McButton(this, {
-        kind,
+        kind: kind === "primary" ? "tableCommit" : kind,
         label: text,
-        type: kind === "primary" ? typeRole.barTitle : typeRole.rowTitle,
+        type: MENU_BUTTON_TYPE,
         rect,
         onClick,
         enabled: true,

@@ -33,6 +33,7 @@ import type { PadLayer, PickBumper } from "../view/pad-layer-bindings.js";
 import { padPickBinding, padPickSlotOf } from "../view/pick-assign.js";
 import { clipHoverRect } from "../view/card-hover.js";
 import type { ShortcutId } from "../view/input-shortcuts.js";
+import { t } from "../i18n/translate.js";
 import { triggerCaption, triggerOrdinal } from "../view/trigger-caption.js";
 import { choiceDock, choiceDockOptions, choiceSheetHost } from "../view/choice-dock.js";
 import {
@@ -2346,7 +2347,7 @@ export class ChoiceOverlay extends Phaser.Scene {
     });
     const available = choice.options.filter((option) => !this.#selected.includes(option.optionId));
 
-    const captionHeight = 16;
+    const captionHeight = area.width < 600 ? 34 : 20;
     // A sheet whose cards only fit as a grid (six cards on a phone), or whose order is the answer, keeps every card
     // where it is, whole and tappable: a picked card wears its ring and the number it will resolve in, instead of
     // being lifted out into a second group (which moved the second card and shrank both: QA QB-8).
@@ -2379,11 +2380,11 @@ export class ChoiceOverlay extends Phaser.Scene {
             ? divideTally
             : this.#selected.length > 0
               ? `selected ${this.#selected.length} · tap to add or remove${layout.scrolls ? " · scroll for more" : ""}`
-              : `tap to select · long press/right click to read it${layout.scrolls ? " · scroll for more" : ""}`,
-        typeRole.label,
+              : [t("reader.choiceOne"), layout.scrolls ? t("reader.moreOptions") : ""].filter(Boolean).join(" "),
+        { ...typeRole.body, size: 12 },
         surface.ink.hex,
         ink.label,
-      );
+      ).setWordWrapWidth(area.width);
       const region = layout.scrolls
         ? new McScrollRegion(this, {
             rect: gridArea,
@@ -2448,12 +2449,12 @@ export class ChoiceOverlay extends Phaser.Scene {
         isAcknowledgeOnly(choice)
           ? LOOK_AT_CAPTION
           : picked.length > 0
-            ? "tap to add · long press/right click to read it"
-            : "tap to select · long press/right click to read it",
-        typeRole.label,
+            ? t("reader.chooseMany")
+            : t("reader.choiceOne"),
+        { ...typeRole.body, size: 12 },
         surface.ink.hex,
         ink.label,
-      );
+      ).setWordWrapWidth(area.width);
       const slots = cardChoiceSlots(row, available.length, { gap: 6 });
       available.forEach((option, index) => {
         const slot = slots[index];
@@ -2795,7 +2796,7 @@ export class ChoiceOverlay extends Phaser.Scene {
    * like any option, so the pad and keyboard can turn them.
    */
   #drawCollectionGrid(area: Rect, choice: PendingChoice, rows: readonly CollectionRow[]): void {
-    const captionHeight = 20;
+    const captionHeight = area.width < 500 ? 34 : 20;
     const gap = 6;
     const gridArea: Rect = { ...area, y: area.y + captionHeight + 4, height: area.height - captionHeight - 4 };
     const grid = collectionGrid(gridArea, gap);
@@ -2810,13 +2811,11 @@ export class ChoiceOverlay extends Phaser.Scene {
       this,
       area.x,
       area.y + 4,
-      this.#selected.length > 0
-        ? "selected 1 · tap again to put it back"
-        : "tap to select · long press/right click to read it",
-      typeRole.label,
+      this.#selected.length > 0 ? "selected 1 · tap again to put it back" : t("reader.choiceOne"),
+      { ...typeRole.body, size: 12 },
       surface.ink.hex,
       ink.label,
-    );
+    ).setWordWrapWidth(area.width);
     const turn = (delta: -1 | 1): void => {
       this.#collectionPage = { ...this.#collectionPage, page: page + delta };
       this.#focus = null;

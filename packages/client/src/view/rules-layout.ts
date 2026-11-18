@@ -44,8 +44,8 @@ export interface RulesLayout {
 
 export function rulesLayout(bounds: Rect, activeTab: RulesTab): RulesLayout {
   const header: Rect = { x: bounds.x, y: bounds.y, width: bounds.width, height: CHROME_TITLE_HEIGHT };
-  const contentX = bounds.x + MARGIN;
-  const contentWidth = Math.max(0, bounds.width - MARGIN * 2);
+  const contentWidth = Math.max(0, Math.min(1240, bounds.width - MARGIN * 2));
+  const contentX = bounds.x + (bounds.width - contentWidth) / 2;
   // Inset like every row under the chrome (`tabs`/`search`/`body`), not edge to edge like the ink
   // chrome band itself — the previous full-width scope row let its own "ON YOUR TABLE" pill sit
   // flush against the viewport's own right edge with zero gutter (found on a 390px phone in a real

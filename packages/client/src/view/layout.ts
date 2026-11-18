@@ -71,10 +71,9 @@ export function contentSlotHeights(rects: readonly Rect[]): number[] {
  * `#drawRow` — one formula so the two screens can't drift into two different
  * row heights for what a player sees as the identical row).
  */
-export function toggleRowHeight(detail: string, width: number, onDesktop = false): number {
-  // The detail is drawn at 10px, which desktop draws a size up (`view/desktop-type.ts`): wider glyphs, taller lines.
-  const grow = desktopTypeSize(10, onDesktop) / 10;
-  const DETAIL_TOP = 20;
+export function toggleRowHeight(detail: string, width: number, onDesktop = false, detailSize = 10): number {
+  const grow = desktopTypeSize(detailSize, onDesktop) / 10;
+  const DETAIL_TOP = detailSize >= 13 ? 24 : 20;
   const DETAIL_LINE_HEIGHT = 14.5 * grow;
   const DETAIL_CHAR_WIDTH = 5.4 * grow;
   const BOTTOM_PADDING = 8;

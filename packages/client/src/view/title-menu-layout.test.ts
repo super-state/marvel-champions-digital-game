@@ -117,7 +117,10 @@ describe("titleMenuLayout", () => {
     });
 
     test("a split screen with room puts the panel in the art panel, its list inside it; a phone gets a menu row", () => {
-      const desktop = titleMenuLayout({ width: 1280, height: 800, continuable: true, games: 3 });
+      const input = { width: 1280, height: 800, continuable: true, games: 3 };
+      expect(titleMenuLayout(input).gamesRow).not.toBeNull();
+      expect(titleMenuLayout(input).gamesPanel).toBeNull();
+      const desktop = titleMenuLayout({ ...input, section: "records" });
       expect(desktop.gamesRow).toBeNull();
       expect(desktop.gamesPanel).not.toBeNull();
       expect(desktop.gamesPanel!.x + desktop.gamesPanel!.width).toBeLessThanOrEqual(desktop.artPanel!.width);
@@ -166,18 +169,21 @@ describe("titleMenuLayout", () => {
   test("Civil War! is one more row directly under Campaign, absent (null) until the box is open", () => {
     const closed = titleMenuLayout({ width: 1280, height: 1000, continuable: false });
     const open = titleMenuLayout({ width: 1280, height: 1000, continuable: false, civilWar: true });
-    expect(closed.civilWar).toBeNull();
-    expect(open.civilWar).not.toBeNull();
-    expect(open.civilWar!.y).toBeGreaterThan(open.campaign.y + open.campaign.height - 1);
-    expect(open.extras.y).toBeGreaterThan(open.civilWar!.y);
+    expect(closed.destinations["civil-war"]).toBeUndefined();
+    expect(open.destinations["civil-war"]).toBeDefined();
+    expect(open.destinations["civil-war"]!.y).toBeGreaterThan(
+      open.destinations.campaign!.y + open.destinations.campaign!.height - 1,
+    );
+    expect(open.destinations["how-to-play"]!.y).toBeGreaterThan(open.destinations["civil-war"]!.y);
     expect(titleMenuLayoutRects(closed)).toHaveLength(titleMenuLayoutRects(open).length - 1);
   });
 
-  test("Quit to desktop is one more row under Settings in the desktop app, absent (null) elsewhere", () => {
+  test("Quit to desktop shares the utility row with Settings in the desktop app", () => {
     const web = titleMenuLayout({ width: 1440, height: 900, continuable: false });
     const desktop = titleMenuLayout({ width: 1440, height: 900, continuable: false, quit: true });
     expect(web.quit).toBeNull();
-    expect(desktop.quit!.y).toBeGreaterThan(desktop.settings.y + desktop.settings.height - 1);
+    expect(desktop.quit!.y).toBe(desktop.settings.y);
+    expect(desktop.quit!.x).toBeGreaterThan(desktop.settings.x + desktop.settings.width);
     expect(desktop.footer.y).toBeGreaterThanOrEqual(desktop.quit!.y + desktop.quit!.height);
   });
 
@@ -209,7 +215,7 @@ describe("titleMenuLayout", () => {
     const withContinue = titleMenuLayout({ width: 1280, height: 1000, continuable: true });
     expect(without.continueRow).toBeNull();
     expect(withContinue.continueRow).not.toBeNull();
-    expect(withContinue.newGame.y).toBeGreaterThan(without.newGame.y);
+    expect(withContinue.destinations["new-game"]!.y).toBeGreaterThan(without.destinations["new-game"]!.y);
   });
 
   test("no update, no banner, and the menu is where it always was", () => {
@@ -235,7 +241,7 @@ describe("titleMenuLayout", () => {
       expect(banner.x).toBe(offered.left);
       expect(banner.width).toBe(offered.column);
       expect(banner.y + banner.height).toBeLessThanOrEqual(offered.eyebrow.y);
-      expect(offered.newGame.y).toBeGreaterThan(plain.newGame.y);
+      expect(offered.destinations["new-game"]!.y).toBeGreaterThan(plain.destinations["new-game"]!.y);
       expect(offered.footer.y + 20).toBeLessThanOrEqual(844);
       const rects = titleMenuLayoutRects(offered);
       for (let i = 0; i < rects.length; i++) {
@@ -381,14 +387,6 @@ describe("the release notice bar", () => {
   });
 
   test("a short screen whose menu fits without the bar still fits with it (1024x600, 360x640 with games)", () => {
-    // 1024x600 slims the bar; the 360x640 phone with every row has no room for one and drops it.
-    expect(
-      titleMenuLayout({ width: 1024, height: 600, continuable: true, civilWar: true, noticeBar: true }).noticeBar,
-    ).not.toBeNull();
-    expect(
-      titleMenuLayout({ width: 360, height: 640, continuable: true, civilWar: true, games: 2, noticeBar: true })
-        .noticeBar,
-    ).toBeNull();
     for (const input of [
       { width: 1024, height: 600, continuable: true, civilWar: true },
       { width: 1024, height: 600, continuable: true, civilWar: true, games: 2 },
@@ -400,6 +398,22 @@ describe("the release notice bar", () => {
       expect(bottom(titleMenuLayout({ ...input, noticeBar: true })), JSON.stringify(input)).toBeLessThanOrEqual(
         input.height + 0.01,
       );
+    }
+  });
+});
+
+describe("home sections", () => {
+  test("each tab shows just the destinations that belong to it, while the utility row stays reachable", () => {
+    const size = { width: 390, height: 844, continuable: true, civilWar: true, games: 2 };
+    const library = titleMenuLayout({ ...size, section: "library" });
+    const records = titleMenuLayout({ ...size, section: "records" });
+    expect(Object.keys(library.destinations)).toEqual(["decks", "extras", "mod-store"]);
+    expect(Object.keys(records.destinations)).toEqual(["past-games", "stats", "trophies"]);
+    for (const page of [library, records]) {
+      expect(page.continueRow).toBeNull();
+      expect(page.gamesRow).toBeNull();
+      expect(page.settings.y).toBeGreaterThan(page.tabs.y + page.tabs.height);
+      expect(page.menuScroll).toBeNull();
     }
   });
 });
@@ -422,7 +436,7 @@ describe("the menu on a window too short for it", () => {
     const layout = titleMenuLayout(short);
     const scroll = layout.menuScroll!;
     expect(layout.footer.y + layout.footer.height).toBeGreaterThan(scroll.y + scroll.height);
-    expect(layout.newGame.y).toBeGreaterThanOrEqual(scroll.y);
+    expect(layout.destinations["new-game"]!.y).toBeGreaterThanOrEqual(scroll.y);
     expect(layout.eyebrow.y + layout.eyebrow.height).toBeLessThanOrEqual(scroll.y);
   });
 

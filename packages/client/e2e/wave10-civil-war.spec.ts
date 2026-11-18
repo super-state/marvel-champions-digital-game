@@ -60,12 +60,12 @@ async function builderAct(page: Page, action: string): Promise<void> {
 async function startNewGameNoGuide(page: Page): Promise<void> {
   await waitForScene(page, "Title", 30000);
   await settle(page);
-  await clickText(page, "NEW GAME", { sceneKey: "Title" });
+  await clickText(page, "Play a single game", { sceneKey: "Title" });
   await waitForScene(page, "GuideChooser");
   await settle(page);
   await clickText(page, "No guide", { sceneKey: "GuideChooser" });
   await settle(page);
-  await clickText(page, "SUIT UP", { sceneKey: "GuideChooser" });
+  await clickText(page, "Continue", { sceneKey: "GuideChooser" });
   await waitForScene(page, "ScenarioSelect");
   await waitFor(async () => (await hasStop(page, "next", "ScenarioSelect")) || null, "scenario list", 15000);
 }

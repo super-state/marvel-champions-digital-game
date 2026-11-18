@@ -17,8 +17,8 @@ import { markedLineOf, type MarkedLine, type TextRange } from "../view/settings-
 export const SEARCH_RESULT_ROW_HEIGHT = 52;
 
 const TITLE_SIZE = 14;
-const DETAIL_SIZE = 11;
-const PLACE_SIZE = 10;
+const DETAIL_SIZE = 13;
+const PLACE_SIZE = 12;
 /** Room at the row's right edge for the list's own scrollbar. */
 const GUTTER = 14;
 const PLACE_GAP = 12;
@@ -52,23 +52,21 @@ export function drawSearchResultRow(
 ): VirtualListRow {
   const right = rect.x + rect.width - GUTTER;
   const place = scene.add
-    .text(right, rect.y + 8, entry.place, textStyle(typeRole.body, surface.paper.hex, 0.6))
+    .text(right, rect.y + 8, entry.place, textStyle(typeRole.body, surface.ink.hex, 0.6))
     .setFontSize(PLACE_SIZE)
     .setOrigin(1, 0);
   fitText(place, rect.width * 0.45, PLACE_SIZE);
   const titleRoom = rect.width - GUTTER - place.displayWidth - PLACE_GAP;
   const band = scene.add.graphics();
   const title = scene.add
-    .text(rect.x, rect.y + 6, entry.title, textStyle(typeRole.body, surface.paper.hex, 0.95))
+    .text(rect.x, rect.y + 6, entry.title, textStyle(typeRole.body, surface.ink.hex, 0.95))
     .setFontSize(TITLE_SIZE);
   markRanges(band, title, fitLine(title, entry.title, titleRanges, titleRoom));
   const detail = scene.add
-    .text(rect.x, rect.y + 28, entry.detail, textStyle(typeRole.body, surface.paper.hex, 0.75))
+    .text(rect.x, rect.y + 28, entry.detail, textStyle(typeRole.body, surface.ink.hex, 0.75))
     .setFontSize(DETAIL_SIZE);
   markRanges(band, detail, fitLine(detail, entry.detail, detailRanges, rect.width - GUTTER));
   const rule = scene.add.graphics();
-  rule
-    .fillStyle(surface.paper.hex, 0.25)
-    .fillRect(rect.x, rect.y + SEARCH_RESULT_ROW_HEIGHT - 2, rect.width - GUTTER, 1);
+  rule.fillStyle(surface.ink.hex, 0.25).fillRect(rect.x, rect.y + SEARCH_RESULT_ROW_HEIGHT - 2, rect.width - GUTTER, 1);
   return { objects: [band, title, detail, place, rule] };
 }

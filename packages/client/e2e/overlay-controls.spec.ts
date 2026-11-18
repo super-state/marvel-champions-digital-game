@@ -92,7 +92,7 @@ const settingsJson = (page: Page): Promise<string> =>
 const openQuickReference = (page: Page): Promise<void> =>
   pressStop(page, true, PAUSE, "quick-toggle", async () => (await stopOf(page, PAUSE, "quick:villainPhase")) !== null);
 
-async function openPause(page: Page, phone: boolean): Promise<void> {
+async function openPause(page: Page, phone: boolean, tools = true): Promise<void> {
   const width = page.viewportSize()!.width;
   await pressUntil(
     page,
@@ -101,6 +101,7 @@ async function openPause(page: Page, phone: boolean): Promise<void> {
     "the menu control opens Pause",
   );
   await settle(page);
+  if (tools) await pressStop(page, phone, PAUSE, "tools", stopShown(page, PAUSE, "concede"));
 }
 
 async function newGame(page: Page): Promise<void> {
@@ -195,12 +196,12 @@ test.describe("Pause menu", () => {
     test.setTimeout(120_000);
     const phone = isPhone(info);
     await newGame(page);
-    await openPause(page, phone);
+    await openPause(page, phone, false);
     await pressStop(page, phone, PAUSE, "save-quit", async () => (await activeScenes(page)).includes("Title"));
     expect(await activeScenes(page)).not.toContain("Board");
   });
 
-  test("the phone's ✕ still closes Pause with the Table and Guide rows scrolled to the bottom", async ({
+  test("the phone's Back control returns to the game menu with the Table and Guide rows scrolled to the bottom", async ({
     page,
   }, info) => {
     test.skip(!isPhone(info), "the scrolling Table and Guide group is the phone sheet's own");
@@ -222,7 +223,7 @@ test.describe("Pause menu", () => {
     if (SHOT) await page.screenshot({ path: `${SHOT}/pause-scrolled-${info.project.name}.png` });
     // One tap, no retries: a scrolled-out row that still caught the press left the ✕ dead.
     await page.touchscreen.tap(close.x + close.width / 2, close.y + close.height / 2);
-    await waitFor(sceneGone(page, PAUSE), "a tap on the ✕ closes Pause", 5_000);
+    await waitFor(stopShown(page, PAUSE, "tools"), "Back returns to the game menu", 5_000);
     expect(errors).toEqual([]);
   });
 
@@ -327,7 +328,7 @@ test.describe("Pause menu during a guided run (the Guide rail is showing)", () =
     await installWave6Helpers(page);
     await page.goto("/");
     await startTutorialFromTitle(page);
-    await openPause(page, false);
+    await openPause(page, false, false);
     await pressStop(page, false, PAUSE, "resume", sceneGone(page, PAUSE));
 
     await openPause(page, false);

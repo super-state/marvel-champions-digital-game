@@ -1,7 +1,17 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
-import { clickFocus, clickText, findText, focusRect, pressAt, pressHookStop, settle, waitFor } from "./helpers.js";
+import {
+  clickFocus,
+  clickText,
+  openHomeDecks,
+  findText,
+  focusRect,
+  pressAt,
+  pressHookStop,
+  settle,
+  waitFor,
+} from "./helpers.js";
 import { activeScenes } from "./helpers.js";
 import {
   answerChoiceSheet,
@@ -89,7 +99,7 @@ test("Psylocke's MarvelCDB deck 32089: imported on Decks, seated for Morlock Sie
   await settle(page);
 
   // Decks & Collection: import by link, the way a player pastes a MarvelCDB URL.
-  await clickText(page, "Decks", { sceneKey: "Title" });
+  await openHomeDecks(page);
   await waitForScene(page, "Decks", 10000);
   await settle(page);
   await press(page, "__mcDecksDebug", "ie-marvelcdb-toggle");

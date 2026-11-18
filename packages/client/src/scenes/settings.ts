@@ -138,8 +138,10 @@ import {
   readMixerVolume,
   writeMixerVolume,
 } from "../platform/app-volume.js";
-import { ink, signal, surface, typeRole } from "../tokens.js";
-import { caseOf, textStyle } from "../ui/theme.js";
+import { ink, signal, surface, tabletop, typeRole } from "../tokens.js";
+import { t } from "../i18n/translate.js";
+import { tabCells } from "../view/tab-cells.js";
+import { textStyle } from "../ui/theme.js";
 import {
   McButton,
   McTabs,
@@ -290,9 +292,6 @@ interface SettingsItem extends SettingsRowText {
 
 /** The tab Settings last showed, so reopening it in the same session lands where the player left off. */
 let lastTab: SettingsTabId = "gameplay";
-
-/** The narrowest tab cell that still shows "Display" and "Sound" whole (#243). */
-const SOUND_TAB_MIN_CELL = 64;
 
 /** Launch data: `receive` opens Save data straight onto Receive with that code (a scanned QR link). */
 export interface SettingsSceneData {
@@ -568,8 +567,7 @@ export class SettingsOverlay extends Phaser.Scene {
       cardLanguage: availableCardLanguages().length > 1,
       inspectCard: formFactorFor(width, height) === "phone",
       gameVolume: followsWindowsMixer(),
-      // Sound's own tab only where six fit with their names whole; a phone keeps five, Sound under Display.
-      soundTab: settingsLayout({ x: 0, y: 0, width, height }, []).tabs.width / 6 >= SOUND_TAB_MIN_CELL,
+      soundTab: true,
       couchMode: couchModeShown(this.game, settings),
       desktopWindow: hasDesktopWindow(),
       discord: hasDesktopWindow(),
@@ -720,13 +718,14 @@ export class SettingsOverlay extends Phaser.Scene {
       { x: 0, y: 0, width, height },
       (results ? [] : active.sections).map((section) => ({
         id: section.id,
-        // A tab's only section is already named by the tab itself.
-        title: active.sections.length > 1 ? section.title : "",
+        title: active.sections.length > 1 ? section.title : t(`menu.settings.${active.id}`),
         items: section.items.flatMap((id) => {
           const item = items.get(id);
           return item ? [item.spec] : [];
         }),
       })),
+      tabs.length,
+      this.#searchOpen,
     );
 
     // Swallows every press that lands on no control of this overlay's own. Without it, lifting a finger after a
@@ -738,35 +737,38 @@ export class SettingsOverlay extends Phaser.Scene {
     const panelsFrom = this.children.list.length;
     const panel = this.add.graphics();
     panel
-      .fillStyle(surface.ink.hex, 1)
+      .fillStyle(surface.paper.hex, 1)
       .fillRect(layout.panel.x, layout.panel.y, layout.panel.width, layout.panel.height);
     panel
-      .lineStyle(4, surface.paper.hex, 1)
+      .fillStyle(tabletop.rail)
+      .fillRect(layout.header.x, layout.header.y, layout.header.width, layout.header.height)
+      .lineStyle(1, tabletop.edge, 1)
       .strokeRect(layout.panel.x, layout.panel.y, layout.panel.width, layout.panel.height);
     const rule = this.add.graphics();
     rule
-      .fillStyle(surface.paper.hex, 0.4)
+      .fillStyle(tabletop.brass)
       .fillRect(layout.header.x, layout.header.y + layout.header.height - 2, layout.header.width, 2);
 
     const stops = new Map<string, FocusStop>();
-    const closeSize = 32;
+    const closeSize = 42;
+    const closeWidth = 70;
     const closeRect: Rect = {
-      x: layout.header.x + layout.header.width - closeSize - 16,
+      x: layout.header.x + layout.header.width - closeWidth - 12,
       y: layout.header.y + (layout.header.height - closeSize) / 2,
-      width: closeSize,
+      width: closeWidth,
       height: closeSize,
     };
     this.#buttons.push(
       new McButton(this, {
-        kind: "secondary",
-        label: "✕",
+        kind: "onInk",
+        label: t("menu.close"),
         type: typeRole.rowTitle,
         rect: closeRect,
         onClick: () => this.#close(),
       }),
     );
     stops.set("back", { rect: closeRect, activate: () => this.#close() });
-    const searchRect: Rect = { ...closeRect, x: closeRect.x - SEARCH_GAP - closeSize };
+    const searchRect: Rect = { ...closeRect, x: closeRect.x - SEARCH_GAP - closeSize, width: closeSize };
     drawSearchToggle(
       this,
       searchRect,
@@ -777,7 +779,7 @@ export class SettingsOverlay extends Phaser.Scene {
       stops,
     );
     const title = this.add
-      .text(layout.header.x + 16, layout.header.y + layout.header.height / 2, caseOf(typeRole.barTitle, "Settings"), {
+      .text(layout.header.x + 16, layout.header.y + layout.header.height / 2, t("title.settings"), {
         ...textStyle(typeRole.barTitle, surface.paper.hex),
         fontSize: "24px",
       })
@@ -797,7 +799,7 @@ export class SettingsOverlay extends Phaser.Scene {
     });
 
     this.#hints.reset();
-    const searchInset = closeSize + 32 + SEARCH_GAP + closeSize + 8;
+    const searchInset = closeWidth + 32 + SEARCH_GAP + closeSize + 8;
     this.#hints.custom(
       (set, snapshot) => (set === "pad" ? specsForShortcuts(["inspect"], snapshot) : null),
       22,
@@ -809,7 +811,7 @@ export class SettingsOverlay extends Phaser.Scene {
         layout.tabs,
         "search-field",
         "",
-        "Search settings, rules, unlocks…",
+        t("menu.settings.search"),
         (value) => this.#onSearchChange(value),
         this.#searchInput,
         stops,
@@ -818,7 +820,8 @@ export class SettingsOverlay extends Phaser.Scene {
     } else {
       this.#tabs = new McTabs(this, {
         rect: layout.tabs,
-        tabs: tabs.map((tab) => ({ id: tab.id, label: tab.label })),
+        columns: layout.columns,
+        tabs: tabs.map((tab) => ({ id: tab.id, label: t(`menu.settings.${tab.id}`) })),
         activeId: active.id,
         onSelect: (id) => this.#setTab(id as SettingsTabId),
       });
@@ -838,15 +841,10 @@ export class SettingsOverlay extends Phaser.Scene {
           return place.x < themeX + 38 + 4 ? null : place;
         },
       );
-      const cellWidth = layout.tabs.width / tabs.length;
+      const cells = tabCells(layout.tabs, tabs.length, layout.columns);
       tabs.forEach((tab, index) => {
         stops.set(`tab:${tab.id}`, {
-          rect: {
-            x: layout.tabs.x + index * cellWidth,
-            y: layout.tabs.y,
-            width: cellWidth,
-            height: layout.tabs.height,
-          },
+          rect: cells[index]!,
           activate: () => this.#setTab(tab.id),
         });
       });
@@ -876,7 +874,7 @@ export class SettingsOverlay extends Phaser.Scene {
   #drawResults(room: Rect, results: readonly SettingsSearchResult[], stops: Map<string, FocusStop>): readonly string[] {
     if (results.length === 0) {
       this.add
-        .text(room.x, room.y + 14, "Nothing matches that search.", textStyle(typeRole.body, surface.paper.hex, 0.8))
+        .text(room.x, room.y + 14, t("menu.settings.noResults"), textStyle(typeRole.body, surface.ink.hex, 0.8))
         .setFontSize(12);
       return [];
     }
@@ -1214,7 +1212,7 @@ export class SettingsOverlay extends Phaser.Scene {
       const heading = section.heading;
       if (heading) {
         this.#captureInto(container, () =>
-          sectionHeader(this, viewport.x, viewport.y + heading.y, viewport.width - 2, section.title, surface.paper.hex),
+          sectionHeader(this, viewport.x, viewport.y + heading.y, viewport.width - 2, section.title, surface.ink.hex),
         );
       }
       for (const item of section.items) {
@@ -1377,12 +1375,10 @@ export class SettingsOverlay extends Phaser.Scene {
   #drawVillainAuto(item: SettingsItemLayout, villain: VillainRowsInfo, stops: Map<string, FocusStop>): void {
     const { autoAdvance } = villain;
     const rect = item.row;
-    label(this, rect.x, rect.y + 2, autoAdvance.title, typeRole.label, surface.paper.hex, ink.secondary).setFontSize(
-      12,
-    );
+    label(this, rect.x, rect.y + 2, autoAdvance.title, typeRole.rowTitle, surface.ink.hex).setFontSize(14);
     this.add
-      .text(rect.x, rect.y + 20, autoAdvance.detail, textStyle(typeRole.body, surface.paper.hex, 0.8))
-      .setFontSize(10)
+      .text(rect.x, rect.y + 24, autoAdvance.detail, textStyle(typeRole.body, surface.ink.hex, ink.secondary))
+      .setFontSize(13)
       .setWordWrapWidth(rect.width);
     autoAdvance.options.forEach((option, i) => {
       this.#drawChoiceCell(
@@ -1428,10 +1424,10 @@ export class SettingsOverlay extends Phaser.Scene {
   ): void {
     const rect = item.row;
     const control = item.control!;
-    label(this, rect.x, rect.y + 2, info.title, typeRole.label, surface.paper.hex, ink.secondary).setFontSize(12);
+    label(this, rect.x, rect.y + 2, info.title, typeRole.rowTitle, surface.ink.hex).setFontSize(14);
     this.add
-      .text(rect.x, rect.y + 20, info.detail, textStyle(typeRole.body, surface.paper.hex, 0.8))
-      .setFontSize(10)
+      .text(rect.x, rect.y + 24, info.detail, textStyle(typeRole.body, surface.ink.hex, ink.secondary))
+      .setFontSize(13)
       .setWordWrapWidth(item.stacked ? rect.width : rect.width - control.width - 16);
     const cellWidth = control.width / info.options.length;
     info.options.forEach((option, i) => {
@@ -1462,10 +1458,10 @@ export class SettingsOverlay extends Phaser.Scene {
   #drawResolutionRow(item: SettingsItemLayout, info: SegmentedInfo<Resolution>, stops: Map<string, FocusStop>): void {
     const rect = item.row;
     const control = item.control!;
-    label(this, rect.x, rect.y + 2, info.title, typeRole.label, surface.paper.hex, ink.secondary).setFontSize(12);
+    label(this, rect.x, rect.y + 2, info.title, typeRole.rowTitle, surface.ink.hex).setFontSize(14);
     this.add
-      .text(rect.x, rect.y + 20, info.detail, textStyle(typeRole.body, surface.paper.hex, 0.8))
-      .setFontSize(10)
+      .text(rect.x, rect.y + 24, info.detail, textStyle(typeRole.body, surface.ink.hex, ink.secondary))
+      .setFontSize(13)
       .setWordWrapWidth(item.stacked ? rect.width : rect.width - control.width - 16);
     const picked = this.#pendingResolution ?? info.selected;
     const field: Rect = { x: control.x, y: control.y, width: control.width - APPLY_WIDTH - 8, height: control.height };
@@ -1652,10 +1648,10 @@ export class SettingsOverlay extends Phaser.Scene {
     index: number,
     stops: Map<string, FocusStop>,
   ): void {
-    label(this, rect.x, rect.y + 2, row.title, typeRole.label, surface.paper.hex, ink.secondary).setFontSize(12);
+    label(this, rect.x, rect.y + 2, row.title, typeRole.rowTitle, surface.ink.hex).setFontSize(14);
     this.add
-      .text(rect.x, rect.y + 20, row.detail, textStyle(typeRole.body, surface.paper.hex, 0.8))
-      .setFontSize(10)
+      .text(rect.x, rect.y + 24, row.detail, textStyle(typeRole.body, surface.ink.hex, ink.secondary))
+      .setFontSize(13)
       .setWordWrapWidth(rect.width - 100);
     const toggleRect = controlRectOf(rect);
     const activate = (): void => (id === "power-saving" ? this.#togglePowerSaving() : this.#setVillain(id));
@@ -1663,7 +1659,7 @@ export class SettingsOverlay extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: row.on ? "secondary" : "quiet",
-        label: row.on ? "ON" : "OFF",
+        label: row.on ? t("menu.on") : t("menu.off"),
         type: typeRole.label,
         rect: toggleRect,
         selected: row.on,
@@ -1677,15 +1673,15 @@ export class SettingsOverlay extends Phaser.Scene {
   }
 
   #drawGuideRow(rect: Rect, row: GuideNonLevelRow, index: number, stops: Map<string, FocusStop>): void {
-    label(this, rect.x, rect.y + 2, row.title, typeRole.label, surface.paper.hex, ink.secondary).setFontSize(12);
+    label(this, rect.x, rect.y + 2, row.title, typeRole.rowTitle, surface.ink.hex).setFontSize(14);
     this.add
       .text(
         rect.x,
-        rect.y + 20,
+        rect.y + 24,
         guideRowDetailOf(row),
-        textStyle(typeRole.body, surface.paper.hex, row.kind === "action" && row.unavailable ? 0.55 : 0.8),
+        textStyle(typeRole.body, surface.ink.hex, row.kind === "action" && row.unavailable ? 0.55 : 0.8),
       )
-      .setFontSize(10)
+      .setFontSize(13)
       .setWordWrapWidth(rect.width - 100);
 
     const controlRect = controlRectOf(rect);
@@ -1700,7 +1696,7 @@ export class SettingsOverlay extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: row.kind === "toggle" && row.on ? "secondary" : "quiet",
-        label: unavailable ? "—" : row.kind === "toggle" ? (row.on ? "ON" : "OFF") : "Open ▸",
+        label: unavailable ? "—" : row.kind === "toggle" ? (row.on ? t("menu.on") : t("menu.off")) : "Open ▸",
         type: typeRole.label,
         rect: controlRect,
         enabled: unavailable === undefined,
@@ -1742,10 +1738,10 @@ export class SettingsOverlay extends Phaser.Scene {
     activate: () => void,
     buttonLabel = "Open ▸",
   ): void {
-    label(this, rect.x, rect.y + 2, title, typeRole.label, surface.paper.hex, ink.secondary).setFontSize(12);
+    label(this, rect.x, rect.y + 2, title, typeRole.rowTitle, surface.ink.hex).setFontSize(14);
     this.add
-      .text(rect.x, rect.y + 20, detail, textStyle(typeRole.body, surface.paper.hex, 0.8))
-      .setFontSize(10)
+      .text(rect.x, rect.y + 24, detail, textStyle(typeRole.body, surface.ink.hex, ink.secondary))
+      .setFontSize(13)
       .setWordWrapWidth(rect.width - 100);
     const openRect = controlRectOf(rect);
     this.#buttons.push(
@@ -1763,15 +1759,15 @@ export class SettingsOverlay extends Phaser.Scene {
   }
 
   #drawRow(rect: Rect, row: SettingsRowInfo, index: number, stops: Map<string, FocusStop>): void {
-    label(this, rect.x, rect.y + 2, row.title, typeRole.label, surface.paper.hex, ink.secondary).setFontSize(12);
+    label(this, rect.x, rect.y + 2, row.title, typeRole.rowTitle, surface.ink.hex).setFontSize(14);
     this.add
       .text(
         rect.x,
-        rect.y + 20,
+        rect.y + 24,
         row.unavailable ?? row.detail,
-        textStyle(typeRole.body, surface.paper.hex, row.unavailable ? 0.55 : 0.8),
+        textStyle(typeRole.body, surface.ink.hex, row.unavailable ? 0.55 : 0.8),
       )
-      .setFontSize(10)
+      .setFontSize(13)
       .setWordWrapWidth(rect.width - 100);
 
     const toggleRect = controlRectOf(rect);
@@ -1785,7 +1781,7 @@ export class SettingsOverlay extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: row.on ? "secondary" : "quiet",
-        label: row.unavailable ? "—" : row.on ? "ON" : "OFF",
+        label: row.unavailable ? "—" : row.on ? t("menu.on") : t("menu.off"),
         type: typeRole.label,
         rect: toggleRect,
         enabled: row.unavailable === undefined,

@@ -11,7 +11,9 @@ test("a tap that straddles a redraw still presses the rebuilt button", async ({ 
   await installPageHelpers(page);
   await page.goto("/");
   await waitFor(async () => ((await activeScenes(page)).includes("Title") ? true : null), "boot lands on Title", 20000);
-  await clickText(page, "NEW GAME", { until: async () => (await findText(page, "Learn as you play")).length > 0 });
+  await clickText(page, "Play a single game", {
+    until: async () => (await findText(page, "Learn as you play")).length > 0,
+  });
   await clickText(page, "Learn as you play", { until: async () => (await findText(page, "Suit up")).length > 0 });
   await clickText(page, "Suit up", { until: async () => (await findText(page, "Start the fight")).length > 0 });
   const button = (await waitForText(page, "Start the fight"))[0]!;

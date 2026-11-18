@@ -59,7 +59,7 @@ test("the record line updates as the selection moves between scenarios", async (
 
   await waitForScene(page, "Title", 30000);
   await settle(page);
-  await clickText(page, "NEW GAME", { sceneKey: "Title" });
+  await clickText(page, "Play a single game", { sceneKey: "Title" });
   await waitForScene(page, "ScenarioSelect");
   await waitFor(async () => (await hasStop(page, "next", "ScenarioSelect")) || null, "scenario list", 15000);
 

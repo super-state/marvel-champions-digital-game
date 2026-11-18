@@ -29,6 +29,7 @@ import { clipHoverRect, hoverSlotOf, type HoverCardIdRect } from "../view/card-h
 import { ART_CATALOG, packCoverFor, villainArtFor } from "../art/scenario-art.js";
 import type { Picture } from "../art/pictures.js";
 import { artFor } from "../art/art-source.js";
+import { drawSetupHeading } from "../ui/setup-heading.js";
 import { hasRandomChosenVillain } from "../view/random-villain.js";
 import { cardArt } from "../art/card-art.js";
 import { accent, border, dotGrid, ink, signal, surface, typeRole } from "../tokens.js";
@@ -380,10 +381,11 @@ export class ScenarioSelectScene extends Phaser.Scene {
   ): { readonly below: Rect; readonly stops: readonly string[] } {
     const gap = 8;
     const width = Math.min(RANDOM_BUTTON_WIDTH, Math.floor((area.width - gap * (buttons.length - 1)) / buttons.length));
-    let x =
-      this.#drill.packId === null
-        ? area.x
-        : area.x + area.width - (width * buttons.length + gap * (buttons.length - 1));
+    let x = area.x + area.width - (width * buttons.length + gap * (buttons.length - 1));
+    if (this.#drill.packId === null && x - area.x > 144) {
+      const heading = label(this, area.x, area.y + 5, t("setup.stageFoe"), typeRole.sectionHeader, surface.ink.hex);
+      fitText(heading, x - area.x - gap, typeRole.sectionHeader.size);
+    }
     for (const button of buttons) {
       const rect: Rect = { x, y: area.y, width, height: RANDOM_ROW_HEIGHT - 8 };
       this.#buttons.push(
@@ -540,8 +542,7 @@ export class ScenarioSelectScene extends Phaser.Scene {
     let footerHeight = FOOTER_HEIGHT;
     // Behind the Filters button while a controller is in use or the game is narrower than the breakpoint (Y or the
     // button brings the chips back).
-    const behindButton = this.#padFilters.behindButton(width);
-    const folded = this.#padFilters.folded(width);
+    const folded = this.#padFilters.folded;
     this.#chipsFolded = folded;
     const layoutFor = (chipRowCount: number): ReturnType<typeof scenarioSelectLayout> =>
       scenarioSelectLayout({
@@ -554,7 +555,7 @@ export class ScenarioSelectScene extends Phaser.Scene {
         detailCollapsed: !this.#stagesOpen || scenario === undefined,
         searchOpen: this.#searchOpen,
         secondaryAction: customize !== null,
-        filtersButton: behindButton,
+        filtersButton: true,
         chipsShown: !folded,
       });
     const estimatedRows = folded ? 0 : packCompactChipsToRows(chipDefs, width).length;
@@ -598,19 +599,7 @@ export class ScenarioSelectScene extends Phaser.Scene {
       }),
     );
     this.#stops.set("back", { rect: layout.back, activate: back });
-    const titleX = layout.back.x + layout.back.width + 16;
-    const title = this.add
-      .text(titleX, layout.headerBar.height / 2, t("scenario.title"), textStyle(typeRole.pageTitle, surface.paper.hex))
-      .setOrigin(0, 0.5);
-    fitText(title, layout.step.x - titleX - 12, typeRole.pageTitle.size);
-    this.add
-      .text(
-        layout.step.x + layout.step.width,
-        layout.headerBar.height / 2,
-        t("scenario.step"),
-        textStyle(typeRole.label, surface.paper.hex, ink.label),
-      )
-      .setOrigin(1, 0.5);
+    drawSetupHeading(this, layout.back, layout.headerBar, t("scenario.title"), 0);
 
     this.#drawSearchAndChips(layout, chipDefs, chipRows, folded);
 
@@ -790,7 +779,10 @@ export class ScenarioSelectScene extends Phaser.Scene {
       this,
       layout.footer.x,
       layout.footer.y,
-      lock ?? t("scenario.stepFooter"),
+      lock ??
+        (scenario
+          ? scenarioDetailOf(scenario, currentCardsById(), currentEncounterSets()).displayName
+          : t("scenario.pickVillainFirst")),
       typeRole.label,
       // On the dark detail panel (wide) the caption is paper; on a phone it sits on the page's own ground.
       layout.wide ? surface.paper.hex : surface.ink.hex,

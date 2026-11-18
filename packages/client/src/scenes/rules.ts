@@ -41,6 +41,7 @@
  */
 import { isDesktopType } from "../ui/desktop-type.js";
 import Phaser from "phaser";
+import { t } from "../i18n/translate.js";
 import type { AnyCard, CardId } from "@mc/content";
 import { getInstance, type GameState, type InstanceId } from "@mc/engine";
 import { CARDS_BY_ID, POOL_CARDS, POOL_DEPS, POOL_ENCOUNTER_SETS } from "../content/pool.js";
@@ -345,7 +346,7 @@ export class RulesOverlay extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: "onInk",
-        label: "◂ Back",
+        label: t("menu.back"),
         type: typeRole.rowTitle,
         rect: backRect,
         onClick: () => this.#close(),
@@ -354,12 +355,10 @@ export class RulesOverlay extends Phaser.Scene {
     this.#hints.button(this.#buttons.at(-1)!, ["cancel"], "ink");
     stops.set("back", { rect: backRect, activate: () => this.#close() });
     this.add
-      .text(
-        backRect.x + backRect.width + 14,
-        layout.header.y + layout.header.height / 2,
-        caseOf(typeRole.barTitle, "Rules reference"),
-        { ...textStyle(typeRole.barTitle, surface.paper.hex), fontSize: "24px" },
-      )
+      .text(backRect.x + backRect.width + 14, layout.header.y + layout.header.height / 2, t("menu.rules.title"), {
+        ...textStyle(typeRole.barTitle, surface.paper.hex),
+        fontSize: "24px",
+      })
       .setOrigin(0, 0.5);
 
     const showScopeToggle = game !== null;
@@ -431,7 +430,7 @@ export class RulesOverlay extends Phaser.Scene {
 
     this.#tabsWidget = new McTabs(this, {
       rect: layout.tabs,
-      tabs: TABS.map((tab) => ({ id: tab.id, label: tab.label })),
+      tabs: TABS.map((tab) => ({ id: tab.id, label: t(`menu.rules.${tab.id}`) })),
       activeId: this.#activeTab,
       onSelect: (id) => this.#setTab(id as RulesTab),
     });

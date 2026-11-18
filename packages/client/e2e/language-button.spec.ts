@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { activeScenes, pressAt, settle, tapAt, waitFor } from "./helpers.js";
+import { activeScenes, clickText, pressAt, settle, tapAt, waitFor } from "./helpers.js";
 import { declineMulligans, openApp, startGame, type Rect } from "./wave6-helpers-b.js";
 import { SHOT } from "./x-men-helpers.js";
 
@@ -54,6 +54,7 @@ test("issue #337: the language button lists the languages and Español switches 
   test.setTimeout(120_000);
   const phone = info.project.name === "phone";
   await openApp(page);
+  await clickText(page, "Shortcuts", { sceneKey: "Title" });
   const button = await buttonRect(page);
   // "Now playing" is usually out by now: the globe stays visible beside it.
   if (SHOT) await page.screenshot({ path: `${SHOT}/language-button-pill-${info.project.name}.png` });
@@ -115,6 +116,7 @@ test("issue #337: on a native install the button opens the Other languages note"
   test.setTimeout(120_000);
   const phone = info.project.name === "phone";
   await openApp(page, "unlock=all&nativelang");
+  await clickText(page, "Shortcuts", { sceneKey: "Title" });
   const button = await buttonRect(page);
   await settle(page);
   await press(page, phone, centre(button));
@@ -150,6 +152,7 @@ const faceTexturesIn = (page: Page, lang: string): Promise<number> =>
 test("issue #337: switching language mid-game redraws the cards already on the table", async ({ page }, info) => {
   test.setTimeout(150_000);
   await openApp(page);
+  await clickText(page, "Shortcuts", { sceneKey: "Title" });
   await startGame(page, { scenarioId: "rhino", decks: ["core-spider-man-justice"], seed: 43523 });
   await declineMulligans(page);
   await settle(page, { quietMs: 800, maxMs: 8000 });

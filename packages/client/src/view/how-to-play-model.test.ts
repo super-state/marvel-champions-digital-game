@@ -173,7 +173,8 @@ describe("howToPlayContentLayout", () => {
       expect(layout.basicsLabel.y).toBeGreaterThan(0);
       // Bounded, not just "some positive number" — a runaway top pad would just move the same "flush against
       // something" bug down to flush-against-the-header's-shadow instead of fixing it.
-      expect(layout.basicsLabel.y).toBeLessThanOrEqual(40);
+      expect(layout.referenceLabel.y).toBeLessThanOrEqual(40);
+      expect(layout.basicsLabel.y).toBeGreaterThan(layout.sample.y + layout.sample.height);
     });
   }
 
@@ -189,12 +190,11 @@ describe("howToPlayContentLayout", () => {
 });
 
 describe("howToPlayFocusOrder", () => {
-  it("orders close, every lesson, every aspect, reference, then continue learning", () => {
+  it("puts the three ways to learn ahead of individual lessons", () => {
     const modules = howToPlayModules(defaultGuidePrefs);
     const order = howToPlayFocusOrder(modules);
     expect(order[0]).toBe("close");
-    expect(order.at(-2)).toBe("reference");
-    expect(order.at(-1)).toBe("continue-learning");
+    expect(order.slice(1, 4)).toEqual(["continue-learning", "sample", "reference"]);
     for (const lesson of modules.lessons) expect(order).toContain(`lesson:${lesson.id}`);
     for (const aspect of modules.aspects) expect(order).toContain(`aspect:${aspect.aspect}`);
   });
@@ -248,9 +248,9 @@ describe("the New in each box band", () => {
       const topOf = (index: number): number => layout.heights.slice(0, index).reduce((a, b) => a + b, 0);
       layout.boxScrollIndex.forEach((index, i) => expect(topOf(index)).toBe(layout.boxRows[i]!.y));
       expect(topOf(layout.continueScrollIndex)).toBe(layout.continueLearning.y);
-      // The band sits under both columns and above Continue learning.
+      // Expansion pages follow the main learning choices.
       expect(layout.boxesLabel!.y).toBeGreaterThan(layout.referenceRow.y + layout.referenceRow.height);
-      expect(layout.continueLearning.y).toBeGreaterThan(layout.boxRows.at(-1)!.y + layout.boxRows.at(-1)!.height);
+      expect(layout.continueLearning.y + layout.continueLearning.height).toBeLessThan(layout.boxesLabel!.y);
     });
   }
 
@@ -264,10 +264,6 @@ describe("the New in each box band", () => {
 
   it("puts every box row in the focus order after the reference row", () => {
     const order = howToPlayFocusOrder(withBoxes);
-    expect(order.slice(-2 - pages.length)).toEqual([
-      "reference",
-      ...pages.map((p) => `box:${p.id}`),
-      "continue-learning",
-    ]);
+    expect(order.slice(-pages.length)).toEqual(pages.map((p) => `box:${p.id}`));
   });
 });

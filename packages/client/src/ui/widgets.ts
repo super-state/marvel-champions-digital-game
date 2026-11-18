@@ -20,6 +20,7 @@ import type {
 import {
   accent,
   border,
+  font,
   hit,
   ink,
   minType,
@@ -28,6 +29,7 @@ import {
   statHue,
   status,
   surface,
+  tabletop,
   threatMeter,
   typeRole,
   type TypeSpec,
@@ -35,6 +37,7 @@ import {
 import { fieldClipPath } from "../view/card-hover.js";
 import { fillCard, paintCardStock, strokeCard } from "./card-stock.js";
 import { pointInRect } from "../view/drag-gesture.js";
+import { tabCells } from "../view/tab-cells.js";
 import { ribbonHeight, type Rect } from "../view/layout.js";
 import { PressArm, withinTapSlop } from "../view/press-arm.js";
 import { noteTapFired, registerTap, tapId } from "./tap.js";
@@ -57,11 +60,21 @@ export function paintPanel(g: Phaser.GameObjects.Graphics, rect: Rect, kind: Wid
     g.lineStyle(1, s.text, state === "unavailable" ? 0.08 : 0.19).lineBetween(x + 5, y + 2, x + w - 5, y + 2);
     return;
   }
-  g.fillStyle(s.fill, s.fillAlpha);
-  g.fillRect(rect.x, rect.y, rect.width, rect.height);
-  g.lineStyle(s.strokeWidth, s.stroke, s.fillAlpha);
+  const { x, y, width, height } = rect;
+  const radius = Math.min(6, height / 5, width / 5);
+  g.fillStyle(s.fill, s.fillAlpha).fillRoundedRect(x, y, width, height, radius);
+  g.lineStyle(s.strokeWidth, s.stroke, state === "rest" ? 0.5 : 1);
   if (s.dashed) dashedRect(g, rect, s.strokeWidth);
-  else g.strokeRect(rect.x, rect.y, rect.width, rect.height);
+  else g.strokeRoundedRect(x + 0.5, y + 0.5, width - 1, height - 1, radius);
+  if (kind === "rail" && state === "selected") {
+    g.fillStyle(tabletop.brass).fillRoundedRect(
+      x + width / 2 - Math.min(width / 4, 18),
+      y + height - 4,
+      Math.min(width / 2, 36),
+      3,
+      1.5,
+    );
+  }
 }
 
 /** A dashed outline: the system's mark for a slot that isn't filled yet. */
@@ -330,6 +343,25 @@ export class McButton {
 
   constructor(scene: Phaser.Scene, options: McButtonOptions) {
     this.#scene = scene;
+    // Keep symbols, printed stamps and explicitly styled values in their own face.
+    // Navigation uses mixed-case text large enough to read from across the table.
+    if (
+      !options.tint &&
+      options.type.family !== font.icons &&
+      options.type.family !== font.mono &&
+      options.type !== typeRole.stamp &&
+      options.type !== typeRole.stat &&
+      options.type !== typeRole.statSmall
+    ) {
+      const size = Math.min(
+        options.rect.height - 4,
+        Math.max(
+          options.rect.height >= hit.target ? 14 : 11,
+          Math.min(options.type.size, options.kind === "primary" || options.kind === "tableCommit" ? 18 : 16),
+        ),
+      );
+      options = { ...options, type: { ...typeRole.rowTitle, size } };
+    }
     this.#options = options;
     const { rect } = options;
     this.#underlaid = options.underlay ? this.state : null;
@@ -753,7 +785,7 @@ export function sectionHeader(
   const ruleEnd = x + width - rightWidth;
   if (ruleX < ruleEnd) {
     const rule = scene.add.graphics();
-    rule.fillStyle(color, 1).fillRect(ruleX, y + heading.height / 2 - 1.5, ruleEnd - ruleX, 3);
+    rule.fillStyle(color, 0.28).fillRect(ruleX, y + heading.height / 2, ruleEnd - ruleX, 1);
     collect?.push(rule);
   }
   return y + heading.height + 12;
@@ -761,6 +793,8 @@ export function sectionHeader(
 
 export interface McTabsOptions {
   readonly rect: Rect;
+  /** Number of cells per row. Unspecified rails follow the long axis of their rectangle. */
+  readonly columns?: number;
   readonly tabs: readonly {
     readonly id: string;
     readonly label: string;
@@ -791,23 +825,14 @@ export class McTabs {
     const rail = scene.add.graphics();
     paintPanel(rail, rect, "rail", "rest");
 
-    // A rail taller than it is wide is a column (the landscape phone board's, down its left edge): same cells, stacked.
-    const column = rect.height > rect.width;
-    const count = Math.max(1, tabs.length);
-    const cellWidth = column ? rect.width : rect.width / count;
-    const cellHeight = column ? rect.height / count : rect.height;
+    const cells = tabCells(rect, tabs.length, options.columns);
     tabs.forEach((tab, index) => {
-      const cell: Rect = {
-        x: column ? rect.x : rect.x + index * cellWidth,
-        y: column ? rect.y + index * cellHeight : rect.y,
-        width: cellWidth,
-        height: cellHeight,
-      };
+      const cell = cells[index]!;
       this.#buttons.push(
         new McButton(scene, {
           kind: "rail",
           label: tab.label,
-          type: { ...typeRole.label, size: Math.max(minType.phoneLabel, typeRole.label.size) },
+          type: typeRole.rowTitle,
           rect: cell,
           selected: tab.id === activeId,
           ...(tab.enabled === false ? { enabled: false } : {}),

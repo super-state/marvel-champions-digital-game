@@ -268,7 +268,7 @@ test("Scenario select: Mansion Attack is titled so, and all eight wave 6 tiles h
   test.setTimeout(180_000);
   const errors = trackPageErrors(page);
   await openApp(page);
-  await clickText(page, "NEW GAME");
+  await clickText(page, "Play a single game");
   await waitFor(
     async () => ((await activeScenes(page)).includes("ScenarioSelect") ? true : null),
     "Scenario select",

@@ -473,6 +473,7 @@ test("Aspects, Encounter and Records: the donut and their rows", async ({ page }
 test("from the Title, Back returns to the Title", async ({ page }) => {
   test.setTimeout(120_000);
   await seeded(page, "title", "Title");
+  await clickText(page, "My record", { sceneKey: "Title" });
   await clickText(page, "Your stats", {
     sceneKey: "Title",
     until: isActive(page, "PlayerStats"),
@@ -535,6 +536,7 @@ test("over Pause: a press on empty stats space reaches nothing underneath, and B
   test.skip(info.project.name === "phone", "the wide Pause menu");
   test.setTimeout(120_000);
   await seeded(page, "pause", "PauseOverlay");
+  await clickText(page, "Table tools", { sceneKey: "PauseOverlay" });
   const pauseStops = (): Promise<Stop[]> =>
     page.evaluate(() =>
       (window as unknown as { __mcFocusRoutes: Record<string, () => Stop[]> }).__mcFocusRoutes.PauseOverlay!(),
@@ -880,6 +882,7 @@ test("the Building your stats toast: shows on the Title, hides off it, and closi
   if (!phone) {
     // Off the Title it hides (it would sit on another screen's controls), and back on the Title it shows again.
     await settle(page);
+    await clickText(page, "Collection", { sceneKey: "Title" });
     const decks = (await stopsIn(page, "Title")).find((s) => s.key === "decks")!;
     await press(page, false, decks.rect);
     await waitFor(isActive(page, "Decks"), "Decks & Collection", 30_000);

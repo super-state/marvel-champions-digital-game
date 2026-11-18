@@ -1,7 +1,16 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
-import { activeScenes, clickText, findText, pressHookStop, settle, trackPageErrors, waitFor } from "./helpers.js";
+import {
+  activeScenes,
+  clickText,
+  openHomeDecks,
+  findText,
+  pressHookStop,
+  settle,
+  trackPageErrors,
+  waitFor,
+} from "./helpers.js";
 import {
   assertNoRawText,
   clickStop,
@@ -84,6 +93,7 @@ test("a conceded scenario 2 goes through Rewind and back to the same Briefing wi
 
   // Concede from the Pause menu: the loss, folded by "Continue the campaign".
   await openPause(page);
+  await clickStop(page, "tools", "PauseOverlay");
   await expect
     .poll(
       async () => {
@@ -170,7 +180,7 @@ test("a Falcon decklist with a Linked card in its slots imports without it and n
   test.setTimeout(120_000);
   const errors = trackPageErrors(page);
   await openApp(page, "unlock=all");
-  await clickText(page, "Decks");
+  await openHomeDecks(page);
   await waitFor(async () => ((await activeScenes(page)).includes("Decks") ? true : null), "Decks opens", 8000);
   await settle(page);
 

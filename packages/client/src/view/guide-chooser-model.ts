@@ -92,15 +92,8 @@ function wideLayout(width: number, height: number, formFactor: FormFactor): Guid
   const columnLeft = artWidth + PAD;
   const columnWidth = width - columnLeft - PAD;
 
-  // The banner sits at the art panel's own foot, matching T01 — the choices column opens with the subtitle
-  // right below the header, so every wide field (art, banner, choices) stays inside its own rect with no
-  // overlap to reason about.
-  const banner: Rect = {
-    x: art.x + 20,
-    y: art.height - BANNER_HEIGHT - 20,
-    width: Math.min(280, artWidth - 40),
-    height: BANNER_HEIGHT,
-  };
+  // Keep the heading next to its choices, with room for the appearance control.
+  const banner: Rect = { x: columnLeft, y: PAD, width: Math.max(1, columnWidth - 56), height: BANNER_HEIGHT };
 
   const suitUpY = height - PAD - SUIT_UP_HEIGHT;
   const suitUp: Rect = { x: columnLeft, y: suitUpY, width: columnWidth * 0.62, height: SUIT_UP_HEIGHT };
@@ -111,7 +104,7 @@ function wideLayout(width: number, height: number, formFactor: FormFactor): Guid
     height: SUIT_UP_HEIGHT,
   };
 
-  const subtitle: Rect = { x: columnLeft, y: PAD, width: columnWidth, height: SUBTITLE_HEIGHT };
+  const subtitle: Rect = { x: columnLeft, y: banner.y + banner.height, width: columnWidth, height: SUBTITLE_HEIGHT };
   const optionsTop = subtitle.y + subtitle.height + GAP;
 
   const options: Rect[] = [];
@@ -148,11 +141,11 @@ function wideLayout(width: number, height: number, formFactor: FormFactor): Guid
 function narrowLayout(width: number, height: number, formFactor: FormFactor): GuideChooserLayout {
   const pad = NARROW_PAD;
   const column = width - pad * 2;
-  const art: Rect = { x: 0, y: 0, width, height: Math.round(height * 0.42) };
+  const art: Rect = { x: 0, y: 0, width, height: Math.min(Math.round(height * 0.34), Math.max(82, height - 390)) };
   const banner: Rect = {
     x: pad,
     y: art.height - BANNER_HEIGHT - 20,
-    width: Math.min(240, column),
+    width: Math.max(1, column - 50),
     height: BANNER_HEIGHT,
   };
 
@@ -167,7 +160,12 @@ function narrowLayout(width: number, height: number, formFactor: FormFactor): Gu
     y += h + OPTION_GAP;
   }
 
-  const suitUp: Rect = { x: pad, y: height - pad - SUIT_UP_HEIGHT, width: column, height: SUIT_UP_HEIGHT };
+  const suitUp: Rect = {
+    x: pad + BACK_WIDTH + GAP,
+    y: height - pad - SUIT_UP_HEIGHT,
+    width: column - BACK_WIDTH - GAP,
+    height: SUIT_UP_HEIGHT,
+  };
 
   return {
     formFactor,
@@ -177,7 +175,7 @@ function narrowLayout(width: number, height: number, formFactor: FormFactor): Gu
     subtitle,
     options,
     chipsRow: { x: pad, y: subtitle.y, width: 0, height: 0 },
-    back: { x: pad, y: suitUp.y, width: 0, height: 0 },
+    back: { x: pad, y: suitUp.y, width: BACK_WIDTH, height: SUIT_UP_HEIGHT },
     suitUp,
   };
 }
@@ -195,7 +193,7 @@ export function guideChooserLayoutRects(layout: GuideChooserLayout): readonly Re
   return rects;
 }
 
-/** Focus order: each radio card, then (wide only) Back, then Suit up. */
-export function guideChooserFocusOrder(wide: boolean): readonly string[] {
-  return [...GUIDE_CHOOSER_OPTIONS.map((option) => `option:${option.value}`), ...(wide ? ["back"] : []), "suit-up"];
+/** Focus order follows the radio cards, then Back and Continue. */
+export function guideChooserFocusOrder(): readonly string[] {
+  return [...GUIDE_CHOOSER_OPTIONS.map((option) => `option:${option.value}`), "back", "suit-up"];
 }

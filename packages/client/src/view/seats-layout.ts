@@ -51,7 +51,7 @@ import { FILTERS_BUTTON_WIDTH } from "./filters-layout.js";
 import { formFactorFor, type FormFactor, type Rect } from "./layout.js";
 
 export const MAX_SEATS = 4;
-export const SEAT_SLOT_HEIGHT = 115;
+export const SEAT_SLOT_HEIGHT = 92;
 export const DETAIL_LINE_HEIGHT = 20;
 export const HEADER_HEIGHT = 64;
 export const GUTTER = 24;
@@ -86,6 +86,8 @@ export interface SeatsLayoutInput {
   readonly width: number;
   readonly height: number;
   readonly chipRows: number;
+  /** Filled hero positions and one position for adding the next hero. */
+  readonly visibleSeats?: number;
   readonly detailLines: number;
   /** Narrow only: the active seat's details block is open under the roster header row. Shut by default. Ignored on wide. */
   readonly detailsOpen?: boolean;
@@ -208,7 +210,7 @@ export function seatsLayout(input: SeatsLayoutInput): SeatsLayout {
 
   const headerBar: Rect = { x: 0, y: 0, width, height: HEADER_HEIGHT };
   const headerPad = 16;
-  const backWidth = 140;
+  const backWidth = width < 600 ? 80 : 132;
   const stepWidth = Math.min(260, Math.max(90, width * 0.32));
   const back: Rect = { x: headerPad, y: (HEADER_HEIGHT - hit.target) / 2, width: backWidth, height: hit.target };
   const step: Rect = {
@@ -221,14 +223,15 @@ export function seatsLayout(input: SeatsLayoutInput): SeatsLayout {
   const left = gutter;
   const detailWidth = detailPanelWidthFor(width, height);
   const shelvesWidth = rosterColumnWidthFor(width, height);
+  const count = Math.min(MAX_SEATS, Math.max(1, input.visibleSeats ?? MAX_SEATS));
 
   const bodyTop = HEADER_HEIGHT + gutter;
   const bodyBottom = height - gutter;
 
   if (wide) {
     // One row of four seat cards.
-    const slotWidth = (shelvesWidth - (MAX_SEATS - 1) * 6) / MAX_SEATS;
-    const seatSlots: Rect[] = Array.from({ length: MAX_SEATS }, (_, i) => ({
+    const slotWidth = Math.min(340, (shelvesWidth - (count - 1) * 6) / count);
+    const seatSlots: Rect[] = Array.from({ length: count }, (_, i) => ({
       x: left + i * (slotWidth + 6),
       y: bodyTop,
       width: slotWidth,
@@ -322,8 +325,8 @@ export function seatsLayout(input: SeatsLayoutInput): SeatsLayout {
 
   // Narrow (P03): compact seat chips in one row, the summary line, header/search/rail, then the shelves take all
   // the room down to the sticky footer. Nothing here is sized to "whatever is left" except the shelves.
-  const chipWidth = (shelvesWidth - (MAX_SEATS - 1) * SEAT_CHIP_GAP) / MAX_SEATS;
-  const seatSlots: Rect[] = Array.from({ length: MAX_SEATS }, (_, i) => ({
+  const chipWidth = (shelvesWidth - (count - 1) * SEAT_CHIP_GAP) / count;
+  const seatSlots: Rect[] = Array.from({ length: count }, (_, i) => ({
     x: left + i * (chipWidth + SEAT_CHIP_GAP),
     y: bodyTop,
     width: chipWidth,

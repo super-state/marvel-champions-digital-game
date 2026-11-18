@@ -264,7 +264,7 @@ test("the Replace sheet: A on the chosen row and Start both confirm, without wal
   await openApp(page, "unlock=all", { landing: "Title" });
   await waitForScene(page, "Title", 30000);
   await settle(page);
-  await clickText(page, "NEW GAME", { sceneKey: "Title" });
+  await clickText(page, "Play a single game", { sceneKey: "Title" });
   await waitForScene(page, "ScenarioSelect");
   await waitFor(async () => (await hasStop(page, "next", "ScenarioSelect")) || null, "scenario list", 15000);
   await clickStop(page, "scenario:rhino", "ScenarioSelect");

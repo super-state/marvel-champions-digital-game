@@ -153,6 +153,7 @@ test("on a replay the d-pad's down looks around the table read-only, and B gives
   await waitForScene(page, "Title", 30000);
   await settle(page, { quietMs: 500, maxMs: 3000 });
 
+  await clickStop(page, "section:records", "Title");
   await clickStop(page, "past-games", "Title");
   await waitForScene(page, "PastGames");
   await waitFor(

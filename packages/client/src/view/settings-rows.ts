@@ -750,8 +750,8 @@ export const CARD_SIZE_LABELS: Readonly<Record<CardSize, string>> = {
 };
 
 export const INSPECT_CARD_LABELS: Readonly<Record<InspectCard, string>> = {
-  large: "Large card",
-  sideBySide: "Side by side",
+  large: "Text first",
+  sideBySide: "Text and thumbnail",
 };
 
 export interface InspectCardRowInfo {
@@ -761,12 +761,12 @@ export interface InspectCardRowInfo {
   readonly selected: InspectCard;
 }
 
-/** The phone-portrait Inspect layout (#358): the scan across the sheet, or the older small scan beside the text. */
+/** The phone reader's opening layout. Full card opens the entire scan in both layouts. */
 export function inspectCardRowInfoOf(settings: Settings): InspectCardRowInfo {
   return {
-    title: "Inspect card",
+    title: "Phone card reader",
     detail:
-      "On a phone held upright, Large card shows the whole scan across the sheet with the text below it. Side by side shows a small scan beside the text.",
+      "Choose whether a small card image appears beside the name. Open Full card in the reader to see the entire scan.",
     options: INSPECT_CARD_VALUES.map((value) => ({ value, label: INSPECT_CARD_LABELS[value] })),
     selected: settings.inspectCard,
   };

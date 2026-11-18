@@ -37,26 +37,15 @@ describe("decksLayout", () => {
         }
       });
 
-      test("exactly one of (listPane & poolPane & statsPane) or (tabs & content) is populated", () => {
+      test("browsing tabs are present at every size and desktop has a separate detail pane", () => {
         const layout = decksLayout({ width, height });
-        if (layout.wide) {
-          expect(layout.listPane).not.toBeNull();
-          expect(layout.poolPane).not.toBeNull();
-          expect(layout.statsPane).not.toBeNull();
-          expect(layout.tabs).toBeNull();
-          expect(layout.content).toBeNull();
-        } else {
-          expect(layout.listPane).toBeNull();
-          expect(layout.poolPane).toBeNull();
-          expect(layout.statsPane).toBeNull();
-          expect(layout.tabs).not.toBeNull();
-          expect(layout.content).not.toBeNull();
-        }
+        expect(layout.tabs.width).toEqual(layout.content.width);
+        expect(layout.statsPane !== null).toBe(layout.wide);
       });
     });
   }
 
-  test("only desktop is wide — three columns need more room than tabletLandscape has, unlike this screen's own two-pane version before W9b", () => {
+  test("desktop puts the selected deck beside the browser", () => {
     expect(decksLayout({ width: 440, height: 900 }).wide).toBe(false);
     expect(decksLayout({ width: 768, height: 1024 }).wide).toBe(false);
     expect(decksLayout({ width: 1024, height: 768 }).wide).toBe(false);
@@ -70,17 +59,17 @@ describe("decksLayout", () => {
     for (const { width, height } of VIEWPORTS) {
       const layout = decksLayout({ width, height });
       if (!layout.wide) continue;
-      expect(layout.listPane!.width).toBeGreaterThanOrEqual(260);
+      expect(layout.content.width).toBeGreaterThan(layout.statsPane!.width);
       expect(layout.statsPane!.width).toBeGreaterThanOrEqual(280);
-      expect(layout.poolPane!.width).toBeGreaterThanOrEqual(260);
+      expect(layout.content.width).toBeGreaterThanOrEqual(500);
     }
   });
 
   test("wide: the pool grid actually gains columns at a wider desktop, rather than just growing whitespace", () => {
     const at1280 = decksLayout({ width: 1280, height: 900 });
     const at1870 = decksLayout({ width: 1870, height: 1050 });
-    const columnsAt1280 = poolGridGeometry(at1280.poolPane!.width, 40).columns;
-    const columnsAt1870 = poolGridGeometry(at1870.poolPane!.width, 40).columns;
+    const columnsAt1280 = poolGridGeometry(at1280.content.width, 40).columns;
+    const columnsAt1870 = poolGridGeometry(at1870.content.width, 40).columns;
     expect(columnsAt1870).toBeGreaterThan(columnsAt1280);
   });
 

@@ -1,20 +1,4 @@
-/**
- * The Title menu (docs/phase4-screen-gaps.md §3 W2, D01/P01): a real menu,
- * not a setup page. Continue (when a game is in progress), New game, Decks &
- * Collection, Campaign (drawn locked — out of scope, PLAN.md Phase 4) and
- * Settings (drawn unavailable until W4 lands it), and a footer with the app's
- * own card-pool coverage and build version.
- *
- * This retires the setup half `TitleScene` used to carry (scenario,
- * difficulty, modular sets, seats, seed) — that flow now lives across
- * `ScenarioSelectScene` → `SeatsScene` → `TableSetupScene`, each reading and
- * writing the one `SetupDraft` `New game` hands off to the first of them.
- *
- * Campaign opens The Saga (`scenes/campaign/saga.ts`, C00b) — campaign mode's own shelf of boxes, not part of
- * this menu's own layout beyond the one button. Extras (`scenes/extras.ts`) opens the comics, artwork, hero and
- * villain files and soundtrack that play has unlocked.
- */
-
+/** The illustrated home. Play, Collection and My record each open the existing game screens. */
 import Phaser from "phaser";
 import { artLanguageNow } from "../art/art-source.js";
 import { accent, dotGrid, hit, ink, signal, surface, tabletop, typeRole } from "../tokens.js";
@@ -22,7 +6,7 @@ import type { Rect } from "../view/layout.js";
 import { cssOf, skin, textStyle } from "../ui/theme.js";
 import { drawPlayPlatformIcon } from "../ui/play-platform-icon.js";
 import { playPlatformMarkOf, playPlatformSlotIn } from "../view/play-platform-mark.js";
-import { McButton, fitText, paintDotGrid } from "../ui/widgets.js";
+import { McButton, addRowTapZone, fitText, paintDotGrid } from "../ui/widgets.js";
 import { TITLE_ART, coverFit, pickTitleArtFor, titleArtSizeOf, type TitleArt } from "../art/title-art.js";
 import { drawnDensity } from "../platform/screen-settings.js";
 import { ensurePictureLoaded } from "../art/pictures.js";
@@ -61,8 +45,7 @@ import type { SaveMeta } from "../engine/game-storage.js";
 import { appSession } from "../session.js";
 import { drawGamesList } from "../ui/games-list.js";
 import { GAME_LABEL_NAMES } from "../view/game-label-names.js";
-import { drawBetaTag, drawBetaTagBeside } from "../ui/beta-tag.js";
-import { BETA_TAG_SIZE } from "../view/beta-tag.js";
+import { drawBetaTagBeside } from "../ui/beta-tag.js";
 import { gameRowsOf, shouldShowGamesList, type GameRow } from "../view/games-list-model.js";
 import { VariableListScroll } from "../view/variable-list-scroll.js";
 import type { GamesListOverlayData } from "./games-list.js";
@@ -95,7 +78,9 @@ import { GlyphHints, specsForShortcuts } from "../ui/glyph-hints.js";
 import { hasDesktopWindow, quitToDesktop } from "../platform/desktop-window.js";
 import { onSyncApplied } from "../sync/sync-events.js";
 import { onLanguageChange } from "../language-change.js";
-import { t } from "../i18n/translate.js";
+import { t, type MessageKey } from "../i18n/translate.js";
+import { drawMenuEntry } from "../ui/menu-entry.js";
+import { HOME_SECTIONS, homeDestinations, type HomeSection, type HomeDestination } from "../view/home-navigation.js";
 import { takeReceiveLink, takeSyncLink } from "../save-data/receive-link.js";
 import { fetchReplay, takeReplayLink } from "../replay/replay-link.js";
 import { openReplay, replayErrorKey } from "../replay/replay-files.js";
@@ -110,6 +95,7 @@ import type { Deck } from "@mc/content";
 import { destroyChildren } from "../ui/destroy-children.js";
 import { setReportSlot } from "../ui/report-slot.js";
 import { setMusicSlot } from "../ui/music-slot.js";
+import { setThemeSlot } from "../ui/theme-slot.js";
 import { musicSlotBeside } from "../view/music-player.js";
 import { languageSlotBeside } from "../view/language-button.js";
 import { themeSlotBeside } from "../view/theme-button.js";
@@ -128,6 +114,7 @@ import { captureIntoRegion } from "../ui/scroll-capture.js";
  * `deckStorage().list()` resolves (Seats prunes unknown seats on every rebuild).
  */
 export interface TitleSceneData {
+  readonly section?: HomeSection;
   readonly initialSeatDeckId?: string;
   /** The deck itself; ignored if its `id` doesn't match `initialSeatDeckId`. */
   readonly initialSeatDeck?: Deck;
@@ -149,7 +136,22 @@ export function newGameDraft(picked = false): ReturnType<typeof initialSetupDraf
   });
 }
 
+const HOME_COPY: Record<HomeDestination, readonly [MessageKey | null, MessageKey]> = {
+  "new-game": ["title.home.single", "title.home.singleDetail"],
+  campaign: ["title.home.campaign", "title.home.campaignDetail"],
+  "civil-war": [null, "title.home.civilWarDetail"],
+  "how-to-play": ["title.howToPlay", "title.home.tutorialDetail"],
+  decks: ["title.home.decks", "title.home.decksDetail"],
+  extras: ["title.home.extras", "title.home.extrasDetail"],
+  "mod-store": ["title.home.mods", "title.home.modsDetail"],
+  "past-games": ["title.home.past", "title.home.pastDetail"],
+  stats: ["title.yourStats", "title.home.statsDetail"],
+  trophies: ["title.home.achievements", "title.home.achievementsDetail"],
+};
+
 export class TitleScene extends Phaser.Scene {
+  #section: HomeSection = "play";
+  #shortcuts = false;
   #buttons: McButton[] = [];
   #status: Phaser.GameObjects.Text | null = null;
   #platformTip: Phaser.GameObjects.Text | null = null;
@@ -245,7 +247,9 @@ export class TitleScene extends Phaser.Scene {
   }
 
   create(data: TitleSceneData = {}): void {
+    if (data.section) this.#section = data.section;
     if (data.initialSeatDeckId) {
+      this.#section = "play";
       const draft = withSeatOne(this.#freshDraft(true), data.initialSeatDeckId);
       const seedDecks =
         data.initialSeatDeck && data.initialSeatDeck.id === data.initialSeatDeckId ? [data.initialSeatDeck] : [];
@@ -280,6 +284,16 @@ export class TitleScene extends Phaser.Scene {
     this.#route = new FocusRoute(this, {
       // The whole icon row beside the menu, not just the note and the bug.
       topRow: true,
+      primary: () => (this.#section === "play" ? (this.#continuable ? "continue" : "new-game") : null),
+      onCancel: () => {
+        if (this.#shortcuts) this.#toggleShortcuts();
+        else this.#switchSection("play");
+      },
+      onTab: (direction) => {
+        const index = (HOME_SECTIONS.indexOf(this.#section) + direction + HOME_SECTIONS.length) % HOME_SECTIONS.length;
+        this.#switchSection(HOME_SECTIONS[index]!);
+        this.#route?.focusKey(`section:${this.#section}`);
+      },
       // The press glyphs on the top row and the notice bar show on the focused stop.
       onFocusChange: () => {
         this.#hints?.refresh();
@@ -293,6 +307,7 @@ export class TitleScene extends Phaser.Scene {
       // R3 (and the Expand key, F / ;) snaps focus to the in-progress games, ready to scroll.
       onExpand: () => {
         if (this.#starting) return;
+        if (this.#section !== "play" && this.#listedGames().length) this.#switchSection("play");
         // The first game's Resume, else the games row, else the remove question's "Keep it"; none of them a stop
         // (no games, nothing listed): leave focus where it is, as focusKey would drop it.
         const stop =
@@ -312,6 +327,7 @@ export class TitleScene extends Phaser.Scene {
     });
     // Phaser reuses this scene instance across "back to title" round trips, so state from a previous visit
     // (a stuck "Starting…", a stale Continue) must not survive into this one.
+    this.#shortcuts = false;
     this.#continuable = null;
     this.#games = [];
     this.#removing = null;
@@ -456,6 +472,19 @@ export class TitleScene extends Phaser.Scene {
     this.#platformTip = text;
   }
 
+  #toggleShortcuts(): void {
+    this.#shortcuts = !this.#shortcuts;
+    this.#rebuild();
+  }
+
+  #switchSection(section: HomeSection): void {
+    if (section === this.#section || this.#starting) return;
+    this.#section = section;
+    this.#shortcuts = false;
+    this.#menuScroll = new VariableListScroll();
+    this.#rebuild();
+  }
+
   #rebuild(): void {
     this.#platformTip?.destroy();
     this.#platformTip = null;
@@ -472,6 +501,7 @@ export class TitleScene extends Phaser.Scene {
       width,
       height,
       continuable: this.#continuable !== null,
+      section: this.#section,
       games: this.#listedGames().length,
       // The native apps' update banner and the web game's old-save banner share the slot; a build only ever has one.
       update: this.#update !== null || this.#oldSave,
@@ -487,10 +517,23 @@ export class TitleScene extends Phaser.Scene {
       width: reportSize,
       height: reportSize,
     };
-    setReportSlot(this.scene.key, reportRect);
+    setReportSlot(this.scene.key, this.#shortcuts ? reportRect : null);
     // The music button's (#191), just left of it.
     const musicRect = musicSlotBeside(reportRect);
-    setMusicSlot(this.scene.key, musicRect);
+    setMusicSlot(this.scene.key, this.#shortcuts ? musicRect : null);
+    const toolsWidth = Math.min(
+      106,
+      Math.round(layout.column * 0.31),
+      Math.max(hit.target, layout.column - 4 * (reportSize + 8)),
+    );
+    const toolsRect = {
+      x: this.#shortcuts ? layout.left : layout.left + layout.column - toolsWidth,
+      y: reportRect.y,
+      width: toolsWidth,
+      height: reportRect.height,
+    };
+    const closedThemeRect = { ...reportRect, x: toolsRect.x - 6 - reportRect.width };
+    setThemeSlot(this.scene.key, this.#shortcuts ? null : closedThemeRect);
 
     // Ground: split desktop/tablet (ink art panel left, red rule, paper menu panel right); one ink ground on phone.
     if (layout.split) {
@@ -518,22 +561,34 @@ export class TitleScene extends Phaser.Scene {
           tabletop.rail,
         )
         .setOrigin(0, 0);
-      paintDotGrid(this, layout.menuPanel, "ink", dotGrid.onInk);
     } else {
       this.add.rectangle(0, 0, width, height, surface.ink.hex).setOrigin(0, 0).setDepth(ART_GROUND_DEPTH);
       paintDotGrid(this, { x: 0, y: 0, width, height }, "ink", dotGrid.onInk).setDepth(ART_GROUND_DEPTH);
       // Phone has no art panel (P01 stacks everything on one ink ground): the picture goes full-bleed under an
       // ink scrim so the paper text on top stays legible.
-      this.add.rectangle(0, 0, width, height, surface.ink.hex, 0.62).setOrigin(0, 0).setDepth(ART_SCRIM_DEPTH);
+      this.add.rectangle(0, 0, width, height, tabletop.rail, 0.84).setOrigin(0, 0).setDepth(ART_SCRIM_DEPTH);
       this.#artPanel = { x: 0, y: 0, width, height };
     }
 
     const textColor = tabletop.lettering;
     const menuKind = "tableAction";
 
-    const eyebrowText = this.add
+    this.add
       .text(layout.eyebrow.x, layout.eyebrow.y, t("title.eyebrow"), textStyle(typeRole.label, tabletop.gold))
-      .setLetterSpacing(1);
+      .setLetterSpacing(1)
+      .setVisible(!this.#shortcuts);
+    const toolsLabel = this.#shortcuts ? t("title.home.closeTools") : t("title.home.shortcuts");
+    const toggleTools = () => this.#toggleShortcuts();
+    this.#buttons.push(
+      new McButton(this, {
+        rect: toolsRect,
+        label: toolsLabel,
+        type: { ...typeRole.menuButton, size: 13 },
+        kind: "tableAction",
+        onClick: toggleTools,
+      }),
+    );
+    this.#stops.set("shortcuts", { rect: toolsRect, activate: toggleTools });
     this.add
       .text(layout.left, layout.eyebrow.y + layout.eyebrow.height + 8, "MARVEL\nCHAMPIONS", {
         ...textStyle(typeRole.screenTitle, textColor),
@@ -559,6 +614,33 @@ export class TitleScene extends Phaser.Scene {
       : null;
     const menuFrom = this.children.list.length;
     const stopsBeforeMenu = new Set(this.#stops.keys());
+    const tabWidth = layout.tabs.width / HOME_SECTIONS.length;
+    HOME_SECTIONS.forEach((section, index) => {
+      const rect: Rect = { ...layout.tabs, x: layout.tabs.x + index * tabWidth, width: tabWidth };
+      const active = this.#section === section;
+      const activate = () => this.#switchSection(section);
+      const g = this.add.graphics();
+      g.fillStyle(tabletop.rail, 0.98).fillRect(rect.x, rect.y, rect.width, rect.height);
+      g.fillStyle(active ? tabletop.gold : tabletop.edge, active ? 1 : 0.55).fillRect(
+        rect.x,
+        rect.y + rect.height - (active ? 3 : 1),
+        rect.width,
+        active ? 3 : 1,
+      );
+      const caption = this.add
+        .text(
+          rect.x + rect.width / 2,
+          rect.y + rect.height / 2,
+          t(`title.home.${section}`),
+          textStyle(typeRole.menuButton, active ? tabletop.gold : tabletop.secondary),
+        )
+        .setOrigin(0.5);
+      fitText(caption, rect.width - 10, layout.split ? 17 : 15);
+      const zone = addRowTapZone(this, rect, { onClick: activate });
+      zone.on("pointerover", () => caption.setAlpha(0.76));
+      zone.on("pointerout", () => caption.setAlpha(1));
+      this.#stops.set(`section:${section}`, { rect, activate });
+    });
 
     if (layout.continueRow) {
       const save = this.#continuable!;
@@ -602,7 +684,7 @@ export class TitleScene extends Phaser.Scene {
       this.#buttons.push(
         new McButton(this, {
           kind: menuKind,
-          label: `In-progress games (${this.#listedGames().length})`,
+          label: t("title.home.games", { count: this.#listedGames().length }),
           type: typeRole.menuButton,
           rect: layout.gamesRow,
           enabled: !this.#starting,
@@ -610,62 +692,21 @@ export class TitleScene extends Phaser.Scene {
         }),
       );
       this.#hints?.button(this.#buttons.at(-1)!, ["expand"], "ink");
-      // A decorative tag at the row's right end, over the button but taking no press.
-      if (layout.gamesRow.width >= 300) {
-        const row = layout.gamesRow;
-        drawBetaTag(this, row.x + row.width - 12 - BETA_TAG_SIZE.width, row.y + row.height / 2);
-      }
       this.#stops.set("games-row", { rect: layout.gamesRow, activate: () => this.#openGamesList() });
     }
 
-    this.#buttons.push(
-      new McButton(this, {
-        kind: "tableCommit",
-        label: this.#starting ? t("title.starting") : t("title.newGame"),
-        type: typeRole.barTitle,
-        rect: layout.newGame,
-        enabled: !this.#starting,
-        onClick: () => this.#newGame(),
-      }),
-    );
-    this.#stops.set("new-game", {
-      rect: layout.newGame,
-      activate: () => this.#newGame(),
-    });
-
-    const openDecks = (): void => {
+    const open = (scene: string): void => {
       this.scale.off("resize", this.#rebuild, this);
-      goToScreen(this, SCENES.decks);
+      goToScreen(this, scene);
     };
-    this.#buttons.push(
-      new McButton(this, {
-        kind: menuKind,
-        label: t("title.decks"),
-        type: typeRole.menuButton,
-        rect: layout.decks,
-        onClick: openDecks,
-      }),
-    );
-    this.#stops.set("decks", { rect: layout.decks, activate: openDecks });
-
-    const openCampaign = (): void => {
-      this.scale.off("resize", this.#rebuild, this);
-      goToScreen(this, SCENES.campaignSaga);
-    };
-    this.#buttons.push(
-      new McButton(this, {
-        kind: menuKind,
-        label: t("title.campaign"),
-        type: typeRole.menuButton,
-        rect: layout.campaign,
-        onClick: openCampaign,
-      }),
-    );
-    this.#stops.set("campaign", { rect: layout.campaign, activate: openCampaign });
-
-    // "Civil War!": the box's own entry, once it is open. The last build, or the first leader as printed.
-    if (civilWar && layout.civilWar) {
-      const openCivilWar = (): void => {
+    const openTrophies = () => open(SCENES.trophyRoom);
+    this.#openTrophies = openTrophies;
+    const openModStore = () => open(SCENES.modStore);
+    const destinations: Record<HomeDestination, () => void> = {
+      "new-game": () => this.#newGame(),
+      campaign: () => open(SCENES.campaignSaga),
+      "civil-war": () => {
+        if (!civilWar) return;
         const entry = enterBuilder("build", newGameDraft(true), civilWar.scenarioId);
         setBuilderOrigin("title");
         this.scale.off("resize", this.#rebuild, this);
@@ -673,112 +714,31 @@ export class TitleScene extends Phaser.Scene {
           draft: entry.draft,
           step: entry.step,
         } satisfies CivilWarBuilderData);
-      };
-      this.#buttons.push(
-        new McButton(this, {
-          kind: menuKind,
-          label: CIVIL_WAR_TITLE_LABEL,
-          type: typeRole.menuButton,
-          rect: layout.civilWar,
-          onClick: openCivilWar,
-        }),
-      );
-      this.#stops.set("civil-war", { rect: layout.civilWar, activate: openCivilWar });
+      },
+      decks: () => open(SCENES.decks),
+      extras: () => open(SCENES.extras),
+      "past-games": () => open(SCENES.pastGames),
+      trophies: openTrophies,
+      stats: () => {
+        this.scale.off("resize", this.#rebuild, this);
+        goToScreen(this, SCENES.playerStats, { from: SCENES.title } satisfies PlayerStatsData);
+      },
+      "how-to-play": () => open(SCENES.howToPlay),
+      "mod-store": openModStore,
+    };
+    for (const id of homeDestinations(this.#section, civilWar !== null)) {
+      const rect = layout.destinations[id]!;
+      const [name, detail] = HOME_COPY[id];
+      const activate = destinations[id];
+      drawMenuEntry(this, rect, {
+        name: id === "new-game" && this.#starting ? t("title.starting") : name ? t(name) : CIVIL_WAR_TITLE_LABEL,
+        detail: t(detail),
+        primary: id === "new-game" && !this.#continuable,
+        enabled: id !== "new-game" || !this.#starting,
+        onClick: activate,
+      });
+      this.#stops.set(id, { rect, activate });
     }
-
-    const openExtras = (): void => {
-      this.scale.off("resize", this.#rebuild, this);
-      goToScreen(this, SCENES.extras);
-    };
-    this.#buttons.push(
-      new McButton(this, {
-        kind: menuKind,
-        label: t("title.extras"),
-        type: typeRole.menuButton,
-        rect: layout.extras,
-        onClick: openExtras,
-      }),
-    );
-    this.#stops.set("extras", { rect: layout.extras, activate: openExtras });
-
-    const openPastGames = (): void => {
-      this.scale.off("resize", this.#rebuild, this);
-      goToScreen(this, SCENES.pastGames);
-    };
-    this.#buttons.push(
-      new McButton(this, {
-        kind: menuKind,
-        label: t("title.pastGames"),
-        type: typeRole.menuButton,
-        rect: layout.pastGames,
-        onClick: openPastGames,
-      }),
-    );
-    this.#stops.set("past-games", { rect: layout.pastGames, activate: openPastGames });
-
-    const openTrophies = (): void => {
-      this.scale.off("resize", this.#rebuild, this);
-      goToScreen(this, SCENES.trophyRoom);
-    };
-    this.#openTrophies = openTrophies;
-    this.#buttons.push(
-      new McButton(this, {
-        kind: menuKind,
-        label: t("title.trophyRoom"),
-        type: typeRole.menuButton,
-        rect: layout.trophies,
-        onClick: openTrophies,
-      }),
-    );
-    this.#stops.set("trophies", { rect: layout.trophies, activate: openTrophies });
-
-    const openStats = (): void => {
-      this.scale.off("resize", this.#rebuild, this);
-      goToScreen(this, SCENES.playerStats, { from: SCENES.title } satisfies PlayerStatsData);
-    };
-    this.#buttons.push(
-      new McButton(this, {
-        kind: menuKind,
-        label: t("title.yourStats"),
-        type: typeRole.menuButton,
-        rect: layout.stats,
-        onClick: openStats,
-      }),
-    );
-    this.#stops.set("stats", { rect: layout.stats, activate: openStats });
-
-    // "How to play" (guided mode G6c, `docs/guided-mode.md` §4): the learning hub. Not a guided run by itself —
-    // starting a lesson from inside the hub is what sets `appSession().guidedRun` (`guide/start-tutorial.ts`).
-    const openHowToPlay = (): void => {
-      this.scale.off("resize", this.#rebuild, this);
-      goToScreen(this, SCENES.howToPlay);
-    };
-    this.#buttons.push(
-      new McButton(this, {
-        kind: menuKind,
-        label: t("title.howToPlay"),
-        type: typeRole.menuButton,
-        rect: layout.howToPlay,
-        onClick: openHowToPlay,
-      }),
-    );
-    this.#stops.set("how-to-play", { rect: layout.howToPlay, activate: openHowToPlay });
-
-    // The Mod Store, a main-menu item of its own (issue #734, bluefireF5ran's playtest notes).
-    const openModStore = (): void => {
-      this.scale.off("resize", this.#rebuild, this);
-      goToScreen(this, SCENES.modStore);
-    };
-    this.#buttons.push(
-      new McButton(this, {
-        kind: menuKind,
-        label: t("title.modStore"),
-        type: typeRole.menuButton,
-        rect: layout.modStore,
-        onClick: openModStore,
-      }),
-    );
-    this.#stops.set("mod-store", { rect: layout.modStore, activate: openModStore });
 
     // W4's Settings is an overlay: launched over this scene, it stops itself on Back (`scenes/settings.ts`).
     const openSettings = (): void => {
@@ -868,7 +828,7 @@ export class TitleScene extends Phaser.Scene {
     const topLanguage = languageSlotBeside(musicRect);
     const topTheme = themeSlotBeside(topLanguage);
     const discordIconRect = layout.split ? themeSlotBeside(themeSlotBeside(topTheme)) : themeSlotBeside(topTheme);
-    const discordIconFits = discordIconRect.x >= eyebrowText.x + eyebrowText.width + 8;
+    const discordIconFits = this.#shortcuts && discordIconRect.x >= toolsRect.x + toolsRect.width + 6;
     // The community Discord, left of Release notes in the same link style; dropped where the footer is too tight to
     // keep it clear of the footer's left edge (Report an issue carries it there too).
     const openDiscord = (): void => openExternal(DISCORD_INVITE_URL);
@@ -945,15 +905,19 @@ export class TitleScene extends Phaser.Scene {
     // The top row's press glyphs, hung under each button while it has focus. The buttons are chrome scenes of their
     // own, with no hints.
     const languageRect = languageSlotBeside(musicRect);
-    const topRow: readonly (readonly [string, Rect])[] = [
-      [CHROME_THEME_STOP, themeSlotBeside(languageRect)],
-      [CHROME_LANGUAGE_STOP, languageRect],
-      [CHROME_MUSIC_STOP, musicRect],
-      [CHROME_REPORT_STOP, reportRect],
-    ];
+    const topRow: readonly (readonly [string, Rect])[] = this.#shortcuts
+      ? [
+          [CHROME_THEME_STOP, themeSlotBeside(languageRect)],
+          [CHROME_LANGUAGE_STOP, languageRect],
+          [CHROME_MUSIC_STOP, musicRect],
+          [CHROME_REPORT_STOP, reportRect],
+        ]
+      : [[CHROME_THEME_STOP, closedThemeRect]];
     // The storefront button, left of the theme button: tablets and desktops only, where the top row has the room; a
     // phone has the menu item. Its stop is keyed as one of the top row's (`chrome:`), which it is on screen.
-    const storeIconRect = layout.split ? themeSlotBeside(themeSlotBeside(languageRect)) : null;
+    const storeCandidate = themeSlotBeside(themeSlotBeside(languageRect));
+    const storeIconRect =
+      this.#shortcuts && layout.split && storeCandidate.x >= toolsRect.x + toolsRect.width + 6 ? storeCandidate : null;
     if (storeIconRect) {
       drawStoreIconButton(this, storeIconRect, openModStore);
       this.#stops.set("chrome:mod-store", { rect: storeIconRect, activate: openModStore });
@@ -986,6 +950,7 @@ export class TitleScene extends Phaser.Scene {
         // The notice bar is the top-most control, so it comes first.
         ...(layout.noticeBar ? ["release-notice"] : []),
         ...titleMenuFocusOrder({
+          section: this.#section,
           continuable: this.#continuable !== null,
           civilWar: civilWar !== null,
           quit: layout.quit !== null,
@@ -996,6 +961,7 @@ export class TitleScene extends Phaser.Scene {
           gamesRow: layout.gamesRow !== null,
         }),
         "rank-badge",
+        "shortcuts",
         ...(discordIconFits ? ["chrome:discord"] : []),
         ...(storeIconRect ? ["chrome:mod-store"] : []),
       ],
@@ -1014,7 +980,7 @@ export class TitleScene extends Phaser.Scene {
       .text(
         list.x,
         panel.y + 12 + (GAMES_PANEL_HEADER - typeRole.sectionHeader.size) / 2,
-        `IN-PROGRESS GAMES (${rows.length})`,
+        t("title.home.games", { count: rows.length }),
         textStyle(typeRole.sectionHeader, surface.paper.hex),
       )
       .setLetterSpacing(1);

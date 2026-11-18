@@ -102,6 +102,7 @@ test("a finished game is listed from the Title and plays as a replay from its de
   const errors = trackPageErrors(page);
   const game = await finishedGame(page);
 
+  await clickStop(page, "section:records", "Title");
   await clickStop(page, "past-games", "Title");
   await waitForScene(page, "PastGames");
   await stopRect(page, "PastGames", `game:${game.id}`);
@@ -131,6 +132,8 @@ test("on a phone a swipe lifting over a row opens nothing; a tap opens the popup
   const errors = trackPageErrors(page);
   const game = await finishedGame(page);
 
+  const records = center(await stopRect(page, "Title", "section:records"));
+  await page.touchscreen.tap(records.x, records.y);
   const button = center(await stopRect(page, "Title", "past-games"));
   await page.touchscreen.tap(button.x, button.y);
   await waitForScene(page, "PastGames");

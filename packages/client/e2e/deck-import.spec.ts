@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
-import { activeScenes, clickText, pressHookStop, settle, trackPageErrors, waitFor } from "./helpers.js";
+import { activeScenes, clickText, openHomeDecks, pressHookStop, settle, trackPageErrors, waitFor } from "./helpers.js";
 import { dealToFirstTurn, findVisibleText, gameFacts, hook, openApp, type Rect } from "./wave6-helpers-b.js";
 
 /**
@@ -62,7 +62,7 @@ const statusLine = async (page: Page): Promise<{ text: string; tone: string } | 
 
 async function openDecks(page: Page): Promise<void> {
   await openApp(page);
-  await clickText(page, "Decks");
+  await openHomeDecks(page);
   await waitFor(async () => ((await activeScenes(page)).includes("Decks") ? true : null), "Decks opens", 8000);
   await settle(page);
 }

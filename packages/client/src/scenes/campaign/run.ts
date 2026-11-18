@@ -17,6 +17,7 @@
  * loaded through `campaignService()` — nothing here computes campaign state.
  */
 import Phaser from "phaser";
+import { t } from "../../i18n/translate.js";
 import { CARDS_BY_ID } from "../../content/pool.js";
 import { storyFor } from "../../campaign/story.js";
 import { ensurePictureLoaded } from "../../art/pictures.js";
@@ -180,10 +181,10 @@ export class CampaignRunScene extends Phaser.Scene {
     const order: string[] = [];
 
     const top = drawTopBar(this, {
-      backLabel: "◂ Cover",
+      backLabel: t("menu.campaign.overview"),
       onBack: () => this.#back(),
       hints: this.#hints,
-      title: model?.campaignName ?? "The run",
+      title: model?.campaignName ?? t("menu.campaign.chapters"),
       right: model ? `Issue ${model.issueNumber} of ${model.totalIssues}` : "",
     });
     if (top.back && top.backRect) {

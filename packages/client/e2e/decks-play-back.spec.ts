@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { activeScenes, clickText, pressHookStop, settle, waitFor } from "./helpers.js";
+import { activeScenes, openHomeDecks, pressHookStop, settle, waitFor } from "./helpers.js";
 import { hook, openApp, type Rect } from "./wave6-helpers-b.js";
 
 /**
@@ -16,7 +16,7 @@ const waitForScene = (page: Page, scene: string): Promise<true> =>
   waitFor(async () => ((await activeScenes(page)).includes(scene) ? true : null), `scene ${scene}`, 30000);
 
 async function openDecks(page: Page): Promise<void> {
-  await clickText(page, "Decks", { sceneKey: "Title" });
+  await openHomeDecks(page);
   await waitForScene(page, "Decks");
   await waitFor(
     async () => ((await hook<Stop[]>(page, "__mcDecksDebug", "stops")) ?? []).find((s) => s.key === "new-deck") ?? null,

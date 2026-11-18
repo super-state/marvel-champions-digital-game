@@ -160,6 +160,8 @@ import {
 } from "./roster-panel.js";
 import { FocusRoute, type FocusStop } from "./focus-route.js";
 import { t } from "../i18n/translate.js";
+import { onLanguageChange } from "../language-change.js";
+import { drawSetupHeading } from "../ui/setup-heading.js";
 import { bindTextFieldEscape } from "./text-field-escape.js";
 import { GlyphHints } from "../ui/glyph-hints.js";
 import { forwardHint } from "./campaign/pad-hints.js";
@@ -401,6 +403,12 @@ export class SeatsScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.events.once(
+      "shutdown",
+      onLanguageChange(() => {
+        if (this.sys.isActive()) this.#rebuild();
+      }),
+    );
     // Phaser reuses this scene: nothing from the last visit carries over.
     this.#leaving = false;
     this.#aspectTipOpen = null;
@@ -658,8 +666,7 @@ export class SeatsScene extends Phaser.Scene {
     const chipDefs = this.#heroChipDefs(deckOptions);
     // Behind the Filters button while a controller is in use or the game is narrower than the breakpoint (Y or the
     // button brings the chips back).
-    const behindButton = this.#padFilters.behindButton(width);
-    const folded = this.#padFilters.folded(width);
+    const folded = this.#padFilters.folded;
     const padMode = this.#padFilters.padMode;
     this.#chipsFolded = folded;
 
@@ -680,9 +687,10 @@ export class SeatsScene extends Phaser.Scene {
       height,
       chipRows: folded ? 0 : packCompactChipsToRows(chipDefs, rosterColumnWidthFor(width, height)).length,
       detailLines: 10,
+      visibleSeats: this.#draft.seats.length + 1,
       detailsOpen: this.#detailsOpen,
       searchOpen: this.#searchOpen,
-      filtersButton: behindButton,
+      filtersButton: true,
       chipsShown: !folded,
       pairRows: Math.min(insights.pairs.length, 3),
       noticeRows: unresolved.length > 0 ? 1 : 0,
@@ -711,32 +719,14 @@ export class SeatsScene extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: "onInk",
-        label: "◂ Scenarios",
+        label: t("setup.backFoes"),
         type: typeRole.backLabel,
         rect: layout.back,
         onClick: back,
       }),
     );
     this.#stops.set("back", { rect: layout.back, activate: back });
-    const titleX = layout.back.x + layout.back.width + 16;
-    const title = this.add
-      .text(titleX, layout.headerBar.height / 2, "Take your seats", textStyle(typeRole.pageTitle, surface.paper.hex))
-      .setOrigin(0, 0.5);
-    const stepRight = layout.step.x + layout.step.width;
-    const seatCount = this.#draft.seats.length;
-    const stepText = this.add
-      .text(
-        stepRight,
-        layout.headerBar.height / 2,
-        `STEP 2 OF 4 · ${seatCount} SEAT${seatCount === 1 ? "" : "S"} FILLED`,
-        textStyle(typeRole.label, surface.paper.hex, ink.label),
-      )
-      .setOrigin(1, 0.5);
-    // The title keeps its name whole; on a narrow header it is the step line that gives way, to its short form.
-    if (titleX + title.width + 12 + stepText.width > stepRight) stepText.setText(`STEP 2 OF 4 · ${seatCount}/4`);
-    if (titleX + title.width + 12 + stepText.width > stepRight) stepText.setText("STEP 2 OF 4");
-    fitText(title, stepRight - stepText.width - titleX - 12, typeRole.pageTitle.size);
-    fitText(stepText, layout.step.width, typeRole.label.size);
+    drawSetupHeading(this, layout.back, layout.headerBar, t("setup.pickHeroes"), 1);
 
     // The four selectable seat cards (the active-seat model, docs/phase4-screen-gaps.md §3 W2b's own bug fix).
     const deckOptionsById = new Map(deckOptions.map((o) => [o.deck.id as string, o]));
@@ -747,7 +737,7 @@ export class SeatsScene extends Phaser.Scene {
       MAX_SEATS,
       this.#draft.activeSeatIndex,
     );
-    slots.forEach((slot, index) => {
+    slots.slice(0, layout.seatSlots.length).forEach((slot, index) => {
       const option = slot.deckId ? deckOptionsById.get(slot.deckId) : undefined;
       if (layout.wide) this.#drawSeatCard(layout.seatSlots[index]!, slot, index, option);
       else this.#drawSeatChip(layout.seatSlots[index]!, slot, index);
@@ -793,7 +783,7 @@ export class SeatsScene extends Phaser.Scene {
         this,
         layout.rosterHeader.x,
         layout.rosterHeader.y + layout.rosterHeader.height / 2,
-        `Heroes — seat ${this.#draft.activeSeatIndex + 1} of ${MAX_SEATS}`,
+        t("setup.forPlayer", { n: this.#draft.activeSeatIndex + 1 }),
         typeRole.label,
         surface.ink.hex,
         ink.label,
@@ -814,7 +804,7 @@ export class SeatsScene extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: "quiet",
-        label: "Use preconstructed",
+        label: t("setup.readyDecks"),
         type: typeRole.label,
         rect: layout.usePreconstructed,
         onClick: usePreconstructed,
@@ -1078,7 +1068,9 @@ export class SeatsScene extends Phaser.Scene {
         subject.deckId === null ? undefined : deckOptions.find((o) => (o.deck.id as string) === subject.deckId);
       const seatNote =
         panelOption && subject.seatIndex !== null && subject.pickingSeatIndex !== null
-          ? `Seat ${subject.seatIndex + 1} is set · pick seat ${subject.pickingSeatIndex + 1} below`
+          ? this.#draft.seats.length === 1
+            ? t("setup.heroAdded")
+            : t("setup.forPlayer", { n: subject.pickingSeatIndex + 1 })
           : null;
       const endY = this.#drawSidePanel(layout.detail, panelOption, detailTextWidth, seatNote);
       this.#insightArea = {
@@ -1115,11 +1107,7 @@ export class SeatsScene extends Phaser.Scene {
     };
     const playButton = new McButton(this, {
       kind: "primary",
-      label: tableLock
-        ? "Hero locked"
-        : noHeroes
-          ? "Pick a hero ▸"
-          : `Play ${this.#draft.seats.length} hero${this.#draft.seats.length === 1 ? "" : "es"} ▸`,
+      label: tableLock ? t("setup.locked") : noHeroes ? t("setup.pickFirst") : t("setup.review"),
       type: typeRole.barTitle,
       rect: layout.play,
       enabled: tableLock === null && !noHeroes,
@@ -1148,7 +1136,7 @@ export class SeatsScene extends Phaser.Scene {
     this.#buttons.push(
       new McButton(this, {
         kind: layout.footer ? "onInk" : "secondary",
-        label: "Deck check ▸",
+        label: t("setup.checkDeck"),
         type: typeRole.barTitle,
         rect: layout.deckCheck,
         onClick: deckCheck,
@@ -1195,7 +1183,7 @@ export class SeatsScene extends Phaser.Scene {
     this.#firstTileKey =
       recIds[0] !== undefined ? `hero-rec:${recIds[0]}` : cardIds[0] !== undefined ? `hero:${cardIds[0]}` : null;
     const baseOrder = seatsFocusOrder({
-      seatCount: MAX_SEATS,
+      seatCount: layout.seatSlots.length,
       deckIds: cardIds,
       ...(shelfStopKeys ? { shelfStopKeys } : {}),
       heroChipIds: folded ? [] : chipDefs.map((c) => c.id),
@@ -1277,9 +1265,9 @@ export class SeatsScene extends Phaser.Scene {
   #yWordFor(key: string | null): string {
     const settings = appSession().settings;
     const pad = glyphSetOf(inputDevice(), settings.inputGlyphs, settings.glyphSource) === "pad";
-    if (pad && this.#padFilters.padMode) return "Filters";
+    if (pad && this.#padFilters.padMode) return t("library.builderFilters");
     if (areaOf(key, this.#areas) === "filters") return "List";
-    return key !== null && /^hero(-rec)?:/.test(key) ? "Inspect" : "Filters";
+    return key !== null && /^hero(-rec)?:/.test(key) ? t("reader.face") : t("library.builderFilters");
   }
 
   /** LB / RB: the seat being edited steps to the previous or next one; the hero list then fills that seat. */
@@ -1357,10 +1345,10 @@ export class SeatsScene extends Phaser.Scene {
   /** Narrow only: the one line the details disclosure shows while shut — enough to know what's in the seat without opening it. */
   #seatDetailsSummary(option: DeckOption | undefined): string {
     const seatNumber = this.#draft.activeSeatIndex + 1;
-    if (!option) return `Seat ${seatNumber} · tap a hero below`;
+    if (!option) return t(seatNumber === 1 ? "setup.chooseFirst" : "setup.addHero");
     const detail = heroCandidateDetailOf(option, currentCardsById(), POOL_ENCOUNTER_SETS);
     // Short enough to read whole beside "Use preconstructed" at 375px; the hand size and the rest are one tap away.
-    return `Seat ${seatNumber} · ${detail.aspectLabel} · HP ${detail.hp ?? "—"}`;
+    return `${t("setup.player", { n: seatNumber })} · ${detail.aspectLabel} · HP ${detail.hp ?? "—"}`;
   }
 
   #toggleSearch(): void {
@@ -1636,9 +1624,7 @@ export class SeatsScene extends Phaser.Scene {
     // to leave room for it; the meta line at the card's own foot is well clear (second-pass fidelity pass:
     // "SPIDER-MAN" read as "SPIDER-MA" with the "✕" sitting on top of the rest).
     const topLineWidth = slot.deckId ? textWidth - CLOSE_SIZE - 8 : textWidth;
-    const seatText = activeEmpty
-      ? `SEAT ${index + 1} · PICKING`
-      : `SEAT ${index + 1}${index === 0 && slot.deckId ? " · YOU" : ""}`;
+    const seatText = t("setup.player", { n: index + 1 });
     const seatLabel = label(this, textX, rect.y + 8, seatText, typeRole.label, accent.heroRed.hex, dim);
     fitText(seatLabel, topLineWidth, typeRole.label.size);
     if (slot.deckId) {
@@ -1671,7 +1657,7 @@ export class SeatsScene extends Phaser.Scene {
         new McButton(this, { kind: "quiet", label: "✕", type: typeRole.label, rect: closeRect, onClick: clear }),
       );
     } else {
-      const message = selectable ? "Empty — pick a hero" : `Fill seat ${this.#draft.seats.length + 1} first`;
+      const message = t(index === 0 ? "setup.chooseFirst" : "setup.addHero");
       const empty = this.add.text(
         textX,
         rect.y + rect.height / 2,
@@ -1721,7 +1707,7 @@ export class SeatsScene extends Phaser.Scene {
     const textWidth = rect.width - pad * 2;
     // "· YOU" only where it fits without shrinking "SEAT 1" itself (a tablet-portrait chip; never a phone one).
     const roomy = rect.width >= 120;
-    const seatText = `SEAT ${index + 1}${index === 0 && slot.deckId && roomy ? " · YOU" : ""}`;
+    const seatText = t("setup.player", { n: index + 1 });
     const seatLabel = label(this, rect.x + pad, rect.y + pad, seatText, typeRole.label, accent.heroRed.hex, dim);
     fitText(seatLabel, textWidth, typeRole.label.size);
     if (slot.deckId) {
@@ -1746,7 +1732,7 @@ export class SeatsScene extends Phaser.Scene {
         fitText(meta, textWidth, typeRole.label.size);
       }
     } else {
-      const message = activeEmpty ? "Picking" : "Empty";
+      const message = t(index === 0 ? "setup.chooseFirst" : "setup.addHero");
       const empty = label(
         this,
         rect.x + pad,
@@ -1937,15 +1923,11 @@ ${sourceWordsOf(decks)}`
   #drawSidePanel(rect: Rect, option: DeckOption | undefined, detailTextWidth: number, seatNote: string | null): number {
     this.add.rectangle(rect.x, rect.y, rect.width, rect.height, surface.ink.hex).setOrigin(0, 0);
     if (!option) {
+      label(this, rect.x + 18, rect.y + 18, t("setup.team"), typeRole.sectionHeader, surface.paper.hex);
       this.add
-        .text(
-          rect.x + 16,
-          rect.y + 16,
-          "Select a hero for this seat below.",
-          textStyle(typeRole.body, surface.paper.hex, ink.label),
-        )
+        .text(rect.x + 18, rect.y + 54, t("setup.teamHint"), textStyle(typeRole.body, surface.paper.hex, ink.label))
         .setWordWrapWidth(rect.width - 32);
-      return rect.y + 60;
+      return rect.y + 112;
     }
     const detail = heroCandidateDetailOf(option, currentCardsById(), POOL_ENCOUNTER_SETS);
     let y = rect.y + 16;

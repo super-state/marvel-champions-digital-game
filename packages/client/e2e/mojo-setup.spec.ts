@@ -56,7 +56,7 @@ test.describe("Table setup: MojoMania", () => {
     await openApp(page);
 
     // New Game -> the MojoMania pack -> Mojo -> two seats (Spider-Man and She-Hulk) -> Table setup.
-    await clickText(page, "NEW GAME");
+    await clickText(page, "Play a single game");
     await waitFor(
       async () => ((await activeScenes(page)).includes("ScenarioSelect") ? true : null),
       "Scenario select",
