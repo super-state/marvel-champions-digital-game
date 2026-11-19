@@ -31,7 +31,7 @@ import {
   profileStatTiles,
   schemePanel,
 } from "../view/board-model.js";
-import { triggerEffectOf, triggerWindowContextOf } from "../view/trigger-window-context.js";
+import { answeredEventsOf, triggerEffectOf, triggerWindowContextOf } from "../view/trigger-window-context.js";
 import { choiceSourcePanelOf } from "../view/choice-source-panel.js";
 import { choiceSourceOf, promptTitleOf } from "../view/choice-source.js";
 import { faceUpName, optionLabelOf, shortIdentityNameOf } from "../view/names.js";
@@ -101,6 +101,7 @@ function triggerSubjectOf(event: TriggerEvent, before: boolean): NonNullable<Bat
     case "thwart":
       return about(event.thwarterInstanceId);
     case "boostCardTurnedFaceup":
+    case "boostCardTurningFaceup":
       return about(event.boostInstanceId);
     case "cardRevealed":
     case "encounterCardRevealing":
@@ -899,7 +900,11 @@ export class BattleModel {
               : {}),
             ...(trigger && pending.prompt.kind === "chooseTriggers"
               ? {
-                  event: triggerSubjectOf(pending.prompt.event, pending.prompt.timing === "interrupt"),
+                  // A merged window's headline names the first condition its options answer; spotlight that one.
+                  event: triggerSubjectOf(
+                    answeredEventsOf(state, pending)[0] ?? pending.prompt.event,
+                    pending.prompt.timing === "interrupt",
+                  ),
                   offers: pending.options.flatMap((option) => {
                     const ref = option.ref;
                     if (ref.kind !== "ability") return [];

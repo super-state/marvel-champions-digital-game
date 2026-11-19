@@ -8,6 +8,7 @@
   </head>
   <body>
     <main class="battle">
+      <h1 class="visually-hidden">Spider-Man vs. Rhino</h1>
       <div class="arena">
         <section class="playfield" aria-label="Battle table">
           <div id="board-viewport" role="region" aria-label="Playmat">
@@ -78,10 +79,12 @@
               <section id="decision" aria-label="Card actions" hidden></section>
             </div>
           </div>
-          <div class="phase-status" aria-live="polite">
+          <div class="phase-status">
             <button type="button" id="menu-button" class="menu-button" aria-label="Menu" title="Menu (Esc)"></button>
-            <span class="phase-chip" id="turn-status" data-phase="hero" role="status">Hero phase</span>
-            <span class="dock-round" id="round-label">Round 1</span>
+            <div class="phase-live" aria-live="polite">
+              <span class="phase-chip" id="turn-status" data-phase="hero" role="status">Hero phase</span>
+              <span class="dock-round" id="round-label">Round 1</span>
+            </div>
           </div>
           <!-- The turn bar: what the game is asking, and the buttons that answer, right under the hand. -->
           <section id="dock" class="dock" aria-labelledby="dock-title">

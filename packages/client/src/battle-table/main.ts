@@ -4,6 +4,7 @@ import "./battle.css";
 import { arrangeScene } from "./debug-scenes.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
+import { eventLook, offerDoes, spotOf, type GlowTone, type Spot } from "./spotlight.js";
 import { BattleTable, INTERRUPT_MS, EXHAUST_MS, READY_MS, HIT_CONTACT_MS, isTuckedUpgrade } from "./table.js";
 
 type Snapshot = ReturnType<BattleModel["snapshot"]>;
@@ -49,15 +50,7 @@ const reticle = element("attack-reticle");
 const pendingMark = element("pending-mark");
 let aimTarget: string | null = null;
 let heldEncounter: string | null = null;
-/** How a card stands out of the darkened table: an attacker red, a scheme taking threat orange, the asking card gold. */
-type GlowTone = "ability" | "attack" | "threat";
-interface Spot {
-  glow: { id: string; tone: GlowTone }[];
-  /** Every card left out of the shade: the glowing ones and any the question needs (defenders to pick). */
-  cutouts: string[];
-  /** An amount about to land on a card while the game waits on the player: threat on a scheme, damage on a hero. */
-  mark?: { id: string; kind: "threat" | "damage" | "thwart"; amount: number } | null;
-}
+/** What the table is darkened around right now (`spotlight.ts`). */
 let spot: Spot | null = null;
 let markKey = "";
 /** Facedown boost cards beside their enemies, each with a "Boost" tag until an activation turns it up. */
@@ -401,11 +394,6 @@ function defend(choice: TriggerChoice) {
   render();
 }
 
-/** What an offered ability does, without the "Use <card> to" its button already says. */
-function offerDoes(effect: string) {
-  return effect.replace(/\.$/, "").replace(/^Use .+? to (?:you )?(?=[a-z])/, "");
-}
-
 function choiceView(choice: Choice): DockView {
   const tone = state.turn === "enemy" ? "villain" : "hero";
   if (choice.offers?.length) {
@@ -415,7 +403,7 @@ function choiceView(choice: Choice): DockView {
     const interrupt = /^interrupt/i.test(offer.question);
     // "Interrupt with Spider-Sense?": the button names the ability, the eyebrow says what kind of reaction it is.
     const ability = / with ([^?]+)\?$/.exec(offer.question)?.[1] ?? card;
-    const look = choice.event ? eventLook(choice.event) : null;
+    const look = choice.event ? eventLook(choice.event, state) : null;
     return {
       tone,
       asking: true,
@@ -951,6 +939,7 @@ function showOutcome(outcome: Snapshot["outcome"]) {
   gameOverUndo.hidden = !model.canUndo;
   tryAgain.replaceChildren(icon("mulligan"), make("span", "", won ? "Play again" : "Try again"));
   if (!gameOver.open) {
+    if (gameMenu.open) gameMenu.close();
     if (won) throwConfetti();
     gameOver.showModal();
   }
@@ -1127,72 +1116,6 @@ function setSpot(next: Spot | null) {
     );
   }
   markKey = key;
-}
-
-/** How a reaction window's event reads: its symbol, and whether it threatens the hero (red), the plan (orange) or neither. */
-function eventLook(event: NonNullable<Choice["event"]>): { icon: IconName | null; glow: GlowTone } {
-  const ours = event.subject === state.hero.id || state.inPlay.some((card) => card.id === event.subject);
-  switch (event.kind) {
-    case "placeThreat":
-      return { icon: "threat", glow: "threat" };
-    case "enemyScheme":
-      return { icon: "scheme", glow: "threat" };
-    case "removeThreat":
-      return { icon: "thwart", glow: "ability" };
-    case "dealDamage":
-      return { icon: "damage", glow: ours ? "attack" : "ability" };
-    case "enemyAttack":
-      return { icon: "attack", glow: "attack" };
-    case "attack":
-      return { icon: "attack", glow: ours ? "ability" : "attack" };
-    case "cardRevealed":
-    case "encounterCardRevealing":
-    case "encounterCardBeingRevealed":
-      return { icon: "forced", glow: "attack" };
-    case "boostCardTurnedFaceup":
-    case "boostCardTurningFaceup":
-      return { icon: "boost", glow: "attack" };
-    default:
-      return { icon: null, glow: "ability" };
-  }
-}
-
-/** What a question spotlights: the attacker and its boost cards, or what an interrupt would change and the card asking. */
-function spotOf(choice: Choice | null): Spot | null {
-  if (!choice) return null;
-  if (choice.defense) {
-    const attacker = choice.defense.attackerId;
-    const boosts = state.facedownBoosts.filter((boost) => boost.enemy === attacker).map((boost) => boost.id);
-    const attachments = state.enemyCards.filter((card) => card.attachedTo === attacker).map((card) => card.id);
-    const defenders = defenseQuestionDecline(choice)
-      ? []
-      : choice.options.flatMap((option) => (option.cardId ? [option.cardId] : []));
-    return { glow: [{ id: attacker, tone: "attack" }], cutouts: [attacker, ...attachments, ...boosts, ...defenders] };
-  }
-  const offer = choice.offers?.[offerIndex];
-  if (!offer) return null;
-  const event = choice.event;
-  const glow: Spot["glow"] = [];
-  if (event?.subject && event.subject !== offer.cardId) glow.push({ id: event.subject, tone: eventLook(event).glow });
-  glow.push({ id: offer.cardId, tone: "ability" });
-  const boosts =
-    event?.kind === "enemyAttack" || event?.kind === "enemyScheme"
-      ? state.facedownBoosts.filter((boost) => boost.enemy === event.subject).map((boost) => boost.id)
-      : [];
-  const kind =
-    event?.kind === "placeThreat"
-      ? "threat"
-      : event?.kind === "removeThreat"
-        ? "thwart"
-        : event?.kind === "dealDamage"
-          ? "damage"
-          : null;
-  const amount = event?.before ? (event.amount ?? 0) : 0;
-  return {
-    glow,
-    cutouts: [...glow.map((item) => item.id), ...boosts, ...(heldEncounter ? [heldEncounter] : [])],
-    mark: event?.subject && kind && amount > 0 ? { id: event.subject, kind, amount } : null,
-  };
 }
 
 function tagBoost(id: string) {
@@ -2082,7 +2005,13 @@ function render() {
   choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
   paintDock(dockView());
   // A question darkens the table around what it is about: the attacker (red), or what an interrupt would change.
-  setSpot(spotOf(state.choice));
+  setSpot(
+    spotOf(state.choice, state, {
+      offerIndex,
+      choosingDefender: !defenseQuestionDecline(state.choice),
+      heldEncounter,
+    }),
+  );
   if (state.choice?.defense) {
     inspect(state.choice.defense.attackerId);
     if (defending) reticle.hidden = false;
@@ -2148,6 +2077,7 @@ function seedFromUrl(): number | undefined {
 }
 
 function deal() {
+  if (gameMenu.open) gameMenu.close();
   menuCard = null;
   actionCard = null;
   restart.disabled = true;
@@ -2243,10 +2173,7 @@ undoButton.onclick = () => {
   if (staged?.type === "event") table?.channelEvent(staged.id);
   inspect(heldEncounter ?? state.hero.id);
 };
-restart.onclick = () => {
-  if (gameMenu.open) gameMenu.close();
-  start();
-};
+restart.onclick = start;
 menuButton.onclick = () => {
   if (!gameMenu.open) gameMenu.showModal();
 };
@@ -2272,6 +2199,7 @@ document.addEventListener(
   true,
 );
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && (gameMenu.open || gameOver.open)) return;
   if (event.key === "Escape" && menuCard) {
     menuCard = null;
     render();

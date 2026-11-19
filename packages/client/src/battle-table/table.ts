@@ -108,6 +108,11 @@ const HEIGHT = 1.407;
 const TAB = 0.18;
 
 // Keep the original scan coordinates so the printed title stays on the exposed edge.
+/** A facedown boost card beside its enemy: smaller than the enemy, never bigger than a waiting encounter card. */
+function boostCardWidth(hostWidth: number, w: number, h: number) {
+  return Math.min(hostWidth * 0.62, h * 0.125, w * 0.105);
+}
+
 function upgradeTab() {
   const geo = new THREE.ShapeGeometry(roundedRect(TAB, HEIGHT, 0.025), 8);
   geo.translate((TAB - 1) / 2, 0, 0);
@@ -1397,7 +1402,7 @@ export class BattleTable {
       const villainBoosts = [...this.#encounters.values()].filter(
         (card) => card.boostFor === state.villain.id && card.id !== this.#revealing,
       ).length;
-      const boostWidth = Math.min(villainWidth * 0.62, h * 0.125, w * 0.105);
+      const boostWidth = boostCardWidth(villainWidth, w, h);
       const left =
         bounds(state.villain, w * 0.5, h * 0.237, villainWidth, villainTabs).right +
         (villainBoosts ? boostWidth * (0.7 + (villainBoosts - 1) * 0.3) : 0);
@@ -1432,7 +1437,7 @@ export class BattleTable {
         // activation turns it up.
         const stacked = boosts.get(card.boostFor) ?? 0;
         boosts.set(card.boostFor, stacked + 1);
-        const width = Math.min(host.width * 0.62, h * 0.125, w * 0.105);
+        const width = boostCardWidth(host.width, w, h);
         this.#pose(
           card.id,
           host.x + host.width * 0.5 + width * (0.14 + stacked * 0.3),
