@@ -1,7 +1,7 @@
 import { statHue } from "../tokens.js";
 import "./battle.css";
 import { BattleModel, type BattleCard } from "./model.js";
-import { BattleTable, INTERRUPT_MS, EXHAUST_MS, READY_MS, HIT_CONTACT_MS } from "./table.js";
+import { BattleTable, INTERRUPT_MS, EXHAUST_MS, READY_MS, HIT_CONTACT_MS, isTuckedUpgrade } from "./table.js";
 
 type Snapshot = ReturnType<BattleModel["snapshot"]>;
 
@@ -22,6 +22,11 @@ const model = new BattleModel();
 const boardLabels = element("board-labels");
 const labelClips = [boardLabels];
 const anchors = element("anchors");
+const rail = element("rail");
+const boardViewport = element("board-viewport");
+const gameOver = element<HTMLDialogElement>("game-over");
+const gameOverUndo = element<HTMLButtonElement>("game-over-undo");
+const tryAgain = element<HTMLButtonElement>("try-again");
 const preview = element<HTMLImageElement>("preview");
 const decision = element("decision");
 const choiceShade = element("choice-shade");
@@ -71,8 +76,12 @@ const viewedPile = () => (viewingEncounterDiscard ? state.encounterDiscard : sta
 const labels = new Map<string, HTMLButtonElement>();
 
 type ResourceSource = NonNullable<Snapshot["payment"]>["sources"][number];
-const resourcePieceId = (source: ResourceSource) =>
-  source.kind === "resourceAbility" ? `ability:${source.id}` : source.cardId;
+function resourcePieceId(source: ResourceSource) {
+  if (source.kind === "handCard") return source.cardId;
+  const onBoard = state.inPlay.some((card) => card.id === source.cardId && card.showAsFullCard);
+  const options = state.payment?.sources.filter((option) => option.cardId === source.cardId);
+  return onBoard && options?.length === 1 ? source.cardId : `ability:${source.id}`;
+}
 let displayedHand: BattleCard[] = [];
 
 function cards() {
@@ -96,8 +105,9 @@ function resourceText(icons: readonly string[]): string {
 function showPayment(payment: NonNullable<Snapshot["payment"]>) {
   const opening = paymentPanel.hidden;
   paymentPanel.hidden = false;
-  element("payment-subject").textContent = `${payment.ability ? "Using" : "Playing"} ${payment.subject.name}`;
-  element("payment-total").textContent = `${payment.paid} / ${payment.required}`;
+  // The staged card already shows what is being paid for; keep the name for screen readers only.
+  paymentTitle.setAttribute("aria-description", `${payment.ability ? "Using" : "Playing"} ${payment.subject.name}`);
+  element("payment-total").textContent = `${payment.paid} / ${payment.required}`;
   paymentPanel.querySelector<HTMLElement>(".payment-track span")!.style.transform =
     `scaleX(${payment.required ? Math.min(1, payment.paid / payment.required) : 1})`;
   const left = payment.required - payment.paid;
@@ -111,24 +121,31 @@ function showPayment(payment: NonNullable<Snapshot["payment"]>) {
           ? "Cost covered"
           : "Choose resources";
   paymentSubmit.disabled = !payment.canPay;
-  if (opening) paymentTitle.focus({ preventScroll: true });
+  if (opening) {
+    boardViewport.scrollTop = boardViewport.scrollHeight;
+    paymentTitle.focus({ preventScroll: true });
+  }
   inspect(hoveredCard);
 }
 
 let hoveredCard: string | null = null;
 function hoverCard(id: string | null) {
   hoveredCard = id;
-  inspect(id);
+  if (!readingCard) inspect(id);
+}
+
+function showPreview(card: Pick<BattleCard, "art" | "name" | "landscape">, expand: boolean) {
+  rail.toggleAttribute("data-wide-preview", expand && card.landscape);
+  if (preview.getAttribute("src") !== card.art) preview.src = card.art;
+  preview.alt = card.name;
+  preview.hidden = false;
 }
 
 function inspect(id: string | null) {
   if (discarding) return;
   const card = cards().find((item) => item.id === id) ?? state.payment?.subject;
-  if (card && card.art) {
-    if (preview.getAttribute("src") !== card.art) preview.src = card.art;
-    preview.alt = card.name;
-    preview.hidden = false;
-  }
+  if (card?.art) showPreview(card, card.id === hoveredCard || card.id === heldEncounter);
+  else if (!heldEncounter) rail.removeAttribute("data-wide-preview");
 }
 
 function setDiscardOpen(open: boolean, encounter = viewingEncounterDiscard) {
@@ -244,6 +261,10 @@ function pick(id: string) {
     return;
   }
   clearFormHint();
+  if (model.isTargetedAttachment(card.id)) {
+    beginPlay(card);
+    return;
+  }
   staged = card;
   flying = true;
   instruction.textContent = `Playing ${card.name}…`;
@@ -252,10 +273,13 @@ function pick(id: string) {
 
 function landed(id: string) {
   if (!flying || staged?.id !== id) return;
-  const card = staged;
   flying = false;
+  beginPlay(staged);
+}
+
+function beginPlay(card: BattleCard) {
   act(() => {
-    if (!model.pick(id)) {
+    if (!model.pick(card.id)) {
       staged = null;
       const refusal = element("play-refusal");
       refusal.getAnimations().forEach((a) => a.cancel());
@@ -465,6 +489,11 @@ function showChoice(choice: NonNullable<Snapshot["choice"]>) {
   if (decline && choice.defense) {
     askYesNo(`Defend ${choice.defense.attacker}’s attack?`, null, null, (yes) => {
       if (yes) {
+        const defenders = choice.options.filter((option) => option.cardId);
+        if (defenders.length === 1) {
+          choose(defenders[0]!.id);
+          return;
+        }
         defenderSelection = choice;
         render();
       } else choose(decline.id);
@@ -528,6 +557,95 @@ function updateThreatLabel(counter: HTMLElement, count: number) {
   counter.dataset.count = String(count);
   counter.textContent =
     counter.dataset.target === undefined ? `${count} threat` : `${count} / ${counter.dataset.target} threat`;
+  const target = Number(counter.dataset.target);
+  counter.toggleAttribute("data-near-limit", count > 0 && count >= target - Math.ceil(target / 4));
+}
+
+function updateHpLabel(label: HTMLButtonElement | undefined, hp: number) {
+  if (!label?.dataset.hp || !label.firstChild) return;
+  const previous = label.dataset.hp;
+  label.dataset.hp = String(hp);
+  label.firstChild.textContent = label.firstChild.textContent!.replace(/\d+ HP/, `${hp} HP`);
+  const description = label.getAttribute("aria-description");
+  if (label.classList.contains("identity") && description)
+    label.setAttribute("aria-description", description.replace(`${previous} HP`, `${hp} HP`));
+}
+
+function showOutcome(outcome: Snapshot["outcome"]) {
+  if (!outcome) {
+    if (gameOver.open) gameOver.close();
+    return;
+  }
+  const won = outcome.result === "win";
+  let detail = won ? `You defeated ${state.villain.name}.` : "The battle has ended.";
+  if (outcome.reason === "mainSchemeCompleted") {
+    const scheme = state.enemyCards.find((card) => card.type === "main_scheme");
+    detail =
+      scheme?.threatTarget != null
+        ? `${scheme.name} reached ${scheme.threat} / ${scheme.threatTarget} threat.`
+        : "The main scheme reached its threat limit.";
+  } else if (outcome.reason === "allPlayersDefeated") {
+    detail = `${state.hero.name} was defeated.`;
+  }
+  // Victory shows the villain stamped out; a loss shows whatever ended the game.
+  const scheme = state.enemyCards.find((card) => card.type === "main_scheme");
+  const schemeLoss = outcome.reason === "mainSchemeCompleted" && !!scheme;
+  const featured = won ? state.villain : schemeLoss ? scheme : state.hero;
+  const art = element<HTMLImageElement>("game-over-art");
+  const figure = art.closest("figure")!;
+  figure.hidden = !featured.art;
+  if (featured.art && art.getAttribute("src") !== featured.art) art.src = featured.art;
+  figure.toggleAttribute("data-landscape", schemeLoss);
+  element("game-over-stamp").textContent = won
+    ? "Defeated"
+    : schemeLoss
+      ? "Scheme complete"
+      : outcome.reason === "allPlayersDefeated"
+        ? "Knocked out"
+        : "Defeat";
+  element("game-over-kicker").textContent = `${state.hero.name} vs. ${state.villain.name}`;
+  element("game-over-title").textContent = won ? "Victory" : "Defeat";
+  element("game-over-detail").textContent = detail;
+  gameOver.toggleAttribute("data-victory", won);
+  gameOverUndo.hidden = !model.canUndo;
+  tryAgain.textContent = won ? "Play Again" : "Try Again";
+  if (!gameOver.open) {
+    if (won) throwConfetti();
+    gameOver.showModal();
+  }
+}
+
+function shakeStage(strength: "light" | "heavy") {
+  const stage = element("stage");
+  delete stage.dataset.shake;
+  // Restart the animation when two hits land close together.
+  void stage.offsetWidth;
+  stage.dataset.shake = strength;
+  clearTimeout(shakeTimer);
+  // Children's animations bubble animationend, so clear on a timer that outlasts the shake and flash.
+  shakeTimer = setTimeout(() => delete stage.dataset.shake, 500);
+}
+let shakeTimer: ReturnType<typeof setTimeout> | undefined;
+
+const CONFETTI = ["#f6c564", "#ff5a4e", "#4fb3ff", "#ffffff", "#7be08f", "#c77dff"];
+
+function throwConfetti() {
+  const host = element("outcome-confetti");
+  host.replaceChildren();
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  for (let i = 0; i < 110; i++) {
+    const bit = make("i", "confetti-bit");
+    const left = Math.random() * 100;
+    bit.style.setProperty("--x", left + "%");
+    bit.style.setProperty("--drift", (Math.random() - 0.5) * 220 + "px");
+    bit.style.setProperty("--spin", (Math.random() < 0.5 ? -1 : 1) * (360 + Math.random() * 720) + "deg");
+    bit.style.setProperty("--delay", Math.random() * 1.4 + "s");
+    bit.style.setProperty("--fall", 2.6 + Math.random() * 2 + "s");
+    bit.style.setProperty("--size", 6 + Math.random() * 7 + "px");
+    bit.style.background = CONFETTI[i % CONFETTI.length]!;
+    if (i % 3 === 0) bit.style.borderRadius = "50%";
+    host.append(bit);
+  }
 }
 
 function synchronizeLabels() {
@@ -568,7 +686,7 @@ function synchronizeLabels() {
     label.toggleAttribute("data-target", !!target);
     label.toggleAttribute(
       "data-tucked",
-      ((card.type === "upgrade" && state.inPlay.some((c) => c.id === card.id)) ||
+      ((isTuckedUpgrade(card) && state.inPlay.some((c) => c.id === card.id)) ||
         (!!card.attachedTo && state.enemyCards.some((c) => c.id === card.id))) &&
         !discardOpen &&
         !source &&
@@ -580,27 +698,29 @@ function synchronizeLabels() {
     else label.removeAttribute("aria-pressed");
     const hero = card.id === state.hero.id;
     const enemy = card.id === state.villain.id;
+    const hp = hero ? state.heroHp : enemy ? state.villainHp : card.hp;
     label.className = "anchor" + (discardOpen ? " discard-card" : hero ? " identity" : enemy ? " enemy" : "");
     const inHand = !discardOpen && displayedHand.some((item) => item.id === card.id);
     const layer = discardOpen ? discardFan : inHand ? anchors : boardLabels;
-    const markerText = card.markers.map((m) => `${m.name} ×${m.count}`).join(", ");
-    if (markerText && layer === boardLabels) label.setAttribute("aria-description", markerText);
+    const description = card.markers.map((m) => `${m.name} ×${m.count}`);
+    if (hero) {
+      if (card.exhausted) description.unshift("Exhausted");
+      description.unshift(`${hp} HP`);
+    }
+    if (description.length && layer === boardLabels) label.setAttribute("aria-description", description.join(", "));
     else label.removeAttribute("aria-description");
     if (label.parentElement !== layer) layer.append(label);
-    label.textContent = inHand
-      ? ""
-      : hero || enemy
-        ? `${card.name} · ${hero ? state.heroHp : state.villainHp} HP`
-        : card.name;
-    if (hero || enemy) label.dataset.hp = String(hero ? state.heroHp : state.villainHp);
+    let caption = inHand ? "" : card.name;
+    if (!inHand && !discardOpen && hp !== undefined) caption = hero ? `${hp} HP` : `${card.name} · ${hp} HP`;
+    label.textContent = caption;
+    if (hp === undefined || discardOpen) delete label.dataset.hp;
+    else label.dataset.hp = String(hp);
     if (card.threat !== null && onTable(card.id)) {
       const counter = make("span", "scheme-threat");
       if (card.threatTarget != null) counter.dataset.target = String(card.threatTarget);
       updateThreatLabel(counter, card.threat);
       label.append(counter);
     }
-    if (hero && !target && !source && state.turn === "player" && !state.payment)
-      label.append(make("span", "resource-value", card.exhausted ? "Exhausted · Actions" : "Actions"));
     if (!inHand && target && !discardChoice && target.label !== card.name && !target.label.startsWith(card.name + " ("))
       label.append(make("span", "resource-value", target.label));
     if (source)
@@ -633,6 +753,12 @@ function updateOutlines(group: SVGGElement, ids: readonly string[]) {
       group.children[i] ?? group.appendChild(document.createElementNS("http://www.w3.org/2000/svg", "polygon"));
     polygon.setAttribute("points", table!.cardOutline(id).join(" "));
   });
+}
+
+function centerDecisionInViewport() {
+  const height = boardViewport.clientHeight;
+  decision.style.setProperty("--decision-viewport-center", `${boardViewport.scrollTop + height / 2}px`);
+  decision.style.setProperty("--decision-viewport-height", `${height}px`);
 }
 
 function placeLabels() {
@@ -729,7 +855,13 @@ function placeLabels() {
     const node = labels.get(anchor.id);
     if (!node) continue;
 
-    const labelWidth = discardOpen ? anchor.width * 0.82 : handIds.has(anchor.id) ? Math.max(32, width) : 142;
+    const labelWidth = discardOpen
+      ? anchor.width * 0.82
+      : handIds.has(anchor.id)
+        ? Math.max(32, width)
+        : anchor.id === state.hero.id
+          ? Math.min(90, anchor.width)
+          : 142;
     node.style.setProperty("--card-width", `${labelWidth}px`);
     let y = anchor.bottom + 4;
     if (!discardOpen && handIds.has(anchor.id)) {
@@ -779,6 +911,20 @@ function activationRing(id: string) {
   element("stage").append(ring);
   ring.addEventListener("animationend", () => ring.remove(), { once: true });
 }
+
+async function flashDefeatedCard(id: string) {
+  const outline = table?.cardOutline(id);
+  if (!outline?.length) return;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.classList.add("defeat-flash");
+  svg.setAttribute("aria-hidden", "true");
+  const polygon = document.createElementNS(svg.namespaceURI, "polygon");
+  polygon.setAttribute("points", outline.join(" "));
+  svg.append(polygon);
+  element("stage").append(svg);
+  await svg.animate([{ opacity: 0.75 }, { opacity: 0 }], { duration: 230, easing: "ease-out" }).finished;
+  svg.remove();
+}
 async function showBoost(reveal: NonNullable<Snapshot["beats"][number]["reveal"]>) {
   const boost = reveal.boost!;
   const projected = table?.anchors();
@@ -821,7 +967,9 @@ async function present(beats: Snapshot["beats"]) {
   anchors.inert = decision.inert = true;
   undoButton.disabled = endTurnButton.disabled = restart.disabled = handDiscardConfirm.disabled = true;
   const pendingDraws = new Set(beats.flatMap((beat) => beat.draw ?? []));
-  for (const [index, beat] of beats.entries()) {
+  for (let index = 0; index < beats.length; index++) {
+    const beat = beats[index]!;
+    if (beat.gameEnded) break;
     if (beat.draw) {
       for (const id of beat.draw) pendingDraws.delete(id);
       displayedHand = state.hand.filter((card) => !pendingDraws.has(card.id));
@@ -845,9 +993,43 @@ async function present(beats: Snapshot["beats"]) {
       await new Promise((resolve) => setTimeout(resolve, PHASE_BANNER_MS));
       continue;
     }
+    if (beat.defeatedCard) {
+      announcement.hidden = true;
+      table?.markActor(null);
+      const id = beat.defeatedCard;
+      const label = labels.get(id);
+      updateHpLabel(label, 0);
+      const threat = label?.querySelector<HTMLElement>(".scheme-threat");
+      if (threat && threat.dataset.count !== "0") {
+        updateThreatLabel(threat, 0);
+        table?.setThreat(id, 0);
+      }
+      await flashDefeatedCard(id);
+      label?.remove();
+      labels.delete(id);
+      const encounter = state.encounterDiscard.find((card) => card.id === id);
+      const discarded = encounter ?? state.discard.find((card) => card.id === id);
+      table?.discardDefeatedCard(id, discarded, encounter ? "encounterDiscard" : "discard");
+      if (discarded) await new Promise((resolve) => setTimeout(resolve, 460));
+      continue;
+    }
     const actor = beat.actor ?? beat.hit?.source ?? beat.reveal?.id ?? null;
-    table?.markActor(actor);
-    if (actor) inspect(actor);
+    table?.markActor(beat.defeat ? null : actor);
+    if (actor && !beat.defeat) inspect(actor);
+    if (beat.defeat) {
+      announcement.hidden = true;
+      if (actor) await flashDefeatedCard(actor);
+      announcement.style.setProperty("--defeat-top", `${boardViewport.scrollTop + 18}px`);
+      announcement.setAttribute("data-defeat", "");
+      announcement.replaceChildren(make("span", "", beat.defeat));
+      announcement.hidden = false;
+      await new Promise((resolve) => setTimeout(resolve, 1350));
+      announcement.removeAttribute("data-defeat");
+      if (!beat.villainStage) {
+        announcement.hidden = true;
+        continue;
+      }
+    }
     announcement.replaceChildren(
       make("b", "", beat.enemy ? beat.activity || "Villain phase" : "Card effect"),
       make("span", "", beat.text),
@@ -857,9 +1039,10 @@ async function present(beats: Snapshot["beats"]) {
       turnStatus.dataset.turn = "enemy";
       phaseIndicator("villain");
     }
-    if (beat.villainStage) {
-      table?.advanceVillain(state.villain);
+    if (beat.villainStage || beat.villainFlip) {
+      table?.showVillain(state.villain, !!(beat.defeat || beat.villainFlip));
       await new Promise((resolve) => setTimeout(resolve, 360));
+      inspect(state.villain.id);
       const label = labels.get(state.villain.id);
       if (label?.firstChild) {
         label.dataset.hp = String(state.villainHp);
@@ -956,9 +1139,13 @@ async function present(beats: Snapshot["beats"]) {
       table?.changeStatus(id, name, delta);
     }
     if (beat.turned) {
-      table?.turnCard(beat.turned.id, beat.turned.exhausted);
-      const nextReadies = beats[index + 1]?.turned?.exhausted === false;
-      const duration = beat.turned.exhausted ? EXHAUST_MS : nextReadies ? 140 : READY_MS;
+      const turns = [beat.turned];
+      if (!beat.turned.exhausted) {
+        while (beats[index + 1]?.turned?.exhausted === false) turns.push(beats[++index]!.turned!);
+        if (turns.length > 1) announcement.lastElementChild!.textContent = `Ready ${turns.length} cards`;
+      }
+      table?.turnCards(turns);
+      const duration = beat.turned.exhausted ? EXHAUST_MS : READY_MS;
       await new Promise((resolve) => setTimeout(resolve, duration));
       continue;
     }
@@ -971,11 +1158,7 @@ async function present(beats: Snapshot["beats"]) {
       readingCard = beat.reveal.boost ? null : beat.reveal.id;
       table?.revealEncounter(beat.reveal);
       await new Promise((resolve) => setTimeout(resolve, 360));
-      if (beat.reveal.art) {
-        preview.src = beat.reveal.art;
-        preview.alt = beat.reveal.name;
-        preview.hidden = false;
-      }
+      if (beat.reveal.art) showPreview(beat.reveal, !beat.reveal.boost);
       if (beat.reveal.boost) {
         await showBoost(beat.reveal);
         table?.retireEncounter(
@@ -989,13 +1172,18 @@ async function present(beats: Snapshot["beats"]) {
         readingCard = null;
         continue;
       }
-      readReveal.setAttribute("aria-label", `Continue after reading ${beat.reveal.name}`);
-      revealHint.hidden = readReveal.hidden = false;
-      readReveal.focus({ preventScroll: true });
-      placeLabels();
-      await new Promise<void>((resolve) => readReveal.addEventListener("click", () => resolve(), { once: true }));
-      revealHint.hidden = readReveal.hidden = true;
+      if (state.outcome) {
+        await new Promise((resolve) => setTimeout(resolve, 650));
+      } else {
+        readReveal.setAttribute("aria-label", `Continue after reading ${beat.reveal.name}`);
+        revealHint.hidden = readReveal.hidden = false;
+        readReveal.focus({ preventScroll: true });
+        placeLabels();
+        await new Promise<void>((resolve) => readReveal.addEventListener("click", () => resolve(), { once: true }));
+        revealHint.hidden = readReveal.hidden = true;
+      }
       readingCard = null;
+      rail.removeAttribute("data-wide-preview");
       const permanent = state.enemyCards.find((c) => c.id === beat.reveal!.id);
       if (permanent) table?.landEncounter(permanent);
       else {
@@ -1020,12 +1208,13 @@ async function present(beats: Snapshot["beats"]) {
       await new Promise((resolve) => setTimeout(resolve, HIT_CONTACT_MS));
       if (beat.hit.tough) table?.changeStatus(beat.hit.target, "tough", -1);
       if (beat.hit.amount) {
+        shakeStage(beat.hit.amount >= 4 ? "heavy" : "light");
         table?.changeStatus(beat.hit.target, "damage", beat.hit.amount);
         const label = labels.get(beat.hit.target);
-        if (label?.dataset.hp && label.firstChild) {
+        if (label?.dataset.hp) {
           const remaining = Math.max(0, Number(label.dataset.hp) - beat.hit.amount);
-          label.dataset.hp = String(remaining);
-          label.firstChild.textContent = label.firstChild.textContent!.replace(/\d+ HP/, remaining + " HP");
+          updateHpLabel(label, remaining);
+          if (!remaining && beat.hit.target === state.hero.id && state.outcome?.reason === "allPlayersDefeated") break;
         }
       }
       const anchor = table?.anchors().find((item) => item.id === beat.hit!.target);
@@ -1041,6 +1230,7 @@ async function present(beats: Snapshot["beats"]) {
     await new Promise((resolve) => setTimeout(resolve, beat.attackAim ? 390 : beat.hit ? 670 : 1000));
     impact.hidden = true;
   }
+  impact.hidden = true;
   announcement.hidden = true;
   delete stage.dataset.resolving;
   anchors.inert = decision.inert = false;
@@ -1061,6 +1251,7 @@ function render() {
         state.encounterDiscard.find((c) => c.id === heldEncounter),
       );
     heldEncounter = null;
+    inspect(hoveredCard);
   }
   if (!heldEncounter) choiceShade.style.clipPath = "";
   if (!state.choice?.offers?.length) triggerChoice = null;
@@ -1097,13 +1288,22 @@ function render() {
       aim: aimTarget,
     });
   }
-  if (state.payment && !staged && state.hand.some((c) => c.id === state.payment!.subject.id))
-    staged = state.payment.subject;
+  const paymentSubject = state.payment?.subject;
+  if (
+    paymentSubject &&
+    !staged &&
+    !model.isTargetedAttachment(paymentSubject.id) &&
+    state.hand.some((card) => card.id === paymentSubject.id)
+  ) {
+    staged = paymentSubject;
+  }
   const abilityCards =
     state.payment?.sources.flatMap((source) => {
       if (source.kind !== "resourceAbility") return [];
+      const id = resourcePieceId(source);
+      if (id === source.cardId) return [];
       const card = [state.hero, ...state.inPlay, ...state.hand].find((c) => c.id === source.cardId);
-      return card ? [{ ...card, id: resourcePieceId(source), resourceAbility: true, reverseArt: null }] : [];
+      return card ? [{ ...card, id, resourceAbility: true, reverseArt: null }] : [];
     }) ?? [];
   displayedHand = [...abilityCards, ...state.hand.filter((card) => card.id !== staged?.id)];
   const selected =
@@ -1232,8 +1432,8 @@ function render() {
             ? "Victory"
             : "Defeat"
           : "Your turn";
-  phaseIndicator(state.turn === "enemy" ? "villain" : "hero");
   if (state.turn === "finished") turnStatus.textContent = turn;
+  else phaseIndicator(state.turn === "enemy" ? "villain" : "hero");
   turnStatus.dataset.turn = state.turn;
   if (state.payment) showPayment(state.payment);
   else paymentPanel.hidden = true;
@@ -1249,6 +1449,7 @@ function render() {
     }
     placeLabels();
   }
+  showOutcome(state.outcome);
 }
 
 function deal() {
@@ -1262,7 +1463,7 @@ function deal() {
   model.reset();
   state = model.snapshot();
   if (!table) {
-    table = new BattleTable(element("space"), {
+    table = new BattleTable(element("space"), boardViewport, {
       onPick: pick,
       onHover: hoverCard,
       onLanded: landed,
@@ -1296,13 +1497,7 @@ document.addEventListener(
   "pointerdown",
   (event) => {
     dismissTarget = null;
-    if (
-      !menuCard ||
-      menuCard === state.hero.id ||
-      !(event.target instanceof Element) ||
-      decision.contains(event.target)
-    )
-      return;
+    if (!menuCard || !(event.target instanceof Element) || decision.contains(event.target)) return;
     if (event.target.closest(".anchor")?.getAttribute("data-card") === menuCard) return;
     if (event.target.closest("#space") && table?.cardAt(event) === menuCard) return;
     dismissTarget = event.target;
@@ -1344,6 +1539,9 @@ undoButton.onclick = () => {
   instruction.textContent = state.choice?.prompt ?? "Move undone.";
 };
 restart.onclick = start;
+tryAgain.onclick = start;
+gameOverUndo.onclick = () => undoButton.click();
+gameOver.oncancel = (event) => event.preventDefault();
 endTurnButton.onclick = () => {
   if (endTurnButton.disabled) return;
   act(() => {
@@ -1387,4 +1585,6 @@ document.addEventListener("keydown", (event) => {
     pile.focus({ preventScroll: true });
   }
 });
+boardViewport.addEventListener("scroll", centerDecisionInViewport, { passive: true });
+new ResizeObserver(centerDecisionInViewport).observe(boardViewport);
 start();

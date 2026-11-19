@@ -13,9 +13,14 @@ export interface TableCard {
   readonly markers?: readonly { name: string; count: number }[];
   readonly playable?: boolean;
   readonly resourceAbility?: boolean;
+  readonly showAsFullCard?: boolean;
   readonly reverseArt: string | null;
   readonly threat: number | null;
   readonly type: string;
+}
+
+export function isTuckedUpgrade(card: Pick<TableCard, "type" | "showAsFullCard">): boolean {
+  return card.type === "upgrade" && !card.showAsFullCard;
 }
 
 export interface TableCards {
@@ -71,13 +76,31 @@ interface Piece {
 interface Flight {
   from: Pose;
   started: number;
+  liftOffset: number;
   kind: "play" | "return" | "discard" | "draw" | "place" | "equip" | "flip" | "turn";
+  /** Set once the landing puff for this flight has been thrown. */
+  puffed?: boolean;
+}
+
+interface Spark {
+  sprite: THREE.Sprite;
+  velocity: THREE.Vector3;
+  born: number;
+  life: number;
+  size: number;
 }
 
 export const INTERRUPT_MS = 440;
 export const HIT_CONTACT_MS = 235;
 export const EXHAUST_MS = 240;
 export const READY_MS = 520;
+/** A short freeze at the moment of contact sells the weight of a hit (the strike still ends at STRIKE_MS). */
+const HIT_STOP_MS = 50;
+const STRIKE_MS = 700;
+/** How long a spent resource card (a Peter Parker style ability) takes to burn away. */
+const SPEND_MS = 760;
+const READY_TURN_START = 0.22;
+const READY_TURN_END = 0.78;
 const HEIGHT = 1.407;
 const TAB = 0.18;
 
@@ -99,25 +122,49 @@ function resourceAura(geometry: THREE.PlaneGeometry) {
   const material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    uniforms: { spent: { value: -1 } },
+    uniforms: { spent: { value: -1 }, map: { value: null as THREE.Texture | null } },
     vertexShader: `varying vec2 card;
       void main() {
         card = position.xy;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.);
       }`,
+    // Once spent, the aura also draws the card itself and burns it away from the bottom up, with an ember edge.
     fragmentShader: `varying vec2 card;
       uniform float spent;
+      uniform sampler2D map;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      float noise(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        f = f * f * (3. - 2. * f);
+        return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1)), f.x), f.y);
+      }
+      vec3 toSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1. / 2.4)) - .055, step(.0031308, c)); }
       void main() {
         vec2 edge = abs(card) - vec2(.46, .6635);
         float distanceToCard = length(max(edge, 0.)) + min(max(edge.x, edge.y), 0.) - .04;
         float halo = exp(-max(0., distanceToCard) * 44.);
-        float alpha = .85 * halo;
-        if (spent >= 0.) {
-          float grain = fract(sin(dot(floor(card * 155.), vec2(12.9898, 78.233))) * 43758.5453);
-          float front = -.86 + spent * 1.8 + .045 * sin(card.x * 19.) + .12 * grain;
-          alpha *= smoothstep(front - .06, front + .02, card.y) * (1. - spent);
+        vec4 glow = vec4(1., .74, .25, .85 * halo);
+        if (spent < 0.) {
+          gl_FragColor = glow;
+          return;
         }
-        gl_FragColor = vec4(1., .74, .25, alpha);
+        float n = .62 * noise(card * 9.) + .38 * noise(card * 27.);
+        // 0 at the bottom edge, 1 at the top, roughened by the noise so the front is ragged.
+        float key = .62 * (card.y / ${HEIGHT.toFixed(4)} + .5) + .38 * n;
+        float front = spent * 1.22 - .08;
+        float alive = smoothstep(front, front + .015, key);
+        float ember = smoothstep(front + .085, front + .015, key) * alive;
+        float inside = 1. - smoothstep(-.004, .004, distanceToCard);
+        vec2 uv = vec2(card.x + .5, card.y / ${HEIGHT.toFixed(4)} + .5);
+        vec3 face = toSRGB(texture2D(map, uv).rgb);
+        // Warm the print as the heat climbs, then let the edge glow white-hot to orange.
+        face = mix(face, face * vec3(1.15, .95, .75), clamp(spent * 1.4, 0., 1.));
+        vec3 emberColor = mix(vec3(1., .42, .08), vec3(1., .95, .7), ember * ember);
+        vec3 color = mix(face, emberColor, ember);
+        float cardAlpha = inside * alive;
+        float haloAlpha = glow.a * alive * (1. - spent);
+        float alpha = max(cardAlpha, haloAlpha);
+        gl_FragColor = vec4(mix(glow.rgb, color, cardAlpha), alpha);
       }`,
   });
   const mesh = new THREE.Mesh(geometry, material);
@@ -179,6 +226,21 @@ function contactShadow() {
     new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.72, depthWrite: false }),
   );
 }
+function sparkTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 64;
+  const ctx = canvas.getContext("2d")!;
+  const glow = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  glow.addColorStop(0, "#fff");
+  glow.addColorStop(0.25, "#ffffffcc");
+  glow.addColorStop(1, "#fff0");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(canvas);
+}
+
+const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
+
 const corners = [
   [-0.5, -HEIGHT / 2],
   [0.5, -HEIGHT / 2],
@@ -272,7 +334,7 @@ function matPrint(redraw: () => void): THREE.CanvasTexture {
 
 /** The scene presents engine state. Only the UI can decide what picking a particular card does. */
 export class BattleTable {
-  readonly #host: HTMLElement;
+  readonly #viewport: HTMLElement;
   readonly #handlers: Handlers;
   readonly #scene = new THREE.Scene();
   readonly #camera = new THREE.PerspectiveCamera(36, 1, 0.05, 120);
@@ -280,6 +342,7 @@ export class BattleTable {
   readonly #ray = new THREE.Raycaster();
   readonly #ndc = new THREE.Vector2();
   readonly #scratch = new THREE.Vector3();
+  readonly #layoutCard = new THREE.Group();
   readonly #floor = new THREE.Plane(new THREE.Vector3(0, 1, 0));
   readonly #tucked = new Map<string, { host: string; depth: number }>();
   readonly #pieces = new Map<string, Piece>();
@@ -352,6 +415,10 @@ export class BattleTable {
   #hovered: string | null = null;
   #hoverFootprint: { x: number; y: number; width: number } | null = null;
   readonly #hitColor = new THREE.Color(0xff302a);
+  readonly #flashColor = new THREE.Color(1.9, 1.9, 1.9);
+  readonly #sparkMap = sparkTexture();
+  readonly #sparks: Spark[] = [];
+  #pointer: { x: number; y: number } | null = null;
   #windup: { id: string; start: number } | null = null;
   windUp(id: string): void {
     if (this.#reduced.matches) return;
@@ -359,7 +426,47 @@ export class BattleTable {
     this.#requestFrame();
   }
 
-  #strike: { source: string; target: string; start: number; origin: THREE.Vector3; color: THREE.Color } | null = null;
+  #strike: {
+    source: string;
+    target: string;
+    start: number;
+    origin: THREE.Vector3;
+    color: THREE.Color;
+    burst?: boolean;
+  } | null = null;
+
+  /** Throw a burst of additive sparks from a point; they fly, fall and fade inside the frame loop. */
+  #burst(at: THREE.Vector3, color: number, count: number, speed: number, rise: number): void {
+    if (this.#reduced.matches) return;
+    const now = performance.now();
+    for (let i = 0; i < count; i++) {
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: this.#sparkMap,
+          color,
+          blending: THREE.AdditiveBlending,
+          transparent: true,
+          depthWrite: false,
+          depthTest: false,
+        }),
+      );
+      sprite.renderOrder = 10;
+      sprite.position.copy(at);
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
+      const v = speed * (0.55 + Math.random() * 0.7);
+      const size = 0.07 + Math.random() * 0.11;
+      sprite.scale.setScalar(size);
+      this.#scene.add(sprite);
+      this.#sparks.push({
+        sprite,
+        velocity: new THREE.Vector3(Math.cos(angle) * v, rise * (0.6 + Math.random() * 0.8), Math.sin(angle) * v),
+        born: now,
+        life: 320 + Math.random() * 260,
+        size,
+      });
+    }
+    this.#requestFrame();
+  }
 
   strike(source: string | null, target: string): void {
     const piece = source && this.#pieces.get(source);
@@ -378,21 +485,24 @@ export class BattleTable {
   #lastFrame = 0;
   #paymentEdge = 0;
   get paymentEdge(): number {
-    return this.#paymentEdge;
+    return this.#paymentEdge + this.#extension;
   }
   #width = 1;
   #height = 1;
+  #extension = 0;
+  get #canvasHeight(): number {
+    return this.#height + this.#extension;
+  }
   #disposed = false;
   #contextLost = false;
   readonly #flights = new Map<string, Flight>();
   #discardDeal: { ids: string[]; spent: Set<string>; started: number; landed: number; done(): void } | null = null;
   #press: { id: string; pointer: number; x: number; y: number; dragging: boolean } | null = null;
 
-  constructor(host: HTMLElement, handlers: Handlers) {
-    this.#host = host;
+  constructor(host: HTMLElement, viewport: HTMLElement, handlers: Handlers) {
+    this.#viewport = viewport;
     this.#handlers = handlers;
     const canvas = this.#renderer.domElement;
-    canvas.style.cssText = "display:block;width:100%;height:100%;touch-action:none;";
     canvas.setAttribute("aria-hidden", "true");
     host.append(canvas);
     this.#renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -466,7 +576,7 @@ export class BattleTable {
     this.#encounterDiscardSlot.add(well.clone(), border.clone());
     this.#scene.add(this.#encounterSlot, this.#encounterDiscardSlot);
     this.#observer = new ResizeObserver(this.#resize);
-    this.#observer.observe(host);
+    this.#observer.observe(viewport);
     this.#resize();
     canvas.addEventListener("pointermove", this.#move);
     canvas.addEventListener("pointerdown", this.#down);
@@ -511,6 +621,8 @@ export class BattleTable {
       this.#flights.delete(id);
     }
     const fresh = new Set<string>();
+    const turnStart = performance.now();
+    let readyIndex = 0;
     for (const card of cards) {
       let piece = this.#pieces.get(card.id);
       if (!piece) {
@@ -573,12 +685,19 @@ export class BattleTable {
         piece.face.material.map = this.#texture(card.art);
         piece.face.material.needsUpdate = true;
       }
-      if (!fresh.has(card.id) && piece.card.exhausted !== card.exhausted && this.#flights.get(card.id)?.kind !== "flip")
-        this.#startFlight(card.id, "turn");
+      if (
+        !fresh.has(card.id) &&
+        piece.card.exhausted !== card.exhausted &&
+        this.#flights.get(card.id)?.kind !== "flip"
+      ) {
+        // Give simultaneously readying cards separate heights if their corners cross in the air.
+        const liftOffset = card.exhausted ? 0 : readyIndex++ * 0.07;
+        this.#startFlight(card.id, "turn", turnStart, liftOffset);
+      }
       piece.card = card;
       const tucked =
         (!!card.attachedTo && state.enemyCards.some((c) => c.id === card.id)) ||
-        (card.type === "upgrade" && state.inPlay.some((item) => item.id === card.id));
+        (isTuckedUpgrade(card) && state.inPlay.some((item) => item.id === card.id));
       const onBoard =
         card.id === state.hero.id ||
         card.id === state.villain.id ||
@@ -590,6 +709,7 @@ export class BattleTable {
     }
     this.#lightCards(state);
     if (previous !== state.staged?.id) {
+      const permanent = state.inPlay.find((card) => card.id === previous);
       if (previous) this.#flights.delete(previous);
       if (state.staged) {
         this.#startFlight(state.staged.id, "play");
@@ -597,11 +717,16 @@ export class BattleTable {
         this.#startFlight(previous, "return");
       } else if (previous && state.enemyCards.some((card) => card.id === previous && !!card.attachedTo)) {
         this.#startFlight(previous, "equip");
-      } else if (previous && state.inPlay.some((card) => card.id === previous)) {
-        this.#startFlight(previous, this.#pieces.get(previous)?.card.type === "upgrade" ? "equip" : "place");
+      } else if (permanent) {
+        this.#startFlight(permanent.id, isTuckedUpgrade(permanent) ? "equip" : "place");
       } else if (previous && state.discard.some((card) => card.id === previous)) {
         this.#startFlight(previous, "discard");
       }
+    }
+    for (const card of [...state.enemyCards, ...state.inPlay]) {
+      if (!card.attachedTo || !previousHand?.some((held) => held.id === card.id)) continue;
+      const tucked = isTuckedUpgrade(card) || state.enemyCards.some((enemy) => enemy.id === card.id);
+      this.#startFlight(card.id, tucked ? "equip" : "place");
     }
     this.#layout();
     for (const id of fresh) this.#apply(this.#pieces.get(id)!, 1);
@@ -625,12 +750,13 @@ export class BattleTable {
     if (this.#state) this.setCards({ ...this.#state, hand, drawn, deckCount, discard, selected: [] });
   }
 
-  #startFlight(id: string, kind: Flight["kind"], started = performance.now()): void {
+  #startFlight(id: string, kind: Flight["kind"], started = performance.now(), liftOffset = 0): void {
     const { position, rotation, scale } = this.#pieces.get(id)!.root;
     if (kind !== "draw") rotation.y = 0;
     this.#flights.set(id, {
       kind,
       started,
+      liftOffset,
       from: { position: position.clone(), scale: scale.x, pitch: rotation.x, roll: rotation.z },
     });
   }
@@ -735,7 +861,8 @@ export class BattleTable {
     this.#setMarkers(
       piece,
       markers,
-      !!updated.attachedTo || (updated.type === "upgrade" && s.inPlay.some((c) => c.id === updated.id)),
+      (!!updated.attachedTo && s.enemyCards.some((card) => card.id === updated.id)) ||
+        (isTuckedUpgrade(updated) && s.inPlay.some((card) => card.id === updated.id)),
     );
     this.#requestFrame();
   }
@@ -883,8 +1010,10 @@ export class BattleTable {
     this.markActor(card.id);
   }
 
-  advanceVillain(card: TableCard): void {
-    if (this.#state) this.setCards({ ...this.#state, villain: { ...card, reverseArt: this.#state.villain.art } });
+  showVillain(card: TableCard, flip: boolean): void {
+    if (this.#state) {
+      this.setCards({ ...this.#state, villain: flip ? { ...card, reverseArt: this.#state.villain.art } : card });
+    }
   }
 
   retireEncounter(id: string, discarded?: TableCard): void {
@@ -899,6 +1028,19 @@ export class BattleTable {
     });
     this.#startFlight(id, "place");
     this.#requestFrame();
+  }
+
+  discardDefeatedCard(id: string, discarded: TableCard | undefined, pile: "discard" | "encounterDiscard"): void {
+    const state = this.#state;
+    if (!state || !this.#pieces.has(id)) return;
+    const stillInPlay = (card: TableCard) => card.id !== id && card.attachedTo !== id;
+    if (discarded) this.#startFlight(id, "discard");
+    this.setCards({
+      ...state,
+      enemyCards: state.enemyCards.filter(stillInPlay),
+      inPlay: state.inPlay.filter(stillInPlay),
+      [pile]: discarded ? [...state[pile].filter((card) => card.id !== id), discarded] : state[pile],
+    });
   }
 
   landEncounter(card: TableCard): void {
@@ -925,11 +1067,15 @@ export class BattleTable {
     this.#requestFrame();
   }
 
-  turnCard(id: string, exhausted: boolean): void {
+  turnCards(turns: readonly { id: string; exhausted: boolean }[]): void {
     const state = this.#state;
     if (!state) return;
-    // Subsequent boost reveals and hover layouts reuse this presentation snapshot.
-    const turn = (card: TableCard) => (card.id === id ? { ...card, exhausted } : card);
+    // Set every landing pose in a single layout before the group takes off.
+    const exhaustedByCard = new Map(turns.map(({ id, exhausted }) => [id, exhausted]));
+    const turn = (card: TableCard) => {
+      const exhausted = exhaustedByCard.get(card.id);
+      return exhausted === undefined ? card : { ...card, exhausted };
+    };
     this.setCards({
       ...state,
       hero: turn(state.hero),
@@ -1065,7 +1211,7 @@ export class BattleTable {
     piece.root.updateMatrixWorld();
     return (piece.card.landscape ? this.#landscapeOutline : this.#outline).map(({ x, y }) => {
       this.#scratch.set(x, y, 0.019).applyMatrix4(piece.root.matrixWorld).project(this.#camera);
-      return `${(((1 + this.#scratch.x) * this.#width) / 2).toFixed(1)} ${(((1 - this.#scratch.y) * this.#height) / 2).toFixed(1)}`;
+      return `${(((1 + this.#scratch.x) * this.#width) / 2).toFixed(1)} ${(((1 - this.#scratch.y) * this.#canvasHeight) / 2).toFixed(1)}`;
     });
   }
 
@@ -1082,7 +1228,7 @@ export class BattleTable {
       const piece = this.#pieces.get(id);
       if (!piece?.root.visible) continue;
       const outline = this.cardOutline(id);
-      clips.push(`path(evenodd, "M0 0 H${this.#width} V${this.#height} H0 Z M${outline.join(" L")} Z")`);
+      clips.push(`path(evenodd, "M0 0 H${this.#width} V${this.#canvasHeight} H0 Z M${outline.join(" L")} Z")`);
     }
     return clips;
   }
@@ -1099,7 +1245,7 @@ export class BattleTable {
     root.updateMatrixWorld();
     this.#scratch.copy(root.position).project(this.#camera);
     const x = (0.5 + this.#scratch.x / 2) * this.#width;
-    const y = (0.5 - this.#scratch.y / 2) * this.#height;
+    const y = (0.5 - this.#scratch.y / 2) * this.#canvasHeight;
     let bottom = y,
       top = y;
     let left = x,
@@ -1112,7 +1258,7 @@ export class BattleTable {
       const cornerX = (0.5 + this.#scratch.x / 2) * this.#width;
       left = Math.min(left, cornerX);
       right = Math.max(right, cornerX);
-      const cornerY = (0.5 - this.#scratch.y / 2) * this.#height;
+      const cornerY = (0.5 - this.#scratch.y / 2) * this.#canvasHeight;
       top = Math.min(top, cornerY);
       bottom = Math.max(bottom, cornerY);
     }
@@ -1136,22 +1282,41 @@ export class BattleTable {
   }
 
   #point(x: number, y: number, elevation: number): THREE.Vector3 {
-    this.#ndc.set((2 * x) / this.#width - 1, 1 - (2 * y) / this.#height);
+    this.#ndc.set((2 * x) / this.#width - 1, 1 - (2 * (y + this.#extension)) / this.#canvasHeight);
     this.#ray.setFromCamera(this.#ndc, this.#camera);
     this.#floor.constant = -elevation;
     return this.#ray.ray.intersectPlane(this.#floor, new THREE.Vector3())!;
   }
 
-  readonly #resize = (): void => {
-    this.#width = Math.max(1, this.#host.clientWidth);
-    this.#height = Math.max(1, this.#host.clientHeight);
-    this.#camera.aspect = this.#width / this.#height;
-    this.#camera.updateProjectionMatrix();
-    this.#renderer.setSize(this.#width, this.#height, false);
+  #resizeCanvas(): void {
+    // Extend the frustum above the board so the existing play area keeps its scale.
+    this.#camera.setViewOffset(this.#width, this.#height, 0, -this.#extension, this.#width, this.#canvasHeight);
+    this.#renderer.setSize(this.#width, this.#canvasHeight, false);
+  }
+
+  #fitMat(farthestCardEdge?: number): void {
     const far = this.#point(this.#width / 2, this.#height * 0.045, 0);
     const near = this.#point(this.#width * 0.985, this.#height * 0.98, 0);
+    const extend = farthestCardEdge !== undefined && farthestCardEdge < far.z;
+    if (extend) far.z = farthestCardEdge;
     this.#mat.position.z = (near.z + far.z) / 2;
     this.#mat.scale.set(near.x * 2, near.z - far.z, 1);
+    const top = (1 - far.project(this.#camera).y) * this.#canvasHeight * 0.5 - this.#extension;
+    const extension = extend ? Math.max(0, Math.ceil(this.#height * 0.045 - top)) : 0;
+    if (extension !== this.#extension) {
+      this.#extension = extension;
+      this.#viewport.style.setProperty("--mat-extension", `${extension}px`);
+      this.#viewport.toggleAttribute("data-extended", extension > 0);
+      this.#viewport.tabIndex = extension > 0 ? 0 : -1;
+      this.#resizeCanvas();
+    }
+  }
+
+  readonly #resize = (): void => {
+    this.#width = Math.max(1, this.#viewport.clientWidth);
+    this.#height = Math.max(1, this.#viewport.clientHeight);
+    this.#resizeCanvas();
+    if (!this.#state) this.#fitMat();
     this.#layout();
     for (const [id, piece] of this.#pieces) {
       if (!this.#flights.has(id)) this.#apply(piece, 1);
@@ -1184,6 +1349,18 @@ export class BattleTable {
       h = this.#height;
     const boardWidth = Math.min(w * 0.2, h * 0.22);
     const flat = -Math.PI / 2;
+    const pileX = w * 0.822;
+    const pileY = h * 0.505;
+    const base = this.#point(pileX, pileY, 0.025);
+    const encounterWidth = Math.min(w * 0.088, h * 0.088);
+    const placeEncounterPile = (slot: THREE.Group, y: number) => {
+      slot.position.copy(this.#point(pileX, y, 0.025));
+      const width = this.#point(pileX + encounterWidth, y, 0.025).x - slot.position.x;
+      slot.scale.setScalar(width);
+      // Align the piles on the table itself, accounting for the camera perspective.
+      slot.position.x = base.x;
+    };
+    placeEncounterPile(this.#encounterSlot, h * 0.23);
     this.#hoverFootprint = null;
     this.#tucked.clear();
     const enemies = state.enemyCards.filter((c) => !c.attachedTo);
@@ -1197,23 +1374,60 @@ export class BattleTable {
     };
     const villainTabs = state.enemyCards.filter((c) => c.attachedTo === state.villain.id).length;
     this.#villainShadow.visible = villainTabs > 0;
-    poseEnemy(state.villain, w * 0.5, h * 0.237, Math.min(boardWidth, (w * 0.3) / (1 + 2 * TAB * villainTabs)));
-    const flank = (cards: readonly TableCard[], center: number) => {
-      const gap = Math.min(w * 0.13, (w * 0.33) / Math.max(1, cards.length));
-      cards.forEach((card, i) => {
+    const villainWidth = Math.min(boardWidth, (w * 0.3) / (1 + 2 * TAB * villainTabs));
+    poseEnemy(state.villain, w * 0.5, h * 0.237, villainWidth);
+    const isScheme = (card: TableCard) => card.type === "main_scheme" || card.type === "side_scheme";
+    const schemes = enemies.filter(isScheme);
+    const otherEnemies = enemies.filter((card) => !isScheme(card));
+    const enemyRow = h * 0.242;
+    const enemyCardWidth = Math.min(w * 0.117, h * 0.145);
+    const schemeX = w * 0.255;
+    const schemeElevation = 0.05;
+    const schemeOrigin = this.#point(schemeX, enemyRow, schemeElevation);
+    const schemeScale = this.#point(schemeX + enemyCardWidth, enemyRow, schemeElevation).x - schemeOrigin.x;
+    // Leave room below each full-size scheme for its threat label.
+    const schemeStep = Math.max(
+      schemeScale * 1.75,
+      schemeOrigin.z - this.#point(schemeX, h * 0.105, schemeElevation).z,
+    );
+    const departingSchemes = state.encounterDiscard.filter(
+      (card) => isScheme(card) && this.#flights.get(card.id)?.kind === "discard",
+    ).length;
+    const schemeCount = schemes.length + departingSchemes;
+    this.#fitMat(schemeCount ? schemeOrigin.z - (schemeCount - 1) * schemeStep - schemeScale * 0.64 : undefined);
+    schemes.forEach((card, i) => {
+      const position = schemeOrigin.clone();
+      position.z -= i * schemeStep;
+      const projected = this.#scratch.copy(position).project(this.#camera);
+      const x = (projected.x + 1) * w * 0.5;
+      const y = (1 - projected.y) * this.#canvasHeight * 0.5 - this.#extension;
+      position.x += schemeScale;
+      const right = (position.project(this.#camera).x + 1) * w * 0.5;
+      poseEnemy(card, x, y, right - x);
+    });
+    if (otherEnemies.length) {
+      const bounds = (card: TableCard, x: number, y: number, width: number, tabs: number) => {
+        const elevation = 0.05 + tabs * 0.035;
+        const root = this.#layoutCard;
+        root.position.copy(this.#point(x, y, elevation));
+        root.scale.setScalar(this.#point(x + width, y, elevation).x - root.position.x);
+        root.rotation.x = flat;
+        return this.#anchor(root, card.landscape);
+      };
+      const left = bounds(state.villain, w * 0.5, h * 0.237, villainWidth, villainTabs).right;
+      const right = this.encounterAnchor().left;
+      const slotWidth = (right - left) / otherEnemies.length;
+      otherEnemies.forEach((card, i) => {
         const tabs = state.enemyCards.filter((c) => c.attachedTo === card.id).length;
-        const width = Math.min((gap * 0.9) / ((card.landscape ? HEIGHT : 1) + TAB * tabs), h * 0.145);
-        poseEnemy(card, w * center + (i - (cards.length - 1) / 2) * gap + (width * TAB * tabs) / 2, h * 0.242, width);
+        const footprint = (card.landscape ? HEIGHT : 1) + TAB * tabs;
+        const width = Math.min(enemyCardWidth, Math.max(1, slotWidth * 0.78) / footprint);
+        const center = left + (i + 0.5) * slotWidth;
+        const x = center + (width * TAB * tabs) / 2;
+        const { left: cardLeft, right: cardRight } = bounds(card, x, enemyRow, width, tabs);
+        const perspectiveOffset = (cardLeft + cardRight) / 2 - x;
+        poseEnemy(card, x - perspectiveOffset, enemyRow, width);
       });
-    };
-    flank(
-      enemies.filter((_, i) => i % 2 === 0),
-      0.23,
-    );
-    flank(
-      enemies.filter((_, i) => i % 2 === 1),
-      0.68,
-    );
+    }
     let waiting = 0;
     for (const card of this.#encounters.values()) {
       if (card.id === this.#revealing)
@@ -1237,15 +1451,13 @@ export class BattleTable {
     }
     const permanents = state.inPlay.filter((c) => c.id !== state.staged?.id);
     if (state.staged && ["ally", "support", "upgrade"].includes(state.staged.type)) permanents.push(state.staged);
-    const upgrades = permanents.filter((c) => c.type === "upgrade");
-    const row = [state.hero, ...permanents.filter((c) => c.type !== "upgrade")];
+    const upgrades = permanents.filter(isTuckedUpgrade);
+    const visibleUpgrades = permanents.filter((card) => card.type === "upgrade" && card.showAsFullCard);
+    const row = [state.hero, ...visibleUpgrades, ...permanents.filter((card) => card.type !== "upgrade")];
     const tabs = upgrades.length * TAB;
     this.#heroShadow.visible = upgrades.some((card) => card.id !== state.staged?.id);
-    // Measure in card widths. A turning corner briefly sweeps wider than either resting face.
-    const footprints = row.map((card) => {
-      if (this.#flights.get(card.id)?.kind === "turn") return Math.hypot(1, HEIGHT);
-      return card.exhausted !== card.landscape ? HEIGHT : 1;
-    });
+    // Airborne cards can sweep over their neighbours. Space the row for their settled poses.
+    const footprints = row.map((card) => (card.exhausted !== card.landscape ? HEIGHT : 1));
     const tabScale = state.hero.exhausted ? 1 / HEIGHT : 1;
     const gap = 0.28;
     const rowWidth = tabs * tabScale + footprints.reduce((total, width) => total + width, 0) + gap * (row.length - 1);
@@ -1334,10 +1546,7 @@ export class BattleTable {
         flat + 0.12,
       );
     }
-    const pileX = w * 0.822;
-    const pileY = h * 0.505;
     const pileWidth = Math.min(w * 0.125, h * 0.125);
-    const base = this.#point(pileX, pileY, 0.025);
     const scale = this.#point(pileX + pileWidth, pileY, 0.025).x - base.x;
     this.#discardSlot.position.copy(base);
     this.#discardSlot.scale.setScalar(scale);
@@ -1346,15 +1555,6 @@ export class BattleTable {
     this.#deckSlot.position.copy(this.#point(deckX, deckY, 0.025));
     const deckScale = this.#point(deckX + Math.min(w * 0.125, h * 0.125), deckY, 0.025).x - this.#deckSlot.position.x;
     this.#deckSlot.scale.setScalar(deckScale);
-    const encounterWidth = Math.min(w * 0.088, h * 0.088);
-    const placeEncounterPile = (slot: THREE.Group, y: number) => {
-      slot.position.copy(this.#point(pileX, y, 0.025));
-      const width = this.#point(pileX + encounterWidth, y, 0.025).x - slot.position.x;
-      slot.scale.setScalar(width);
-      // Align the piles on the table itself, accounting for the camera perspective.
-      slot.position.x = base.x;
-    };
-    placeEncounterPile(this.#encounterSlot, h * 0.23);
     const slot = this.#encounterDiscardSlot;
     placeEncounterPile(slot, h * 0.102);
     slot.visible = state.encounterDiscard.length > 0;
@@ -1442,7 +1642,7 @@ export class BattleTable {
     const tabs =
       piece.card.attachedTo && this.#state!.enemyCards.some((c) => c.id === piece.card.id)
         ? this.#state!.enemyCards.filter((card) => card.attachedTo === piece.card.attachedTo).length
-        : this.#state!.inPlay.filter((card) => card.type === "upgrade").length;
+        : this.#state!.inPlay.filter(isTuckedUpgrade).length;
     // Clear even the outermost existing tab before descending to the stack's height.
     const clearance = Math.max(from.scale, target.scale) * (1.12 + tabs * TAB);
     const outsideX = target.position.x - clearance;
@@ -1467,6 +1667,23 @@ export class BattleTable {
     root.scale.setScalar(THREE.MathUtils.lerp(root.scale.x, target.scale, t));
   }
 
+  /** Lean the hovered hand card towards the pointer, like a card held up to the light. True while easing. */
+  #tiltHand(dt: number): boolean {
+    let easing = false;
+    const footprint = this.#hoverFootprint;
+    for (const card of this.#state?.hand ?? []) {
+      const piece = this.#pieces.get(card.id);
+      if (!piece || this.#flights.has(card.id) || (this.#press?.dragging && this.#press.id === card.id)) continue;
+      let goal = 0;
+      if (card.id === this.#hovered && footprint && this.#pointer && !this.#reduced.matches)
+        goal = THREE.MathUtils.clamp((this.#pointer.x - footprint.x) / footprint.width, -0.5, 0.5) * 0.32;
+      const y = this.#reduced.matches ? goal : THREE.MathUtils.damp(piece.root.rotation.y, goal, 14, dt);
+      piece.root.rotation.y = Math.abs(y - goal) < 0.0008 ? goal : y;
+      if (piece.root.rotation.y !== goal) easing = true;
+    }
+    return easing;
+  }
+
   readonly #requestFrame = (): void => {
     if (!this.#frame && !this.#disposed && !this.#contextLost) this.#frame = requestAnimationFrame(this.#draw);
   };
@@ -1487,11 +1704,23 @@ export class BattleTable {
       if (this.#press?.dragging && this.#press.id === id) continue;
       const deal = this.#discardDeal;
       if (piece.aura && deal?.spent.has(id)) {
-        const t = this.#reduced.matches ? 1 : THREE.MathUtils.clamp((now - deal.started) / 560, 0, 1);
+        const t = this.#reduced.matches ? 1 : THREE.MathUtils.clamp((now - deal.started) / SPEND_MS, 0, 1);
+        const uniforms = piece.aura.material.uniforms;
+        if (uniforms.spent!.value < 0) {
+          uniforms.map!.value = piece.face.material.map;
+          const at = piece.root.position.clone();
+          at.y += 0.1;
+          this.#burst(at, 0xffb347, 14, 0.9, 2.2);
+        }
         piece.root.children.forEach((child) => {
           child.visible = child === piece.aura;
         });
-        piece.aura.material.uniforms.spent!.value = t;
+        // Rise a little towards the light and swell as it burns.
+        const rise = easeOutCubic(t);
+        piece.root.position.copy(piece.target.position);
+        piece.root.position.y += rise * 0.28;
+        piece.root.scale.setScalar(piece.target.scale * (1 + 0.07 * rise));
+        uniforms.spent!.value = t;
         if (t === 1) {
           piece.root.visible = false;
           deal.spent.delete(id);
@@ -1513,10 +1742,13 @@ export class BattleTable {
       }
       const strike = this.#strike;
       if (strike && (strike.source === id || strike.target === id)) {
-        const ms = Math.max(0, now - strike.start);
+        const raw = Math.max(0, now - strike.start);
+        // Hold the contact frame for HIT_STOP_MS, then play the rest of the strike on a delayed clock.
+        const ms = raw < HIT_CONTACT_MS ? raw : Math.max(HIT_CONTACT_MS, raw - HIT_STOP_MS);
         const target = this.#pieces.get(strike.target);
-        if (target && ms < 700) {
-          const recovery = THREE.MathUtils.clamp((ms - HIT_CONTACT_MS - 65) / 400, 0, 1);
+        if (target && raw < STRIKE_MS) {
+          const recoverMs = STRIKE_MS - HIT_STOP_MS - HIT_CONTACT_MS - 65;
+          const recovery = THREE.MathUtils.clamp((ms - HIT_CONTACT_MS - 65) / recoverMs, 0, 1);
           const pull = Math.min(1, ms / 140);
           const dash = THREE.MathUtils.clamp((ms - 140) / (HIT_CONTACT_MS - 140), 0, 1);
           if (strike.source === id) {
@@ -1524,13 +1756,28 @@ export class BattleTable {
             piece.root.position.lerpVectors(strike.origin, target.target.position, travel);
             piece.root.position.y += (0.7 * pull + Math.sin(Math.PI * dash) * 0.65) * (1 - recovery);
             piece.root.rotation.z = piece.target.roll + (0.16 * pull - 0.29 * dash) * (1 - recovery);
-          } else if (ms >= HIT_CONTACT_MS) {
+            // Coil a little on the wind-up, stretch into the dash.
+            const stretch = 1 - 0.04 * pull * (1 - dash) + 0.07 * dash * (1 - recovery);
+            piece.root.scale.setScalar(piece.target.scale * stretch);
+          } else if (raw >= HIT_CONTACT_MS) {
             const age = ms - HIT_CONTACT_MS;
             const recoil = Math.sin(Math.min(1, age / 220) * Math.PI) * Math.exp(-age / 180);
             piece.root.position.lerpVectors(piece.target.position, strike.origin, -0.28 * recoil);
             piece.root.position.y += recoil * 0.42;
             piece.root.rotation.z = piece.target.roll + recoil * 0.19;
-            piece.face.material.color.copy(strike.color).lerp(this.#hitColor, Math.max(0, 1 - age / 330));
+            // Squash on contact, then spring back with the recoil.
+            const squash = Math.exp(-(raw - HIT_CONTACT_MS) / 70);
+            piece.root.scale.setScalar(piece.target.scale * (1 - 0.08 * squash + 0.05 * recoil));
+            // A white-hot frame first, then the red tint fades back to the card's own colour.
+            if (raw - HIT_CONTACT_MS < HIT_STOP_MS + 20) piece.face.material.color.copy(this.#flashColor);
+            else piece.face.material.color.copy(strike.color).lerp(this.#hitColor, Math.max(0, 1 - age / 330));
+            if (!strike.burst) {
+              strike.burst = true;
+              const at = piece.root.position.clone();
+              at.y += 0.25;
+              this.#burst(at, 0xffa040, 18, 3.2, 2.6);
+              this.#burst(at, 0xfff1c0, 8, 1.6, 1.4);
+            }
           }
           moving = true;
           continue;
@@ -1559,8 +1806,9 @@ export class BattleTable {
         continue;
       }
       if (flight) {
-        const { from, started, kind } = flight;
+        const { from, started, kind, liftOffset } = flight;
         const exhausting = kind === "turn" && piece.card.exhausted;
+        const readying = kind === "turn" && !exhausting;
         const duration =
           kind === "flip"
             ? 340
@@ -1577,16 +1825,29 @@ export class BattleTable {
                     : 310;
         const progress = this.#reduced.matches ? 1 : THREE.MathUtils.clamp((now - started) / duration, 0, 1);
         const contact = Math.min(1, progress / 0.54);
-        const t = kind === "place" ? contact ** 2 : progress * progress * (3 - 2 * progress);
+        const t = readying
+          ? THREE.MathUtils.smoothstep(progress, READY_TURN_START, READY_TURN_END)
+          : kind === "place"
+            ? contact ** 2
+            : kind === "flip" || kind === "turn"
+              ? progress * progress * (3 - 2 * progress)
+              : // Leave fast and glide in. The curve never overshoots, so a drawn card never shows its back.
+                easeOutCubic(progress);
         piece.root.position.lerpVectors(from.position, piece.target.position, t);
         if (kind === "place") {
           const settle = Math.max(0, (progress - 0.54) / 0.46);
           piece.root.position.y += Math.sin(Math.PI * settle) * (1 - settle) * 0.24;
           piece.rim.visible = settle > 0 && settle < 0.74;
+        } else if (readying) {
+          const rise = THREE.MathUtils.smoothstep(progress, 0, READY_TURN_START);
+          const descent = THREE.MathUtils.smoothstep(progress, READY_TURN_END, 1);
+          piece.root.position.y += (rise - descent) * (Math.max(0.58, piece.target.scale * 0.5) + liftOffset);
         } else piece.root.position.y += Math.sin(Math.PI * progress) * (kind === "discard" ? 0.95 : 0.46);
         if (kind === "draw") {
           const fromDeck = this.#state?.hand.some((card) => card.id === id);
-          piece.root.rotation.y = Math.PI * (1 - (fromDeck ? Math.min(1, t / 0.65) : t));
+          // Turn face-up over the first 60% of the flight, as before the ease-out curve.
+          const turn = fromDeck ? THREE.MathUtils.smoothstep(progress, 0, 0.6) : t;
+          piece.root.rotation.y = Math.PI * (1 - turn);
           if (fromDeck) {
             const fly = THREE.MathUtils.smoothstep(progress, 0.2, 1);
             piece.root.position.lerpVectors(from.position, piece.target.position, fly);
@@ -1596,6 +1857,28 @@ export class BattleTable {
         piece.root.rotation.x = THREE.MathUtils.lerp(from.pitch, piece.target.pitch, t);
         piece.root.rotation.z = THREE.MathUtils.lerp(from.roll, piece.target.roll, exhausting ? progress ** 2 : t);
         piece.root.scale.setScalar(THREE.MathUtils.lerp(from.scale, piece.target.scale, t));
+        if (!this.#reduced.matches) {
+          if (kind === "play" || kind === "return" || kind === "discard") {
+            // Swing into the direction of travel, levelling out as the card arrives.
+            const lean = THREE.MathUtils.clamp((piece.target.position.x - from.position.x) * -0.045, -0.16, 0.16);
+            piece.root.rotation.z += Math.sin(Math.PI * progress) * (1 - progress) * lean * 1.6;
+          }
+          if (kind === "play" || kind === "draw") {
+            // A small pop as the card settles.
+            const settle = THREE.MathUtils.clamp((progress - 0.7) / 0.3, 0, 1);
+            piece.root.scale.multiplyScalar(1 + Math.sin(Math.PI * settle) * 0.045);
+          }
+          if (kind === "place") {
+            const settle = Math.max(0, (progress - 0.54) / 0.46);
+            piece.root.scale.multiplyScalar(1 - Math.sin(Math.PI * Math.min(1, settle * 2.2)) * 0.05 * (1 - settle));
+            if (settle > 0 && !flight.puffed) {
+              flight.puffed = true;
+              const at = piece.target.position.clone();
+              at.y += 0.05;
+              this.#burst(at, 0xd9e4ff, 12, 1.9, 0.5);
+            }
+          }
+        }
         if (kind === "flip") {
           piece.root.position.y += Math.sin(Math.PI * t) * piece.root.scale.x * 0.65;
           piece.root.rotation.y = 0;
@@ -1608,7 +1891,7 @@ export class BattleTable {
             piece.root.rotation.set(piece.target.pitch, 0, piece.target.roll);
           }
           this.#flights.delete(id);
-          if (kind === "turn") this.#layout();
+          if (kind === "discard" && piece.card.type === "side_scheme") this.#layout();
           if (kind === "play") landed = id;
           if (kind === "discard" && this.#discardDeal?.ids.includes(id)) {
             this.#discardDeal.landed++;
@@ -1651,7 +1934,7 @@ export class BattleTable {
         piece.root.scale.copy(parent.scale);
       }
     }
-    if (this.#strike && now - this.#strike.start >= 700) {
+    if (this.#strike && now - this.#strike.start >= STRIKE_MS) {
       this.#pieces.get(this.#strike.target)?.face.material.color.copy(this.#strike.color);
       this.#strike = null;
     }
@@ -1707,10 +1990,7 @@ export class BattleTable {
       for (const [id, piece] of this.#pieces) {
         const onEnemy = !!piece.card.attachedTo && this.#state.enemyCards.some((c) => c.id === id);
         if (piece.card.type !== "upgrade" && piece.card.type !== "attachment" && !onEnemy) continue;
-        const tucked =
-          (onEnemy || (piece.card.type === "upgrade" && this.#state.inPlay.some((card) => card.id === id))) &&
-          !this.#flights.has(id) &&
-          this.#state.staged?.id !== id;
+        const tucked = this.#tucked.has(id) && !this.#flights.has(id) && this.#state.staged?.id !== id;
         const geometry = tucked
           ? onEnemy && piece.card.type === "attachment"
             ? this.#attachmentTab
@@ -1737,6 +2017,24 @@ export class BattleTable {
         this.#interrupt = null;
       } else moving = true;
     }
+    for (let i = this.#sparks.length - 1; i >= 0; i--) {
+      const spark = this.#sparks[i]!;
+      const age = now - spark.born;
+      if (age >= spark.life || this.#reduced.matches) {
+        spark.sprite.removeFromParent();
+        spark.sprite.material.dispose();
+        this.#sparks.splice(i, 1);
+        continue;
+      }
+      spark.velocity.y -= 9 * dt;
+      spark.velocity.multiplyScalar(1 - 2.4 * dt);
+      spark.sprite.position.addScaledVector(spark.velocity, dt);
+      const fade = 1 - age / spark.life;
+      spark.sprite.material.opacity = fade;
+      spark.sprite.scale.setScalar(spark.size * (0.4 + 0.6 * fade));
+      moving = true;
+    }
+    if (this.#tiltHand(dt)) moving = true;
     this.#renderer.render(this.#scene, this.#camera);
     this.#handlers.onDraw?.();
     if (moving) this.#requestFrame();
@@ -1795,7 +2093,7 @@ export class BattleTable {
       !id &&
       footprint &&
       Math.abs(event.clientX - rect.left - footprint.x) < footprint.width / 2 &&
-      Math.abs(event.clientY - rect.top - footprint.y) < footprint.width * 0.72
+      Math.abs(event.clientY - rect.top - this.#extension - footprint.y) < footprint.width * 0.72
     )
       return this.#hovered;
     return id;
@@ -1812,7 +2110,12 @@ export class BattleTable {
     if (this.#discardDeal) return;
     const press = this.#press;
     if (!press) {
-      if (event.pointerType !== "touch") this.#notifyHover(this.#hit(event));
+      if (event.pointerType !== "touch") {
+        const rect = this.#renderer.domElement.getBoundingClientRect();
+        this.#pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top - this.#extension };
+        this.#notifyHover(this.#hit(event));
+        if (this.#hovered && this.#state?.hand.some((card) => card.id === this.#hovered)) this.#requestFrame();
+      }
       return;
     }
     if (
@@ -1827,13 +2130,15 @@ export class BattleTable {
     press.dragging = true;
     if (piece.card.playable === false && !this.#state?.paymentSources) return;
     const rect = this.#renderer.domElement.getBoundingClientRect();
-    piece.root.position.copy(this.#point(event.clientX - rect.left, event.clientY - rect.top, 1.9));
+    piece.root.position.copy(this.#point(event.clientX - rect.left, event.clientY - rect.top - this.#extension, 1.9));
     piece.root.rotation.set(this.#camera.rotation.x, 0, 0);
     this.#renderer.domElement.style.cursor = "grabbing";
     this.#requestFrame();
   };
 
   readonly #down = (event: PointerEvent): void => {
+    // A touch has no hover, so don't let an old mouse position aim the hand tilt.
+    if (event.pointerType === "touch") this.#pointer = null;
     if (event.button !== 0 || !event.isPrimary || this.#press || this.#discardDeal) return;
     const id = this.#hit(event);
     if (!id) {
@@ -1853,7 +2158,7 @@ export class BattleTable {
       event.clientX >= rect.left &&
       event.clientX <= rect.right &&
       event.clientY >= rect.top &&
-      event.clientY < rect.top + rect.height * 0.68;
+      event.clientY < rect.top + this.#extension + this.#height * 0.68;
     const activate = press.dragging
       ? playArea
       : Math.hypot(event.clientX - press.x, event.clientY - press.y) < 9 || this.#hit(event) === press.id;
@@ -1873,6 +2178,7 @@ export class BattleTable {
   };
 
   readonly #leave = (): void => {
+    this.#pointer = null;
     if (!this.#press) this.#notifyHover(null);
   };
   readonly #loseContext = (event: Event): void => {
@@ -1889,6 +2195,9 @@ export class BattleTable {
 
   dispose(): void {
     this.#disposed = true;
+    for (const spark of this.#sparks) spark.sprite.material.dispose();
+    this.#sparks.length = 0;
+    this.#sparkMap.dispose();
     this.#observer.disconnect();
     cancelAnimationFrame(this.#frame);
     const canvas = this.#renderer.domElement;

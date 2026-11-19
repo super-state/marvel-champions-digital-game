@@ -15,71 +15,80 @@
       </header>
       <div class="arena">
         <section class="playfield" aria-label="Battle table">
-          <div id="stage">
-            <div id="space"></div>
-            <div id="anchors" aria-label="Cards on the table">
-              <div id="board-labels">
-                <button id="encounter-discard" type="button" aria-expanded="false" aria-controls="discard-fan" disabled>
-                  Encounter discard <b id="encounter-discard-count">0</b>
-                </button>
-                <span id="encounter-label">Encounter <b id="encounter-count"></b></span>
-                <span id="deck-label">Deck <b id="deck-count"></b></span>
-                <button type="button" id="discard-label" aria-expanded="false" aria-controls="discard-fan" disabled>
-                  Discard <b id="discard-count">0</b>
-                </button>
+          <div id="board-viewport" role="region" aria-label="Playmat">
+            <div id="stage">
+              <div id="space"></div>
+              <div id="anchors" aria-label="Cards on the table">
+                <div id="board-labels">
+                  <button
+                    id="encounter-discard"
+                    type="button"
+                    aria-expanded="false"
+                    aria-controls="discard-fan"
+                    disabled
+                  >
+                    Encounter discard <b id="encounter-discard-count">0</b>
+                  </button>
+                  <span id="encounter-label">Encounter <b id="encounter-count"></b></span>
+                  <span id="deck-label">Deck <b id="deck-count"></b></span>
+                  <button type="button" id="discard-label" aria-expanded="false" aria-controls="discard-fan" disabled>
+                    Discard <b id="discard-count">0</b>
+                  </button>
+                </div>
+                <div id="discard-fan" role="group" aria-label="Discarded cards" hidden></div>
               </div>
-              <div id="discard-fan" role="group" aria-label="Discarded cards" hidden></div>
-            </div>
-            <section id="payment" aria-labelledby="payment-title" hidden>
-              <p class="eyebrow" id="payment-subject"></p>
-              <h2 id="payment-title" tabindex="-1">Discard cards for resources</h2>
-              <div class="payment-progress" role="status" aria-live="polite" aria-atomic="true">
-                <strong id="payment-total"></strong>
-                <div class="payment-track" aria-hidden="true"><span></span></div>
-                <span id="payment-balance"></span>
+              <section id="payment" aria-labelledby="payment-title" hidden>
+                <h2 id="payment-title" tabindex="-1">Discard cards for resources</h2>
+                <div class="payment-progress" role="status" aria-live="polite" aria-atomic="true">
+                  <strong id="payment-total"></strong>
+                  <div class="payment-track" aria-hidden="true"><span></span></div>
+                  <span id="payment-balance"></span>
+                </div>
+              </section>
+              <div id="form-flash" aria-hidden="true" hidden></div>
+              <div id="form-hint" role="status" hidden>
+                <svg aria-hidden="true" width="30" height="23" viewBox="0 0 40 28">
+                  <path
+                    fill="#ff796e"
+                    stroke="#49191d"
+                    stroke-width="1.6"
+                    fill-rule="evenodd"
+                    d="M2 4Q10 4 20 10Q30 4 38 4L36 18Q31 27 22 20L20 17L18 20Q9 27 4 18ZM7 11Q11 11 16 15Q10 19 7 11ZM33 11Q29 11 24 15Q30 19 33 11Z"
+                  />
+                </svg>
+                <span>Hero form required</span>
               </div>
-            </section>
-            <div id="form-flash" aria-hidden="true" hidden></div>
-            <div id="form-hint" role="status" hidden>
-              <svg aria-hidden="true" width="30" height="23" viewBox="0 0 40 28">
-                <path
-                  fill="#ff796e"
-                  stroke="#49191d"
-                  stroke-width="1.6"
-                  fill-rule="evenodd"
-                  d="M2 4Q10 4 20 10Q30 4 38 4L36 18Q31 27 22 20L20 17L18 20Q9 27 4 18ZM7 11Q11 11 16 15Q10 19 7 11ZM33 11Q29 11 24 15Q30 19 33 11Z"
-                />
+              <div id="play-refusal" role="status" hidden></div>
+              <div id="action-beat" role="status" aria-live="polite" hidden></div>
+              <span id="turn-status" role="status"></span>
+              <div id="phase-banner" aria-hidden="true">
+                <span><b></b></span>
+              </div>
+              <svg id="ability-glow" aria-hidden="true" hidden><g id="ability-outlines"></g></svg>
+              <svg id="defense-shade" aria-hidden="true" hidden>
+                <defs>
+                  <mask id="defense-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height="100%">
+                    <rect width="100%" height="100%" fill="white" />
+                    <g id="defender-cutouts" fill="black"></g>
+                  </mask>
+                </defs>
+                <rect width="100%" height="100%" fill="#050911" opacity=".78" mask="url(#defense-mask)" />
               </svg>
-              <span>Hero form required</span>
+              <div id="attack-reticle" aria-hidden="true" hidden></div>
+              <div id="choice-shade" hidden></div>
+              <span id="reveal-hint" aria-hidden="true" hidden>Click anywhere to continue</span>
+              <div id="impact" aria-hidden="true" hidden></div>
+              <section id="decision" aria-label="Turn decision" hidden></section>
             </div>
-            <div id="play-refusal" role="status" hidden></div>
-            <div id="action-beat" role="status" aria-live="polite" hidden></div>
-            <span id="turn-status" role="status"></span>
-            <div id="phase-banner" aria-hidden="true">
-              <span><b></b></span>
-            </div>
-            <svg id="ability-glow" aria-hidden="true" hidden><g id="ability-outlines"></g></svg>
-            <svg id="defense-shade" aria-hidden="true" hidden>
-              <defs>
-                <mask id="defense-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height="100%">
-                  <rect width="100%" height="100%" fill="white" />
-                  <g id="defender-cutouts" fill="black"></g>
-                </mask>
-              </defs>
-              <rect width="100%" height="100%" fill="#050911" opacity=".78" mask="url(#defense-mask)" />
-            </svg>
-            <div id="attack-reticle" aria-hidden="true" hidden></div>
-            <div id="choice-shade" hidden></div>
-            <span id="reveal-hint" aria-hidden="true" hidden>Click anywhere to continue</span>
-            <div id="impact" aria-hidden="true" hidden></div>
-            <section id="decision" aria-label="Turn decision" hidden></section>
           </div>
           <div class="hand-strip">
             <div><span class="deck-mark" aria-hidden="true"></span> Your hand <b id="hand-count"></b></div>
             <span id="instruction" role="status">Dealing the opening hand…</span>
             <span id="discard-hint" hidden>Click or tap outside the fan to close.</span>
-            <button type="button" id="undo" disabled>Undo</button>
-            <button type="button" id="end-turn" disabled>End Turn</button>
+            <button type="button" id="undo" aria-label="Undo" disabled><span aria-hidden="true">↶</span> Undo</button>
+            <button type="button" id="end-turn" aria-label="End Turn" disabled>
+              End Turn <span aria-hidden="true">→</span>
+            </button>
             <footer class="payment-actions" aria-label="Turn actions">
               <button type="button" id="payment-cancel">Cancel</button>
               <button type="button" id="payment-submit" disabled>Confirm</button>
@@ -94,6 +103,23 @@
         </aside>
       </div>
     </main>
+    <dialog id="game-over" aria-labelledby="game-over-title" aria-describedby="game-over-detail">
+      <div class="outcome-glow" aria-hidden="true"><div class="outcome-rays"></div></div>
+      <div class="outcome-confetti" id="outcome-confetti" aria-hidden="true"></div>
+      <div class="outcome-body">
+        <figure class="outcome-card" aria-hidden="true">
+          <img id="game-over-art" alt="" />
+          <span class="outcome-stamp" id="game-over-stamp">Defeated</span>
+        </figure>
+        <p class="eyebrow outcome-kicker" id="game-over-kicker"></p>
+        <h2 id="game-over-title">Game over</h2>
+        <p id="game-over-detail"></p>
+        <div class="game-over-actions">
+          <button type="button" id="try-again" class="option" autofocus>Try Again</button>
+          <button type="button" id="game-over-undo" class="quiet">Undo last move</button>
+        </div>
+      </div>
+    </dialog>
     <button type="button" id="read-reveal" hidden aria-label="Continue after reading the revealed card"></button>
     <script type="module" src="/src/battle-table/main.ts"></script>
   </body>

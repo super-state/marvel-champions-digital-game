@@ -45,6 +45,8 @@ export interface BattleCard {
   art: string;
   landscape: boolean;
   exhausted: boolean;
+  hp?: number;
+  showAsFullCard?: boolean;
   reverseArt: string | null;
   threat: number | null;
   threatTarget: number | null;
@@ -106,6 +108,9 @@ export interface BattleBeat {
   draw?: string[];
   encounterDeal?: string;
   villainStage?: number;
+  villainFlip?: boolean;
+  defeat?: string;
+  defeatedCard?: string;
   reveal?: {
     id: string;
     name: string;
@@ -115,6 +120,7 @@ export interface BattleBeat {
   };
   actor?: string | null;
   phase?: "hero" | "villain";
+  gameEnded?: true;
   activate?: { card: string; hero: string };
   threat?: { scheme: string; delta: number };
   hit?: { source: string | null; target: string; amount: number; tough?: boolean };
@@ -310,20 +316,42 @@ export class BattleModel {
         if (last?.draw) last.draw.push(e.instanceId);
         else this.#beats.push({ text: "Draw into hand", enemy, draw: [e.instanceId] });
       } else if (e.type === "stepChanged") {
-        if ((e.to.phase === "villain") !== enemy)
+        if (e.to.phase !== "player" && e.to.phase !== "villain") continue;
+        const villainPhase = e.to.phase === "villain";
+        if (villainPhase !== enemy)
           this.#beats.push({
-            enemy: e.to.phase === "villain",
-            text: e.to.phase === "villain" ? "Villain Phase" : "Hero Phase",
-            phase: e.to.phase === "villain" ? "villain" : "hero",
+            enemy: villainPhase,
+            text: villainPhase ? "Villain Phase" : "Hero Phase",
+            phase: villainPhase ? "villain" : "hero",
           });
-        enemy = e.to.phase === "villain";
+        enemy = villainPhase;
+      } else if (e.type === "gameEnded") {
+        this.#beats.push({ enemy, text: "", gameEnded: true });
       } else if (e.type === "villainStageAdvanced" || e.type === "villainStageRevealed") {
         this.#beats.push({
           enemy,
           actor: e.instanceId,
           villainStage: e.stageIndex + 1,
           text: `${name(e.instanceId)} · Stage ${e.stageIndex + 1}`,
+          ...(e.type === "villainStageAdvanced"
+            ? { defeat: `${faceUpName(this.#game, e.instanceId)} · Stage ${e.stageIndex} defeated` }
+            : {}),
         });
+      } else if (e.type === "villainFlipped") {
+        this.#beats.push({
+          enemy,
+          actor: e.instanceId,
+          villainFlip: true,
+          text: `${name(e.instanceId)} · Side ${e.to.toUpperCase()}`,
+        });
+      } else if (e.type === "characterDefeated" || e.type === "schemeDefeated") {
+        const type = cardOf(result.state, e.instanceId)?.type ?? cardOf(this.#game, e.instanceId)?.type;
+        if (type === "villain" && e.type === "characterDefeated") {
+          const defeat = `${name(e.instanceId)} defeated`;
+          this.#beats.push({ enemy, actor: e.instanceId, text: defeat, defeat });
+        } else if (e.type === "schemeDefeated" || type === "minion") {
+          this.#beats.push({ enemy, defeatedCard: e.instanceId, text: "" });
+        }
       } else if (e.type === "encounterCardDealt" || e.type === "boostCardDealt") {
         this.#beats.push({
           enemy,
@@ -550,6 +578,14 @@ export class BattleModel {
       this.#actions.kind === "turn" &&
       this.#actions.illegal.find((entry) => entry.action.kind === "playCard" && entry.action.instanceId === id);
     const instance = getInstance(state, id);
+    const showAsFullCard =
+      card?.type === "upgrade" &&
+      (card.keywords.some((keyword) => keyword.name === "uses") ||
+        Object.keys(instance?.counters ?? {}).length > 0 ||
+        card.abilities.some(({ id }) => {
+          const trigger = CORE_DEPS.abilities[id]?.trigger.kind;
+          return trigger === "action" || trigger === "resource";
+        }));
     const markers = instance
       ? [
           ...Object.entries(instance.statuses).map(([name, count]) => ({ name, count })),
@@ -564,10 +600,12 @@ export class BattleModel {
     return {
       id,
       attachedTo: instance?.attachedTo ?? null,
+      showAsFullCard,
       markers: ["ally", "hero_identity", "villain", "minion"].includes(card?.type ?? "")
         ? [...markers, ...statModifiers(state, id)]
         : markers,
       name: shortIdentityNameOf(state, id) ?? faceUpName(state, id),
+      ...(card?.type === "minion" ? { hp: remainingHitPoints(state, id, CORE_DEPS) ?? 0 } : {}),
       reverseArt:
         id === state.players[0]!.identity.instanceId
           ? (artFor(card, { kind: state.players[0]!.identity.form === "hero" ? "alterEgo" : "hero" })?.url ?? null)
@@ -860,6 +898,10 @@ export class BattleModel {
       return true;
     }
     return this.#openPayment(entry, entry.targets[0] ?? null);
+  }
+
+  isTargetedAttachment(id: string): boolean {
+    return (this.#plays.get(id)?.targets.length ?? 0) > 0;
   }
 
   #openPayment(entry: LegalAction, target: InstanceId | null): boolean {

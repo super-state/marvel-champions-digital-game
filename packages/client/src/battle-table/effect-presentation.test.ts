@@ -61,6 +61,7 @@ test("Rhino advances on the table before revealing his side scheme", () => {
   expect(after.encounterDiscard.some((c) => c.id === after.villain.id)).toBe(false);
   const transition = after.beats.findIndex((b) => b.villainStage === 2);
   expect(transition).toBeGreaterThan(after.beats.findIndex((b) => b.hit));
+  expect(after.beats[transition]?.defeat).toBe("Rhino · Stage 1 defeated");
   expect(after.beats.some((b) => b.reveal?.id === after.villain.id)).toBe(false);
   const scheme = after.enemyCards.find((c) => c.type === "side_scheme")!;
   expect(scheme.threat).toBe(3);
@@ -86,6 +87,28 @@ test("Tough absorbs Spider-Man's hit at contact before he exhausts", () => {
   expect(after.beats.indexOf(contacts[0]!)).toBeLessThan(after.beats.findIndex((b) => b.turned?.exhausted));
 });
 
+test("a lethal villain attack ends the battle without starting a hero phase", () => {
+  const battle = scenario((s) => {
+    const hero = s.players[0]!.identity.instanceId;
+    return { ...s, instances: { ...s.instances, [hero]: { ...s.instances[hero]!, damage: 9 } } };
+  });
+  expect(battle.heroAction("changeForm")).toBe(true);
+  expect(battle.endTurn()).toBe(true);
+  for (let i = 0; i < 15; i++) {
+    const choice = battle.snapshot().choice;
+    if (!choice) break;
+    const picks = choice.defense ? ["decline"] : choice.options.slice(0, choice.min).map((option) => option.id);
+    expect(battle.chooseMany(picks)).toBe(true);
+  }
+  const defeated = battle.snapshot();
+  expect(defeated.outcome).toEqual({ result: "loss", reason: "allPlayersDefeated" });
+  expect(defeated.heroHp).toBe(0);
+  expect(defeated.beats.some((beat) => beat.phase === "hero")).toBe(false);
+  const hit = defeated.beats.findIndex((beat) => beat.hit?.target === defeated.hero.id && beat.hit.amount > 0);
+  expect(hit).toBeGreaterThanOrEqual(0);
+  expect(defeated.beats.findIndex((beat) => beat.gameEnded)).toBeGreaterThan(hit);
+});
+
 test("Spider-Tracer reports its missing host while it is still in hand", () => {
   const battle = scenario((s) => arrange(s, "01007", []));
   const tracer = battle.snapshot().hand.find((c) => c.name === "Spider-Tracer")!;
@@ -98,6 +121,7 @@ test("Spider-Tracer reports its missing host while it is still in hand", () => {
 test("Spider-Tracer stays visible on its engaged minion", () => {
   const battle = scenario((s) => arrange(s, "01007", ["01110"], true));
   const tracer = battle.snapshot().hand.find((c) => c.name === "Spider-Tracer")!;
+  expect(battle.isTargetedAttachment(tracer.id)).toBe(true);
   expect(battle.pick(tracer.id)).toBe(true);
   const resource = battle.snapshot().payment!.sources.find((s) => s.kind === "handCard")!;
   battle.toggle(resource.id);
@@ -164,6 +188,7 @@ test("Spider-Tracer can attach after Spider-Man attacks and interrupts only the 
   spend("Helicarrier");
   expect(battle.pay()).toBe(true);
   expect(battle.choose(battle.snapshot().choice!.options.find((o) => o.cardId === minion.id)!.id)).toBe(true);
+  expect(battle.snapshot().beats.find((beat) => beat.defeatedCard === minion.id)).toMatchObject({ text: "" });
   expect(battle.snapshot().enemyCards.find((c) => c.type === "main_scheme")?.threat).toBe(1);
   expect(battle.snapshot().discard.map((c) => c.id)).toContain(tracer.id);
 });
@@ -278,6 +303,7 @@ test("Surveillance Team can exhaust and spend a snoop counter to remove threat",
 test("Tenacity lets the player choose its physical payment before readying Spider-Man", () => {
   const battle = scenario((s) => arrange(s, "01093", []));
   const tenacity = battle.snapshot().hand.find((c) => c.name === "Tenacity")!;
+  expect(tenacity.showAsFullCard).toBe(true);
   battle.heroAction("changeForm");
   battle.heroAction("basicAttack");
   expect(battle.pick(tenacity.id)).toBe(true);
@@ -300,4 +326,20 @@ test("Tenacity lets the player choose its physical payment before readying Spide
   expect(battle.pay()).toBe(true);
   expect(battle.snapshot().hero.exhausted).toBe(false);
   expect(battle.snapshot().discard.map((c) => c.id)).toContain(tenacity.id);
+});
+
+test("Web-Shooter has a full card while passive Heroic Intuition is tucked", () => {
+  const battle = scenario((s) => arrange(s, "01008", []));
+  const { hand } = battle.snapshot();
+  const shooter = hand.find((card) => card.name === "Web-Shooter")!;
+  expect(shooter.showAsFullCard).toBe(true);
+  expect(hand.find((card) => card.name === "Heroic Intuition")?.showAsFullCard).toBe(false);
+  expect(battle.heroAction("changeForm")).toBe(true);
+  expect(battle.pick(shooter.id)).toBe(true);
+  battle.toggle(battle.snapshot().payment!.sources.find((source) => source.label === "Heroic Intuition")!.id);
+  expect(battle.pay()).toBe(true);
+  expect(battle.snapshot().inPlay.find((card) => card.id === shooter.id)).toMatchObject({
+    showAsFullCard: true,
+    markers: [{ name: "web", count: 3 }],
+  });
 });

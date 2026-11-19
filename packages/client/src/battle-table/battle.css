@@ -9,6 +9,11 @@
   font-weight: 700;
 }
 @font-face {
+  font-family: Public Sans;
+  src: url("/fonts/public-sans-latin-800-normal.woff2") format("woff2");
+  font-weight: 800;
+}
+@font-face {
   font-family: Bangers;
   src: url("/fonts/bangers-latin-400-normal.woff2") format("woff2");
 }
@@ -25,6 +30,9 @@
   --rule: #3c474b;
   --signal: #f6c564;
   --mono: "Plex Mono", monospace;
+  /* Shared motion curves: a fast quint ease-out and a springy overshoot. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   font-family: "Public Sans", sans-serif;
   background: var(--ink);
   color: var(--paper);
@@ -125,11 +133,20 @@ h1 i {
   flex-direction: column;
   min-width: 0;
 }
-#stage {
+#board-viewport {
   flex: 1;
   position: relative;
-  isolation: isolate;
   min-height: 280px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  background: #0b111b;
+}
+#stage {
+  position: absolute;
+  inset: 0 0 auto;
+  height: calc(100% + var(--mat-extension, 0px));
+  isolation: isolate;
   background: #1a2930;
 }
 #space,
@@ -144,6 +161,9 @@ h1 i {
   width: 100%;
   height: 100%;
   touch-action: none;
+}
+#board-viewport[data-extended] #space canvas {
+  touch-action: pan-y;
 }
 #anchors {
   pointer-events: none;
@@ -230,9 +250,9 @@ h1 i {
   font: bold clamp(10px, 0.86vw, 14px)/1.4 var(--mono);
   padding: 4px 8px;
   border-bottom: 2px solid #82bacb;
-  max-width: 190px;
 }
 .anchor.enemy {
+  max-width: 190px;
   border-bottom-color: #db8d7b;
 }
 .hand-strip {
@@ -262,9 +282,22 @@ h1 i {
 #turn-status[data-turn="enemy"] {
   color: #ffb09c;
 }
+:is(#end-turn, #undo) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+:is(#end-turn, #undo) > span {
+  font:
+    700 17px/1 system-ui,
+    sans-serif;
+}
 #end-turn {
   flex: 0 0 auto;
-  padding: 7px 13px;
+  padding: 7px 16px;
+  min-width: 112px;
   color: #241c0e;
   background: var(--signal);
   border: 1px solid var(--signal);
@@ -318,6 +351,9 @@ h1 i {
   line-height: 1.4;
 }
 .rail {
+  --preview-padding: clamp(16px, 2vw, 32px);
+  --preview-max-width: 380px;
+  --preview-max-height: 72svh;
   position: relative;
   border-left: 1px solid var(--rule);
   background: var(--panel);
@@ -327,7 +363,7 @@ h1 i {
 .reader {
   flex: 1;
   min-width: 0;
-  padding: clamp(16px, 2vw, 32px);
+  padding: var(--preview-padding);
   display: grid;
   align-content: center;
   justify-items: center;
@@ -336,11 +372,36 @@ h1 i {
 .reader img {
   display: block;
   width: 100%;
-  max-width: 380px;
-  max-height: 72svh;
+  max-width: var(--preview-max-width);
+  max-height: var(--preview-max-height);
   object-fit: contain;
   border-radius: 5% / 3.6%;
   filter: drop-shadow(0 14px 18px #05090b87);
+}
+@media (min-width: 741px) {
+  .rail[data-wide-preview] {
+    z-index: 1;
+    --card-ratio: 1.43;
+    --portrait-width: min(
+      var(--preview-max-width),
+      calc(var(--sidebar-width) - 2 * var(--preview-padding) - 1px),
+      calc(var(--preview-max-height) / var(--card-ratio))
+    );
+  }
+  .rail[data-wide-preview] .reader {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: calc(var(--portrait-width) * var(--card-ratio) + 2 * var(--preview-padding) + 1px);
+    border-left: 1px solid var(--rule);
+    background-color: var(--panel);
+    pointer-events: none;
+  }
+  .rail[data-wide-preview] img {
+    width: auto;
+    height: var(--portrait-width);
+    max-width: none;
+    border-radius: 3.6% / 5%;
+  }
 }
 .eyebrow {
   margin: 0;
@@ -349,11 +410,12 @@ h1 i {
   font: 11px/1.5 var(--mono);
   color: var(--signal);
 }
+/* Bangers is kept for the logo only; headings use a heavy, tracked Public Sans for a cleaner, premium feel. */
 h2 {
   font:
-    clamp(32px, 3.1vw, 52px)/1.03 Bangers,
+    800 clamp(24px, 2.4vw, 38px)/1.1 "Public Sans",
     sans-serif;
-  letter-spacing: 0.025em;
+  letter-spacing: 0.01em;
   margin: 7px 0 16px;
 }
 .option {
@@ -403,6 +465,18 @@ h2 {
   overflow: auto;
   scrollbar-width: thin;
 }
+#decision:not(
+  [data-identity],
+  [data-enemy-choice],
+  [data-defense],
+  [data-hand-choice],
+  [data-revealed-choice],
+  [data-ability]
+) {
+  top: var(--decision-viewport-center, 50%);
+  max-height: calc(var(--decision-viewport-height, 100%) - 24px);
+  translate: -50% -50%;
+}
 #decision :is(p, h2, button),
 #payment :is(p, h2) {
   text-wrap: balance;
@@ -433,14 +507,22 @@ h2 {
 .anchor[aria-pressed="true"] {
   background: #2a261a;
 }
+/* One typeface across the payment bar: the title, the count and the hint are all Public Sans. */
 #payment-total {
-  font: 700 20px/1.2 var(--mono);
+  font:
+    800 20px/1.2 "Public Sans",
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
   color: var(--signal);
   white-space: nowrap;
 }
 #payment-balance {
-  color: #dae0dd;
-  font-size: 14px;
+  color: var(--muted);
+  font:
+    400 14px/1.2 "Public Sans",
+    sans-serif;
+  white-space: nowrap;
 }
 .payment-track {
   width: clamp(58px, 8vw, 115px);
@@ -454,7 +536,7 @@ h2 {
   height: 100%;
   background: var(--signal);
   transform-origin: left;
-  transition: transform 180ms ease-out;
+  transition: transform 220ms var(--ease-spring);
 }
 .payment-actions {
   display: none;
@@ -469,10 +551,12 @@ h2 {
   background: #111b22;
   border-top: 1px solid var(--rule);
 }
-#stage:has(#payment:not([hidden]), #decision[data-hand-choice]:not([hidden])) + .hand-strip > :not(.payment-actions) {
+#board-viewport:has(#payment:not([hidden]), #decision[data-hand-choice]:not([hidden]))
+  + .hand-strip
+  > :not(.payment-actions) {
   visibility: hidden;
 }
-#stage:has(#payment:not([hidden]), #decision[data-hand-choice]:not([hidden])) + .hand-strip .payment-actions {
+#board-viewport:has(#payment:not([hidden]), #decision[data-hand-choice]:not([hidden])) + .hand-strip .payment-actions {
   display: flex;
 }
 .payment-actions button {
@@ -543,13 +627,17 @@ h2 {
     display: flex;
     flex-direction: column;
   }
-  #stage {
+  #board-viewport {
     flex: none;
     height: clamp(290px, 48svh, 540px);
   }
   .hand-strip {
     --hand-strip-height: 44px;
     gap: 10px;
+  }
+  #end-turn {
+    min-width: 0;
+    padding-inline: 10px;
   }
   #instruction {
     font-size: 12px;
@@ -597,8 +685,21 @@ h2 {
     padding-block: 4px;
   }
 }
+@media (max-width: 380px) {
+  .hand-strip {
+    gap: 6px;
+    padding-inline: 8px;
+  }
+  #instruction {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  #undo {
+    padding-inline: 8px;
+  }
+}
 @media (max-height: 425px) {
-  #stage:has(#payment:not([hidden])) {
+  #board-viewport:has(#payment:not([hidden])) {
     min-height: 0;
     height: min(clamp(290px, 48svh, 540px), calc(100dvh - 112px - env(safe-area-inset-bottom)));
   }
@@ -635,6 +736,353 @@ h2 {
   font: bold 11px var(--mono);
   margin-right: 8px;
 }
+#action-beat[data-defeat] {
+  top: var(--defeat-top);
+  padding: 10px 24px;
+  border: 1px solid var(--signal);
+  color: #ffedba;
+  background: #271a11;
+  box-shadow: 0 0 24px #ffbd5366;
+  font-size: clamp(20px, 2.4vw, 30px);
+  font-weight: 700;
+  line-height: 1.2;
+}
+#game-over {
+  --outcome-accent: #ff5a4e;
+  --outcome-glow: #ff3b3066;
+  position: fixed;
+  overflow: visible;
+  isolation: isolate;
+  width: min(460px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-top: 3px solid var(--outcome-accent);
+  border-radius: 10px;
+  background: radial-gradient(120% 70% at 50% 0%, #2a1416 0%, var(--panel) 62%);
+  color: var(--paper);
+  text-align: center;
+  box-shadow:
+    0 0 0 1px #0006,
+    0 26px 80px #000b,
+    0 0 70px var(--outcome-glow);
+}
+#game-over[data-victory] {
+  --outcome-accent: var(--signal);
+  --outcome-glow: #f6c56466;
+  background: radial-gradient(120% 70% at 50% 0%, #3a2c12 0%, var(--panel) 64%);
+}
+#game-over::backdrop {
+  background: radial-gradient(circle at 50% 45%, rgb(30 8 10 / 72%), rgb(4 7 12 / 94%) 70%);
+}
+#game-over[data-victory]::backdrop {
+  background: radial-gradient(circle at 50% 45%, rgb(60 44 12 / 70%), rgb(4 7 12 / 92%) 70%);
+}
+/* The panel itself lets confetti spill out; its content scrolls on short screens. */
+.outcome-body {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  padding: clamp(24px, 4vw, 38px) clamp(20px, 4vw, 36px) clamp(22px, 3.4vw, 30px);
+}
+@media (max-height: 560px) {
+  .outcome-body {
+    padding-block: 16px;
+  }
+  #game-over .outcome-card {
+    width: 82px;
+    margin-bottom: 8px;
+  }
+  #game-over .outcome-card[data-landscape] {
+    width: 128px;
+  }
+  #game-over .game-over-actions {
+    margin-top: 12px;
+  }
+}
+/* Comic sunburst behind the card, only on a win, clipped to the panel. */
+.outcome-glow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.outcome-rays {
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: 92px;
+  width: 640px;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  background: repeating-conic-gradient(from 0deg, #f6c56438 0deg 9deg, transparent 9deg 18deg);
+  mask: radial-gradient(circle, #000 18%, transparent 62%);
+  display: none;
+}
+#game-over[data-victory] .outcome-rays {
+  display: block;
+}
+/* The confetti covers the whole window, centred on the panel. */
+.outcome-confetti {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100vw;
+  height: 100vh;
+  translate: -50% -50%;
+  z-index: 3;
+  pointer-events: none;
+  overflow: hidden;
+}
+#game-over:not([data-victory]) .outcome-confetti {
+  display: none;
+}
+.confetti-bit {
+  position: absolute;
+  top: -16px;
+  left: var(--x);
+  width: var(--size);
+  height: calc(var(--size) * 0.45);
+  opacity: 0;
+}
+.outcome-card {
+  position: relative;
+  width: clamp(104px, 26vw, 138px);
+  aspect-ratio: 63 / 88;
+  margin: 0 auto 14px;
+  rotate: -4deg;
+}
+.outcome-card[data-landscape] {
+  width: clamp(150px, 40vw, 196px);
+  aspect-ratio: 88 / 63;
+}
+.outcome-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4.5% / 3.2%;
+  box-shadow:
+    0 12px 26px #000a,
+    0 0 0 2px #0008;
+}
+#game-over:not([data-victory]) .outcome-card img {
+  filter: grayscale(0.85) brightness(0.62) contrast(1.1);
+}
+.outcome-stamp {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  translate: -50% -50%;
+  rotate: -14deg;
+  padding: 5px 12px 4px;
+  border: 2px solid var(--outcome-accent);
+  border-radius: 3px;
+  background: #120b0bdd;
+  color: var(--outcome-accent);
+  font:
+    800 clamp(12px, 2.6vw, 15px)/1.1 "Public Sans",
+    sans-serif;
+  letter-spacing: 0.22em;
+  white-space: nowrap;
+  text-transform: uppercase;
+  box-shadow: 0 4px 14px #000a;
+}
+#game-over[data-victory] .outcome-stamp {
+  background: #b81d1dee;
+  border-color: #fff0c4;
+  color: #fff7df;
+}
+.outcome-kicker {
+  margin: 0 0 2px;
+  color: var(--muted);
+}
+#game-over-title {
+  margin: 6px 0 8px;
+  padding-left: 0.24em; /* balance the trailing letter-spacing so the word sits centred */
+  font:
+    800 clamp(34px, 7vw, 52px)/1 "Public Sans",
+    sans-serif;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  /* Brushed-gold lettering with a soft glow, rather than an outlined comic face. */
+  background: linear-gradient(180deg, #fff6dc 0%, #f6c564 48%, #c98a2c 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 0 #0008) drop-shadow(0 0 22px var(--outcome-glow));
+}
+#game-over:not([data-victory]) #game-over-title {
+  background-image: linear-gradient(180deg, #ffd9d4 0%, #ff6b61 50%, #b8322b 100%);
+}
+#game-over-detail {
+  margin: 0 auto;
+  max-width: 32ch;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.game-over-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 22px;
+}
+#try-again {
+  width: min(240px, 100%);
+  margin-top: 0;
+  padding: 12px 22px;
+  border-color: var(--outcome-accent);
+  background: var(--outcome-accent);
+  color: #17151a;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 6px 20px var(--outcome-glow);
+}
+#try-again:is(:hover, :focus-visible) {
+  filter: brightness(1.08);
+}
+.game-over-actions .quiet {
+  padding: 8px 12px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  #game-over[open] {
+    animation: outcome-in 520ms var(--ease-spring) both;
+  }
+  #game-over[open]::backdrop {
+    animation: outcome-fade 420ms var(--ease-out) both;
+  }
+  #game-over[open] .outcome-card {
+    animation: outcome-card-in 640ms 120ms var(--ease-spring) both;
+  }
+  #game-over[open] .outcome-stamp {
+    animation: outcome-stamp 420ms 560ms cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  }
+  #game-over[open] :is(.outcome-kicker, #game-over-title, #game-over-detail, .game-over-actions) {
+    animation: outcome-rise 520ms var(--ease-out) both;
+  }
+  #game-over[open] .outcome-kicker {
+    animation-delay: 260ms;
+  }
+  #game-over[open] #game-over-title {
+    animation: outcome-title 620ms 300ms var(--ease-spring) both;
+  }
+  #game-over[open] #game-over-detail {
+    animation-delay: 460ms;
+  }
+  #game-over[open] .game-over-actions {
+    animation-delay: 620ms;
+  }
+  #game-over[open] .outcome-rays {
+    animation:
+      outcome-fade 900ms 200ms var(--ease-out) both,
+      outcome-spin 24s linear infinite;
+  }
+  #game-over[open] .confetti-bit {
+    animation: confetti-fall var(--fall) var(--delay) cubic-bezier(0.25, 0.6, 0.45, 1) forwards;
+  }
+  #game-over[open]:not([data-victory]) {
+    animation:
+      outcome-in 520ms var(--ease-spring) both,
+      outcome-shudder 380ms 600ms ease-in-out both;
+  }
+}
+@keyframes outcome-in {
+  from {
+    opacity: 0;
+    scale: 0.82;
+    translate: 0 18px;
+  }
+}
+@keyframes outcome-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes outcome-card-in {
+  from {
+    opacity: 0;
+    scale: 0.5;
+    rotate: 18deg;
+    translate: 0 -30px;
+  }
+}
+@keyframes outcome-stamp {
+  from {
+    opacity: 0;
+    scale: 2.6;
+  }
+  60% {
+    opacity: 1;
+  }
+}
+@keyframes outcome-title {
+  from {
+    opacity: 0;
+    scale: 0.92;
+    letter-spacing: 0.6em;
+  }
+}
+@keyframes outcome-rise {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+}
+@keyframes outcome-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+@keyframes outcome-shudder {
+  20%,
+  60% {
+    translate: -5px 0;
+  }
+  40%,
+  80% {
+    translate: 5px 0;
+  }
+}
+@keyframes confetti-fall {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--drift), calc(100vh + 32px)) rotate(var(--spin));
+  }
+}
+.defeat-flash {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  pointer-events: none;
+  fill: #f14343;
+}
+@media (prefers-reduced-motion: no-preference) {
+  #action-beat[data-defeat] {
+    animation: defeat-arrival 360ms var(--ease-spring) both;
+  }
+  @keyframes defeat-arrival {
+    from {
+      opacity: 0;
+      scale: 0.88;
+    }
+    to {
+      opacity: 1;
+      scale: 1;
+    }
+  }
+}
 #impact {
   pointer-events: none;
   z-index: 4;
@@ -650,7 +1098,7 @@ h2 {
   text-shadow: 2px 3px #851414;
 }
 #impact:not([hidden]) {
-  animation: damage-number 650ms ease-out both;
+  animation: damage-number 650ms var(--ease-out) both;
 }
 #impact::before,
 #impact::after {
@@ -686,12 +1134,12 @@ h2 {
     13% 12%,
     43% 31%
   );
-  animation: impact-burst 430ms ease-out both;
+  animation: impact-burst 430ms var(--ease-out) both;
 }
 #impact::after {
   border: 3px solid #ff5337;
   border-radius: 50%;
-  animation: impact-ring 430ms ease-out both;
+  animation: impact-ring 470ms var(--ease-out) both;
 }
 #impact[data-blocked="true"] {
   font-size: clamp(20px, 3vw, 38px);
@@ -724,16 +1172,29 @@ h2 {
 }
 @keyframes damage-number {
   from {
-    scale: 1.35;
+    scale: 2.1;
+    rotate: -9deg;
+    opacity: 0;
+  }
+  12% {
+    scale: 0.88;
+    rotate: 4deg;
+    opacity: 1;
   }
   24% {
-    scale: 1;
+    scale: 1.08;
+    rotate: -2deg;
   }
-  70% {
+  36% {
+    scale: 1;
+    rotate: 0deg;
+  }
+  72% {
     opacity: 1;
   }
   to {
-    transform: translateY(-13px);
+    transform: translateY(-26px);
+    scale: 0.94;
     opacity: 0;
   }
 }
@@ -747,11 +1208,62 @@ h2 {
   }
 }
 #stage[data-resolving] :is(#payment, #decision),
-#stage[data-resolving] + .hand-strip .payment-actions {
+#board-viewport:has(#stage[data-resolving]) + .hand-strip .payment-actions {
   visibility: hidden;
 }
 #stage[data-resolving] #space {
   pointer-events: none;
+}
+/* Screen shake and a red edge flash on a damaging hit, scaled by data-shake. */
+#stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 52%, #ff2a1f55 100%);
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* Shake the board layers inside a clipped stage, so the scroll area never sees extra overflow. */
+  #stage[data-shake] {
+    overflow: clip;
+  }
+  #stage[data-shake] > :is(#space, #anchors) {
+    animation: stage-shake 360ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  }
+  #stage[data-shake="heavy"] > :is(#space, #anchors) {
+    --shake: 9px;
+    animation-duration: 460ms;
+  }
+  #stage[data-shake]::after {
+    animation: stage-flash 420ms var(--ease-out) both;
+  }
+}
+@keyframes stage-shake {
+  10% {
+    translate: calc(var(--shake, 5px) * -1) calc(var(--shake, 5px) * 0.4);
+  }
+  25% {
+    translate: var(--shake, 5px) calc(var(--shake, 5px) * -0.5);
+  }
+  40% {
+    translate: calc(var(--shake, 5px) * -0.6) calc(var(--shake, 5px) * 0.3);
+  }
+  60% {
+    translate: calc(var(--shake, 5px) * 0.35) 0;
+  }
+  80% {
+    translate: calc(var(--shake, 5px) * -0.15) 0;
+  }
+}
+@keyframes stage-flash {
+  from {
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
 }
 
 .anchor[data-tucked]:not(:focus-visible) {
@@ -763,6 +1275,9 @@ h2 {
   display: block;
   color: #ffcb69;
   font-weight: 800;
+}
+.scheme-threat[data-near-limit] {
+  color: #ff746b;
 }
 #encounter-label {
   color: #ffcf99;
@@ -883,7 +1398,7 @@ h2 {
 }
 @media (prefers-reduced-motion: no-preference) {
   #decision[data-identity] button {
-    animation: hero-actions-rise 0.21s ease-out both;
+    animation: hero-actions-rise 0.32s var(--ease-spring) both;
   }
   @keyframes hero-actions-rise {
     from {
@@ -914,7 +1429,7 @@ h2 {
   box-shadow:
     0 0 15px #ffbc48,
     inset 0 0 12px #ffda81;
-  animation: power-wave 540ms ease-out forwards;
+  animation: power-wave 540ms var(--ease-out) forwards;
 }
 @keyframes power-wave {
   from {
@@ -969,11 +1484,6 @@ h2 {
   margin: 0;
   font-size: clamp(16px, 1.55vw, 23px);
 }
-#payment-subject {
-  order: 1;
-  letter-spacing: 0.035em;
-  text-transform: none;
-}
 #payment .payment-progress {
   order: 2;
   gap: 8px;
@@ -986,9 +1496,6 @@ h2 {
   }
   #payment #payment-title {
     font-size: 16px;
-  }
-  #payment-subject {
-    font-size: 10px;
   }
   #payment-total {
     font-size: 15px;
