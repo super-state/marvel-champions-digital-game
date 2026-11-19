@@ -121,6 +121,8 @@ export interface BattleBeat {
   returned?: string[];
   /** Cards discarded from the top of the player's deck (Black Cat). */
   milled?: string[];
+  /** The encounter card whose surge deals the player another encounter card (the deal beat follows). */
+  surge?: string;
   reveal?: {
     id: string;
     name: string;
@@ -309,6 +311,14 @@ export class BattleModel {
     const name = (id: InstanceId) => shortIdentityNameOf(result.state, id) ?? faceUpName(result.state, id);
     this.#beats = [];
     const toughAttacks = new Set<string>();
+    // Surge deals its extra card first and names the surging card just after; pair them up so the table can say
+    // "surge" before the card flies out (RRG 1.8 "Surge").
+    const surgeOf = new Map<string, InstanceId>();
+    events.forEach((e, i) => {
+      if (e.type !== "encounterCardDealt" || e.source !== "surge") return;
+      const next = events.slice(i + 1).find((later) => later.type === "surgeTriggered");
+      if (next?.type === "surgeTriggered") surgeOf.set(e.instanceId, next.instanceId);
+    });
     const defeated = new Set(
       events.flatMap((e) =>
         e.type === "characterDefeated" || e.type === "schemeDefeated" ? [e.instanceId as string] : [],
@@ -380,6 +390,8 @@ export class BattleModel {
           this.#beats.push({ enemy, defeatedCard: e.instanceId, text: "" });
         }
       } else if (e.type === "encounterCardDealt" || e.type === "boostCardDealt") {
+        const surging = e.type === "encounterCardDealt" ? surgeOf.get(e.instanceId) : undefined;
+        if (surging) this.#beats.push({ enemy, actor: surging, text: `${name(surging)} surges`, surge: surging });
         this.#beats.push({
           enemy,
           text:

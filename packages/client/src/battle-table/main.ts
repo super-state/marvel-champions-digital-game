@@ -1294,7 +1294,7 @@ function floatNumber(
   ]);
 }
 
-function stampCard(id: string, text: string, tone?: "status" | "confused" | "tough") {
+function stampCard(id: string, text: string, tone?: "status" | "confused" | "tough" | "surge") {
   const node = make("div", "card-stamp", text);
   if (tone) node.dataset.tone = tone;
   floatOver(id, node, 1100, [
@@ -1336,6 +1336,32 @@ async function showBoost(reveal: NonNullable<Beat["reveal"]>) {
   burst.remove();
 }
 
+/** "+1 card" bursting off the encounter deck, so the extra deal that follows has a cause. */
+async function surgeBurst() {
+  const deck = table?.encounterAnchor();
+  if (!deck) return;
+  const burst = make("div", "surge-burst");
+  burst.setAttribute("role", "status");
+  burst.append(icon("surge"), make("b", "", "Surge"), make("span", "", "+1 card"));
+  burst.style.left = deck.x + "px";
+  burst.style.top = deck.y + "px";
+  stage.append(burst);
+  const animation = burst.animate(
+    reducedMotion()
+      ? [{ opacity: 1 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }]
+      : [
+          { transform: "scale(.4)", opacity: 0 },
+          { transform: "scale(1.15)", opacity: 1, offset: 0.2 },
+          { transform: "scale(1)", opacity: 1, offset: 0.35 },
+          { transform: "scale(1)", opacity: 1, offset: 0.78 },
+          { transform: "scale(1.06) translateY(-10px)", opacity: 0 },
+        ],
+    { duration: 1100, easing: "ease-out" },
+  );
+  await animation.finished;
+  burst.remove();
+}
+
 const STATUS_STAMP: Record<string, ["status" | "confused" | "tough", string]> = {
   stunned: ["status", "Stunned!"],
   confused: ["confused", "Confused!"],
@@ -1355,6 +1381,8 @@ function feedLineOf(beat: Beat): FeedLine | null {
   if (beat.returned)
     return { text: `${plural(beat.returned.length, "card")} back to your hand`, icon: "draw", tone: "hero" };
   if (beat.leftPlay) return { text: beat.text, icon: "discard", tone: beat.enemy ? "villain" : "hero" };
+  if (beat.surge)
+    return { text: `Surge: ${nameOf(beat.surge) || "another card"} deals one more`, icon: "surge", tone: "villain" };
   if (beat.milled)
     return {
       text: `Discard ${beat.milled.map(nameOf).filter(Boolean).join(", ") || plural(beat.milled.length, "card")} from your deck`,
@@ -1458,6 +1486,12 @@ async function present(beats: Snapshot["beats"]) {
       displayedHand = [...displayedHand.filter((card) => !beat.returned!.includes(card.id)), ...back];
       table?.showDraw(displayedHand, beat.returned, state.deckCount + pendingDraws.size, state.discard);
       await sleep(760);
+      continue;
+    }
+    if (beat.surge) {
+      narrate(beat, feedLineOf(beat), { title: "Surge! One more encounter card" });
+      stampCard(beat.surge, "Surge!", "surge");
+      await surgeBurst();
       continue;
     }
     if (beat.milled) {

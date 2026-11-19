@@ -1108,8 +1108,25 @@ export class BattleTable {
   }
 
   setThreat(id: string, total: number): void {
-    const group = this.#pieces.get(id)?.tokens;
-    if (!group) return;
+    const piece = this.#pieces.get(id);
+    const group = piece?.tokens;
+    if (!piece || !group) return;
+    // Remember the new count on the card too. A later redraw in the same move (a deal, a reveal, a discard) rebuilds
+    // every card's chips from its card; with the old count there it would take the new chips straight back off.
+    if (piece.card.threat !== total && this.#state) {
+      const updated = { ...piece.card, threat: total };
+      const replace = (c: TableCard) => (c.id === id ? updated : c);
+      piece.card = updated;
+      const s = this.#state;
+      this.#state = {
+        ...s,
+        hero: replace(s.hero),
+        villain: replace(s.villain),
+        inPlay: s.inPlay.map(replace),
+        enemyCards: s.enemyCards.map(replace),
+        staged: s.staged && replace(s.staged),
+      };
+    }
     while (group.children.length > total) {
       const token = group.children.at(-1)! as THREE.Group;
       this.#drops.delete(token);

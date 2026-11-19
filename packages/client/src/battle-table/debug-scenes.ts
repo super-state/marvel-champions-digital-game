@@ -30,6 +30,8 @@ interface Scene {
   hand?: string[];
   /** The top of the player's deck, top first. */
   deckTop?: string[];
+  /** The top of the encounter deck, top first (Rhino's boost card comes off it before the encounter deal). */
+  encounterTop?: string[];
 }
 
 const SCENES: Record<string, Scene> = {
@@ -61,6 +63,10 @@ const SCENES: Record<string, Scene> = {
   blackcat: {
     hand: ["01002", "01090"],
     deckTop: ["01089", "01087"],
+  },
+  /** Hard to Keep Down on an unhurt Rhino surges into "I'm Tough!": end the turn to watch it. */
+  surge: {
+    encounterTop: ["01110", "01104", "01105"],
   },
   /** A quiet mid-game board: one minion, one side scheme, a couple of supports. */
   midgame: {
@@ -136,6 +142,7 @@ function arrange(state: GameState, scene: Scene): GameState {
   const deckId = activeEncounterDeckId(state);
   // Chosen cards first, then keep the hand full from the deck; chosen deck-top cards go back on top.
   const handIds = (scene.hand ?? []).map(take);
+  const encounterTopIds = (scene.encounterTop ?? []).map(take);
   const topIds = (scene.deckTop ?? []).map(take);
   const held = [...handIds, ...gone(player.hand)];
   const hand = held.slice(0, player.hand.length);
@@ -160,7 +167,7 @@ function arrange(state: GameState, scene: Scene): GameState {
     encounterSetAside: gone(state.encounterSetAside),
     encounterDecks: {
       ...state.encounterDecks,
-      [deckId]: { ...piles, deck: gone(piles.deck), discard: gone(piles.discard) },
+      [deckId]: { ...piles, deck: [...encounterTopIds, ...gone(piles.deck)], discard: gone(piles.discard) },
     },
   };
 }

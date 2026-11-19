@@ -62,6 +62,8 @@ const ICONS = {
   crisis: [{ d: polygon(octagon(12, 12, 10.6)) + exclaim(6.4, 18.2) }],
   /** Hazard: an extra encounter card each round. */
   hazard: [{ d: "M12 1.4L22.6 12 12 22.6 1.4 12z" + exclaim(6.6, 17.8) }],
+  /** Surge: another encounter card follows. */
+  surge: [{ d: "M2.5 4.5h4.6l7.2 7.5-7.2 7.5H2.5l7.2-7.5zM10.2 4.5h4.6l7.2 7.5-7.2 7.5h-4.6l7.2-7.5z" }],
   /** Boost icons on an encounter card. */
   boost: [{ d: star(12, 12, 8, 11.5, 4.6) }],
   /** Wild resource. */

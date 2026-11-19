@@ -726,6 +726,10 @@
   color: var(--tough);
   rotate: 8deg;
 }
+.card-stamp[data-tone="surge"] {
+  color: #ff9a3c;
+  rotate: -6deg;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .btn-primary[data-attention]:enabled,

@@ -343,3 +343,25 @@ test("Web-Shooter has a full card while passive Heroic Intuition is tucked", () 
     markers: [{ name: "web", count: 3 }],
   });
 });
+
+test("Hard to Keep Down surges on an unhurt Rhino, and the table calls the surge before the extra card", () => {
+  const battle = scenario((s) => arrange(s, "01007", ["01110", "01104", "01105"]));
+  expect(battle.endTurn()).toBe(true);
+  const beats = [...battle.snapshot().beats];
+  for (let i = 0; i < 12 && battle.snapshot().choice; i++) {
+    const choice = battle.snapshot().choice!;
+    const decline = choice.options.find((option) => !option.cardId);
+    const picks = choice.defense && decline ? [decline.id] : choice.options.slice(0, choice.min).map((o) => o.id);
+    expect(battle.chooseMany(picks)).toBe(true);
+    beats.push(...battle.snapshot().beats);
+  }
+  const keepDown = beats.findIndex((beat) => beat.reveal?.name === "Hard to Keep Down");
+  const surge = beats.findIndex((beat) => beat.surge);
+  const tough = beats.findIndex((beat) => !!beat.reveal?.name.includes("Tough"));
+  expect(keepDown).toBeGreaterThanOrEqual(0);
+  expect(beats[surge]).toMatchObject({ surge: beats[keepDown]!.reveal!.id, text: "Hard to Keep Down surges" });
+  expect(surge).toBeGreaterThan(keepDown);
+  // The surge comes before the extra card is dealt and revealed.
+  expect(beats.findIndex((beat, i) => i > surge && beat.encounterDeal)).toBeGreaterThan(surge);
+  expect(tough).toBeGreaterThan(surge);
+});

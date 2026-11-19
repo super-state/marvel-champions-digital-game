@@ -1022,6 +1022,43 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
   letter-spacing: 0.1em;
 }
 
+/* ── Surge ───────────────────────────────────────────────────────────────── */
+.surge-burst {
+  position: absolute;
+  z-index: 6;
+  translate: -50% -50%;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  column-gap: 8px;
+  padding: 10px 16px 10px 12px;
+  border: 2px solid #ffb55c;
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, #4a2108f2, #2a1205f2);
+  box-shadow:
+    0 0 0 4px #0007,
+    0 0 34px #ff8a2a99;
+  color: #ffe2c2;
+  pointer-events: none;
+}
+.surge-burst .icon {
+  grid-row: 1 / 3;
+  width: 34px;
+  height: 34px;
+  color: #ff9a3c;
+}
+.surge-burst b {
+  font: italic 900 24px/1 var(--font-ui);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.surge-burst span {
+  color: #ffc58c;
+  font: 800 11px/1.2 var(--font-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 /* ── Game over ───────────────────────────────────────────────────────────── */
 #game-over {
   --outcome-accent: #ff5a4e;
