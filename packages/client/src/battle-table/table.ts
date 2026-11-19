@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { CARD_BACKS } from "../art/art-source.js";
 import { cardRadius } from "../art/card-shape.js";
 import rooftop from "../art/tabletop/rooftop.webp?url";
-import { IDENTITY_FIT, fitBoard, fitToBox, type BoardFit, type TableBox } from "./board-fit.js";
+import { fitBoard, fitToBox, type BoardFit, type TableBox } from "./board-fit.js";
 import { TokenKit, placeTokens } from "./tokens3d.js";
 
 export interface TableCard {
@@ -1367,16 +1367,17 @@ export class BattleTable {
     // A phone's turn bar spans the screen and wraps its buttons under the question, so it stands taller.
     const bar = w < 740 ? 92 : 50;
     const room = { left: 6, right: w - 6, top: 6, bottom: h - bar - handCard * 1.48 - 26 };
-    // The table keeps its own layout, villain in the middle, while it fits across the screen and its top stays on it.
-    // Only a board that runs off (a tall stack of side schemes) shrinks until it fits. The hero's row sits where the
-    // layout puts it, over the top of the hand, so the bottom edge never starts a fit, and a fitted board keeps that
-    // row's edge where it was.
+    // The table fills the room above the hand: a quiet board grows up into empty space at the top (up to a quarter
+    // bigger), a busy one (a tall stack of side schemes) shrinks until it fits. The hero's row keeps its edge where
+    // the layout put it, over the top of the hand, and the villain stays in the middle.
     const corners = [box.x0, box.x1].flatMap((x) => [box.z0, box.z1].map((z) => this.#project(x, 0.06, z)));
     const lowest = Math.max(...corners.map((p) => p.y));
-    const spills = corners.some((p) => p.x < room.left || p.x > room.right || p.y < room.top);
-    const fit: BoardFit = spills
-      ? fitBoard(box, this.#project, { ...room, bottom: Math.max(room.bottom, lowest) }, { maxScale: 1 })
-      : IDENTITY_FIT;
+    const fit: BoardFit = fitBoard(
+      box,
+      this.#project,
+      { ...room, top: 46, bottom: Math.max(room.bottom, lowest) },
+      { maxScale: 1.25 },
+    );
     const place = (p: THREE.Vector3) => {
       const q = fitToBox(fit, p);
       return p.set(q.x, q.y, q.z);
@@ -1407,10 +1408,10 @@ export class BattleTable {
     const far = fitToBox(fit, { x: box.x0, y: 0, z: box.z0 });
     const near = fitToBox(fit, { x: box.x1, y: 0, z: box.z1 });
     const margin = (fitToBox(fit, { x: 0.32, y: 0, z: 0 }).x - fitToBox(fit, { x: 0, y: 0, z: 0 }).x) * 0.8;
-    const screenFar = this.#point(w / 2, h * 0.045, 0);
     const screenNear = this.#point(w * 0.985, h * 0.98, 0);
     const halfWidth = Math.max(screenNear.x, -(far.x - margin), near.x + margin);
-    const top = Math.min(screenFar.z, far.z - margin);
+    // The mat's far edge follows the cards: no bare strip of mat above the villain's row.
+    const top = far.z - margin * 1.6;
     const front = Math.max(screenNear.z, near.z + margin);
     this.#matGoal = { x: 0, z: (top + front) / 2, width: halfWidth * 2, depth: front - top };
   }
@@ -1701,8 +1702,9 @@ export class BattleTable {
     this.#encounterDiscardSlot.visible = state.encounterDiscard.length > 0;
     // The piles are part of the table too, the encounter discard pile even while it is empty, so a first discard
     // doesn't move everything.
-    for (const goal of [discardGoal, deckGoal, encounterGoal, encounterDiscardGoal])
-      rest(goal.position, goal.scale, false);
+    for (const goal of [discardGoal, deckGoal, encounterGoal]) rest(goal.position, goal.scale, false);
+    // The encounter discard pile sits above the deck: the mat only reaches up for it once a card is on it.
+    if (state.encounterDiscard.length) rest(encounterDiscardGoal.position, encounterDiscardGoal.scale, false);
     this.#fitTable(onBoard, rests, [
       [this.#discardSlot, discardGoal],
       [this.#deckSlot, deckGoal],
