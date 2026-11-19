@@ -42,6 +42,7 @@ const tryAgain = element<HTMLButtonElement>("try-again");
 const preview = element<HTMLImageElement>("preview");
 const decision = element("decision");
 const choiceShade = element("choice-shade");
+const focusBlur = element("focus-blur");
 const defenseShade = document.querySelector<SVGSVGElement>("#defense-shade")!;
 const abilityGlow = document.querySelector<SVGSVGElement>("#ability-glow")!;
 const abilityOutlines = document.querySelector<SVGGElement>("#ability-outlines")!;
@@ -1246,6 +1247,19 @@ function placeLabels() {
     if (card)
       tag.style.transform = `translate(${Math.round(card.right - card.width * 0.32)}px,${Math.round(card.y)}px)`;
   }
+  if (!focusBlur.hidden) {
+    // A hole around the hand, so only the cards being decided on stay sharp.
+    const held = new Set(displayedHand.map((card) => card.id));
+    const cards = projected.filter((p) => held.has(p.id));
+    if (cards.length) {
+      const pad = 14;
+      const left = Math.min(...cards.map((c) => c.left)) - pad;
+      const right = Math.max(...cards.map((c) => c.right)) + pad;
+      const top = Math.min(...cards.map((c) => c.top)) - pad;
+      const bottom = Math.max(...cards.map((c) => c.bottom)) + pad;
+      focusBlur.style.clipPath = `polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${left}px ${top}px, ${right}px ${top}px, ${right}px ${bottom}px, ${left}px ${bottom}px, ${left}px ${top}px)`;
+    }
+  }
   if (heldEncounter && !choiceShade.hidden) {
     const card = projected.find((p) => p.id === heldEncounter);
     if (card)
@@ -2063,6 +2077,7 @@ function render() {
             ? "ending"
             : "hero",
     );
+  focusBlur.hidden = !state.choice?.mulligan;
   choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
   const asked = paintDock(dockView());
   // A question about the hand sends a ripple through it, so the eye goes where the answer is.

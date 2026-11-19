@@ -827,6 +827,18 @@ button:focus-visible {
   transform-box: fill-box;
   transform-origin: center;
 }
+/* The mulligan: the table softens out of focus around the hand being decided on. */
+#focus-blur {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: rgb(3 8 13 / 22%);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+}
+#focus-blur[hidden] {
+  display: none;
+}
 #choice-shade {
   position: absolute;
   inset: 0;
