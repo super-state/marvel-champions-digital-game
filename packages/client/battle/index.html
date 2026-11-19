@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#10181e" />
-    <title>Peter Parker vs. Rhino · Marvel Champions</title>
+    <meta name="theme-color" content="#070c12" />
+    <title>Spider-Man vs. Rhino · Marvel Champions</title>
   </head>
   <body>
     <main class="battle">
       <header class="mast">
         <div class="wordmark" aria-label="Marvel Champions"><span>Marvel</span> Champions</div>
-        <h1>Peter Parker <i>vs.</i> Rhino</h1>
-        <button class="reset" id="reset" type="button" disabled><span aria-hidden="true">↻</span> Restart deal</button>
+        <h1>Spider-Man <i>vs.</i> Rhino</h1>
+        <button class="btn btn-ghost reset" id="reset" type="button" disabled>New game</button>
       </header>
       <div class="arena">
         <section class="playfield" aria-label="Battle table">
@@ -22,29 +22,31 @@
                 <div id="board-labels">
                   <button
                     id="encounter-discard"
+                    class="pile-label"
                     type="button"
                     aria-expanded="false"
                     aria-controls="discard-fan"
                     disabled
                   >
-                    Encounter discard <b id="encounter-discard-count">0</b>
+                    <b id="encounter-discard-count">0</b>
                   </button>
-                  <span id="encounter-label">Encounter <b id="encounter-count"></b></span>
-                  <span id="deck-label">Deck <b id="deck-count"></b></span>
-                  <button type="button" id="discard-label" aria-expanded="false" aria-controls="discard-fan" disabled>
-                    Discard <b id="discard-count">0</b>
+                  <span id="encounter-label" class="pile-label" title="Encounter deck"
+                    ><b id="encounter-count"></b
+                  ></span>
+                  <span id="deck-label" class="pile-label" title="Your deck"><b id="deck-count"></b></span>
+                  <button
+                    type="button"
+                    id="discard-label"
+                    class="pile-label"
+                    aria-expanded="false"
+                    aria-controls="discard-fan"
+                    disabled
+                  >
+                    <b id="discard-count">0</b>
                   </button>
                 </div>
                 <div id="discard-fan" role="group" aria-label="Discarded cards" hidden></div>
               </div>
-              <section id="payment" aria-labelledby="payment-title" hidden>
-                <h2 id="payment-title" tabindex="-1">Discard cards for resources</h2>
-                <div class="payment-progress" role="status" aria-live="polite" aria-atomic="true">
-                  <strong id="payment-total"></strong>
-                  <div class="payment-track" aria-hidden="true"><span></span></div>
-                  <span id="payment-balance"></span>
-                </div>
-              </section>
               <div id="form-flash" aria-hidden="true" hidden></div>
               <div id="form-hint" role="status" hidden>
                 <svg aria-hidden="true" width="30" height="23" viewBox="0 0 40 28">
@@ -60,7 +62,6 @@
               </div>
               <div id="play-refusal" role="status" hidden></div>
               <div id="action-beat" role="status" aria-live="polite" hidden></div>
-              <span id="turn-status" role="status"></span>
               <div id="phase-banner" aria-hidden="true">
                 <span><b></b></span>
               </div>
@@ -72,34 +73,52 @@
                     <g id="defender-cutouts" fill="black"></g>
                   </mask>
                 </defs>
-                <rect width="100%" height="100%" fill="#050911" opacity=".78" mask="url(#defense-mask)" />
+                <rect width="100%" height="100%" fill="#050911" opacity=".72" mask="url(#defense-mask)" />
               </svg>
               <div id="attack-reticle" aria-hidden="true" hidden></div>
               <div id="choice-shade" hidden></div>
-              <span id="reveal-hint" aria-hidden="true" hidden>Click anywhere to continue</span>
+              <span id="reveal-hint" aria-hidden="true" hidden></span>
               <div id="impact" aria-hidden="true" hidden></div>
-              <section id="decision" aria-label="Turn decision" hidden></section>
+              <section id="decision" aria-label="Card actions" hidden></section>
             </div>
           </div>
-          <div class="hand-strip">
-            <div><span class="deck-mark" aria-hidden="true"></span> Your hand <b id="hand-count"></b></div>
-            <span id="instruction" role="status">Dealing the opening hand…</span>
-            <span id="discard-hint" hidden>Click or tap outside the fan to close.</span>
-            <button type="button" id="undo" aria-label="Undo" disabled><span aria-hidden="true">↶</span> Undo</button>
-            <button type="button" id="end-turn" aria-label="End Turn" disabled>
-              End Turn <span aria-hidden="true">→</span>
-            </button>
-            <footer class="payment-actions" aria-label="Turn actions">
-              <button type="button" id="payment-cancel">Cancel</button>
-              <button type="button" id="payment-submit" disabled>Confirm</button>
-              <button type="button" id="hand-discard-confirm" class="choice-confirm" hidden>
-                Discard &amp; continue
-              </button>
-            </footer>
+          <div class="phase-status" aria-live="polite">
+            <span class="phase-chip" id="turn-status" data-phase="hero" role="status">Hero phase</span>
+            <span class="dock-round" id="round-label">Round 1</span>
           </div>
+          <!-- The turn bar: what the game is asking, and the buttons that answer, right under the hand. -->
+          <section id="dock" class="dock" aria-labelledby="dock-title">
+            <div class="dock-body" id="dock-body">
+              <p class="eyebrow" id="dock-eyebrow" hidden></p>
+              <h2 class="dock-title" id="dock-title" tabindex="-1">Dealing the opening hand…</h2>
+              <p class="dock-help" id="instruction" role="status" aria-live="polite"></p>
+            </div>
+            <div class="meter" id="dock-meter" hidden>
+              <strong id="payment-total"></strong>
+              <div class="meter-track" aria-hidden="true"><span></span></div>
+              <small id="payment-balance"></small>
+            </div>
+            <div class="dock-options" id="dock-options" hidden></div>
+            <div class="dock-actions">
+              <button
+                type="button"
+                id="undo"
+                class="btn btn-ghost btn-icon"
+                aria-label="Undo"
+                title="Undo"
+                disabled
+              ></button>
+              <button type="button" id="dock-secondary" class="btn btn-secondary" hidden></button>
+              <button type="button" id="dock-primary" class="btn btn-primary" disabled>End Turn</button>
+            </div>
+          </section>
         </section>
-        <aside class="rail" aria-label="Card preview" id="rail">
+        <aside class="rail" aria-label="Card preview and log" id="rail">
           <div id="reader" class="reader"><img id="preview" alt="" hidden /></div>
+          <section class="log" aria-labelledby="log-title">
+            <h3 id="log-title">Log</h3>
+            <ol class="dock-feed" id="dock-feed"></ol>
+          </section>
         </aside>
       </div>
     </main>
@@ -115,8 +134,8 @@
         <h2 id="game-over-title">Game over</h2>
         <p id="game-over-detail"></p>
         <div class="game-over-actions">
-          <button type="button" id="try-again" class="option" autofocus>Try Again</button>
-          <button type="button" id="game-over-undo" class="quiet">Undo last move</button>
+          <button type="button" id="try-again" class="btn btn-primary" autofocus>Try Again</button>
+          <button type="button" id="game-over-undo" class="btn btn-ghost">Undo last move</button>
         </div>
       </div>
     </dialog>

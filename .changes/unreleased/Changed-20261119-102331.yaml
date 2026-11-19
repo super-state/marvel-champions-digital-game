@@ -1,0 +1,3 @@
+kind: Changed
+body: "The 3D battle table gets a design system and a mulligan: one turn bar under the hand for every question and the End Turn button, enamel damage, counter, status and stat tokens, HP and threat badges, a symbol set, floating damage, heal and threat numbers, defeat stamps, and a game log beside the card preview. Every card in the Spider-Man vs Rhino fight is now covered by table tests and a dead-end fuzz run."
+time: 2026-11-19T10:23:31.0000000+00:00

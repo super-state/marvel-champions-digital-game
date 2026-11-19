@@ -91,6 +91,8 @@ export interface BattleChoice {
   min: number;
   max: number;
   discardFromHand: boolean;
+  /** The opening-hand mulligan: pick any cards to discard, then draw back up to hand size. */
+  mulligan: boolean;
 }
 
 export interface BattleBeat {
@@ -111,6 +113,14 @@ export interface BattleBeat {
   villainFlip?: boolean;
   defeat?: string;
   defeatedCard?: string;
+  /** A card in play discarded without being defeated: an attachment used up, a support Caught Off Guard took. */
+  leftPlay?: string;
+  /** Cards an effect discarded from the hand (Eviction Notice's random discard), in the order they went. */
+  handDiscard?: string[];
+  /** Cards an effect put back in the hand from elsewhere (Highway Robbery returning what it stole). */
+  returned?: string[];
+  /** Cards discarded from the top of the player's deck (Black Cat). */
+  milled?: string[];
   reveal?: {
     id: string;
     name: string;
@@ -169,11 +179,22 @@ function apply(state: GameState, command: Command) {
   return result;
 }
 
-/** An isolated, repeatable opening turn. Seed 75 deals Swinging Web Kick, Strength and several priced permanents. */
-function openingTurn(): GameState {
+/** The repeatable practice deal the tests use: seed 75 deals Swinging Web Kick, Strength and several priced permanents. */
+export const PRACTICE_SEED = 75;
+
+export interface DealOptions {
+  /** The shuffle. Every seed is a different, repeatable deal. */
+  seed?: number;
+  /** Stop at the opening hand so the player can mulligan (RRG Appendix II step 15); otherwise keep it. */
+  mulligan?: boolean;
+  /** Rearrange the first hero phase (a dev scene for looking at a crowded table). Ignored with `mulligan`. */
+  arrange?: (state: GameState) => GameState;
+}
+
+function openingTurn({ seed = PRACTICE_SEED, mulligan: ask = false, arrange }: DealOptions = {}): GameState {
   const created = createGame(
     coreScenario("rhino", {
-      seed: 75,
+      seed,
       players: [{ starterDeckId: "core-spider-man-justice" }],
     }),
     CORE_DEPS,
@@ -182,13 +203,14 @@ function openingTurn(): GameState {
   const state = created.state;
   const mulligan = state.pendingChoice;
   if (mulligan?.prompt.kind !== "mulligan") throw Error("Expected Spider-Man's opening hand.");
+  if (ask) return state;
   const turn = apply(state, {
     type: "resolveChoice",
     playerId: mulligan.playerId,
     choiceId: mulligan.choiceId,
     selectedOptionIds: [],
   });
-  return turn.state;
+  return arrange ? arrange(turn.state) : turn.state;
 }
 
 export class BattleModel {
@@ -207,6 +229,8 @@ export class BattleModel {
   #handOrder: InstanceId[] = [];
 
   #history: { game: GameState; handOrder: InstanceId[]; activity: string; beats: BattleBeat[] }[] = [];
+  /** The card whose ability the player last set going: a follow-up target prompt with no frame of its own names it. */
+  #lastSource: InstanceId | null = null;
 
   get canUndo(): boolean {
     return this.#history.length > 0;
@@ -222,11 +246,11 @@ export class BattleModel {
     return true;
   }
 
-  reset(): void {
+  reset(options: DealOptions = {}): void {
     this.#history = [];
     this.#villainActivity = "";
     this.#beats = [];
-    const opening = openingTurn();
+    const opening = openingTurn(options);
     this.#setGame(opening, opening.players[0]!.hand);
   }
 
@@ -287,6 +311,11 @@ export class BattleModel {
     const name = (id: InstanceId) => shortIdentityNameOf(result.state, id) ?? faceUpName(result.state, id);
     this.#beats = [];
     const toughAttacks = new Set<string>();
+    const defeated = new Set(
+      events.flatMap((e) =>
+        e.type === "characterDefeated" || e.type === "schemeDefeated" ? [e.instanceId as string] : [],
+      ),
+    );
     for (const e of events) {
       const before = this.#beats.length;
       if (
@@ -318,7 +347,7 @@ export class BattleModel {
       } else if (e.type === "stepChanged") {
         if (e.to.phase !== "player" && e.to.phase !== "villain") continue;
         const villainPhase = e.to.phase === "villain";
-        if (villainPhase !== enemy)
+        if (villainPhase !== enemy || (e.from.phase === "setup" && !villainPhase))
           this.#beats.push({
             enemy: villainPhase,
             text: villainPhase ? "Villain Phase" : "Hero Phase",
@@ -349,7 +378,7 @@ export class BattleModel {
         if (type === "villain" && e.type === "characterDefeated") {
           const defeat = `${name(e.instanceId)} defeated`;
           this.#beats.push({ enemy, actor: e.instanceId, text: defeat, defeat });
-        } else if (e.type === "schemeDefeated" || type === "minion") {
+        } else if (e.type === "schemeDefeated" || type === "minion" || type === "ally") {
           this.#beats.push({ enemy, defeatedCard: e.instanceId, text: "" });
         }
       } else if (e.type === "encounterCardDealt" || e.type === "boostCardDealt") {
@@ -374,6 +403,31 @@ export class BattleModel {
             landscape: isLandscapeType(card?.type ?? ""),
           },
         });
+      } else if (
+        e.type === "cardMoved" &&
+        ["playArea", "villainArea", "attachment", "scenarioArea", "scenarioPlayArea"].includes(e.from.kind) &&
+        (e.to.kind === "discard" || e.to.kind === "encounterDiscard")
+      ) {
+        // A defeat already sends the card to its pile; anything else that leaves play goes there on its own beat.
+        if (!defeated.has(e.instanceId))
+          this.#beats.push({
+            enemy,
+            actor: e.instanceId,
+            text: `${faceUpName(this.#game, e.instanceId)} is discarded`,
+            leftPlay: e.instanceId,
+          });
+      } else if (e.type === "cardMoved" && e.from.kind === "hand" && e.to.kind === "discard") {
+        const last = this.#beats.at(-1);
+        if (last?.handDiscard) last.handDiscard.push(e.instanceId);
+        else this.#beats.push({ enemy, text: "Discard from your hand", handDiscard: [e.instanceId] });
+      } else if (e.type === "cardMoved" && e.from.kind === "deck" && e.to.kind === "discard") {
+        const last = this.#beats.at(-1);
+        if (last?.milled) last.milled.push(e.instanceId);
+        else this.#beats.push({ enemy, text: "Discard from the top of your deck", milled: [e.instanceId] });
+      } else if (e.type === "cardMoved" && e.to.kind === "hand" && e.from.kind !== "deck") {
+        const last = this.#beats.at(-1);
+        if (last?.returned) last.returned.push(e.instanceId);
+        else this.#beats.push({ enemy, text: "Return to your hand", returned: [e.instanceId] });
       } else if (e.type === "cardMoved" && e.from.kind === "resolving" && e.to.kind === "discard") {
         this.#beats.push({
           enemy,
@@ -403,7 +457,12 @@ export class BattleModel {
           text: `${name(e.preventerInstanceId)} prevents ${e.amount} damage`,
           deflection: { card: e.preventerInstanceId, amount: e.amount },
         });
-      } else if ((e.type === "damageDealt" || (e.type === "damagePrevented" && e.reason === "tough")) && e.amount > 0) {
+      } else if (
+        (e.type === "damageDealt" ||
+          e.type === "damagePlaced" ||
+          (e.type === "damagePrevented" && e.reason === "tough")) &&
+        e.amount > 0
+      ) {
         const tough = e.type === "damagePrevented";
         const sourceId = tough ? (e.attackSourceInstanceId ?? null) : e.sourceInstanceId;
         const source = sourceId && cardOf(result.state, sourceId);
@@ -418,9 +477,11 @@ export class BattleModel {
           actor: attacker,
           text: tough
             ? `Tough prevents ${e.amount} damage to ${name(e.targetInstanceId)}`
-            : sourceId
-              ? `${name(sourceId)} deals ${e.amount} damage to ${name(e.targetInstanceId)}`
-              : `${name(e.targetInstanceId)} takes ${e.amount} damage`,
+            : e.type === "damagePlaced"
+              ? `${e.amount} damage lands on ${name(e.targetInstanceId)}`
+              : sourceId
+                ? `${name(sourceId)} deals ${e.amount} damage to ${name(e.targetInstanceId)}`
+                : `${name(e.targetInstanceId)} takes ${e.amount} damage`,
           hit: {
             source: attacker,
             target: e.targetInstanceId,
@@ -460,7 +521,9 @@ export class BattleModel {
           enemy,
           actor: e.sourceInstanceId ?? e.schemeInstanceId,
           text: placed
-            ? `${e.sourceInstanceId ? name(e.sourceInstanceId) + " places" : "Place"} ${e.amount} threat on ${name(e.schemeInstanceId)}`
+            ? e.sourceInstanceId && e.sourceInstanceId !== e.schemeInstanceId
+              ? `${name(e.sourceInstanceId)} places ${e.amount} threat on ${name(e.schemeInstanceId)}`
+              : `${name(e.schemeInstanceId)} gains ${e.amount} threat`
             : `Remove ${e.amount} threat from ${name(e.schemeInstanceId)}`,
           threat: { scheme: e.schemeInstanceId, delta: placed ? e.amount : -e.amount },
         });
@@ -595,6 +658,7 @@ export class BattleModel {
             ? [{ name: "threat", count: instance.threat }]
             : []),
           ...countersOf(state, id),
+          { name: "tucked", count: instance.tucked.length },
         ].filter((m) => m.count > 0)
       : [];
     return {
@@ -605,7 +669,9 @@ export class BattleModel {
         ? [...markers, ...statModifiers(state, id)]
         : markers,
       name: shortIdentityNameOf(state, id) ?? faceUpName(state, id),
-      ...(card?.type === "minion" ? { hp: remainingHitPoints(state, id, CORE_DEPS) ?? 0 } : {}),
+      ...(card?.type === "minion" || card?.type === "ally"
+        ? { hp: Math.max(0, remainingHitPoints(state, id, CORE_DEPS) ?? 0) }
+        : {}),
       reverseArt:
         id === state.players[0]!.identity.instanceId
           ? (artFor(card, { kind: state.players[0]!.identity.form === "hero" ? "alterEgo" : "hero" })?.url ?? null)
@@ -754,6 +820,7 @@ export class BattleModel {
           min: 1,
           max: 1,
           discardFromHand: false,
+          mulligan: false,
         }
       : pending
         ? {
@@ -816,6 +883,7 @@ export class BattleModel {
             min: pending.minSelections,
             max: pending.maxSelections,
             discardFromHand: pending.prompt.kind === "discardDownToHandSize",
+            mulligan: pending.prompt.kind === "mulligan",
           }
         : null;
     const attached = getInstance(state, player.identity.instanceId)?.attachments ?? [];
@@ -834,7 +902,12 @@ export class BattleModel {
     for (const host of enemyIds) for (const id of getInstance(state, host)?.attachments ?? []) enemyIds.add(id);
     this.#view = {
       beats: this.#beats,
-      choiceSource: pending ? (choiceSourceOf(state, pending)?.instanceId ?? null) : null,
+      choiceSource: pending
+        ? (choiceSourceOf(state, pending)?.instanceId ??
+          (pending.prompt.kind === "chooseTarget" && this.#lastSource && getInstance(state, this.#lastSource)
+            ? this.#lastSource
+            : null))
+        : null,
       facedownEncounters: [
         ...player.dealtEncounter,
         ...[villain.instanceId, ...player.playArea].flatMap((id) => getInstance(state, id)?.boostCards ?? []),
@@ -855,8 +928,8 @@ export class BattleModel {
                 ? "Thwart"
                 : "Recover",
       })),
-      heroHp: remainingHitPoints(state, player.identity.instanceId, CORE_DEPS) ?? 0,
-      villainHp: remainingHitPoints(state, villain.instanceId, CORE_DEPS) ?? 0,
+      heroHp: Math.max(0, remainingHitPoints(state, player.identity.instanceId, CORE_DEPS) ?? 0),
+      villainHp: Math.max(0, remainingHitPoints(state, villain.instanceId, CORE_DEPS) ?? 0),
       hand: this.#handOrder.map((id) => this.#card(id)),
       deckCount: player.deck.length,
       encounterCount: activeEncounterDeck(state).deck.length,
@@ -1006,6 +1079,7 @@ export class BattleModel {
   }
 
   fieldAction(id: string, kind: string): boolean {
+    this.#lastSource = id as InstanceId;
     const power = this.#allyPowers(id).find(({ action }) => action.kind === kind);
     if (power) return this.#usePower(power);
     const entry = this.#fieldAbilities(id).find((action) => action.kind === kind)?.entry;
@@ -1071,6 +1145,10 @@ export class BattleModel {
 
   chooseMany(ids: readonly string[]): boolean {
     const choice = this.#game.pendingChoice;
+    if (choice?.prompt.kind === "chooseTriggers") {
+      const picked = choice.options.find((option) => ids.includes(option.optionId))?.ref;
+      if (picked?.kind === "ability") this.#lastSource = picked.instanceId;
+    }
     if (
       !choice ||
       ids.length < choice.minSelections ||

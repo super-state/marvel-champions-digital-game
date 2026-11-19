@@ -1,9 +1,15 @@
 import { statHue } from "../tokens.js";
+import "./design.css";
 import "./battle.css";
+import { arrangeScene } from "./debug-scenes.js";
+import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
 import { BattleTable, INTERRUPT_MS, EXHAUST_MS, READY_MS, HIT_CONTACT_MS, isTuckedUpgrade } from "./table.js";
 
 type Snapshot = ReturnType<BattleModel["snapshot"]>;
+type Beat = Snapshot["beats"][number];
+type Choice = NonNullable<Snapshot["choice"]>;
+type Payment = NonNullable<Snapshot["payment"]>;
 
 function element<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -18,7 +24,12 @@ function make<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, 
   return node;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 const model = new BattleModel();
+const stage = element("stage");
 const boardLabels = element("board-labels");
 const labelClips = [boardLabels];
 const anchors = element("anchors");
@@ -46,12 +57,16 @@ const encounterPile = element<HTMLButtonElement>("encounter-discard");
 const encounterLabel = element("encounter-label");
 const deckLabel = element("deck-label");
 const deckCount = element("deck-count");
-const handDiscardConfirm = element<HTMLButtonElement>("hand-discard-confirm");
-const paymentPanel = element("payment");
-const paymentSubmit = element<HTMLButtonElement>("payment-submit");
-const paymentTitle = element("payment-title");
+const dock = element("dock");
+const dockTitle = element("dock-title");
+const dockEyebrow = element("dock-eyebrow");
+const dockOptions = element("dock-options");
+const dockFeed = element("dock-feed");
+const dockMeter = element("dock-meter");
+const dockPrimary = element<HTMLButtonElement>("dock-primary");
+const dockSecondary = element<HTMLButtonElement>("dock-secondary");
+const roundLabel = element("round-label");
 const undoButton = element<HTMLButtonElement>("undo");
-const endTurnButton = element<HTMLButtonElement>("end-turn");
 const turnStatus = element("turn-status");
 const choicePicks = new Set<string>();
 let table: BattleTable | undefined;
@@ -64,7 +79,7 @@ let menuCard: string | null = null;
 let actionCard: string | null = null;
 const moveViews = new WeakMap<
   Snapshot["beats"],
-  { staged: BattleCard | null; reveal: Snapshot["beats"][number]["reveal"]; aim: string | null }
+  { staged: BattleCard | null; reveal: Beat["reveal"]; aim: string | null }
 >();
 let presented: Snapshot["beats"] | undefined;
 let presenting = false;
@@ -74,8 +89,18 @@ let discardOpen = false;
 let viewingEncounterDiscard = false;
 const viewedPile = () => (viewingEncounterDiscard ? state.encounterDiscard : state.discard);
 const labels = new Map<string, HTMLButtonElement>();
+/** Hand cards the player's own payment or discard already flew to the pile, so their beat doesn't fly them again. */
+const preAnimated = new Set<string>();
 
-type ResourceSource = NonNullable<Snapshot["payment"]>["sources"][number];
+// Pile labels and the dock's quiet buttons carry the same symbols as the rest of the table.
+deckLabel.prepend(icon("deck", "Your deck"));
+encounterLabel.prepend(icon("deck", "Encounter deck"));
+pile.prepend(icon("discard"));
+encounterPile.prepend(icon("discard"));
+undoButton.prepend(icon("undo"));
+restart.prepend(icon("mulligan"));
+
+type ResourceSource = Payment["sources"][number];
 function resourcePieceId(source: ResourceSource) {
   if (source.kind === "handCard") return source.cardId;
   const onBoard = state.inPlay.some((card) => card.id === source.cardId && card.showAsFullCard);
@@ -96,38 +121,441 @@ function cards() {
   ];
 }
 
+function nameOf(id: string | null | undefined): string {
+  if (!id) return "";
+  return (cards().find((card) => card.id === id) ?? (staged?.id === id ? staged : undefined))?.name ?? "";
+}
+
 function resourceText(icons: readonly string[]): string {
   const counts = new Map<string, number>();
-  for (const icon of icons) counts.set(icon, (counts.get(icon) ?? 0) + 1);
-  return [...counts].map(([icon, n]) => `${n} ${icon}`).join(" + ");
+  for (const type of icons) counts.set(type, (counts.get(type) ?? 0) + 1);
+  return [...counts].map(([type, n]) => `${n} ${type}`).join(" + ");
 }
 
-function showPayment(payment: NonNullable<Snapshot["payment"]>) {
-  const opening = paymentPanel.hidden;
-  paymentPanel.hidden = false;
-  // The staged card already shows what is being paid for; keep the name for screen readers only.
-  paymentTitle.setAttribute("aria-description", `${payment.ability ? "Using" : "Playing"} ${payment.subject.name}`);
-  element("payment-total").textContent = `${payment.paid} / ${payment.required}`;
-  paymentPanel.querySelector<HTMLElement>(".payment-track span")!.style.transform =
-    `scaleX(${payment.required ? Math.min(1, payment.paid / payment.required) : 1})`;
-  const left = payment.required - payment.paid;
-  element("payment-balance").textContent = payment.outstanding?.length
-    ? `Need ${payment.outstanding.join(" + ")}`
-    : left > 0
-      ? `${left} more needed`
-      : left < 0
-        ? `${-left} extra selected`
-        : payment.canPay
-          ? "Cost covered"
-          : "Choose resources";
-  paymentSubmit.disabled = !payment.canPay;
-  if (opening) {
-    boardViewport.scrollTop = boardViewport.scrollHeight;
-    paymentTitle.focus({ preventScroll: true });
+function resourcePips(icons: readonly string[]): HTMLElement {
+  const pips = make("span", "pips");
+  for (const type of icons) {
+    const pip = make("span", "pip");
+    pip.dataset.resource = type;
+    pip.append(icon(RESOURCE_ICON[type] ?? "wild"));
+    pips.append(pip);
   }
-  inspect(hoveredCard);
+  return pips;
 }
 
+// ── The turn dock ─────────────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * The dock is the one place the game talks to the player: what is happening, what it is asking, and the buttons
+ * that answer. The button that moves the game on is always the gold one in the bottom-right corner.
+ */
+interface DockButton {
+  label: string;
+  icon?: IconName;
+  disabled?: boolean;
+  /** Pulse: the game is waiting on exactly this. */
+  attention?: boolean;
+  onClick(): void;
+}
+interface DockOption {
+  id: string;
+  label: string;
+  detail?: string | null;
+  icon?: IconName | null;
+  pressed?: boolean;
+  onClick(): void;
+}
+interface DockView {
+  tone: "hero" | "villain";
+  /** True while the game waits for the player's answer. */
+  asking: boolean;
+  eyebrow?: { text: string; icon?: IconName; tone?: "villain" | "hero" | "reaction" } | null;
+  title: string;
+  help?: string | null;
+  options?: readonly DockOption[];
+  meter?: { paid: number; required: number; balance: string } | null;
+  primary?: DockButton | null;
+  secondary?: DockButton | null;
+}
+
+let dockKey = "";
+function paintButton(button: HTMLButtonElement, spec: DockButton | null | undefined) {
+  button.hidden = !spec;
+  if (!spec) return;
+  const key = `${spec.icon ?? ""}|${spec.label}`;
+  if (button.dataset.key !== key) {
+    button.dataset.key = key;
+    button.replaceChildren(...(spec.icon ? [icon(spec.icon)] : []), make("span", "", spec.label));
+  }
+  button.disabled = !!spec.disabled;
+  button.toggleAttribute("data-attention", !!spec.attention);
+  button.onclick = () => {
+    if (!button.disabled) spec.onClick();
+  };
+}
+
+function paintDock(view: DockView) {
+  dock.dataset.tone = view.tone;
+  dock.toggleAttribute("data-asking", view.asking);
+  const eyebrow = view.eyebrow;
+  dockEyebrow.hidden = !eyebrow;
+  if (eyebrow) {
+    dockEyebrow.replaceChildren(...(eyebrow.icon ? [icon(eyebrow.icon)] : []), make("span", "", eyebrow.text));
+    if (eyebrow.tone) dockEyebrow.dataset.tone = eyebrow.tone;
+    else delete dockEyebrow.dataset.tone;
+  }
+  const key = `${view.title}|${eyebrow?.text ?? ""}`;
+  const fresh = key !== dockKey;
+  dockKey = key;
+  dockTitle.textContent = view.title;
+  instruction.textContent = view.help ?? "";
+  instruction.hidden = !view.help;
+  dockMeter.hidden = !view.meter;
+  if (view.meter) {
+    const { paid, required, balance } = view.meter;
+    element("payment-total").textContent = `${paid}/${required}`;
+    dockMeter.querySelector<HTMLElement>(".meter-track span")!.style.transform =
+      `scaleX(${required ? Math.min(1, paid / required) : 1})`;
+    element("payment-balance").textContent = balance;
+  }
+  const focusedOption = dockOptions.contains(document.activeElement)
+    ? (document.activeElement as HTMLElement).dataset.option
+    : undefined;
+  dockOptions.hidden = !view.options?.length;
+  dockOptions.replaceChildren(
+    ...(view.options ?? []).map((option) => {
+      const button = make("button", "btn btn-secondary btn-option");
+      button.type = "button";
+      button.dataset.option = option.id;
+      if (option.pressed !== undefined) button.setAttribute("aria-pressed", String(option.pressed));
+      if (option.icon) button.append(icon(option.icon));
+      button.append(make("span", "", option.label));
+      if (option.detail) button.append(make("small", "", option.detail));
+      button.onclick = () => {
+        if (!discarding && !presenting) option.onClick();
+      };
+      return button;
+    }),
+  );
+  if (focusedOption)
+    dockOptions
+      .querySelector<HTMLElement>(`[data-option="${CSS.escape(focusedOption)}"]`)
+      ?.focus({ preventScroll: true });
+  paintButton(dockPrimary, view.primary);
+  paintButton(dockSecondary, view.secondary);
+  paintFeed();
+  // A new question takes the keyboard focus so it is read out and answerable from the keyboard.
+  if (fresh && view.asking && !presenting && !dock.contains(document.activeElement)) {
+    const first = view.options?.length ? dockOptions.querySelector<HTMLElement>("button") : null;
+    (first ?? dockTitle).focus({ preventScroll: true });
+  }
+}
+
+/** What just happened, newest first, so a fast villain phase can be followed. */
+interface FeedLine {
+  text: string;
+  icon: IconName;
+  tone?: "villain" | "hero" | "damage" | "threat" | "heal" | undefined;
+}
+let feed: FeedLine[] = [];
+function pushFeed(line: FeedLine) {
+  if (!line.text || feed[0]?.text === line.text) return;
+  feed = [line, ...feed].slice(0, 6);
+}
+function paintFeed() {
+  dockFeed.replaceChildren(
+    ...feed.map((line) => {
+      const item = make("li", "");
+      if (line.tone) item.dataset.tone = line.tone;
+      item.append(icon(line.icon), make("span", "", line.text));
+      return item;
+    }),
+  );
+}
+
+/** The player's own moves go in the log beside the game's, so the turn reads as one story. */
+function say(text: string) {
+  pushFeed({ text, icon: "action", tone: "hero" });
+  paintFeed();
+}
+
+/** A short message over the table, for a move that couldn't be made. */
+function toast(text: string) {
+  const refusal = element("play-refusal");
+  refusal.getAnimations().forEach((a) => a.cancel());
+  refusal.textContent = text;
+  refusal.hidden = false;
+  refusal.animate([{ opacity: 1 }, { opacity: 1, offset: 0.88 }, { opacity: 0 }], { duration: 3600 }).onfinish = () => {
+    refusal.hidden = true;
+  };
+}
+
+/** A symbol for a printed option ("Take 2 damage", "Place 1 threat…"), so choices read at a glance. */
+function optionIcon(label: string): IconName | null {
+  const text = label.toLowerCase();
+  if (/\bheal/.test(text)) return "heal";
+  if (/remove .*threat|thwart/.test(text)) return "thwart";
+  if (/threat/.test(text)) return "threat";
+  if (/deal .*damage|attack/.test(text)) return "attack";
+  if (/damage/.test(text)) return "damage";
+  if (/draw/.test(text)) return "draw";
+  if (/discard/.test(text)) return "discard";
+  if (/stun/.test(text)) return "stunned";
+  if (/confus/.test(text)) return "confused";
+  if (/tough/.test(text)) return "tough";
+  if (/exhaust/.test(text)) return "exhaust";
+  return null;
+}
+
+function capitalize(text: string) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function paymentView(payment: Payment): DockView {
+  const left = payment.required - payment.paid;
+  return {
+    tone: "hero",
+    asking: true,
+    eyebrow: { text: payment.subject.name, icon: "action", tone: "hero" },
+    title: payment.required ? `Pay ${payment.required}` : payment.ability ? "Use it?" : "Play it?",
+    meter: payment.required
+      ? {
+          paid: payment.paid,
+          required: payment.required,
+          // Only what the count can't say: a resource type still owed, or an overspend.
+          balance: payment.outstanding?.length
+            ? `Need ${payment.outstanding.join(" + ")}`
+            : left < 0
+              ? `${-left} extra`
+              : "",
+        }
+      : null,
+    secondary: { label: "Cancel", disabled: discarding, onClick: cancel },
+    primary: {
+      label: payment.ability ? "Use" : "Play",
+      icon: "next",
+      disabled: !payment.canPay || discarding,
+      attention: payment.canPay,
+      onClick: pay,
+    },
+  };
+}
+
+type TriggerChoice = Choice;
+let triggerChoice: TriggerChoice | null = null;
+let defenderSelection: TriggerChoice | null = null;
+function defenseQuestionDecline(choice: TriggerChoice | null) {
+  if (!choice?.defense || choice === defenderSelection || !choice.options.some((option) => option.cardId)) return;
+  return choice.options.find((option) => !option.cardId);
+}
+
+let offerIndex = 0;
+let acceptedOffers: string[] = [];
+
+function syncOffer(choice: TriggerChoice) {
+  if (triggerChoice === choice) return;
+  triggerChoice = choice;
+  offerIndex = 0;
+  acceptedOffers = [];
+}
+
+function answerOffer(yes: boolean) {
+  const choice = triggerChoice;
+  if (!choice?.offers || discarding || presenting) return;
+  const offer = choice.offers[offerIndex]!;
+  if (yes) acceptedOffers.push(offer.id);
+  if (++offerIndex < choice.offers.length && acceptedOffers.length < choice.max) {
+    render();
+    return;
+  }
+  const picks = acceptedOffers;
+  triggerChoice = null;
+  act(() => {
+    model.chooseMany(picks);
+  });
+}
+
+function defend(choice: TriggerChoice) {
+  const defenders = choice.options.filter((option) => option.cardId);
+  if (defenders.length === 1) {
+    choose(defenders[0]!.id);
+    return;
+  }
+  defenderSelection = choice;
+  render();
+}
+
+function choiceView(choice: Choice): DockView {
+  const tone = state.turn === "enemy" ? "villain" : "hero";
+  if (choice.offers?.length) {
+    syncOffer(choice);
+    const offer = choice.offers[offerIndex]!;
+    const card = nameOf(offer.cardId);
+    const interrupt = /^interrupt/i.test(offer.question);
+    // "Interrupt with Spider-Sense?": the button names the ability, the eyebrow says what kind of reaction it is.
+    const ability = / with ([^?]+)\?$/.exec(offer.question)?.[1] ?? card;
+    return {
+      tone,
+      asking: true,
+      eyebrow: {
+        text: interrupt ? "Interrupt" : "Response",
+        icon: interrupt ? "energy" : "response",
+        tone: "reaction",
+      },
+      title: offer.effect ? capitalize(offer.effect.replace(/\.$/, "")) + "?" : offer.question,
+      secondary: { label: "Pass", onClick: () => answerOffer(false) },
+      primary: {
+        label: ability ? `Use ${ability}` : "Use it",
+        icon: interrupt ? "energy" : "response",
+        attention: true,
+        onClick: () => answerOffer(true),
+      },
+    };
+  }
+  const decline = defenseQuestionDecline(choice);
+  if (choice.defense) {
+    const defenders = choice.options.filter((option) => option.cardId);
+    const eyebrow = { text: `${choice.defense.attacker} attacks`, icon: "attack" as const, tone: "villain" as const };
+    const declineOption = choice.options.find((option) => !option.cardId);
+    if (decline) {
+      return {
+        tone: "villain",
+        asking: true,
+        eyebrow,
+        title: defenders.length === 1 ? `Defend with ${nameOf(defenders[0]!.cardId)}?` : "Defend?",
+        secondary: { label: "Don’t defend", onClick: () => choose(decline.id) },
+        primary: { label: "Defend", icon: "tough", attention: true, onClick: () => defend(choice) },
+      };
+    }
+    return {
+      tone: "villain",
+      asking: true,
+      eyebrow,
+      title: defenders.length ? "Choose a defender" : "No defender",
+      secondary: declineOption
+        ? { label: defenders.length ? "Don’t defend" : "Continue", onClick: () => choose(declineOption.id) }
+        : null,
+    };
+  }
+  const n = choicePicks.size;
+  if (choice.mulligan) {
+    return {
+      tone: "hero",
+      asking: true,
+      eyebrow: { text: "Mulligan", icon: "mulligan", tone: "hero" },
+      title: n ? `Swap ${plural(n, "card")}` : "Keep your hand?",
+      primary: {
+        label: n ? `Mulligan ${n}` : "Keep hand",
+        icon: n ? "mulligan" : "next",
+        disabled: discarding,
+        attention: true,
+        onClick: confirmChoice,
+      },
+    };
+  }
+  if (choice.discardFromHand) {
+    const forced = choice.min > 0;
+    return {
+      tone: "hero",
+      asking: true,
+      eyebrow: { text: forced ? "Hand limit" : "End of turn", icon: "discard", tone: "hero" },
+      title: forced ? `Discard ${choice.min}` : "Discard any?",
+      primary: {
+        label: n ? `Discard ${n}` : forced ? `Pick ${choice.min}` : "Keep hand",
+        icon: n ? "discard" : "next",
+        disabled: n < choice.min || discarding,
+        attention: n >= choice.min,
+        onClick: confirmChoice,
+      },
+    };
+  }
+  const multiple = choice.max > 1;
+  const listed = choice.options.filter((option) => !onTable(option.cardId) || actionCard === option.cardId);
+  const source =
+    choice.sourceTitle?.replace(/ · When Revealed$/, "") ??
+    (nameOf(state.choiceSource) ||
+      (state.turn === "enemy" ? "Villain phase" : state.turn === "ending" ? "End of turn" : staged?.name || ""));
+  const heading = /^choose one[.:]?$/i.test(choice.prompt.trim()) ? "Choose one" : choice.prompt;
+  return {
+    tone,
+    asking: true,
+    eyebrow: source
+      ? {
+          text: source,
+          icon: state.turn === "enemy" ? "forced" : "action",
+          tone: state.turn === "enemy" ? "villain" : "hero",
+        }
+      : null,
+    title: heading,
+    options: listed.map((option) => ({
+      id: option.id,
+      label: option.label,
+      icon: optionIcon(option.label),
+      ...(multiple ? { pressed: choicePicks.has(option.id) } : {}),
+      onClick: () => selectChoice(option.id),
+    })),
+    primary: multiple
+      ? {
+          label: n ? `Confirm ${n}` : "Confirm",
+          icon: "next",
+          disabled: n < choice.min || discarding,
+          attention: n >= choice.min,
+          onClick: confirmChoice,
+        }
+      : null,
+    secondary: choice.canCancel
+      ? { label: "Cancel", onClick: cancel }
+      : !multiple && choice.canSkip
+        ? { label: choice.decline ?? "Skip", onClick: () => choose(null) }
+        : null,
+  };
+}
+
+function dockView(): DockView {
+  const villain = state.turn === "enemy";
+  if (state.outcome) {
+    const won = state.outcome.result === "win";
+    return {
+      tone: won ? "hero" : "villain",
+      asking: false,
+      eyebrow: null,
+      title: won ? "Victory" : "Defeat",
+      primary: { label: won ? "Play again" : "Try again", icon: "mulligan", onClick: start },
+    };
+  }
+  if (discardOpen) {
+    return {
+      tone: villain ? "villain" : "hero",
+      asking: false,
+      eyebrow: null,
+      title: `${viewingEncounterDiscard ? "Encounter discard" : "Discard pile"} · ${viewedPile().length}`,
+      primary: { label: "Close", onClick: () => setDiscardOpen(false) },
+    };
+  }
+  if (state.payment) return paymentView(state.payment);
+  if (state.choice) return choiceView(state.choice);
+  if (state.turn === "player") {
+    return {
+      tone: "hero",
+      asking: false,
+      eyebrow: null,
+      title: "Your turn",
+      primary: {
+        label: "End Turn",
+        icon: "next",
+        disabled: !state.canEndTurn || flying || discarding || discardOpen,
+        onClick: endTurn,
+      },
+    };
+  }
+  return {
+    tone: villain ? "villain" : "hero",
+    asking: false,
+    title: villain ? "Villain phase" : "End of turn",
+    primary: { label: "End Turn", icon: "next", disabled: true, onClick: () => undefined },
+  };
+}
+
+// ── Reading cards ─────────────────────────────────────────────────────────────────────────────────────────────────
 let hoveredCard: string | null = null;
 function hoverCard(id: string | null) {
   hoveredCard = id;
@@ -189,7 +617,7 @@ function showPlayHint(id: string, message: string, showMask = false) {
   clearFormHint();
   formFlash.hidden = formHint.hidden = false;
   placeLabels();
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reduced = reducedMotion();
   formFlash.animate([{ opacity: 0.48 }, { opacity: 0 }], { duration: reduced ? 150 : 520 }).onfinish = () => {
     formFlash.hidden = true;
   };
@@ -206,6 +634,7 @@ function showPlayHint(id: string, message: string, showMask = false) {
   };
 }
 
+// ── Picking cards ─────────────────────────────────────────────────────────────────────────────────────────────────
 function pick(id: string) {
   if (flying || discarding || presenting || state.choice?.offers?.length) return;
   if (
@@ -267,7 +696,6 @@ function pick(id: string) {
   }
   staged = card;
   flying = true;
-  instruction.textContent = `Playing ${card.name}…`;
   render();
 }
 
@@ -289,14 +717,13 @@ function beginPlay(card: BattleCard) {
       fade.onfinish = () => {
         refusal.hidden = true;
       };
-      instruction.textContent = card.reason || "Pick another card to play.";
       return;
     }
     state = model.snapshot();
-    if (!state.payment && !state.choice) staged = null;
-    instruction.textContent = state.payment
-      ? "Select the cards you want to spend."
-      : (state.choice?.prompt ?? `${card.name} played.`);
+    if (!state.payment && !state.choice) {
+      staged = null;
+      say(`${card.name} played`);
+    }
   });
 }
 
@@ -312,7 +739,7 @@ function act(work: () => void) {
   } catch (error) {
     staged = null;
     flying = false;
-    instruction.textContent = error instanceof Error ? error.message : "The play could not be completed.";
+    toast(error instanceof Error ? error.message : "That can’t be done now.");
   } finally {
     render();
   }
@@ -323,7 +750,7 @@ function cancel() {
   model.cancel();
   staged = null;
   flying = false;
-  instruction.textContent = returned ? `${returned} returned to your hand.` : "Pick a card to play.";
+  if (returned) say(`${returned} back to hand`);
   render();
 }
 
@@ -331,18 +758,12 @@ function pay() {
   const payment = state.payment;
   if (discarding || !payment?.canPay || !table) return;
   const flights = payment.discards;
-  const before = state.villainHp;
   if (!model.pay()) return;
-  paymentPanel.hidden = true;
-  animateDiscards(flights, flights.length ? "Discarding payment…" : `Playing ${payment.subject.name}…`, () => {
+  animateDiscards(flights, "", () => {
     // Keep a resolving event on the mat while the player chooses its target.
     staged = !payment.ability && state.choice && payment.subject.type === "event" ? payment.subject : null;
-    const damage = before - state.villainHp;
-    instruction.textContent =
-      state.choice?.prompt ??
-      (damage > 0
-        ? `${payment.subject.name} dealt ${damage} damage to Rhino.`
-        : `${payment.subject.name} ${payment.ability ? "activated" : "played"}.`);
+    // An event announces itself when it resolves; a card that stays on the table gets its own line.
+    if (payment.subject.type !== "event") say(`${payment.subject.name} ${payment.ability ? "used" : "played"}`);
   });
 }
 
@@ -351,7 +772,6 @@ function closeDecision() {
   choiceShade.hidden = true;
   defenseShade.setAttribute("hidden", "");
   abilityGlow.setAttribute("hidden", "");
-  handDiscardConfirm.hidden = true;
 }
 
 function animateDiscards(ids: readonly string[], message: string, onComplete: () => void) {
@@ -359,15 +779,16 @@ function animateDiscards(ids: readonly string[], message: string, onComplete: ()
   discarding = true;
   closeDecision();
   restart.disabled = true;
-  undoButton.disabled = endTurnButton.disabled = true;
-  handDiscardConfirm.disabled = true;
+  undoButton.disabled = dockPrimary.disabled = dockSecondary.disabled = true;
   anchors.inert = true;
-  for (const button of decision.querySelectorAll("button")) button.disabled = true;
+  for (const button of dockOptions.querySelectorAll("button")) button.disabled = true;
   for (const id of ids) {
+    preAnimated.add(id);
     const label = labels.get(id);
     if (label) label.hidden = true;
   }
   instruction.textContent = message;
+  instruction.hidden = !message;
   table.animateDiscards(ids, () => {
     discarding = false;
     restart.disabled = false;
@@ -381,14 +802,9 @@ function animateDiscards(ids: readonly string[], message: string, onComplete: ()
 function choose(id: string | null) {
   actionCard = null;
   act(() => {
-    const before = state.villainHp;
     if (!model.choose(id)) return;
     state = model.snapshot();
     if (!state.payment && !state.choice) staged = null;
-    const damage = before - state.villainHp;
-    instruction.textContent = state.payment
-      ? "Select the cards you want to spend."
-      : (state.choice?.prompt ?? (damage ? `Rhino took ${damage} damage.` : "Pick a card to play."));
   });
 }
 
@@ -396,179 +812,81 @@ function selectChoice(id: string) {
   actionCard = null;
   const choice = state.choice;
   if (discarding || !choice) return;
-  if (!choice.discardFromHand && choice.max <= 1) {
+  if (!choice.discardFromHand && !choice.mulligan && choice.max <= 1) {
     choose(id);
     return;
   }
   if (!choicePicks.delete(id) && choicePicks.size < choice.max) choicePicks.add(id);
-  const focusedOption = document.activeElement instanceof HTMLButtonElement && document.activeElement.dataset.option;
   render();
-  if (focusedOption) decision.querySelector<HTMLButtonElement>(`[data-option="${CSS.escape(focusedOption)}"]`)?.focus();
 }
 
 function confirmChoice() {
   const choice = state.choice;
   const picks = [...choicePicks];
   if (discarding || !choice || !model.chooseMany(picks)) return;
-  const discarded = choice.discardFromHand
-    ? picks.map((id) => choice.options.find((option) => option.id === id)?.cardId ?? id)
-    : [];
+  const discarded =
+    choice.discardFromHand || choice.mulligan
+      ? picks.map((id) => choice.options.find((option) => option.id === id)?.cardId ?? id)
+      : [];
   choicePicks.clear();
-  animateDiscards(discarded, "Discarding cards…", () => {
-    instruction.textContent = state.choice?.prompt ?? "Pick a card to play.";
+  animateDiscards(discarded, choice.mulligan ? "Swapping cards…" : "Discarding cards…", () => {
+    if (choice.mulligan) say(picks.length ? `Swapped ${plural(picks.length, "card")}` : "Hand kept");
   });
 }
 
-type TriggerChoice = NonNullable<Snapshot["choice"]>;
-let triggerChoice: TriggerChoice | null = null;
-let defenderSelection: TriggerChoice | null = null;
-function defenseQuestionDecline(choice: TriggerChoice | null) {
-  if (!choice?.defense || choice === defenderSelection || !choice.options.some((option) => option.cardId)) return;
-  return choice.options.find((option) => !option.cardId);
-}
-
-let offerIndex = 0;
-let acceptedOffers: string[] = [];
-
-function showOffer(choice: TriggerChoice) {
-  if (triggerChoice !== choice) {
-    triggerChoice = choice;
-    offerIndex = 0;
-    acceptedOffers = [];
-  }
-  const offers = choice.offers!;
-  const offer = offers[offerIndex]!;
-  inspect(offer.cardId);
-  askYesNo(offer.question, choice.prompt, offer.effect, (yes) => {
-    if (yes) acceptedOffers.push(offer.id);
-    if (++offerIndex < offers.length && acceptedOffers.length < choice.max) {
-      render();
-      return;
-    }
-    const picks = acceptedOffers;
-    triggerChoice = null;
-    act(() => {
-      model.chooseMany(picks);
-    });
+function endTurn() {
+  if (!state.canEndTurn) return;
+  act(() => {
+    model.endTurn();
   });
 }
 
-function askYesNo(question: string, context: string | null, effect: string | null, answer: (yes: boolean) => void) {
-  const heading = make("h2", "", question);
-  heading.id = "turn-question";
-  decision.setAttribute("data-ability", "");
-  decision.setAttribute("role", "dialog");
-  decision.setAttribute("aria-modal", "true");
-  decision.setAttribute("aria-labelledby", heading.id);
-  if (context) decision.append(make("p", "choice-help", context));
-  decision.append(heading);
-  if (effect) decision.append(make("p", "choice-help", effect));
-  const actions = make("div", "trigger-actions");
-  for (const yes of [true, false]) {
-    const button = make("button", "option", yes ? "Yes" : "No");
-    button.onclick = () => answer(yes);
-    actions.append(button);
-  }
-  actions.onkeydown = (event) => {
-    if (event.key !== "Tab") return;
-    event.preventDefault();
-    const [yes, no] = actions.querySelectorAll("button");
-    (document.activeElement === yes ? no : yes)?.focus();
-  };
-  decision.append(actions);
-  heading.tabIndex = -1;
-  heading.focus({ preventScroll: true });
+// ── Nameplates ────────────────────────────────────────────────────────────────────────────────────────────────────
+function hpPill(hp: number): HTMLElement {
+  const pill = make("span", "stat-pill");
+  pill.dataset.kind = "hp";
+  pill.append(icon("heart"), make("b", "", String(hp)));
+  pill.toggleAttribute("data-low", hp <= 3);
+  return pill;
 }
 
-function showChoice(choice: NonNullable<Snapshot["choice"]>) {
-  if (choice.offers?.length) {
-    showOffer(choice);
-    return;
-  }
-  const decline = defenseQuestionDecline(choice);
-  if (decline && choice.defense) {
-    askYesNo(`Defend ${choice.defense.attacker}’s attack?`, null, null, (yes) => {
-      if (yes) {
-        const defenders = choice.options.filter((option) => option.cardId);
-        if (defenders.length === 1) {
-          choose(defenders[0]!.id);
-          return;
-        }
-        defenderSelection = choice;
-        render();
-      } else choose(decline.id);
-    });
-    return;
-  }
-  const multiple = choice.discardFromHand || choice.max > 1;
-  decision.append(
-    make(
-      "p",
-      "eyebrow",
-      (choice.defense ? `${choice.defense.attacker} attacks` : choice.sourceTitle) ??
-        (state.turn === "enemy"
-          ? (cards().find((c) => c.id === state.choiceSource)?.name ?? "Villain Phase")
-          : state.turn === "ending"
-            ? "End of turn"
-            : "Resolve card"),
-    ),
-  );
-  const heading = choice.discardFromHand ? "Choose cards to discard" : choice.prompt;
-  const explanation = choice.explanation && make("p", "choice-help", choice.explanation);
-  if (explanation && choice.sourceTitle) decision.append(explanation);
-  if (!/^choose one[.:]?$/i.test(heading.trim())) decision.append(make("h2", "", heading));
-  if (explanation && !choice.sourceTitle) decision.append(explanation);
-  decision.toggleAttribute("data-revealed-choice", !!choice.sourceTitle);
-  if (multiple && choice.min > 0) {
-    decision.append(
-      make("p", "choice-help", `Choose at least ${choice.min} ${choice.min === 1 ? "card" : "cards"} to continue.`),
-    );
-  }
-  if (choice.discardFromHand) {
-    handDiscardConfirm.textContent = choicePicks.size ? `Discard ${choicePicks.size} & continue` : "Keep hand";
-    handDiscardConfirm.disabled = choicePicks.size < choice.min || discarding;
-    return;
-  }
-  function option(id: string | null, text: string) {
-    const button = make("button", "option", text);
-    if (id !== null && multiple) {
-      button.dataset.option = id;
-      button.setAttribute("aria-pressed", String(choicePicks.has(id)));
-    }
-    button.onclick = () => (id === null ? choose(null) : selectChoice(id));
-    decision.append(button);
-  }
-  for (const item of choice.options)
-    if (!onTable(item.cardId) || actionCard === item.cardId) option(item.id, item.label);
-  if (multiple) {
-    const confirm = make("button", "option choice-confirm", "Continue");
-    confirm.disabled = choicePicks.size < choice.min;
-    confirm.onclick = confirmChoice;
-    decision.append(confirm);
-  } else if (choice.canSkip) option(null, choice.decline ?? "Skip");
-  if (choice.canCancel) {
-    const back = make("button", "quiet", "Cancel");
-    back.onclick = cancel;
-    decision.append(back);
-  }
+function threatPill(count: number, target: number | null): HTMLElement {
+  const pill = make("span", "stat-pill scheme-threat");
+  pill.dataset.kind = "threat";
+  if (target != null) pill.dataset.target = String(target);
+  pill.append(icon("threat"), make("b", "", ""));
+  if (target != null) pill.append(make("i", "", `/${target}`));
+  updateThreatLabel(pill, count);
+  return pill;
+}
+
+function tick(pill: Element) {
+  pill.classList.remove("ticked");
+  void (pill as HTMLElement).offsetWidth;
+  pill.classList.add("ticked");
 }
 
 function updateThreatLabel(counter: HTMLElement, count: number) {
+  const changed = counter.dataset.count !== undefined && counter.dataset.count !== String(count);
   counter.dataset.count = String(count);
-  counter.textContent =
-    counter.dataset.target === undefined ? `${count} threat` : `${count} / ${counter.dataset.target} threat`;
+  counter.querySelector("b")!.textContent = String(count);
   const target = Number(counter.dataset.target);
-  counter.toggleAttribute("data-near-limit", count > 0 && count >= target - Math.ceil(target / 4));
+  counter.toggleAttribute("data-near-limit", !!target && count > 0 && count >= target - Math.ceil(target / 4));
+  if (changed) tick(counter);
 }
 
 function updateHpLabel(label: HTMLButtonElement | undefined, hp: number) {
-  if (!label?.dataset.hp || !label.firstChild) return;
+  if (!label?.dataset.hp) return;
   const previous = label.dataset.hp;
   label.dataset.hp = String(hp);
-  label.firstChild.textContent = label.firstChild.textContent!.replace(/\d+ HP/, `${hp} HP`);
+  const pill = label.querySelector<HTMLElement>('.stat-pill[data-kind="hp"]');
+  if (pill) {
+    pill.querySelector("b")!.textContent = String(hp);
+    pill.toggleAttribute("data-low", hp <= 3);
+    if (previous !== String(hp)) tick(pill);
+  }
   const description = label.getAttribute("aria-description");
-  if (label.classList.contains("identity") && description)
-    label.setAttribute("aria-description", description.replace(`${previous} HP`, `${hp} HP`));
+  if (description) label.setAttribute("aria-description", description.replace(`${previous} HP`, `${hp} HP`));
 }
 
 function showOutcome(outcome: Snapshot["outcome"]) {
@@ -608,7 +926,7 @@ function showOutcome(outcome: Snapshot["outcome"]) {
   element("game-over-detail").textContent = detail;
   gameOver.toggleAttribute("data-victory", won);
   gameOverUndo.hidden = !model.canUndo;
-  tryAgain.textContent = won ? "Play Again" : "Try Again";
+  tryAgain.replaceChildren(icon("mulligan"), make("span", "", won ? "Play again" : "Try again"));
   if (!gameOver.open) {
     if (won) throwConfetti();
     gameOver.showModal();
@@ -616,7 +934,6 @@ function showOutcome(outcome: Snapshot["outcome"]) {
 }
 
 function shakeStage(strength: "light" | "heavy") {
-  const stage = element("stage");
   delete stage.dataset.shake;
   // Restart the animation when two hits land close together.
   void stage.offsetWidth;
@@ -632,7 +949,7 @@ const CONFETTI = ["#f6c564", "#ff5a4e", "#4fb3ff", "#ffffff", "#7be08f", "#c77df
 function throwConfetti() {
   const host = element("outcome-confetti");
   host.replaceChildren();
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (reducedMotion()) return;
   for (let i = 0; i < 110; i++) {
     const bit = make("i", "confetti-bit");
     const left = Math.random() * 100;
@@ -681,7 +998,7 @@ function synchronizeLabels() {
     const target = defenseQuestionDecline(state.choice)
       ? undefined
       : state.choice?.options.find((option) => option.cardId === card.id);
-    const discardChoice = state.choice?.discardFromHand && target;
+    const handPick = !!(state.choice?.discardFromHand || state.choice?.mulligan) && !!target;
     label.disabled = (!!state.payment && !source?.available) || (!!state.choice?.defense && !target);
     label.toggleAttribute("data-target", !!target);
     label.toggleAttribute(
@@ -693,50 +1010,61 @@ function synchronizeLabels() {
         !target,
     );
     label.dataset.spent = String(!!source?.selected);
-    if (source || discardChoice)
-      label.setAttribute("aria-pressed", String(source?.selected ?? choicePicks.has(target!.id)));
+    const picked = handPick && choicePicks.has(target!.id);
+    if (source || handPick) label.setAttribute("aria-pressed", String(source?.selected ?? picked));
     else label.removeAttribute("aria-pressed");
     const hero = card.id === state.hero.id;
     const enemy = card.id === state.villain.id;
     const hp = hero ? state.heroHp : enemy ? state.villainHp : card.hp;
-    label.className = "anchor" + (discardOpen ? " discard-card" : hero ? " identity" : enemy ? " enemy" : "");
     const inHand = !discardOpen && displayedHand.some((item) => item.id === card.id);
+    label.className =
+      "anchor" + (discardOpen ? " discard-card" : hero ? " identity" : enemy ? " enemy" : inHand ? " in-hand" : "");
     const layer = discardOpen ? discardFan : inHand ? anchors : boardLabels;
     const description = card.markers.map((m) => `${m.name} ×${m.count}`);
-    if (hero) {
+    if (hp !== undefined && !inHand) {
       if (card.exhausted) description.unshift("Exhausted");
       description.unshift(`${hp} HP`);
     }
     if (description.length && layer === boardLabels) label.setAttribute("aria-description", description.join(", "));
     else label.removeAttribute("aria-description");
     if (label.parentElement !== layer) layer.append(label);
-    let caption = inHand ? "" : card.name;
-    if (!inHand && !discardOpen && hp !== undefined) caption = hero ? `${hp} HP` : `${card.name} · ${hp} HP`;
-    label.textContent = caption;
-    if (hp === undefined || discardOpen) delete label.dataset.hp;
-    else label.dataset.hp = String(hp);
-    if (card.threat !== null && onTable(card.id)) {
-      const counter = make("span", "scheme-threat");
-      if (card.threatTarget != null) counter.dataset.target = String(card.threatTarget);
-      updateThreatLabel(counter, card.threat);
-      label.append(counter);
+    label.replaceChildren();
+    // Characters and schemes wear a nameplate; a support or upgrade only does while a question involves it.
+    const plated = hp !== undefined || card.threat !== null || !!source || !!target;
+    if (inHand || !plated) {
+      if (picked) {
+        const mulligan = !!state.choice?.mulligan;
+        const chip = make("span", "pick-chip");
+        chip.append(icon(mulligan ? "mulligan" : "discard"), make("span", "", mulligan ? "Swap" : "Discard"));
+        label.append(chip);
+      }
+    } else {
+      if ((source || target) && !handPick) label.append(make("span", "plate-name", card.name));
+      if (!discardOpen && hp !== undefined) label.append(hpPill(hp));
     }
-    if (!inHand && target && !discardChoice && target.label !== card.name && !target.label.startsWith(card.name + " ("))
+    if (hp === undefined || discardOpen || inHand) delete label.dataset.hp;
+    else label.dataset.hp = String(hp);
+    if (card.threat !== null && onTable(card.id)) label.append(threatPill(card.threat, card.threatTarget));
+    if (
+      !inHand &&
+      target &&
+      !handPick &&
+      !state.choice?.offers?.length &&
+      target.label !== card.name &&
+      !target.label.startsWith(card.name + " (")
+    )
       label.append(make("span", "resource-value", target.label));
-    if (source)
-      label.append(
-        make(
-          "span",
-          "resource-value",
-          `${source.kind === "resourceAbility" ? "Ability · " : ""}+${resourceText(source.icons)}`,
-        ),
-      );
+    if (source) {
+      const value = make("span", "resource-value");
+      value.append(resourcePips(source.icons));
+      label.append(value);
+    }
     label.setAttribute(
       "aria-label",
       discardOpen
         ? `Inspect ${card.name}`
         : target
-          ? `${discardChoice ? "Discard" : "Choose"} ${card.name}`
+          ? `${handPick ? (state.choice?.mulligan ? "Swap" : "Discard") : "Choose"} ${card.name}`
           : source
             ? `${source.selected ? "Remove" : "Spend"} ${card.name}, ${resourceText(source.icons)}`
             : card.playable
@@ -778,17 +1106,17 @@ function placeLabels() {
   const discard = table.discardAnchor();
   const deck = table.deckAnchor();
   const encounter = table.encounterAnchor();
-  encounterLabel.style.transform = `translate(${Math.round(encounter.x)}px,${Math.round(encounter.bottom + 2)}px)`;
-  deckLabel.style.transform = `translate(${Math.round(deck.x)}px,${Math.round(deck.bottom + 3)}px)`;
+  encounterLabel.style.transform = `translate(${Math.round(encounter.x)}px,${Math.round(encounter.bottom + 4)}px)`;
+  deckLabel.style.transform = `translate(${Math.round(deck.x)}px,${Math.round(deck.bottom + 5)}px)`;
   const encounterDiscard = table.encounterDiscardAnchor();
   encounterPile.style.transform =
     discardOpen && viewingEncounterDiscard
       ? ""
-      : `translate(${Math.round(Math.min(encounterDiscard.x, element("stage").clientWidth - encounterPile.offsetWidth / 2 - 2))}px,${Math.round(encounterDiscard.bottom + 2)}px)`;
+      : `translate(${Math.round(Math.min(encounterDiscard.x, stage.clientWidth - encounterPile.offsetWidth / 2 - 2))}px,${Math.round(encounterDiscard.bottom + 4)}px)`;
   pile.style.transform =
     discardOpen && !viewingEncounterDiscard
       ? ""
-      : `translate(${Math.round(discard.x)}px,${Math.round(discard.bottom + 3)}px)`;
+      : `translate(${Math.round(discard.x)}px,${Math.round(discard.bottom + 5)}px)`;
   const projected = table.anchors();
   if (!formHint.hidden || !formFlash.hidden) {
     const hero = projected.find((point) => point.id === hintCardId);
@@ -824,16 +1152,14 @@ function placeLabels() {
   }
   if (heldEncounter && !choiceShade.hidden) {
     const card = projected.find((p) => p.id === heldEncounter);
-    if (card) {
-      decision.style.setProperty("--reveal-bottom", card.bottom + 8 + "px");
+    if (card)
       choiceShade.style.clipPath = `polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${card.left}px ${card.top}px, ${card.right}px ${card.top}px, ${card.right}px ${card.bottom}px, ${card.left}px ${card.bottom}px, ${card.left}px ${card.top}px)`;
-    }
   }
   if (readingCard) {
     const card = projected.find((p) => p.id === readingCard);
     if (card) {
       revealHint.style.left = card.x + "px";
-      revealHint.style.top = card.bottom + 4 + "px";
+      revealHint.style.top = card.bottom + 6 + "px";
     }
   }
   if (menuCard) {
@@ -843,10 +1169,15 @@ function placeLabels() {
       decision.style.setProperty("--hero-y", hero.y - (hero.bottom - hero.y) * 0.74 + "px");
     }
   }
+  for (const float of floats) {
+    const anchor = projected.find((p) => p.id === float.dataset.card);
+    if (anchor) {
+      float.style.left = anchor.x + "px";
+      float.style.top = anchor.y + "px";
+    }
+  }
   const handIds = new Set(displayedHand.map((card) => card.id));
   const hand = projected.filter((point) => handIds.has(point.id)).sort((a, b) => a.x - b.x);
-  const paymentEdge = table.paymentEdge;
-  if (state.payment) paymentPanel.style.setProperty("--hand-edge", paymentEdge + "px");
   const width = hand.reduce(
     (gap, point, index) => (index ? Math.min(gap, point.x - hand[index - 1]!.x - 4) : gap),
     142,
@@ -854,33 +1185,31 @@ function placeLabels() {
   for (const anchor of projected) {
     const node = labels.get(anchor.id);
     if (!node) continue;
-
+    const handCard = !discardOpen && handIds.has(anchor.id);
     const labelWidth = discardOpen
       ? anchor.width * 0.82
-      : handIds.has(anchor.id)
+      : handCard
         ? Math.max(32, width)
-        : anchor.id === state.hero.id
-          ? Math.min(90, anchor.width)
-          : 142;
+        : anchor.id === state.hero.id || anchor.id === state.villain.id
+          ? Math.max(200, anchor.width * 1.3)
+          : Math.max(104, anchor.width * 1.25);
     node.style.setProperty("--card-width", `${labelWidth}px`);
-    let y = anchor.bottom + 4;
-    if (!discardOpen && handIds.has(anchor.id)) {
-      const halfWidth = node.offsetWidth / 2;
-      const nearby = hand.filter((p) => p.right > anchor.x - halfWidth && p.left < anchor.x + halfWidth);
-      y = Math.max(y, ...nearby.map((p) => p.bottom + 4));
-    }
+    // A hand card wears its chip (Spend, Swap, Discard) low on its face; other cards' plates sit under them.
+    const y = handCard ? anchor.bottom - 44 : anchor.bottom + 5;
     node.style.transform = `translate(${Math.round(anchor.x)}px,${Math.round(y)}px)`;
   }
 }
 
+// ── Presenting what happened ─────────────────────────────────────────────────────────────────────────────────────
 const PHASE_BANNER_MS = 1500;
 
-function phaseIndicator(phase: "hero" | "villain", announce = false) {
-  table?.setPhase(phase);
-  const title = phase === "hero" ? "Hero Phase" : "Villain Phase";
-  turnStatus.dataset.phase = phase;
-  turnStatus.textContent = `${title} · ${state.round}`;
-  if (announce) {
+function phaseIndicator(phase: "hero" | "villain" | "setup", announce = false) {
+  if (phase !== "setup") table?.setPhase(phase);
+  const title = phase === "hero" ? "Hero phase" : phase === "villain" ? "Villain phase" : "Setup";
+  turnStatus.dataset.phase = phase === "villain" ? "villain" : "hero";
+  turnStatus.textContent = title;
+  roundLabel.textContent = `Round ${state?.round ?? 1}`;
+  if (announce && phase !== "setup") {
     const banner = element("phase-banner");
     banner.dataset.phase = phase;
     const lettering = banner.querySelector("b")!;
@@ -889,7 +1218,7 @@ function phaseIndicator(phase: "hero" | "villain", announce = false) {
     banner.animate([{ opacity: 0 }, { opacity: 1, offset: 0.16 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }], {
       duration: PHASE_BANNER_MS,
     });
-    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (!reducedMotion()) {
       lettering.animate(
         [
           { transform: "translateX(-100%)", easing: "cubic-bezier(.18,.74,.28,1)" },
@@ -908,7 +1237,7 @@ function activationRing(id: string) {
   if (!card) return;
   const ring = make("div", "activation-ring");
   ring.style.cssText = `left:${card.x}px;top:${card.y}px;width:${card.width}px;`;
-  element("stage").append(ring);
+  stage.append(ring);
   ring.addEventListener("animationend", () => ring.remove(), { once: true });
 }
 
@@ -921,11 +1250,63 @@ async function flashDefeatedCard(id: string) {
   const polygon = document.createElementNS(svg.namespaceURI, "polygon");
   polygon.setAttribute("points", outline.join(" "));
   svg.append(polygon);
-  element("stage").append(svg);
-  await svg.animate([{ opacity: 0.75 }, { opacity: 0 }], { duration: 230, easing: "ease-out" }).finished;
+  stage.append(svg);
+  await svg.animate([{ opacity: 0.85 }, { opacity: 0 }], { duration: 260, easing: "ease-out" }).finished;
   svg.remove();
 }
-async function showBoost(reveal: NonNullable<Snapshot["beats"][number]["reveal"]>) {
+
+/** Numbers and stamps that float off a card follow it while it moves. */
+const floats = new Set<HTMLElement>();
+function floatOver(id: string, node: HTMLElement, duration: number, keyframes: Keyframe[]) {
+  const anchor = table?.anchors().find((point) => point.id === id);
+  if (!anchor) return;
+  node.dataset.card = id;
+  node.style.left = anchor.x + "px";
+  node.style.top = anchor.y + "px";
+  node.style.setProperty("--float-size", Math.round(Math.min(78, Math.max(40, anchor.width * 0.62))) + "px");
+  stage.append(node);
+  floats.add(node);
+  const animation = node.animate(
+    reducedMotion() ? [{ opacity: 1 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }] : keyframes,
+    { duration, easing: "cubic-bezier(.2,.8,.3,1)" },
+  );
+  animation.onfinish = () => {
+    node.remove();
+    floats.delete(node);
+  };
+}
+
+function floatNumber(
+  id: string,
+  kind: "damage" | "heal" | "threat" | "thwart" | "blocked",
+  text: string,
+  caption?: string,
+) {
+  const node = make("div", "float-number", text);
+  node.dataset.kind = kind;
+  if (caption) node.append(make("small", "", caption));
+  floatOver(id, node, kind === "damage" ? 1050 : 1250, [
+    { transform: "translateY(10px) scale(.3) rotate(-8deg)", opacity: 0 },
+    { transform: "translateY(-6px) scale(1.18) rotate(3deg)", opacity: 1, offset: 0.14 },
+    { transform: "translateY(-14px) scale(1) rotate(0deg)", opacity: 1, offset: 0.3 },
+    { transform: "translateY(-44px) scale(.96)", opacity: 1, offset: 0.78 },
+    { transform: "translateY(-60px) scale(.9)", opacity: 0 },
+  ]);
+}
+
+function stampCard(id: string, text: string, tone?: "status" | "confused" | "tough") {
+  const node = make("div", "card-stamp", text);
+  if (tone) node.dataset.tone = tone;
+  floatOver(id, node, 1100, [
+    { transform: "scale(2.4)", opacity: 0 },
+    { transform: "scale(.92)", opacity: 1, offset: 0.16 },
+    { transform: "scale(1)", opacity: 1, offset: 0.26 },
+    { transform: "scale(1)", opacity: 1, offset: 0.8 },
+    { transform: "scale(1.05)", opacity: 0 },
+  ]);
+}
+
+async function showBoost(reveal: NonNullable<Beat["reveal"]>) {
   const boost = reveal.boost!;
   const projected = table?.anchors();
   const card = projected?.find((p) => p.id === reveal.id);
@@ -933,15 +1314,14 @@ async function showBoost(reveal: NonNullable<Snapshot["beats"][number]["reveal"]
   if (!card) return;
   const burst = make("div", "boost-burst");
   burst.setAttribute("role", "status");
-  burst.append(make("b", "", `+${boost.icons}`), make("span", "", "Boost"));
+  burst.append(icon("boost"), make("b", "", `+${boost.icons}`), make("span", "", "Boost"));
   const x = card.x + card.width * 0.33;
   const y = card.bottom - card.width * 0.25;
   burst.style.left = x + "px";
   burst.style.top = y + "px";
-  element("stage").append(burst);
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  stage.append(burst);
   const animation = burst.animate(
-    reduced
+    reducedMotion()
       ? [{ opacity: 1 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }]
       : [
           { transform: "scale(.55)", opacity: 0 },
@@ -950,22 +1330,101 @@ async function showBoost(reveal: NonNullable<Snapshot["beats"][number]["reveal"]
           { transform: "scale(1)", opacity: 1, offset: 0.68 },
           { transform: `translate(${(enemy?.x ?? x) - x}px,${(enemy?.y ?? y) - y}px) scale(.62)`, opacity: 0 },
         ],
-    { duration: 760, easing: "ease-out" },
+    { duration: 860, easing: "ease-out" },
   );
   await animation.finished;
   burst.remove();
 }
 
+const STATUS_STAMP: Record<string, ["status" | "confused" | "tough", string]> = {
+  stunned: ["status", "Stunned!"],
+  confused: ["confused", "Confused!"],
+  tough: ["tough", "Tough!"],
+};
+
+/** The dock line for a beat: an icon and a tone, so the feed reads at a glance. */
+function feedLineOf(beat: Beat): FeedLine | null {
+  if (beat.phase || beat.turned || beat.encounterDeal) return null;
+  if (beat.draw) return { text: `Draw ${plural(beat.draw.length, "card")}`, icon: "draw", tone: "hero" };
+  if (beat.handDiscard)
+    return {
+      text: `Discard ${beat.handDiscard.map(nameOf).filter(Boolean).join(", ") || plural(beat.handDiscard.length, "card")}`,
+      icon: "discard",
+      tone: beat.enemy ? "villain" : "hero",
+    };
+  if (beat.returned)
+    return { text: `${plural(beat.returned.length, "card")} back to your hand`, icon: "draw", tone: "hero" };
+  if (beat.leftPlay) return { text: beat.text, icon: "discard", tone: beat.enemy ? "villain" : "hero" };
+  if (beat.milled)
+    return {
+      text: `Discard ${beat.milled.map(nameOf).filter(Boolean).join(", ") || plural(beat.milled.length, "card")} from your deck`,
+      icon: "discard",
+      tone: "hero",
+    };
+  if (beat.defeatedCard)
+    return { text: `${nameOf(beat.defeatedCard) || "A card"} is defeated`, icon: "defeated", tone: "hero" };
+  if (beat.defeat) return { text: beat.defeat, icon: "defeated", tone: "hero" };
+  if (beat.hit)
+    return {
+      text: beat.text,
+      icon: beat.hit.tough ? "tough" : "damage",
+      tone: beat.hit.amount ? "damage" : undefined,
+    };
+  if (beat.threat)
+    return {
+      text: beat.text,
+      icon: beat.threat.delta > 0 ? "threat" : "thwart",
+      tone: beat.threat.delta > 0 ? "threat" : "hero",
+    };
+  if (beat.statusChange) {
+    const { name, delta } = beat.statusChange;
+    if (name === "damage" && delta < 0) return { text: beat.text, icon: "heal", tone: "heal" };
+    const symbol: IconName = name === "stunned" || name === "confused" || name === "tough" ? name : "forced";
+    return { text: beat.text, icon: symbol, tone: beat.enemy ? "villain" : "hero" };
+  }
+  if (beat.reveal) return { text: beat.text, icon: beat.reveal.boost ? "boost" : "forced", tone: "villain" };
+  if (beat.activate) return { text: beat.text, icon: "action", tone: "hero" };
+  if (beat.interrupt) return { text: beat.text, icon: "energy", tone: "hero" };
+  if (beat.deflection) return { text: beat.text, icon: "tough", tone: "hero" };
+  if (beat.attackAim)
+    return {
+      text: `${nameOf(beat.attackAim.source)} attacks ${nameOf(beat.attackAim.target)}`,
+      icon: "attack",
+      tone: "villain",
+    };
+  if (beat.villainStage || beat.villainFlip) return { text: beat.text, icon: "flip", tone: "villain" };
+  if (beat.modifier) return { text: beat.text, icon: "action", tone: beat.enemy ? "villain" : "hero" };
+  return beat.text
+    ? { text: beat.text, icon: beat.enemy ? "scheme" : "action", tone: beat.enemy ? "villain" : "hero" }
+    : null;
+}
+
+function narrate(beat: Beat, line: FeedLine | null, extra: Partial<DockView> = {}) {
+  const villain = beat.enemy || beat.phase === "villain";
+  if (line) pushFeed(line);
+  paintDock({
+    tone: villain ? "villain" : "hero",
+    asking: false,
+    eyebrow: {
+      text: villain ? beat.activity || "Villain phase" : "Card effect",
+      icon: villain ? "scheme" : "action",
+      tone: villain ? "villain" : "hero",
+    },
+    title: line?.text ?? (beat.text || (villain ? "Villain phase" : "Resolving")),
+    help: null,
+    primary: { label: villain ? "Villain phase" : "Resolving", disabled: true, onClick: () => undefined },
+    ...extra,
+  });
+}
+
 async function present(beats: Snapshot["beats"]) {
   presenting = true;
   closeDecision();
-  paymentPanel.hidden = true;
-  const stage = element("stage");
   const announcement = element("action-beat");
   const impact = element("impact");
   stage.dataset.resolving = "true";
-  anchors.inert = decision.inert = true;
-  undoButton.disabled = endTurnButton.disabled = restart.disabled = handDiscardConfirm.disabled = true;
+  anchors.inert = true;
+  undoButton.disabled = restart.disabled = true;
   const pendingDraws = new Set(beats.flatMap((beat) => beat.draw ?? []));
   for (let index = 0; index < beats.length; index++) {
     const beat = beats[index]!;
@@ -976,27 +1435,58 @@ async function present(beats: Snapshot["beats"]) {
       const deckSize = state.deckCount + pendingDraws.size;
       table?.showDraw(displayedHand, beat.draw, deckSize, state.discard);
       deckCount.textContent = String(deckSize);
-      element("hand-count").textContent = String(displayedHand.length);
-      announcement.replaceChildren(
-        make("b", "", beat.enemy ? "Villain phase" : "Player phase"),
-        make("span", "", `Draw ${beat.draw.length} card${beat.draw.length === 1 ? "" : "s"}`),
-      );
-      announcement.hidden = false;
-      const duration = 680 + (beat.draw.length - 1) * 180;
-      await new Promise((resolve) => setTimeout(resolve, duration));
+      narrate(beat, feedLineOf(beat));
+      await sleep(680 + (beat.draw.length - 1) * 180);
+      continue;
+    }
+    if (beat.handDiscard) {
+      const fresh = beat.handDiscard.filter((id) => !preAnimated.has(id));
+      for (const id of beat.handDiscard) preAnimated.delete(id);
+      if (!fresh.length) continue;
+      narrate(beat, feedLineOf(beat));
+      await new Promise<void>((resolve) => (table ? table.animateDiscards(fresh, resolve) : resolve()));
+      displayedHand = displayedHand.filter((card) => !fresh.includes(card.id));
+      await sleep(240);
+      continue;
+    }
+    if (beat.returned) {
+      narrate(beat, feedLineOf(beat));
+      const back = state.hand.filter((card) => beat.returned!.includes(card.id));
+      displayedHand = [...displayedHand.filter((card) => !beat.returned!.includes(card.id)), ...back];
+      table?.showDraw(displayedHand, beat.returned, state.deckCount + pendingDraws.size, state.discard);
+      await sleep(760);
+      continue;
+    }
+    if (beat.milled) {
+      narrate(beat, feedLineOf(beat));
+      deckCount.textContent = String(Math.max(0, Number(deckCount.textContent) - beat.milled.length));
+      await sleep(700);
+      continue;
+    }
+    if (beat.leftPlay) {
+      const id = beat.leftPlay;
+      table?.markActor(null);
+      narrate(beat, feedLineOf(beat));
+      labels.get(id)?.remove();
+      labels.delete(id);
+      const encounter = state.encounterDiscard.find((card) => card.id === id);
+      const discarded = encounter ?? state.discard.find((card) => card.id === id);
+      table?.discardDefeatedCard(id, discarded, encounter ? "encounterDiscard" : "discard");
+      await sleep(discarded ? 560 : 240);
       continue;
     }
     if (beat.phase) {
       announcement.hidden = true;
       phaseIndicator(beat.phase, true);
-      turnStatus.dataset.turn = beat.phase === "hero" ? "player" : "enemy";
-      await new Promise((resolve) => setTimeout(resolve, PHASE_BANNER_MS));
+      narrate(beat, null, { title: beat.phase === "hero" ? "Your turn" : "Villain phase", eyebrow: null });
+      await sleep(PHASE_BANNER_MS);
       continue;
     }
     if (beat.defeatedCard) {
       announcement.hidden = true;
       table?.markActor(null);
       const id = beat.defeatedCard;
+      narrate(beat, feedLineOf(beat));
       const label = labels.get(id);
       updateHpLabel(label, 0);
       const threat = label?.querySelector<HTMLElement>(".scheme-threat");
@@ -1004,51 +1494,48 @@ async function present(beats: Snapshot["beats"]) {
         updateThreatLabel(threat, 0);
         table?.setThreat(id, 0);
       }
+      stampCard(id, "Defeated");
       await flashDefeatedCard(id);
+      await sleep(240);
       label?.remove();
       labels.delete(id);
       const encounter = state.encounterDiscard.find((card) => card.id === id);
       const discarded = encounter ?? state.discard.find((card) => card.id === id);
       table?.discardDefeatedCard(id, discarded, encounter ? "encounterDiscard" : "discard");
-      if (discarded) await new Promise((resolve) => setTimeout(resolve, 460));
+      if (discarded) await sleep(520);
       continue;
     }
     const actor = beat.actor ?? beat.hit?.source ?? beat.reveal?.id ?? null;
     table?.markActor(beat.defeat ? null : actor);
     if (actor && !beat.defeat) inspect(actor);
+    const line = feedLineOf(beat);
     if (beat.defeat) {
       announcement.hidden = true;
-      if (actor) await flashDefeatedCard(actor);
-      announcement.style.setProperty("--defeat-top", `${boardViewport.scrollTop + 18}px`);
-      announcement.setAttribute("data-defeat", "");
-      announcement.replaceChildren(make("span", "", beat.defeat));
-      announcement.hidden = false;
-      await new Promise((resolve) => setTimeout(resolve, 1350));
-      announcement.removeAttribute("data-defeat");
-      if (!beat.villainStage) {
-        announcement.hidden = true;
-        continue;
+      narrate(beat, line);
+      if (actor) {
+        stampCard(actor, "Defeated");
+        await flashDefeatedCard(actor);
       }
-    }
-    announcement.replaceChildren(
-      make("b", "", beat.enemy ? beat.activity || "Villain phase" : "Card effect"),
-      make("span", "", beat.text),
-    );
-    announcement.hidden = false;
-    if (beat.enemy) {
-      turnStatus.dataset.turn = "enemy";
-      phaseIndicator("villain");
-    }
+      announcement.setAttribute("data-defeat", "");
+      announcement.replaceChildren(icon("defeated"), make("span", "", beat.defeat));
+      announcement.hidden = false;
+      shakeStage("heavy");
+      await sleep(1450);
+      announcement.removeAttribute("data-defeat");
+      announcement.hidden = true;
+      if (!beat.villainStage) continue;
+    } else narrate(beat, line);
     if (beat.villainStage || beat.villainFlip) {
       table?.showVillain(state.villain, !!(beat.defeat || beat.villainFlip));
-      await new Promise((resolve) => setTimeout(resolve, 360));
+      await sleep(360);
       inspect(state.villain.id);
       const label = labels.get(state.villain.id);
-      if (label?.firstChild) {
-        label.dataset.hp = String(state.villainHp);
-        label.firstChild.textContent = `${state.villain.name} · ${state.villainHp} HP`;
+      if (label) {
+        const name = label.querySelector(".plate-name");
+        if (name) name.textContent = state.villain.name;
+        updateHpLabel(label, state.villainHp);
       }
-      await new Promise((resolve) => setTimeout(resolve, 460));
+      await sleep(460);
       continue;
     }
     if (beat.enemyActivation) {
@@ -1062,7 +1549,7 @@ async function present(beats: Snapshot["beats"]) {
         svg.append(polygon);
         stage.append(svg);
         polygon.animate(
-          matchMedia("(prefers-reduced-motion: reduce)").matches
+          reducedMotion()
             ? [{ opacity: 0.75 }, { opacity: 0 }]
             : [
                 { transform: "scale(1)", opacity: 0.95 },
@@ -1076,14 +1563,14 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.attackAim) {
       const { source, target } = beat.attackAim;
       table?.windUp(source);
-      await new Promise((resolve) => setTimeout(resolve, 90));
+      await sleep(90);
       const projected = table?.anchors();
       const from = projected?.find((a) => a.id === source);
       const to = projected?.find((a) => a.id === target);
       aimTarget = target;
       reticle.hidden = false;
       placeLabels();
-      if (from && to && !matchMedia("(prefers-reduced-motion: reduce)").matches)
+      if (from && to && !reducedMotion())
         reticle.animate(
           [
             { transform: `translate(${from.x - to.x}px, ${from.y - to.y}px) scale(1.45)`, opacity: 0.25 },
@@ -1100,21 +1587,24 @@ async function present(beats: Snapshot["beats"]) {
         displayedHand = displayedHand.filter((c) => c.id !== event.id);
         labels.get(event.id)?.remove();
         labels.delete(event.id);
-        await new Promise((resolve) => setTimeout(resolve, 320));
+        await sleep(320);
       }
       activationRing(beat.activate.card);
-      await new Promise((resolve) => setTimeout(resolve, 360));
+      await sleep(360);
       table?.channelEvent(beat.activate.card);
-      await new Promise((resolve) => setTimeout(resolve, 450));
+      await sleep(450);
       table?.markActor(beat.activate.hero);
       activationRing(beat.activate.hero);
     }
     if (beat.interrupt) {
       table?.pulseInterrupt(beat.interrupt);
-      await new Promise((resolve) => setTimeout(resolve, INTERRUPT_MS));
+      await sleep(INTERRUPT_MS);
       continue;
     }
-    if (beat.deflection) table?.deflectDamage(beat.deflection.card, beat.deflection.amount);
+    if (beat.deflection) {
+      table?.deflectDamage(beat.deflection.card, beat.deflection.amount);
+      floatNumber(beat.deflection.card, "blocked", "Blocked", `${beat.deflection.amount} damage`);
+    }
     if (beat.discardEvent) {
       const card = state.discard.find((c) => c.id === beat.discardEvent);
       if (card) {
@@ -1134,19 +1624,27 @@ async function present(beats: Snapshot["beats"]) {
       const { id, name, delta } = beat.statusChange;
       if (delta > 0) {
         activationRing(id);
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await sleep(200);
       }
       table?.changeStatus(id, name, delta);
+      if (name === "damage" && delta < 0) {
+        floatNumber(id, "heal", `+${-delta}`, "healed");
+        const label = labels.get(id);
+        if (label?.dataset.hp) updateHpLabel(label, Number(label.dataset.hp) - delta);
+        table?.healBurst(id);
+      } else if (delta > 0 && STATUS_STAMP[name]) {
+        const [tone, text] = STATUS_STAMP[name]!;
+        stampCard(id, text, tone);
+      }
     }
     if (beat.turned) {
       const turns = [beat.turned];
       if (!beat.turned.exhausted) {
         while (beats[index + 1]?.turned?.exhausted === false) turns.push(beats[++index]!.turned!);
-        if (turns.length > 1) announcement.lastElementChild!.textContent = `Ready ${turns.length} cards`;
+        dockTitle.textContent = turns.length > 1 ? `Ready ${plural(turns.length, "card")}` : beat.text;
       }
       table?.turnCards(turns);
-      const duration = beat.turned.exhausted ? EXHAUST_MS : READY_MS;
-      await new Promise((resolve) => setTimeout(resolve, duration));
+      await sleep(beat.turned.exhausted ? EXHAUST_MS : READY_MS);
       continue;
     }
     if (beat.encounterDeal) {
@@ -1157,7 +1655,7 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.reveal) {
       readingCard = beat.reveal.boost ? null : beat.reveal.id;
       table?.revealEncounter(beat.reveal);
-      await new Promise((resolve) => setTimeout(resolve, 360));
+      await sleep(360);
       if (beat.reveal.art) showPreview(beat.reveal, !beat.reveal.boost);
       if (beat.reveal.boost) {
         await showBoost(beat.reveal);
@@ -1173,14 +1671,20 @@ async function present(beats: Snapshot["beats"]) {
         continue;
       }
       if (state.outcome) {
-        await new Promise((resolve) => setTimeout(resolve, 650));
+        await sleep(650);
       } else {
         readReveal.setAttribute("aria-label", `Continue after reading ${beat.reveal.name}`);
-        revealHint.hidden = readReveal.hidden = false;
+        readReveal.hidden = false;
+        narrate(beat, null, {
+          eyebrow: { text: "Revealed", icon: "forced", tone: "villain" },
+          title: beat.reveal.name,
+          primary: { label: "Continue", icon: "next", attention: true, onClick: () => readReveal.click() },
+        });
         readReveal.focus({ preventScroll: true });
         placeLabels();
         await new Promise<void>((resolve) => readReveal.addEventListener("click", () => resolve(), { once: true }));
         revealHint.hidden = readReveal.hidden = true;
+        narrate(beat, null);
       }
       readingCard = null;
       rail.removeAttribute("data-wide-preview");
@@ -1191,7 +1695,7 @@ async function present(beats: Snapshot["beats"]) {
           beat.reveal.id,
           state.encounterDiscard.find((c) => c.id === beat.reveal!.id),
         );
-        await new Promise((resolve) => setTimeout(resolve, 450));
+        await sleep(450);
       }
     }
     if (beat.threat) {
@@ -1202,10 +1706,16 @@ async function present(beats: Snapshot["beats"]) {
         updateThreatLabel(counter, n);
         table?.setThreat(beat.threat.scheme, n);
       }
+      floatNumber(
+        beat.threat.scheme,
+        beat.threat.delta > 0 ? "threat" : "thwart",
+        `${beat.threat.delta > 0 ? "+" : "−"}${Math.abs(beat.threat.delta)}`,
+        "threat",
+      );
     }
     if (beat.hit) {
       table?.strike(beat.hit.source, beat.hit.target);
-      await new Promise((resolve) => setTimeout(resolve, HIT_CONTACT_MS));
+      await sleep(HIT_CONTACT_MS);
       if (beat.hit.tough) table?.changeStatus(beat.hit.target, "tough", -1);
       if (beat.hit.amount) {
         shakeStage(beat.hit.amount >= 4 ? "heavy" : "light");
@@ -1219,24 +1729,29 @@ async function present(beats: Snapshot["beats"]) {
       }
       const anchor = table?.anchors().find((item) => item.id === beat.hit!.target);
       if (anchor) {
-        impact.textContent = beat.hit.amount ? `−${beat.hit.amount}` : beat.hit.tough ? "Tough" : "Blocked";
+        impact.replaceChildren(
+          make("span", "impact-number", beat.hit.amount ? `−${beat.hit.amount}` : beat.hit.tough ? "Tough" : "Blocked"),
+        );
+        if (beat.hit.amount) impact.append(make("small", "", "damage"));
         impact.style.left = anchor.x + "px";
         impact.style.top = anchor.y + "px";
         impact.dataset.blocked = String(!beat.hit.amount);
-        impact.style.setProperty("--burst-size", Math.min(180, Math.max(74, anchor.width * 1.1)) + "px");
+        impact.style.setProperty("--burst-size", Math.min(190, Math.max(80, anchor.width * 1.15)) + "px");
         impact.hidden = false;
       }
     }
-    await new Promise((resolve) => setTimeout(resolve, beat.attackAim ? 390 : beat.hit ? 670 : 1000));
+    await sleep(beat.attackAim ? 390 : beat.hit ? 760 : beat.threat ? 820 : 1000);
     impact.hidden = true;
   }
   impact.hidden = true;
   announcement.hidden = true;
   delete stage.dataset.resolving;
-  anchors.inert = decision.inert = false;
+  anchors.inert = false;
   presenting = false;
   render();
 }
+
+// ── Rendering ─────────────────────────────────────────────────────────────────────────────────────────────────────
 function render() {
   if (presenting) return;
   state = model.snapshot();
@@ -1255,10 +1770,7 @@ function render() {
   }
   if (!heldEncounter) choiceShade.style.clipPath = "";
   if (!state.choice?.offers?.length) triggerChoice = null;
-  decision.removeAttribute("aria-modal");
-  decision.removeAttribute("role");
-  decision.removeAttribute("aria-labelledby");
-  decision.removeAttribute("data-revealed-choice");
+  if (!state.choice) choicePicks.clear();
   if (defenderSelection !== state.choice) defenderSelection = null;
   const defenseQuestion = !!defenseQuestionDecline(state.choice);
   const defending = !!state.choice?.defense && !defenseQuestion;
@@ -1267,9 +1779,7 @@ function render() {
   reticle.hidden =
     defenseQuestion || !aimTarget || (!defending && !state.choice?.options.some((o) => o.cardId === aimTarget));
   abilityGlow.setAttribute("hidden", "");
-  decision.removeAttribute("data-ability");
   defenseShade.setAttribute("hidden", "");
-  decision.toggleAttribute("data-defense", defending);
   if (presented !== state.beats) {
     presented = state.beats;
     if (presented.length) {
@@ -1325,7 +1835,11 @@ function render() {
     viewingEncounterDiscard,
     drawn: state.drawn,
     targets:
-      state.choice && !defenseQuestion && state.choice.max <= 1 && !state.choice.discardFromHand
+      state.choice &&
+      !defenseQuestion &&
+      state.choice.max <= 1 &&
+      !state.choice.discardFromHand &&
+      !state.choice.mulligan
         ? state.choice.options.flatMap((item) => (item.cardId && onTable(item.cardId) ? [item.cardId] : []))
         : [],
     discardOpen,
@@ -1344,112 +1858,97 @@ function render() {
   encounterPile.disabled = !state.encounterDiscard.length || flying || discarding || !!state.payment;
   element("encounter-discard-count").textContent = String(state.encounterDiscard.length);
   const count = state.discard.length;
-  pile.setAttribute(
-    "aria-label",
-    `${discardOpen ? "Stack" : "Inspect"} discard pile, ${count} card${count === 1 ? "" : "s"}`,
-  );
-  instruction.hidden = discardOpen;
-  element("discard-hint").hidden = !discardOpen;
+  pile.setAttribute("aria-label", `${discardOpen ? "Stack" : "Inspect"} discard pile, ${plural(count, "card")}`);
   pileCount.textContent = String(state.discard.length);
   element("encounter-count").textContent = String(state.encounterCount);
   deckCount.textContent = String(state.deckCount);
-  element("hand-count").textContent = String(state.hand.filter((card) => card.id !== staged?.id).length);
-  decision.replaceChildren();
-  decision.hidden = (!state.choice && !menuCard) || discardOpen;
-  decision.toggleAttribute("data-identity", !!menuCard);
-  decision.toggleAttribute(
-    "data-enemy-choice",
-    !!state.choice &&
-      (state.turn === "enemy" ||
-        state.choice.options.some(
-          (o) => state.enemyCards.some((c) => c.id === o.cardId) || state.villain.id === o.cardId,
-        )),
-  );
-  if (menuCard) {
-    const id = menuCard;
-    const card = [state.hero, ...state.inPlay].find((c) => c.id === id);
-    const actions = id === state.hero.id ? state.heroActions : model.fieldActions(id);
-    if (!actions.length)
-      decision.append(make("p", "choice-help", card?.exhausted ? "Exhausted" : "No actions available"));
-    for (const action of actions) {
-      const button = make("button", "option", action.label);
-      button.dataset.power = action.kind;
-      if (action.kind === "basicAttack" || action.kind === "basicThwart" || action.kind === "basicRecover") {
-        const stat = action.kind === "basicAttack" ? "atk" : action.kind === "basicThwart" ? "thw" : "rec";
-        const value = model.basicPower(id, stat);
-        const description = `${action.label} with ${card?.name ?? "card"} (${value} ${stat.toUpperCase()})`;
-        button.setAttribute("aria-label", description);
-        button.title = description;
-        button.classList.add("stat-action");
-        button.style.setProperty("--stat-color", statHue[stat].css);
-        button.replaceChildren(make("b", "stat-value", String(value)), make("span", "stat-ribbon", stat.toUpperCase()));
-      } else if ("exhausts" in action && action.exhausts) {
-        const description = `${card?.name ?? "Card"}: ${action.label}`;
-        button.setAttribute("aria-label", description);
-        button.title = description;
-        const icon = make("span", "exhaust-icon", "↷");
-        icon.setAttribute("aria-hidden", "true");
-        button.replaceChildren(icon);
-        button.classList.add("exhaust-action");
-      }
-      button.onclick = () => {
-        menuCard = null;
-        act(() => {
-          if (id === state.hero.id) model.heroAction(action.kind);
-          else model.fieldAction(id, action.kind);
-        });
-        inspect(id);
-      };
-      decision.append(button);
-    }
-    if (id === state.hero.id) {
-      const close = make("button", "quiet", "Close");
-      close.onclick = () => {
-        menuCard = null;
-        render();
-      };
-      decision.append(close);
-    }
-    placeLabels();
-  }
-  const handChoice = !decision.hidden && !!state.choice?.discardFromHand;
-  decision.toggleAttribute("data-hand-choice", handChoice);
-  const undoNeighbor = handChoice ? handDiscardConfirm : endTurnButton;
-  if (undoButton.nextElementSibling !== undoNeighbor) undoNeighbor.before(undoButton);
+  renderCardMenu();
   undoButton.disabled = !model.canUndo || flying || discarding || !!state.payment || !!state.choice?.canCancel;
-  handDiscardConfirm.hidden = !handChoice;
-  paymentSubmit.hidden = handChoice;
-  element("payment-cancel").hidden = handChoice;
   restart.disabled = discarding || !!state.payment;
-  endTurnButton.disabled = !state.canEndTurn || flying || discarding || discardOpen;
-  const turn =
-    state.turn === "enemy"
-      ? "Enemy turn"
-      : state.turn === "ending"
-        ? "Ending your turn"
-        : state.turn === "finished"
-          ? state.outcome?.result === "win"
-            ? "Victory"
-            : "Defeat"
-          : "Your turn";
-  if (state.turn === "finished") turnStatus.textContent = turn;
-  else phaseIndicator(state.turn === "enemy" ? "villain" : "hero");
-  turnStatus.dataset.turn = state.turn;
-  if (state.payment) showPayment(state.payment);
-  else paymentPanel.hidden = true;
-  choiceShade.hidden = decision.hidden || !(heldEncounter || state.choice?.offers?.length || defenseQuestion);
+  if (state.outcome) {
+    turnStatus.textContent = state.outcome.result === "win" ? "Victory" : "Defeat";
+    turnStatus.dataset.phase = state.outcome.result === "win" ? "hero" : "villain";
+  } else phaseIndicator(state.choice?.mulligan ? "setup" : state.turn === "enemy" ? "villain" : "hero");
+  choiceShade.hidden = !state.choice || !(heldEncounter || state.choice.offers?.length || defenseQuestion);
+  paintDock(dockView());
   if (state.choice) {
-    showChoice(state.choice);
     if (defending) {
       defenseShade.removeAttribute("hidden");
       reticle.hidden = false;
     }
     if (state.choice.offers?.length) {
       abilityGlow.removeAttribute("hidden");
+      inspect(state.choice.offers[offerIndex]?.cardId ?? null);
     }
-    placeLabels();
   }
+  placeLabels();
   showOutcome(state.outcome);
+}
+
+/** The hero's or an ally's own menu, opened by clicking the card: its basic powers and abilities. */
+function renderCardMenu() {
+  decision.replaceChildren();
+  decision.hidden = !menuCard || discardOpen;
+  decision.toggleAttribute("data-identity", !!menuCard);
+  if (!menuCard) return;
+  const id = menuCard;
+  const card = [state.hero, ...state.inPlay].find((c) => c.id === id);
+  const actions = id === state.hero.id ? state.heroActions : model.fieldActions(id);
+  if (!actions.length) decision.append(make("p", "menu-note", card?.exhausted ? "Exhausted" : "No actions available"));
+  for (const action of actions) {
+    const button = make("button", "btn btn-secondary menu-action");
+    button.type = "button";
+    button.dataset.power = action.kind;
+    if (action.kind === "basicAttack" || action.kind === "basicThwart" || action.kind === "basicRecover") {
+      const stat = action.kind === "basicAttack" ? "atk" : action.kind === "basicThwart" ? "thw" : "rec";
+      const value = model.basicPower(id, stat);
+      const description = `${action.label} with ${card?.name ?? "card"} (${value} ${stat.toUpperCase()})`;
+      button.setAttribute("aria-label", description);
+      button.title = description;
+      button.classList.add("stat-action");
+      button.style.setProperty("--stat-color", statHue[stat].css);
+      button.replaceChildren(
+        make("b", "stat-value", String(value)),
+        make("span", "stat-ribbon", stat.toUpperCase()),
+        make("span", "stat-name", action.label),
+      );
+    } else if (action.kind === "changeForm") {
+      button.classList.add("form-action");
+      button.replaceChildren(icon("flip"), make("span", "", action.label));
+    } else if ("exhausts" in action && action.exhausts) {
+      const description = `${card?.name ?? "Card"}: ${action.label}`;
+      button.setAttribute("aria-label", description);
+      button.title = description;
+      button.classList.add("exhaust-action");
+      button.replaceChildren(icon("exhaust"), make("span", "", action.label));
+    } else {
+      button.replaceChildren(icon("action"), make("span", "", action.label));
+    }
+    button.onclick = () => {
+      menuCard = null;
+      act(() => {
+        if (id === state.hero.id) model.heroAction(action.kind);
+        else model.fieldAction(id, action.kind);
+      });
+      inspect(id);
+    };
+    decision.append(button);
+  }
+  const close = make("button", "btn btn-ghost btn-icon menu-close");
+  close.type = "button";
+  close.setAttribute("aria-label", "Close");
+  close.append(icon("close"));
+  close.onclick = () => {
+    menuCard = null;
+    render();
+  };
+  decision.append(close);
+}
+
+// ── Starting a game ───────────────────────────────────────────────────────────────────────────────────────────────
+function seedFromUrl(): number | undefined {
+  const seed = Number(new URLSearchParams(location.search).get("seed"));
+  return Number.isInteger(seed) && seed > 0 ? seed : undefined;
 }
 
 function deal() {
@@ -1460,8 +1959,14 @@ function deal() {
   discardOpen = false;
   choicePicks.clear();
   staged = null;
-  model.reset();
+  feed = [];
+  paintFeed();
+  const seed = seedFromUrl() ?? Math.floor(Math.random() * 2 ** 31) + 1;
+  // `?scene=crowded` skips the mulligan and lays out a busy table for checking the presentation.
+  const arrange = arrangeScene(new URLSearchParams(location.search).get("scene") ?? "");
+  model.reset(arrange ? { seed, arrange } : { seed, mulligan: true });
   state = model.snapshot();
+  presented = state.beats;
   if (!table) {
     table = new BattleTable(element("space"), boardViewport, {
       onPick: pick,
@@ -1476,17 +1981,15 @@ function deal() {
   }
   render();
   inspect(state.hand.find((card) => card.playable)?.id ?? state.hero.id);
-  instruction.textContent = "Pick a card to play.";
   restart.disabled = false;
   placeLabels();
-  phaseIndicator("hero", true);
 }
 
 function start() {
   try {
     deal();
   } catch (error) {
-    instruction.textContent = error instanceof Error ? error.message : "Could not open the table.";
+    dockTitle.textContent = error instanceof Error ? error.message : "Could not open the table.";
     restart.disabled = false;
     console.error(error);
   }
@@ -1531,26 +2034,17 @@ undoButton.onclick = () => {
   discardOpen = false;
   choicePicks.clear();
   table?.reconcileEncounters([]);
+  say("Move undone");
   render();
   for (const id of state.facedownEncounters) table?.dealEncounter(id);
   if (view?.reveal) table?.revealEncounter(view.reveal);
   if (staged?.type === "event") table?.channelEvent(staged.id);
   inspect(heldEncounter ?? state.hero.id);
-  instruction.textContent = state.choice?.prompt ?? "Move undone.";
 };
 restart.onclick = start;
 tryAgain.onclick = start;
 gameOverUndo.onclick = () => undoButton.click();
 gameOver.oncancel = (event) => event.preventDefault();
-endTurnButton.onclick = () => {
-  if (endTurnButton.disabled) return;
-  act(() => {
-    if (model.endTurn()) instruction.textContent = model.snapshot().choice?.prompt ?? "";
-  });
-};
-paymentSubmit.onclick = pay;
-handDiscardConfirm.onclick = confirmChoice;
-element<HTMLButtonElement>("payment-cancel").onclick = cancel;
 pile.onclick = () => setDiscardOpen(!discardOpen || viewingEncounterDiscard, false);
 encounterPile.onclick = () => setDiscardOpen(!discardOpen || !viewingEncounterDiscard, true);
 document.addEventListener(
@@ -1559,7 +2053,7 @@ document.addEventListener(
     if (
       !discardOpen ||
       !(event.target instanceof Element) ||
-      event.target.closest("#space, #discard-label, #encounter-discard, #discard-fan")
+      event.target.closest("#space, #discard-label, #encounter-discard, #discard-fan, #dock")
     )
       return;
     event.preventDefault();

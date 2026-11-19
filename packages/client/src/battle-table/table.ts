@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { CARD_BACKS } from "../art/art-source.js";
 import { cardRadius } from "../art/card-shape.js";
 import rooftop from "../art/tabletop/rooftop.webp?url";
+import { TokenKit, placeTokens } from "./tokens3d.js";
 
 export interface TableCard {
   readonly attachedTo?: string | null;
@@ -170,41 +171,6 @@ function resourceAura(geometry: THREE.PlaneGeometry) {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.z = 0.008;
   return mesh;
-}
-
-function markerFace(name: string, count: number): THREE.MeshBasicMaterial {
-  const colors: Record<string, string> = {
-    stunned: "#9b5d0e",
-    confused: "#693d89",
-    tough: "#256981",
-    damage: "#9d342d",
-    acceleration: "#8e4128",
-    threat: "#86541b",
-  };
-  const canvas = document.createElement("canvas");
-  canvas.width = 384;
-  canvas.height = 110;
-  const ctx = canvas.getContext("2d")!;
-  ctx.fillStyle = colors[name] ?? "#316651";
-  ctx.fillRect(0, 0, 384, 110);
-  ctx.strokeStyle = "#f5ead6";
-  ctx.lineWidth = 5;
-  ctx.strokeRect(6, 6, 372, 98);
-  ctx.fillStyle = "white";
-  ctx.font = "bold 53px system-ui";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(
-    /^(THW|ATK|DEF|SCH|REC|HP)$/.test(name)
-      ? `${count > 0 ? "+" : ""}${count} ${name}`
-      : `${name.toUpperCase()} ${count}`,
-    192,
-    55,
-    350,
-  );
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.MeshBasicMaterial({ map: texture, toneMapped: false });
 }
 
 function contactShadow() {
@@ -400,13 +366,8 @@ export class BattleTable {
   #revealing: string | null = null;
   #actor: string | null = null;
   #power: string | null = null;
-  readonly #markerFace = new THREE.PlaneGeometry(0.64, 0.184);
-  readonly #markerBase = new THREE.BoxGeometry(0.65, 0.195, 0.046);
-  readonly #markerEdge = new THREE.MeshStandardMaterial({ color: 0x38322b });
-  readonly #markerMaterials = new Map<string, THREE.MeshBasicMaterial>();
-  readonly #chip = new THREE.CylinderGeometry(0.12, 0.13, 0.048, 6);
-  readonly #chipRim = new THREE.MeshStandardMaterial({ color: 0xffb334, metalness: 0.32, roughness: 0.45 });
-  readonly #chipInset = new THREE.MeshStandardMaterial({ color: 0x9e391b, roughness: 0.65 });
+  /** Damage discs, counters, status tiles, stat pills and threat chips. */
+  readonly #kit = new TokenKit(Math.min(8, this.#renderer.capabilities.getMaxAnisotropy()), () => this.#requestFrame());
   readonly #liftedTokens = new Map<THREE.Group, number>();
   readonly #drops = new Map<THREE.Group, number>();
   readonly #observer: ResizeObserver;
@@ -466,6 +427,16 @@ export class BattleTable {
       });
     }
     this.#requestFrame();
+  }
+
+  /** Green motes rising off a healed card. */
+  healBurst(id: string): void {
+    const piece = this.#pieces.get(id);
+    if (!piece) return;
+    const at = piece.root.position.clone();
+    at.y += 0.15;
+    this.#burst(at, 0x5dffa0, 16, 0.7, 2.4);
+    this.#burst(at, 0xe8fff0, 6, 0.4, 1.6);
   }
 
   strike(source: string | null, target: string): void {
@@ -934,24 +905,11 @@ export class BattleTable {
     const piece = this.#pieces.get(id);
     if (!piece) return;
     this.#deflection?.token.removeFromParent();
-    const token = new THREE.Group();
-    const face = new THREE.Mesh(this.#markerFace, this.#markerMaterial("damage", amount));
-    face.position.z = 0.025;
-    token.add(new THREE.Mesh(this.#markerBase, this.#markerEdge), face);
+    const token = this.#kit.build("damage", amount);
     piece.root.add(token, this.#sheen);
     this.#sheen.position.z = 0.025;
     this.#deflection = { token, start: performance.now() };
     this.#requestFrame();
-  }
-
-  #markerMaterial(name: string, count: number) {
-    const key = JSON.stringify([name, count]);
-    let material = this.#markerMaterials.get(key);
-    if (!material) {
-      material = markerFace(name, count);
-      this.#markerMaterials.set(key, material);
-    }
-    return material;
   }
 
   channelEvent(id: string): void {
@@ -1117,32 +1075,22 @@ export class BattleTable {
     );
     for (const token of group.children) this.#drops.delete(token as THREE.Group);
     group.clear();
+    const places = placeTokens(markers, piece.card.landscape);
     markers.forEach(({ name, count }, i) => {
-      const token = new THREE.Group();
-      token.name = name;
-      token.userData.count = count;
+      const token = this.#kit.build(name, count);
       const old = prior.get(name);
+      // A new token, or one whose number changed, drops onto the card; an unchanged one stays put.
       const drop = old?.count === count ? old.drop : performance.now() + i * 55;
       if (drop !== undefined) this.#drops.set(token, drop);
-      const material = this.#markerMaterial(name, count);
-      const edge = new THREE.Mesh(this.#markerBase, this.#markerEdge);
-      edge.castShadow = true;
-      const face = new THREE.Mesh(this.#markerFace, material);
-      face.position.z = 0.024;
-      token.add(edge, face);
       if (tucked) {
-        token.rotation.z = Math.PI / 2;
-        token.scale.setScalar(0.82);
-        token.position.set(-0.41, -0.34 + i * 0.54, 0.06);
+        // On an upgrade or attachment tab: a short column along the exposed edge.
+        token.scale.setScalar(0.62);
+        token.position.set(-0.41, -0.42 + i * 0.27, 0.04);
       } else {
-        const columns = Math.ceil(markers.length / 5);
-        const scale = Math.min(1, 1.35 / columns);
-        token.scale.setScalar(scale);
-        token.position.set(
-          (piece.card.landscape ? -0.29 : 0) + (Math.floor(i / 5) - (columns - 1) / 2) * 0.67 * scale,
-          0.3 - (i % 5) * 0.205 * scale,
-          0.065,
-        );
+        const place = places[i]!;
+        token.position.set(place.x, place.y, 0.03);
+        token.rotation.z = place.rotation;
+        token.scale.setScalar(place.scale);
       }
       group.add(token);
     });
@@ -1159,21 +1107,14 @@ export class BattleTable {
     }
     while (group.children.length < total) {
       const i = group.children.length;
-      const token = new THREE.Group();
-      const rim = new THREE.Mesh(this.#chip, this.#chipRim);
-      rim.rotation.x = Math.PI / 2;
-      rim.castShadow = true;
-      const inset = new THREE.Mesh(this.#chip, this.#chipInset);
-      inset.rotation.x = Math.PI / 2;
-      inset.scale.set(0.72, 0.25, 0.72);
-      inset.position.z = 0.025;
-      token.add(rim, inset);
+      const token = this.#kit.threatChip();
+      // Chips settle in a loose three-by-two tray in the corner of the scheme, then stack.
       token.position.set(
         0.48 - (i % 3) * 0.235,
-        -0.29 + Math.floor((i % 6) / 3) * 0.2,
-        0.055 + Math.floor(i / 6) * 0.06,
+        -0.29 + Math.floor((i % 6) / 3) * 0.21,
+        0.03 + Math.floor(i / 6) * 0.047,
       );
-      token.rotation.z = i * 0.36;
+      token.rotation.z = ((i * 0.61) % 0.5) - 0.25;
       group.add(token);
       this.#drops.set(token, performance.now() + Math.min(i, 4) * 45);
     }
@@ -1304,11 +1245,17 @@ export class BattleTable {
     const top = (1 - far.project(this.#camera).y) * this.#canvasHeight * 0.5 - this.#extension;
     const extension = extend ? Math.max(0, Math.ceil(this.#height * 0.045 - top)) : 0;
     if (extension !== this.#extension) {
+      const grew = extension > this.#extension;
       this.#extension = extension;
       this.#viewport.style.setProperty("--mat-extension", `${extension}px`);
       this.#viewport.toggleAttribute("data-extended", extension > 0);
       this.#viewport.tabIndex = extension > 0 ? 0 : -1;
       this.#resizeCanvas();
+      // The mat grows upward for extra schemes; keep the view on the hand and the hero, scrolled to the bottom.
+      if (grew)
+        requestAnimationFrame(() => {
+          this.#viewport.scrollTop = this.#viewport.scrollHeight;
+        });
     }
   }
 
@@ -1349,7 +1296,8 @@ export class BattleTable {
       h = this.#height;
     const boardWidth = Math.min(w * 0.2, h * 0.22);
     const flat = -Math.PI / 2;
-    const pileX = w * 0.822;
+    // Piles sit out at the mat's edges, leaving the middle to the cards in play.
+    const pileX = w * 0.885;
     const pileY = h * 0.505;
     const base = this.#point(pileX, pileY, 0.025);
     const encounterWidth = Math.min(w * 0.088, h * 0.088);
@@ -1459,9 +1407,10 @@ export class BattleTable {
     // Airborne cards can sweep over their neighbours. Space the row for their settled poses.
     const footprints = row.map((card) => (card.exhausted !== card.landscape ? HEIGHT : 1));
     const tabScale = state.hero.exhausted ? 1 / HEIGHT : 1;
-    const gap = 0.28;
+    // A busy row closes up before its cards shrink.
+    const gap = row.length > 5 ? 0.16 : 0.28;
     const rowWidth = tabs * tabScale + footprints.reduce((total, width) => total + width, 0) + gap * (row.length - 1);
-    const playWidth = Math.min(w * 0.1134, h * 0.133, (w * 0.52) / rowWidth);
+    const playWidth = Math.min(w * 0.1134, h * 0.133, (w * 0.62) / rowWidth);
     let left = (w - rowWidth * playWidth) / 2 + tabs * tabScale * playWidth;
     const centers = footprints.map((width) => {
       const center = left + (width * playWidth) / 2;
@@ -1492,13 +1441,14 @@ export class BattleTable {
     const hand = state.hand.filter((card) => card.id !== state.staged?.id);
     const handLeft = 14;
     const spread = w < 550 ? 0.73 : 1.03;
+    // The turn bar floats under the hand; keep its strip of the table clear.
+    const bottomMargin = w < 740 ? 112 : Math.min(100, Math.max(78, h * 0.105));
     const cardWidth = Math.min(
-      Math.min(h * 0.215, (h * 0.34 - Math.min(56, Math.max(39, h * 0.079))) / 1.5),
+      Math.min(h * 0.215, (h * 0.36 - bottomMargin) / 1.5),
       (w - handLeft - 14) / (1 + Math.max(0, hand.length - 1) * spread),
       w * 0.245,
     );
     const center = (hand.length - 1) / 2;
-    const bottomMargin = Math.min(56, Math.max(39, h * 0.079));
     const baseline = h - bottomMargin - cardWidth * 0.78;
     // Reserve room for a fully raised card, independently of hover or selection.
     this.#paymentEdge = baseline - cardWidth * 1.0 - 8;
@@ -1508,6 +1458,15 @@ export class BattleTable {
     const planeDistance = this.#point(w * 0.5, baseline, 1.34)
       .sub(eye)
       .dot(normal);
+    // Raised cards face the camera, so they get layers along its view instead: the hovered card nearest, then each
+    // picked card a card's thickness behind the last, so neighbours never cut through each other.
+    const forward = this.#camera.getWorldDirection(new THREE.Vector3());
+    const raisedDepth = this.#point(w * 0.5, baseline - cardWidth * 0.17, 2.06)
+      .sub(eye)
+      .dot(forward);
+    const picked = hand.filter(
+      (card) => state.selected.includes(card.id) && !(this.#hovered === card.id && !this.#press?.dragging),
+    );
     hand.forEach((card, i) => {
       const offset = i - center;
       const outward = center ? offset / center : 0;
@@ -1527,14 +1486,14 @@ export class BattleTable {
         raised ? this.#camera.rotation.x : restPitch,
         raised ? 0 : -outward * 0.066,
       );
-      if (!raised) {
-        // Parallel layers along the camera ray keep every projected corner in place.
-        const pose = this.#pieces.get(card.id)!.target;
-        const ray = pose.position.clone().sub(eye);
-        const ratio = (planeDistance + i * 0.035 * pose.scale) / ray.dot(normal);
-        pose.position.copy(eye).addScaledVector(ray, ratio);
-        pose.scale *= ratio;
-      }
+      // Parallel layers along the camera ray keep every projected corner in place.
+      const pose = this.#pieces.get(card.id)!.target;
+      const ray = pose.position.clone().sub(eye);
+      const ratio = raised
+        ? (raisedDepth + (hovered ? -0.12 : picked.indexOf(card) * 0.026) * pose.scale) / ray.dot(forward)
+        : (planeDistance + i * 0.035 * pose.scale) / ray.dot(normal);
+      pose.position.copy(eye).addScaledVector(ray, ratio);
+      pose.scale *= ratio;
     });
     if (state.staged && this.#power !== state.staged.id && !permanents.includes(state.staged)) {
       this.#pose(
@@ -1550,7 +1509,7 @@ export class BattleTable {
     const scale = this.#point(pileX + pileWidth, pileY, 0.025).x - base.x;
     this.#discardSlot.position.copy(base);
     this.#discardSlot.scale.setScalar(scale);
-    const deckX = w * 0.178,
+    const deckX = w * 0.115,
       deckY = h * 0.505;
     this.#deckSlot.position.copy(this.#point(deckX, deckY, 0.025));
     const deckScale = this.#point(deckX + Math.min(w * 0.125, h * 0.125), deckY, 0.025).x - this.#deckSlot.position.x;
@@ -1980,9 +1939,8 @@ export class BattleTable {
     for (const [chip, start] of this.#drops) {
       const t = this.#reduced.matches ? 1 : THREE.MathUtils.clamp((now - start) / 460, 0, 1);
       const height = t < 0.7 ? 0.9 * (1 - (t / 0.7) ** 2) : 0.12 * Math.sin((Math.PI * (t - 0.7)) / 0.3);
-      chip.children.forEach((child, i) => {
-        child.position.z = (i === 1 ? 0.025 : 0) + height;
-      });
+      // Every token is a group around one piece: the piece falls and bounces, the group stays where it was laid.
+      chip.children[0]!.position.z = height;
       if (t === 1) this.#drops.delete(chip);
       else moving = true;
     }
@@ -2209,8 +2167,6 @@ export class BattleTable {
     canvas.removeEventListener("webglcontextlost", this.#loseContext);
     canvas.removeEventListener("webglcontextrestored", this.#restoreContext);
     const geometries = new Set<THREE.BufferGeometry>([
-      this.#markerFace,
-      this.#markerBase,
       this.#auraPlane,
       this.#interruptPuff.geometry,
       this.#tab,
@@ -2225,12 +2181,8 @@ export class BattleTable {
       this.#interruptSheen.material,
       this.#interruptPuff.material,
       this.#actionShadow.material,
-      this.#markerEdge,
-      ...this.#markerMaterials.values(),
       this.#stockMaterial,
       this.#glow,
-      this.#chipRim,
-      this.#chipInset,
     ]);
     this.#scene.traverse((object) => {
       if (object instanceof THREE.Mesh) {
@@ -2241,7 +2193,7 @@ export class BattleTable {
       if (object instanceof THREE.DirectionalLight) object.shadow.dispose();
     });
     geometries.forEach((geometry) => geometry.dispose());
-    this.#markerMaterials.forEach((material) => material.map?.dispose());
+    this.#kit.dispose();
     materials.forEach((material) => material.dispose());
     this.#textures.forEach((texture) => texture.dispose());
     this.#renderer.dispose();

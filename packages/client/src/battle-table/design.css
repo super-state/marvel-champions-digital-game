@@ -1,0 +1,735 @@
+/*
+ * The battle table's design system: one palette, one type ramp, one button family and one prompt dock.
+ * Everything on the table's chrome is built from these tokens; battle.css only places things.
+ *
+ *   Type   Public Sans throughout. 900 italic for impact (phase banners, damage numbers, outcomes),
+ *          800 for questions and numbers, 700 for buttons and labels, 400 for help text.
+ *          Bangers is the logo only.
+ *   Colour Gold means "you can act here" (primary buttons, targets, selection, focus).
+ *          Blue is the hero side, red the villain side. Status hues come from the printed status cards.
+ *   Place  Every question the game asks appears in the turn dock (bottom right), with the button that moves
+ *          the game on always in the same corner. Cards you can pick glow gold on the table.
+ */
+@font-face {
+  font-family: Public Sans;
+  src: url("/fonts/public-sans-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: Public Sans;
+  src: url("/fonts/public-sans-latin-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: Public Sans;
+  src: url("/fonts/public-sans-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: Public Sans;
+  src: url("/fonts/public-sans-latin-800-normal.woff2") format("woff2");
+  font-weight: 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: Public Sans;
+  src: url("/fonts/public-sans-latin-900-normal.woff2") format("woff2");
+  font-weight: 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: Public Sans;
+  src: url("/fonts/public-sans-latin-800-italic.woff2") format("woff2");
+  font-weight: 800;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: Public Sans;
+  src: url("/fonts/public-sans-latin-900-italic.woff2") format("woff2");
+  font-weight: 900;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: Bangers;
+  src: url("/fonts/bangers-latin-400-normal.woff2") format("woff2");
+}
+
+:root {
+  color-scheme: dark;
+  /* Surfaces, darkest to lightest. */
+  --bg-0: #070c12;
+  --bg-1: #0c131b;
+  --bg-2: #121c26;
+  --bg-3: #192633;
+  --bg-4: #223242;
+  --line: #273544;
+  --line-strong: #3d5163;
+  /* Text. */
+  --text: #f3eee3;
+  --text-2: #aab6bf;
+  --text-3: #74838e;
+  /* Meaning. */
+  --gold: #f5c35b;
+  --gold-hi: #ffe09a;
+  --gold-lo: #d99a2b;
+  --gold-ink: #2b1d06;
+  --hero: #5cb4ff;
+  --hero-deep: #11324f;
+  --villain: #ff5f4f;
+  --villain-deep: #4a1619;
+  --threat: #ff9f2e;
+  --damage: #f04a36;
+  --heal: #3fd27f;
+  --tough: #49c6dd;
+  --stunned: #ffb722;
+  --confused: #b884ff;
+  --boost: #ffd84a;
+  --physical: #ef4a3c;
+  --mental: #4a93ff;
+  --energy: #ffc935;
+  --wild: #34d08b;
+  /* Shape and depth. */
+  --r-xs: 4px;
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+  --shadow-1: 0 1px 2px #0009, 0 4px 12px #0006;
+  --shadow-2: 0 10px 34px #000b;
+  --glass: linear-gradient(180deg, #172330f5 0%, #0f1821f5 100%);
+  /* Type. */
+  --font-ui: "Public Sans", system-ui, sans-serif;
+  --font-logo: Bangers, "Public Sans", sans-serif;
+  /* Motion: a fast quint ease-out and a springy overshoot. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-0);
+  color: var(--text);
+}
+
+.icon {
+  display: inline-block;
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.2em;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn {
+  --btn-bg: var(--bg-3);
+  --btn-fg: var(--text);
+  --btn-border: var(--line-strong);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--btn-border);
+  border-radius: var(--r-md);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font: 700 14px/1.15 var(--font-ui);
+  letter-spacing: 0.01em;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 140ms,
+    border-color 140ms,
+    color 140ms,
+    box-shadow 140ms,
+    transform 120ms var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.btn .icon {
+  width: 18px;
+  height: 18px;
+}
+.btn:enabled:active {
+  transform: translateY(1px) scale(0.98);
+}
+.btn:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+.btn:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+.btn-primary {
+  --btn-bg: linear-gradient(180deg, var(--gold-hi) 0%, var(--gold) 46%, var(--gold-lo) 100%);
+  --btn-fg: var(--gold-ink);
+  --btn-border: #ffe7ad;
+  min-width: 132px;
+  background: var(--btn-bg);
+  box-shadow:
+    inset 0 1px 0 #fff8,
+    inset 0 -2px 0 #0002,
+    0 6px 18px #f5b2402e;
+}
+.btn-primary:enabled:hover {
+  filter: brightness(1.07);
+  box-shadow:
+    inset 0 1px 0 #fff8,
+    inset 0 -2px 0 #0002,
+    0 8px 24px #f5b24055;
+}
+.btn-primary:disabled {
+  --btn-bg: var(--bg-3);
+  --btn-fg: var(--text-2);
+  --btn-border: var(--line-strong);
+  opacity: 1;
+  box-shadow: none;
+}
+/* A primary button that is waiting on the player pulses gently, so the next step is never in doubt. */
+.btn-primary[data-attention]:enabled {
+  animation: btn-attention 1.8s var(--ease-out) infinite;
+}
+@keyframes btn-attention {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 1px 0 #fff8,
+      inset 0 -2px 0 #0002,
+      0 0 0 0 #f5c35b88;
+  }
+  60% {
+    box-shadow:
+      inset 0 1px 0 #fff8,
+      inset 0 -2px 0 #0002,
+      0 0 0 9px #f5c35b00;
+  }
+}
+.btn-secondary:enabled:hover {
+  --btn-bg: var(--bg-4);
+  --btn-border: #5b7286;
+}
+.btn-ghost {
+  --btn-bg: transparent;
+  --btn-border: transparent;
+  --btn-fg: var(--text-2);
+  padding: 0 12px;
+}
+.btn-ghost:enabled:hover {
+  --btn-fg: var(--text);
+  --btn-bg: #ffffff0f;
+}
+.btn-icon {
+  min-width: 44px;
+  padding: 0;
+}
+/* One answer among several: a full-width row with an icon, a label and an optional detail line. */
+.btn-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  justify-items: start;
+  column-gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 14px;
+  text-align: left;
+  white-space: normal;
+}
+.btn-option .icon {
+  width: 22px;
+  height: 22px;
+  color: var(--gold);
+}
+.btn-option small {
+  grid-column: 2;
+  color: var(--text-2);
+  font-weight: 400;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.btn-option:not(:has(.icon)) {
+  grid-template-columns: 1fr;
+}
+.btn-option:not(:has(.icon)) small {
+  grid-column: 1;
+}
+.btn-option:enabled:hover,
+.btn-option[aria-pressed="true"] {
+  --btn-border: var(--gold);
+  --btn-bg: #2a2716;
+}
+
+/* ── Chips and labels ───────────────────────────────────────────────────── */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--gold);
+  font: 800 11px/1.3 var(--font-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.eyebrow .icon {
+  width: 15px;
+  height: 15px;
+}
+.eyebrow[data-tone="villain"] {
+  color: #ff8a7c;
+}
+.eyebrow[data-tone="hero"] {
+  color: #8fd0ff;
+}
+.eyebrow[data-tone="reaction"] {
+  color: #c3e7ff;
+}
+.phase-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 11px 5px 9px;
+  border-radius: var(--r-pill);
+  background: var(--hero-deep);
+  color: #9fd6ff;
+  font: 800 11px/1 var(--font-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition:
+    background 0.35s,
+    color 0.35s;
+}
+.phase-chip::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 10px currentColor;
+}
+.phase-chip[data-phase="villain"] {
+  background: var(--villain-deep);
+  color: #ffa093;
+}
+.phase-chip[data-phase="over"] {
+  background: #2c2410;
+  color: var(--gold);
+}
+
+/* ── The turn bar: what the game is asking and the buttons that answer, centred under the hand ───────── */
+.dock {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  min-height: 64px;
+  padding: 9px 10px 9px 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #172433f2 0%, #0e1720f5 100%);
+  box-shadow:
+    0 1px 0 #ffffff12 inset,
+    0 14px 36px #000c;
+  backdrop-filter: blur(6px);
+  transition:
+    border-color 200ms,
+    box-shadow 200ms;
+}
+.dock[data-tone="villain"] {
+  border-color: #5a2a2d;
+  background: linear-gradient(180deg, #2a171bf2 0%, #160d10f5 100%);
+}
+.dock[data-asking] {
+  border-color: var(--gold);
+  box-shadow:
+    0 0 0 1px #f5c35b44,
+    0 14px 36px #000c,
+    0 0 28px #f5c35b2e;
+}
+.dock-round {
+  color: var(--text-2);
+  font: 700 11px/1 var(--font-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.dock-body {
+  display: grid;
+  gap: 2px;
+  min-width: 180px;
+  max-width: 440px;
+}
+.dock-title {
+  margin: 0;
+  color: var(--text);
+  font: 800 17px/1.2 var(--font-ui);
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+  outline: none;
+}
+.dock-help {
+  margin: 0;
+  color: var(--text-2);
+  font: 400 12.5px/1.35 var(--font-ui);
+  text-wrap: pretty;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.dock-help b {
+  color: var(--text);
+  font-weight: 700;
+}
+.dock-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 560px;
+}
+.dock-options .btn-option {
+  width: auto;
+  min-height: 46px;
+  max-width: 260px;
+  padding: 8px 14px 8px 10px;
+}
+.dock-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+/* What just happened, newest first, in the rail beside the card being read. */
+.dock-feed {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dock-feed li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--text);
+  font: 600 13px/1.35 var(--font-ui);
+}
+.dock-feed li .icon {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  color: var(--text-2);
+}
+.dock-feed li:nth-child(n + 2) {
+  color: var(--text-2);
+}
+.dock-feed li:nth-child(n + 4) {
+  opacity: 0.55;
+}
+.dock-feed li[data-tone="villain"] .icon {
+  color: var(--villain);
+}
+.dock-feed li[data-tone="hero"] .icon {
+  color: var(--hero);
+}
+.dock-feed li[data-tone="damage"] .icon {
+  color: var(--damage);
+}
+.dock-feed li[data-tone="threat"] .icon {
+  color: var(--threat);
+}
+.dock-feed li[data-tone="heal"] .icon {
+  color: var(--heal);
+}
+/* Payment progress: resources chosen against the cost. */
+.meter {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 4px;
+  width: 190px;
+}
+.meter small {
+  grid-column: 1 / -1;
+}
+.meter strong {
+  color: var(--gold);
+  font: 800 20px/1 var(--font-ui);
+}
+.meter-track {
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--bg-4);
+  overflow: hidden;
+}
+.meter-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--gold-lo), var(--gold-hi));
+  transform-origin: left;
+  transition: transform 220ms var(--ease-spring);
+}
+.meter small {
+  color: var(--text-2);
+  font: 600 12.5px/1 var(--font-ui);
+}
+.pips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.pip {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-4);
+  color: var(--text-2);
+}
+.pip .icon {
+  width: 14px;
+  height: 14px;
+}
+.pip[data-resource="physical"] {
+  background: #4a1714;
+  color: #ff8a7f;
+}
+.pip[data-resource="mental"] {
+  background: #13284a;
+  color: #8fbcff;
+}
+.pip[data-resource="energy"] {
+  background: #463710;
+  color: var(--energy);
+}
+.pip[data-resource="wild"] {
+  background: #0f3a2a;
+  color: #6be3ad;
+}
+
+/* ── Nameplates and pile labels on the table ─────────────────────────────── */
+.plate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid #ffffff1c;
+  border-radius: var(--r-pill);
+  background: #0a1118e8;
+  box-shadow: var(--shadow-1);
+  color: var(--text);
+  font: 700 12px/1.2 var(--font-ui);
+  white-space: nowrap;
+}
+.plate-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stat-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 6px;
+  border-radius: var(--r-pill);
+  font: 800 14px/1.1 var(--font-ui);
+}
+.stat-pill .icon {
+  width: 14px;
+  height: 14px;
+}
+.stat-pill[data-kind="hp"] {
+  background: linear-gradient(180deg, #5a1a1c, #3a0f12);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px #ff6b5c55;
+}
+.stat-pill[data-kind="hp"] .icon {
+  color: #ff5f52;
+}
+.stat-pill[data-kind="hp"][data-low] {
+  animation: hp-low 1.2s ease-in-out infinite;
+}
+@keyframes hp-low {
+  50% {
+    box-shadow:
+      inset 0 0 0 1px #ff6b5c,
+      0 0 12px #ff3b2a99;
+  }
+}
+.stat-pill[data-kind="threat"] {
+  background: linear-gradient(180deg, #5a3a10, #3a250a);
+  color: #ffe2b8;
+  box-shadow: inset 0 0 0 1px #ffa53a55;
+}
+.stat-pill[data-kind="threat"] .icon {
+  color: var(--threat);
+}
+.stat-pill[data-kind="threat"] i {
+  color: #c8a77c;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 12px;
+}
+.stat-pill[data-kind="threat"][data-near-limit] {
+  background: linear-gradient(180deg, #7a1d12, #4a0f0a);
+  animation: hp-low 1.2s ease-in-out infinite;
+}
+.stat-pill.ticked {
+  animation: pill-tick 420ms var(--ease-spring);
+}
+@keyframes pill-tick {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.32);
+    filter: brightness(1.6);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.pile-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 7px;
+  border: 1px solid #ffffff17;
+  border-radius: var(--r-pill);
+  background: #0a1118d9;
+  color: var(--text-2);
+  font: 700 11.5px/1.2 var(--font-ui);
+  white-space: nowrap;
+}
+.pile-label .icon {
+  width: 14px;
+  height: 14px;
+}
+.pile-label b {
+  color: var(--text);
+  font-weight: 800;
+}
+
+/* ── Floating numbers: damage, healing, threat ──────────────────────────── */
+.float-number {
+  position: absolute;
+  z-index: 6;
+  translate: -50% -50%;
+  pointer-events: none;
+  color: #fff;
+  font: italic 900 var(--float-size, 54px)/1 var(--font-ui);
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+  -webkit-text-stroke: 0.09em #3b0806;
+  paint-order: stroke fill;
+  text-shadow:
+    0 4px 0 #3b0806,
+    0 10px 22px #000c;
+}
+.float-number[data-kind="damage"] {
+  color: #ffefe6;
+  background: linear-gradient(180deg, #fff6ef 10%, #ffb39e 55%, #ff5b44 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.float-number[data-kind="heal"] {
+  -webkit-text-stroke-color: #06341b;
+  text-shadow:
+    0 4px 0 #06341b,
+    0 10px 22px #000c;
+  background: linear-gradient(180deg, #effff5 10%, #8ff0b7 55%, #2fc775 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.float-number[data-kind="threat"] {
+  -webkit-text-stroke-color: #3a2203;
+  text-shadow:
+    0 4px 0 #3a2203,
+    0 10px 22px #000c;
+  background: linear-gradient(180deg, #fff6e4 10%, #ffd08a 55%, #ff9a2a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.float-number[data-kind="thwart"] {
+  -webkit-text-stroke-color: #0b2a45;
+  text-shadow:
+    0 4px 0 #0b2a45,
+    0 10px 22px #000c;
+  background: linear-gradient(180deg, #f2fbff 10%, #9fd6ff 55%, #4fa3ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.float-number[data-kind="blocked"] {
+  -webkit-text-stroke-color: #0c2630;
+  text-shadow:
+    0 3px 0 #0c2630,
+    0 8px 18px #000b;
+  color: #cdf6ff;
+  font-size: calc(var(--float-size, 54px) * 0.62);
+  text-transform: uppercase;
+}
+.float-number small {
+  display: block;
+  margin-top: 0.12em;
+  font-size: 0.32em;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  -webkit-text-stroke: 0;
+  text-shadow: 0 2px 6px #000;
+  -webkit-text-fill-color: #fff;
+  text-align: center;
+}
+
+/* A word stamped across a card: DEFEATED, STUNNED, BLOCKED. */
+.card-stamp {
+  position: absolute;
+  z-index: 6;
+  translate: -50% -50%;
+  rotate: -12deg;
+  padding: 6px 14px 5px;
+  border: 3px solid currentColor;
+  border-radius: var(--r-sm);
+  background: #0b0f14d9;
+  color: #ff6a58;
+  pointer-events: none;
+  font: italic 900 clamp(18px, 2vw, 28px)/1 var(--font-ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: 0 8px 22px #000b;
+}
+.card-stamp[data-tone="status"] {
+  color: var(--stunned);
+  rotate: 8deg;
+}
+.card-stamp[data-tone="confused"] {
+  color: var(--confused);
+  rotate: 8deg;
+}
+.card-stamp[data-tone="tough"] {
+  color: var(--tough);
+  rotate: 8deg;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary[data-attention]:enabled,
+  .stat-pill[data-kind="hp"][data-low],
+  .stat-pill[data-near-limit] {
+    animation: none;
+  }
+}
