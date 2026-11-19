@@ -2090,6 +2090,13 @@ export class BattleTable {
             const settle = THREE.MathUtils.clamp((progress - 0.7) / 0.3, 0, 1);
             piece.root.scale.multiplyScalar(1 + Math.sin(Math.PI * settle) * 0.045);
           }
+          if (kind === "draw" && this.#state?.hand.some((card) => card.id === id)) {
+            // Landing in the hand on a soft spring: it dips past its place, bounces back once and settles.
+            const settle = THREE.MathUtils.clamp((progress - 0.62) / 0.38, 0, 1);
+            const spring = Math.sin(settle * Math.PI * 2) * Math.exp(-3.2 * settle) * (1 - settle);
+            piece.root.position.y -= spring * piece.root.scale.x * 0.09;
+            piece.root.rotation.z += spring * 0.035;
+          }
           if (kind === "place") {
             const settle = Math.max(0, (progress - 0.54) / 0.46);
             piece.root.scale.multiplyScalar(1 - Math.sin(Math.PI * Math.min(1, settle * 2.2)) * 0.05 * (1 - settle));
