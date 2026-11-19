@@ -33,15 +33,35 @@ describe("offerDoes", () => {
   test("drops the 'Use <card> to' the button already says", () => {
     expect(offerDoes("Use Spider-Sense to draw 1 card")).toBe("draw 1 card");
     expect(offerDoes("Use Mockingbird to stun an enemy.")).toBe("stun an enemy");
+    expect(offerDoes('Use Enhanced Spider-Sense to cancel its "When Revealed" effects')).toBe(
+      'cancel its "When Revealed" effects',
+    );
   });
 
   test("reads Great Responsibility's 'you take it' as an instruction", () => {
     expect(offerDoes("Use Great Responsibility to you take it as damage instead")).toBe("take it as damage instead");
   });
 
-  test("leaves a 'Use <card>: <text>' line whole, even when its text says 'to' later", () => {
-    const line = "Use Foo: Interrupt (defense): When an enemy attacks you, deal 1 damage to it";
-    expect(offerDoes(line)).toBe(line);
+  test("takes the instruction out of a line given whole, past its trigger and condition", () => {
+    // The lines this deck's interrupts read as (Backflip, Emergency), and an "it" that is not the instruction.
+    expect(
+      offerDoes(
+        "Use Backflip: Interrupt (defense): When you would take any amount of damage from an attack, prevent all of that damage",
+      ),
+    ).toBe("prevent all of that damage");
+    expect(
+      offerDoes(
+        "Use Emergency: Interrupt (thwart): When the villain schemes, reduce the amount of threat placed on the scheme by 1",
+      ),
+    ).toBe("reduce the amount of threat placed on the scheme by 1");
+    expect(offerDoes("Use Foo: Interrupt (defense): When an enemy attacks you, deal 1 damage to it")).toBe(
+      "deal 1 damage to it",
+    );
+    expect(offerDoes("Use Aunt May: Draw a card")).toBe("Draw a card");
+  });
+
+  test("keeps a line it cannot read", () => {
+    expect(offerDoes("Use Foo")).toBe("Use Foo");
   });
 });
 

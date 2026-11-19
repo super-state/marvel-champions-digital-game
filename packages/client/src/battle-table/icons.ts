@@ -65,7 +65,11 @@ const ICONS = {
   /** Surge: another encounter card follows. */
   surge: [{ d: "M2.5 4.5h4.6l7.2 7.5-7.2 7.5H2.5l7.2-7.5zM10.2 4.5h4.6l7.2 7.5-7.2 7.5h-4.6l7.2-7.5z" }],
   /** Boost icons on an encounter card. */
-  boost: [{ d: star(12, 12, 8, 11.5, 4.6) }],
+  boost: [
+    {
+      d: "M1.8 3.2C5.4 3.2 8.8 6.8 12 6.8C15.2 6.8 18.6 3.2 22.2 3.2C21.4 6 17.8 9 15.4 10.4C14.6 11 14.4 12.2 14.3 14C14.1 16.4 13.4 18.8 12 21.4C10.6 18.8 9.9 16.4 9.7 14C9.6 12.2 9.4 11 8.6 10.4C6.2 9 2.6 6 1.8 3.2Z",
+    },
+  ],
   /** Wild resource. */
   wild: [{ d: star(12, 12, 4, 11.2, 3.6) + star(19, 5, 4, 3.4, 1.1) }],
   /** Energy resource; also a hero interrupt's lightning. */
@@ -151,6 +155,8 @@ const ICONS = {
         "M12 13.9l1.4 2.5h-2.8zM9.7 18.4h1.1v2.4H9.7zM13.2 18.4h1.1v2.4h-1.1z",
     },
   ],
+  /** Done, keep as it is. */
+  check: [{ d: "M4.5 12.6l4.9 4.9L19.6 7.1", stroke: 2.6 }],
   /** The game menu. */
   menu: [{ d: "M4 6.5h16M4 12h16M4 17.5h16", stroke: 2.4 }],
   /** Close a panel. */

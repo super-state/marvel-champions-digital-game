@@ -73,11 +73,11 @@ const SCENES: Record<string, Scene> = {
     hero: { form: "hero" },
     hand: ["01061"],
   },
-  /** Rhino attacks with Sandman as his boost card and Enhanced Ivory Horn attached: Spider-Sense, then the defense. */
+  /** Rhino attacks with Sandman as his boost card and Enhanced Ivory Horn attached: Spider-Sense, the defense, Backflip. */
   attack: {
     hero: { form: "hero" },
     villainAttachments: [{ code: "01100" }],
-    hand: ["01060", "01093", "01083", "01007", "01005"],
+    hand: ["01003", "01093", "01083", "01007", "01005"],
     encounterTop: ["01102", "01108"],
   },
   /** A quiet mid-game board: one minion, one side scheme, a couple of supports. */

@@ -898,6 +898,15 @@ export class BattleTable {
     }),
   );
   #interrupt: { piece: Piece; start: number; lift: number } | null = null;
+  #wave: { start: number; lifts: Map<Piece, number> } | null = null;
+
+  /** A ripple through the hand, each card hopping in turn: a question about the hand points at it. */
+  waveHand(): void {
+    if (this.#reduced.matches || !this.#state?.hand.length) return;
+    this.#wave ??= { start: 0, lifts: new Map() };
+    this.#wave.start = performance.now();
+    this.#requestFrame();
+  }
 
   pulseInterrupt(id: string): void {
     const piece = this.#pieces.get(id);
@@ -1733,6 +1742,10 @@ export class BattleTable {
   readonly #draw = (now: number): void => {
     this.#frame = 0;
     if (this.#interrupt) this.#interrupt.piece.root.position.y -= this.#interrupt.lift;
+    if (this.#wave) {
+      for (const [piece, lift] of this.#wave.lifts) piece.root.position.y -= lift;
+      this.#wave.lifts.clear();
+    }
     const dt = Math.min(40, Math.max(1, now - this.#lastFrame)) / 1000;
     this.#lastFrame = now;
     const handSlide = this.#reduced.matches ? 1 : 1 - Math.exp(-dt * 10);
@@ -2055,6 +2068,22 @@ export class BattleTable {
         this.#interruptSheen.removeFromParent();
         this.#interrupt = null;
       } else moving = true;
+    }
+    if (this.#wave && now - this.#wave.start >= 380 + (this.#state?.hand.length ?? 0) * 65) this.#wave = null;
+    if (this.#wave) {
+      const wave = this.#wave;
+      const elapsed = now - wave.start;
+      const hand = this.#state?.hand ?? [];
+      hand.forEach((card, i) => {
+        const piece = this.#pieces.get(card.id);
+        if (!piece || this.#flights.has(card.id)) return;
+        const t = THREE.MathUtils.clamp((elapsed - i * 65) / 380, 0, 1);
+        const lift = piece.root.scale.x * 0.14 * Math.sin(Math.PI * t);
+        if (lift <= 0) return;
+        piece.root.position.y += lift;
+        wave.lifts.set(piece, lift);
+      });
+      moving = true;
     }
     for (let i = this.#sparks.length - 1; i >= 0; i--) {
       const spark = this.#sparks[i]!;

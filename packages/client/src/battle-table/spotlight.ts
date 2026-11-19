@@ -27,12 +27,19 @@ export interface SpotTable {
 type TriggerEventView = NonNullable<BattleChoice["event"]>;
 
 /**
- * What an offered ability does, without the "Use <card> to" its button already says: "Use Great Responsibility to you
- * take it as damage instead" reads "take it as damage instead". A line in the "Use <card>: <text>" form (an ability
- * whose text does not take the "When ..., do" shape) stays whole.
+ * What an offered ability does, without the "Use <card>" its button already says: "Use Spider-Sense to draw 1 card"
+ * reads "draw 1 card", and Great Responsibility's "to you take it as damage instead" reads "take it as damage
+ * instead". A line given whole ("Use Backflip: Interrupt (defense): When you would take any amount of damage from an
+ * attack, prevent all of that damage") loses its trigger and condition the same way: "prevent all of that damage".
  */
 export function offerDoes(effect: string): string {
-  return effect.replace(/\.$/, "").replace(/^Use [^:]+? to (?:you )?(?=[a-z])/, "");
+  const text = effect.replace(/\.$/, "");
+  const to = /^Use [^:]+? to (?:you (?:may )?)?(?=[a-z])/;
+  if (to.test(text)) return text.replace(to, "");
+  const whole =
+    /^Use [^:]+:\s*(?:(?:Hero |Alter-Ego )?(?:Forced )?(?:Interrupt|Response)(?:\s*\([^)]*\))?\s*:\s*)?(?:(?:When|After|If)\b[^,]*,\s*)?(?:you (?:may )?(?=[a-z]))?/;
+  const rest = text.replace(whole, "");
+  return rest && rest !== text ? rest : text;
 }
 
 /** How a reaction window's event reads: its symbol, and whether it threatens the hero (red), the plan (orange) or neither. */

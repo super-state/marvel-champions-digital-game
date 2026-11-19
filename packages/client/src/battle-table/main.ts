@@ -188,6 +188,10 @@ interface DockView {
 }
 
 let dockKey = "";
+/** When the bar's current question appeared: its buttons wait out a double-click on the button that brought it. */
+let questionAt = 0;
+const QUESTION_GUARD_MS = 380;
+const settled = () => performance.now() - questionAt >= QUESTION_GUARD_MS;
 function paintButton(button: HTMLButtonElement, spec: DockButton | null | undefined) {
   button.hidden = !spec;
   if (!spec) return;
@@ -199,11 +203,12 @@ function paintButton(button: HTMLButtonElement, spec: DockButton | null | undefi
   button.disabled = !!spec.disabled;
   button.toggleAttribute("data-attention", !!spec.attention);
   button.onclick = () => {
-    if (!button.disabled) spec.onClick();
+    if (!button.disabled && settled()) spec.onClick();
   };
 }
 
-function paintDock(view: DockView) {
+/** Paint the turn bar; true when it now asks a question it was not asking before. */
+function paintDock(view: DockView): boolean {
   dock.dataset.tone = view.tone;
   dock.toggleAttribute("data-asking", view.asking);
   const eyebrow = view.eyebrow;
@@ -216,6 +221,19 @@ function paintDock(view: DockView) {
   const key = `${view.title}|${eyebrow?.text ?? ""}`;
   const fresh = key !== dockKey;
   dockKey = key;
+  if (fresh && view.asking) {
+    questionAt = performance.now();
+    // The bar turns over like a card to a new question, so it never reads as the button just pressed.
+    if (!reducedMotion())
+      dock.animate(
+        [
+          { transform: "perspective(700px) rotateX(-78deg)", opacity: 0.2 },
+          { transform: "perspective(700px) rotateX(9deg)", opacity: 1, offset: 0.68 },
+          { transform: "none", opacity: 1 },
+        ],
+        { duration: 360, easing: "cubic-bezier(.2,.8,.3,1)" },
+      );
+  }
   dockTitle.textContent = view.title;
   instruction.textContent = view.help ?? "";
   instruction.hidden = !view.help;
@@ -241,7 +259,7 @@ function paintDock(view: DockView) {
       button.append(make("span", "", option.label));
       if (option.detail) button.append(make("small", "", option.detail));
       button.onclick = () => {
-        if (!discarding && !presenting) option.onClick();
+        if (!discarding && !presenting && settled()) option.onClick();
       };
       return button;
     }),
@@ -258,6 +276,7 @@ function paintDock(view: DockView) {
     const first = view.options?.length ? dockOptions.querySelector<HTMLElement>("button") : null;
     (first ?? dockTitle).focus({ preventScroll: true });
   }
+  return fresh && view.asking;
 }
 
 /** What just happened, newest first, so a fast villain phase can be followed. */
@@ -473,7 +492,7 @@ function choiceView(choice: Choice): DockView {
       title: forced ? `Discard ${choice.min}` : "Discard any?",
       primary: {
         label: n ? `Discard ${n}` : forced ? `Pick ${choice.min}` : "Keep hand",
-        icon: n ? "discard" : "next",
+        icon: n || forced ? "discard" : "check",
         disabled: n < choice.min || discarding,
         attention: n >= choice.min,
         onClick: confirmChoice,
@@ -1268,10 +1287,17 @@ function placeLabels() {
 // ── Presenting what happened ─────────────────────────────────────────────────────────────────────────────────────
 const PHASE_BANNER_MS = 1500;
 
-function phaseIndicator(phase: "hero" | "villain" | "setup", announce = false) {
-  if (phase !== "setup") table?.setPhase(phase);
-  const title = phase === "hero" ? "Hero phase" : phase === "villain" ? "Villain phase" : "Setup";
-  turnStatus.dataset.phase = phase === "villain" ? "villain" : "hero";
+function phaseIndicator(phase: "hero" | "villain" | "ending" | "setup", announce = false) {
+  if (phase !== "setup") table?.setPhase(phase === "villain" ? "villain" : "hero");
+  const title =
+    phase === "hero"
+      ? "Hero phase"
+      : phase === "villain"
+        ? "Villain phase"
+        : phase === "ending"
+          ? "End of turn"
+          : "Setup";
+  turnStatus.dataset.phase = phase === "villain" ? "villain" : phase === "ending" ? "ending" : "hero";
   turnStatus.textContent = title;
   roundLabel.textContent = `Round ${state?.round ?? 1}`;
   if (announce && phase !== "setup") {
@@ -1379,7 +1405,9 @@ async function showBoost(reveal: NonNullable<Beat["reveal"]>) {
   if (!card) return;
   const burst = make("div", "boost-burst");
   burst.setAttribute("role", "status");
-  burst.append(icon("boost"), make("b", "", `+${boost.icons}`), make("span", "", "Boost"));
+  const marks = make("span", "boost-marks");
+  for (let i = 0; i < Math.min(boost.icons, 4); i++) marks.append(icon("boost"));
+  burst.append(marks, make("b", "", `+${boost.icons}`), make("span", "", "Boost"));
   const x = card.x + card.width * 0.33;
   const y = card.bottom - card.width * 0.25;
   burst.style.left = x + "px";
@@ -2001,9 +2029,20 @@ function render() {
   if (state.outcome) {
     turnStatus.textContent = state.outcome.result === "win" ? "Victory" : "Defeat";
     turnStatus.dataset.phase = state.outcome.result === "win" ? "hero" : "villain";
-  } else phaseIndicator(state.choice?.mulligan ? "setup" : state.turn === "enemy" ? "villain" : "hero");
+  } else
+    phaseIndicator(
+      state.choice?.mulligan
+        ? "setup"
+        : state.turn === "enemy"
+          ? "villain"
+          : state.turn === "ending"
+            ? "ending"
+            : "hero",
+    );
   choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
-  paintDock(dockView());
+  const asked = paintDock(dockView());
+  // A question about the hand sends a ripple through it, so the eye goes where the answer is.
+  if (asked && (state.choice?.discardFromHand || state.choice?.mulligan)) table?.waveHand();
   // A question darkens the table around what it is about: the attacker (red), or what an interrupt would change.
   setSpot(
     spotOf(state.choice, state, {

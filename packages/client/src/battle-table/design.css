@@ -88,7 +88,7 @@
   --tough: #49c6dd;
   --stunned: #ffb722;
   --confused: #b884ff;
-  --boost: #ffd84a;
+  --boost: #e8464e;
   --physical: #ef4a3c;
   --mental: #4a93ff;
   --energy: #ffc935;
@@ -272,7 +272,7 @@
   gap: 7px;
   margin: 0;
   color: var(--gold);
-  font: 800 11px/1.3 var(--font-ui);
+  font: 700 11px/1.3 var(--font-ui);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -319,6 +319,10 @@
 .phase-chip[data-phase="villain"] {
   background: var(--villain-deep);
   color: #ffa093;
+}
+.phase-chip[data-phase="ending"] {
+  background: #33240c;
+  color: #ffc35e;
 }
 .phase-chip[data-phase="over"] {
   background: #2c2410;
@@ -375,7 +379,7 @@
 .dock-title {
   margin: 0;
   color: var(--text);
-  font: 800 17px/1.2 var(--font-ui);
+  font: 700 17px/1.2 var(--font-ui);
   letter-spacing: -0.005em;
   text-wrap: balance;
   outline: none;
