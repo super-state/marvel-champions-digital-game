@@ -36,6 +36,27 @@ button:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--sidebar-width);
 }
+/* The sidebar on the left (a menu setting): it swaps sides with the table. */
+@media (min-width: 741px) {
+  .arena[data-rail="left"] {
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  }
+  .arena[data-rail="left"] .rail {
+    grid-column: 1;
+    grid-row: 1;
+    border-right: 1px solid var(--line);
+    border-left: 0;
+  }
+  .arena[data-rail="left"] .playfield {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .arena[data-rail="left"] .rail[data-wide-preview] .reader {
+    inset: 0 auto 0 0;
+    border-right: 1px solid var(--line);
+    border-left: 0;
+  }
+}
 .playfield {
   position: relative;
   display: flex;
@@ -1075,6 +1096,22 @@ button:focus-visible {
 #menu h2 i {
   color: var(--text-3);
   font-weight: 700;
+}
+.menu-setting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  color: var(--text-2);
+  font: 700 13px/1 var(--font-ui);
+}
+.menu-setting span {
+  margin-right: 4px;
+}
+.menu-setting .btn-option {
+  min-height: 36px;
+  padding: 0 14px;
 }
 .menu-actions {
   display: grid;

@@ -2306,6 +2306,24 @@ menuButton.onclick = () => {
   if (!gameMenu.open) gameMenu.showModal();
 };
 element<HTMLButtonElement>("menu-resume").onclick = () => gameMenu.close();
+// Which side the card reader and log sit on, remembered on this device.
+function setSidebarSide(side: "left" | "right") {
+  document.querySelector(".arena")!.setAttribute("data-rail", side);
+  for (const button of gameMenu.querySelectorAll<HTMLButtonElement>("[data-side]"))
+    button.setAttribute("aria-pressed", String(button.dataset.side === side));
+  try {
+    localStorage.setItem("battle-sidebar-side", side);
+  } catch {
+    // Private windows may refuse storage: the choice just lasts this visit.
+  }
+}
+for (const button of gameMenu.querySelectorAll<HTMLButtonElement>("[data-side]"))
+  button.onclick = () => setSidebarSide(button.dataset.side === "left" ? "left" : "right");
+try {
+  setSidebarSide(localStorage.getItem("battle-sidebar-side") === "left" ? "left" : "right");
+} catch {
+  setSidebarSide("right");
+}
 tryAgain.onclick = start;
 gameOverUndo.onclick = () => undoButton.click();
 gameOver.oncancel = (event) => event.preventDefault();
