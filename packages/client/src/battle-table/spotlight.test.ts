@@ -15,6 +15,7 @@ const table: SpotTable = {
 
 function choice(part: Partial<BattleChoice>): BattleChoice {
   return {
+    id: "c1",
     prompt: "",
     options: [],
     canSkip: false,
@@ -58,6 +59,14 @@ describe("offerDoes", () => {
       "deal 1 damage to it",
     );
     expect(offerDoes("Use Aunt May: Draw a card")).toBe("Draw a card");
+  });
+
+  test("drops 'you' only before an instruction's verb", () => {
+    expect(offerDoes("Use Foo to you may draw 1 card")).toBe("draw 1 card");
+    expect(offerDoes("Use Foo: Response: After Bar enters play, you may draw 1 card")).toBe("draw 1 card");
+    expect(offerDoes("Use Foo to you are dealt an encounter card instead")).toBe(
+      "you are dealt an encounter card instead",
+    );
   });
 
   test("keeps a line it cannot read", () => {

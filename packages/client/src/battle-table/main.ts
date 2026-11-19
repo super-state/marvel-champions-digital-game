@@ -179,6 +179,8 @@ interface DockView {
   /** True while the game waits for the player's answer. */
   asking: boolean;
   eyebrow?: { text: string; icon?: IconName; tone?: "villain" | "hero" | "reaction" | "threat" } | null;
+  /** Which question the bar asks; a new one flips the bar in and arms the double-click guard. */
+  question?: string;
   title: string;
   help?: string | null;
   options?: readonly DockOption[];
@@ -187,9 +189,9 @@ interface DockView {
   secondary?: DockButton | null;
 }
 
-let dockKey = "";
 /** When the bar's current question appeared: its buttons wait out a double-click on the button that brought it. */
 let questionAt = 0;
+let lastQuestion = "";
 const QUESTION_GUARD_MS = 380;
 const settled = () => performance.now() - questionAt >= QUESTION_GUARD_MS;
 function paintButton(button: HTMLButtonElement, spec: DockButton | null | undefined) {
@@ -202,8 +204,8 @@ function paintButton(button: HTMLButtonElement, spec: DockButton | null | undefi
   }
   button.disabled = !!spec.disabled;
   button.toggleAttribute("data-attention", !!spec.attention);
-  button.onclick = () => {
-    if (!button.disabled && settled()) spec.onClick();
+  button.onclick = (event) => {
+    if (!button.disabled && (event.detail === 0 || settled())) spec.onClick();
   };
 }
 
@@ -219,9 +221,14 @@ function paintDock(view: DockView): boolean {
     else delete dockEyebrow.dataset.tone;
   }
   const key = `${view.title}|${eyebrow?.text ?? ""}`;
-  const fresh = key !== dockKey;
-  dockKey = key;
-  if (fresh && view.asking) {
+  // Picking cards for a mulligan changes the title, not the question; two offers of the same card are two questions.
+  let asked = false;
+  if (view.asking) {
+    const question = view.question ?? key;
+    asked = question !== lastQuestion;
+    lastQuestion = question;
+  }
+  if (asked) {
     questionAt = performance.now();
     // The bar turns over like a card to a new question, so it never reads as the button just pressed.
     if (!reducedMotion())
@@ -258,8 +265,8 @@ function paintDock(view: DockView): boolean {
       if (option.icon) button.append(icon(option.icon));
       button.append(make("span", "", option.label));
       if (option.detail) button.append(make("small", "", option.detail));
-      button.onclick = () => {
-        if (!discarding && !presenting && settled()) option.onClick();
+      button.onclick = (event) => {
+        if (!discarding && !presenting && (event.detail === 0 || settled())) option.onClick();
       };
       return button;
     }),
@@ -272,11 +279,11 @@ function paintDock(view: DockView): boolean {
   paintButton(dockSecondary, view.secondary);
   paintFeed();
   // A new question takes the keyboard focus so it is read out and answerable from the keyboard.
-  if (fresh && view.asking && !presenting && !dock.contains(document.activeElement)) {
+  if (asked && !presenting && !dock.contains(document.activeElement)) {
     const first = view.options?.length ? dockOptions.querySelector<HTMLElement>("button") : null;
     (first ?? dockTitle).focus({ preventScroll: true });
   }
-  return fresh && view.asking;
+  return asked;
 }
 
 /** What just happened, newest first, so a fast villain phase can be followed. */
@@ -476,7 +483,7 @@ function choiceView(choice: Choice): DockView {
       title: n ? `Swap ${plural(n, "card")}` : "Keep your hand?",
       primary: {
         label: n ? `Mulligan ${n}` : "Keep hand",
-        icon: n ? "mulligan" : "next",
+        icon: n ? "mulligan" : "check",
         disabled: discarding,
         attention: true,
         onClick: confirmChoice,
@@ -562,8 +569,13 @@ function dockView(): DockView {
       primary: { label: "Close", onClick: () => setDiscardOpen(false) },
     };
   }
-  if (state.payment) return paymentView(state.payment);
-  if (state.choice) return choiceView(state.choice);
+  if (state.payment) return { ...paymentView(state.payment), question: `pay:${state.payment.subject.id}` };
+  if (state.choice) {
+    const view = choiceView(state.choice);
+    // After choiceView, which moves to the next offer: each offer, and choosing among defenders, is its own question.
+    const step = state.choice.offers?.length ? offerIndex : defenderSelection === state.choice ? "defenders" : "";
+    return { ...view, question: `${state.choice.id}:${step}` };
+  }
   if (state.turn === "player") {
     return {
       tone: "hero",
@@ -2117,6 +2129,7 @@ function seedFromUrl(): number | undefined {
 
 function deal() {
   if (gameMenu.open) gameMenu.close();
+  lastQuestion = "";
   menuCard = null;
   actionCard = null;
   restart.disabled = true;

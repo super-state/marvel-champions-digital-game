@@ -34,10 +34,11 @@ type TriggerEventView = NonNullable<BattleChoice["event"]>;
  */
 export function offerDoes(effect: string): string {
   const text = effect.replace(/\.$/, "");
-  const to = /^Use [^:]+? to (?:you (?:may )?)?(?=[a-z])/;
+  const to =
+    /^Use [^:]+? to (?:you (?:may )?(?=(?:take|draw|gain|deal|heal|remove|place|discard|choose|look|search|ready|exhaust|return|put|reveal)\b))?(?=[a-z])/;
   if (to.test(text)) return text.replace(to, "");
   const whole =
-    /^Use [^:]+:\s*(?:(?:Hero |Alter-Ego )?(?:Forced )?(?:Interrupt|Response)(?:\s*\([^)]*\))?\s*:\s*)?(?:(?:When|After|If)\b[^,]*,\s*)?(?:you (?:may )?(?=[a-z]))?/;
+    /^Use [^:]+:\s*(?:(?:Hero |Alter-Ego )?(?:Forced )?(?:Interrupt|Response)(?:\s*\([^)]*\))?\s*:\s*)?(?:(?:When|After|If)\b[^,]*,\s*)?(?:you (?:may )?(?=(?:take|draw|gain|deal|heal|remove|place|discard|choose|look|search|ready|exhaust|return|put|reveal)\b))?/;
   const rest = text.replace(whole, "");
   return rest && rest !== text ? rest : text;
 }

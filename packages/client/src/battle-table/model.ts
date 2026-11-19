@@ -117,6 +117,8 @@ function triggerSubjectOf(event: TriggerEvent, before: boolean): NonNullable<Bat
 }
 
 export interface BattleChoice {
+  /** Which question this is: the engine's choice id, or the target pick's action. Stable while it is asked. */
+  id: string;
   prompt: string;
   explanation?: string;
   sourceTitle?: string;
@@ -863,6 +865,7 @@ export class BattleModel {
     const trigger = pending && triggerWindowContextOf(state, pending, player.playerId, CORE_DEPS);
     const choice = this.#targetPick
       ? {
+          id: `target:${this.#targetPick.action.kind}`,
           prompt:
             this.#targetPick.action.kind === "basicAttack"
               ? "Choose an enemy to attack"
@@ -879,6 +882,7 @@ export class BattleModel {
         }
       : pending
         ? {
+            id: pending.choiceId,
             prompt: trigger?.headline ?? promptTitleOf(pending.prompt, CORE_DEPS, pending, state),
             ...(pending.prompt.kind === "declareDefender"
               ? {

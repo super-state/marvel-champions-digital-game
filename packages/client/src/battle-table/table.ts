@@ -80,7 +80,7 @@ interface Flight {
   from: Pose;
   started: number;
   liftOffset: number;
-  kind: "play" | "return" | "discard" | "draw" | "place" | "equip" | "flip" | "turn";
+  kind: "play" | "return" | "discard" | "draw" | "place" | "equip" | "flip" | "turn" | "tuck";
   /** Set once the landing puff for this flight has been thrown. */
   puffed?: boolean;
 }
@@ -972,7 +972,7 @@ export class BattleTable {
     root.position.y += 0.15;
     root.scale.copy(this.#encounterSlot.scale);
     root.rotation.copy(this.#encounterSlot.rotation);
-    this.#startFlight(id, "place");
+    this.#startFlight(id, boostFor ? "tuck" : "place");
   }
 
   revealEncounter(card: { id: string; name: string; art: string; landscape: boolean }): void {
@@ -1873,11 +1873,13 @@ export class BattleTable {
                 : READY_MS
               : kind === "place"
                 ? 440
-                : kind === "draw"
+                : kind === "tuck"
                   ? 560
-                  : kind === "discard"
-                    ? 460
-                    : 310;
+                  : kind === "draw"
+                    ? 560
+                    : kind === "discard"
+                      ? 460
+                      : 310;
         const progress = this.#reduced.matches ? 1 : THREE.MathUtils.clamp((now - started) / duration, 0, 1);
         const contact = Math.min(1, progress / 0.54);
         const t = readying
@@ -1889,7 +1891,14 @@ export class BattleTable {
               : // Leave fast and glide in. The curve never overshoots, so a drawn card never shows its back.
                 easeOutCubic(progress);
         piece.root.position.lerpVectors(from.position, piece.target.position, t);
-        if (kind === "place") {
+        if (kind === "tuck") {
+          // Clear the deck, drop to the table, then slide in flat: it passes under its enemy's edge, never over it.
+          piece.root.position.y = THREE.MathUtils.lerp(
+            from.position.y,
+            piece.target.position.y,
+            THREE.MathUtils.smoothstep(progress, 0.14, 0.4),
+          );
+        } else if (kind === "place") {
           const settle = Math.max(0, (progress - 0.54) / 0.46);
           piece.root.position.y += Math.sin(Math.PI * settle) * (1 - settle) * 0.24;
           piece.rim.visible = settle > 0 && settle < 0.74;
