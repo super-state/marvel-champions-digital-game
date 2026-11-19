@@ -1054,7 +1054,9 @@ function synchronizeLabels() {
       !target.label.startsWith(card.name + " (")
     )
       label.append(make("span", "resource-value", target.label));
-    if (source) {
+    // A hand card prints its resources in its own corner; only an ability (Peter Parker's Scientist, Web-Shooter)
+    // needs the symbol of what it generates spelled out.
+    if (source && source.kind === "resourceAbility") {
       const value = make("span", "resource-value");
       value.append(resourcePips(source.icons));
       label.append(value);
