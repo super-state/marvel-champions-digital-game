@@ -882,6 +882,8 @@ export type GameEvent =
     }
   | {
       readonly type: "damagePrevented";
+      readonly attackSourceInstanceId?: InstanceId;
+      readonly preventerInstanceId?: InstanceId;
       readonly targetInstanceId: InstanceId;
       readonly amount: number;
       /** `reduced`: constant reductions and caps brought it to 0 (docs/phase7-wave3.md §3.15). */

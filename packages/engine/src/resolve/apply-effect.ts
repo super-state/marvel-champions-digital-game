@@ -3475,6 +3475,7 @@ export function applyEffect(ctx: Ctx, effect: EffectSpec, context: EffectContext
           type: "damagePrevented",
           targetInstanceId: target.event.targetInstanceId,
           amount: prevented,
+          ...(frame.selfInstanceId ? { preventerInstanceId: frame.selfInstanceId } : {}),
           reason: "effect",
         });
         if (effect.kind === "preventDamage" && effect.bind)

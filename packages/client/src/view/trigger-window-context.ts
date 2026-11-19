@@ -337,6 +337,20 @@ export function declineLabelOf(state: GameState | null, choice: TriggerChoiceLik
  * The context for a `chooseTriggers` prompt, or null for any other prompt. `effects` has one line per distinct
  * offered ability.
  */
+export function triggerEffectOf(
+  state: GameState,
+  option: ChoiceOption,
+  viewer: PlayerId,
+  deps: EngineDeps,
+): string | null {
+  const { ref } = option;
+  if (ref.kind !== "ability") return null;
+  const panel = sourceCardPanelFor(state, ref.instanceId, viewer, deps, null, ref.abilityId);
+  const trigger = deps.abilities[ref.abilityId]?.trigger;
+  const ordered = abilityFirst(panel.rulesText, trigger ? triggerLabel(trigger) : "");
+  return effectLineOf(faceUpName(state, ref.instanceId), ordered.split(/\n+/)[0] ?? ordered);
+}
+
 export function triggerWindowContextOf(
   state: GameState,
   choice: PendingChoice,
@@ -347,13 +361,8 @@ export function triggerWindowContextOf(
   if (prompt.kind !== "chooseTriggers") return null;
   const effects: string[] = [];
   for (const option of choice.options) {
-    const { ref } = option;
-    if (ref.kind !== "ability") continue;
-    const panel = sourceCardPanelFor(state, ref.instanceId, viewer, deps, null, ref.abilityId);
-    const trigger = deps.abilities[ref.abilityId]?.trigger;
-    const ordered = abilityFirst(panel.rulesText, trigger ? triggerLabel(trigger) : "");
-    const line = effectLineOf(faceUpName(state, ref.instanceId), ordered.split(/\n+/)[0] ?? ordered);
-    if (!effects.includes(line)) effects.push(line);
+    const line = triggerEffectOf(state, option, viewer, deps);
+    if (line && !effects.includes(line)) effects.push(line);
   }
   const answered = answeredEventsOf(state, choice);
   return {

@@ -2091,6 +2091,7 @@ export function applyDamage(
       targetInstanceId: event.targetInstanceId,
       amount: taken,
       reason: "tough",
+      ...(event.fromAttack && source ? { attackSourceInstanceId: source } : {}),
     });
     // One tough card is used up (RRG 1.8 "Tough", p. 44), and announced (docs/phase7-wave6.md §3.5).
     const used = discardStatusCards(ctx, event.targetInstanceId, "tough", "preventedDamage", target.statuses.tough - 1);

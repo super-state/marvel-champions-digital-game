@@ -22,8 +22,78 @@ describe("Peter Parker and Rhino's practice turn", () => {
     return source;
   }
 
+  test("undo restores one committed move, including payment, hand order and End Turn", () => {
+    const opening = battle.snapshot();
+    expect(battle.undo()).toBe(false);
+    battle.heroAction("changeForm");
+    pick("Helicarrier");
+    spend("Strength");
+    spend("Jessica Jones");
+    expect(battle.pay()).toBe(true);
+    const paid = battle.snapshot();
+    expect(battle.endTurn()).toBe(true);
+    expect(battle.undo()).toBe(true);
+    expect(battle.snapshot()).toMatchObject({
+      inPlay: paid.inPlay,
+      discard: paid.discard,
+      hand: paid.hand,
+      choice: null,
+    });
+    expect(battle.undo()).toBe(true);
+    expect(battle.snapshot()).toMatchObject({ inPlay: [], discard: [], payment: null, hero: { name: "Spider-Man" } });
+    expect(battle.snapshot().hand.map((c) => c.id)).toEqual(opening.hand.map((c) => c.id));
+    expect(battle.undo()).toBe(true);
+    expect(battle.snapshot().hero).toEqual(opening.hero);
+    expect(battle.canUndo).toBe(false);
+    battle.endTurn();
+    battle.reset();
+    expect(battle.canUndo).toBe(false);
+  });
+
+  test("shows the basic attack impact before turning the attacker sideways", () => {
+    battle.heroAction("changeForm");
+    const hero = battle.snapshot().hero.id;
+    expect(battle.heroAction("basicAttack")).toBe(true);
+    const { beats } = battle.snapshot();
+    const impact = beats.findIndex((beat) => beat.hit?.source === hero);
+    expect(impact).toBeGreaterThanOrEqual(0);
+    expect(beats.findIndex((beat) => beat.turned?.id === hero && beat.turned.exhausted)).toBeGreaterThan(impact);
+    expect(battle.snapshot().hero.exhausted).toBe(true);
+  });
+
+  test("Spider-Man stays exhausted after defending Rhino and cannot also defend Hydra Bomber", () => {
+    battle.heroAction("changeForm");
+    const hero = battle.snapshot().hero.id;
+    const defended: string[] = [];
+    const attackHits: string[] = [];
+    for (let round = 1; round <= 2; round++) {
+      expect(battle.endTurn()).toBe(true);
+      for (let step = 0; step < 24; step++) {
+        const { beats, choice, turn } = battle.snapshot();
+        for (const beat of beats) if (beat.hit?.target === hero && beat.activity) attackHits.push(beat.activity);
+        if (turn === "player" && !choice) break;
+        expect(choice).toBeTruthy();
+        if (!choice) break;
+        if (choice.defense) {
+          const defender = choice.options.find((opt) => opt.cardId === hero);
+          expect(defender).toBeDefined();
+          defended.push(choice.defense.attacker);
+          expect(battle.choose(defender!.id)).toBe(true);
+        } else {
+          const options = choice.options.filter((o) => o.label === "Strength" && choice.discardFromHand);
+          const picks = options.length ? [options[0]!] : choice.options.slice(0, choice.min);
+          expect(battle.chooseMany(picks.map((opt) => opt.id))).toBe(true);
+        }
+      }
+      expect(battle.snapshot().hero.exhausted).toBe(true);
+    }
+    expect(defended).toEqual(["Rhino", "Rhino"]);
+    expect(attackHits).toContain("Hydra Bomber attacks");
+  });
+
   test("ends the player turn, resolves the enemy turn, and starts the next round", () => {
     expect(battle.snapshot()).toMatchObject({ turn: "player", round: 1, canEndTurn: true });
+    expect(battle.heroAction("changeForm")).toBe(true);
     expect(battle.endTurn()).toBe(true);
     expect(battle.snapshot()).toMatchObject({
       turn: "ending",
@@ -47,7 +117,7 @@ describe("Peter Parker and Rhino's practice turn", () => {
 
   test("deals the same visible cards after reset and identifies cards that only pay", () => {
     const opening = battle.snapshot();
-    expect(opening.hero.name).toContain("Spider-Man");
+    expect(opening.hero.name).toContain("Peter Parker");
     expect(opening.villain.name).toContain("Rhino");
     expect(opening.heroHp).toBe(10);
     expect(opening.villainHp).toBe(14);
@@ -59,6 +129,36 @@ describe("Peter Parker and Rhino's practice turn", () => {
     expect(battle.pick(strength.id)).toBe(false);
     battle.reset();
     expect(battle.snapshot()).toEqual(opening);
+  });
+
+  test("a newly played ally can attack, exhausts and takes consequential damage", () => {
+    const ally = pick("Jessica Jones");
+    spend("Strength");
+    spend("Heroic Intuition");
+    expect(battle.pay()).toBe(true);
+    expect(battle.fieldActions(ally.id)).toContainEqual({ kind: "basicAttack", label: "Attack" });
+    expect(battle.fieldAction(ally.id, "basicAttack")).toBe(true);
+    const board = battle.snapshot();
+    expect(board.villainHp).toBeLessThan(14);
+    expect(board.inPlay.find((c) => c.id === ally.id)).toMatchObject({
+      exhausted: true,
+      markers: [{ name: "damage", count: 1 }],
+    });
+    expect(battle.fieldAction(ally.id, "basicAttack")).toBe(false);
+  });
+
+  test("can exhaust a newly played Helicarrier to discount the next play", () => {
+    const carrier = pick("Helicarrier");
+    spend("Strength");
+    spend("Jessica Jones");
+    expect(battle.pay()).toBe(true);
+    const [action] = battle.fieldActions(carrier.id);
+    expect(action).toBeDefined();
+    expect(battle.fieldAction(carrier.id, action!.kind)).toBe(true);
+    expect(battle.snapshot().inPlay.find((c) => c.id === carrier.id)?.exhausted).toBe(true);
+    expect(battle.fieldActions(carrier.id)).toEqual([]);
+    pick("Heroic Intuition");
+    expect(battle.snapshot().payment?.required).toBe(1);
   });
 
   test("requires manual payment and commits only the chosen resources to play a support", () => {
@@ -75,6 +175,13 @@ describe("Peter Parker and Rhino's practice turn", () => {
     expect(extra.icons).toHaveLength(1);
     priced = battle.snapshot().payment!;
     expect(priced).toMatchObject({ paid: 3, required: 3, canPay: true });
+    const spare = priced.sources.find((s) => !s.selected)!;
+    expect(spare.available).toBe(false);
+    battle.toggle(spare.id);
+    expect(battle.snapshot().payment!.paid).toBe(3);
+    battle.toggle(extra.id);
+    expect(battle.snapshot().payment!.sources.find((s) => s.id === spare.id)?.available).toBe(true);
+    battle.toggle(extra.id);
     expect(battle.snapshot().hand).toHaveLength(6);
     expect(battle.pay()).toBe(true);
     expect(battle.pay()).toBe(false);
@@ -118,17 +225,17 @@ describe("Peter Parker and Rhino's practice turn", () => {
   });
 
   test("paying for Swinging Web Kick allows the real engine to damage Rhino", () => {
+    expect(battle.heroAction("changeForm")).toBe(true);
     const kick = pick("Swinging Web Kick");
     const strength = spend("Strength");
     const intuition = spend("Heroic Intuition");
     expect(battle.pay()).toBe(true);
-    const pending = battle.snapshot().choice;
-    if (pending) {
-      expect(battle.snapshot().discard.map((card) => card.id)).toEqual([strength.cardId, intuition.cardId]);
-      const target = pending.options.find((option) => option.label.includes("Rhino"))!;
-      expect(target).toBeDefined();
-      expect(battle.choose(target.id)).toBe(true);
-    }
+    expect(battle.snapshot().choice).toBeNull();
+    expect(
+      battle
+        .snapshot()
+        .beats.some((beat) => beat.hit?.target === battle.snapshot().villain.id && beat.hit.amount === 8),
+    ).toBe(true);
     expect(battle.snapshot().villainHp).toBe(6);
     expect(battle.snapshot().inPlay.some((card) => card.name === "Swinging Web Kick")).toBe(false);
     expect(battle.snapshot().discard.map((card) => card.id)).toEqual([strength.cardId, intuition.cardId, kick.id]);

@@ -2095,7 +2095,7 @@ function printsX(state: GameState, action: ActionRef): boolean {
 }
 
 /** Whether a played card's printed abilities read an `overpaid.*` value anywhere in their text. */
-function readsOverpaid(state: GameState, deps: EngineDeps, action: ActionRef): boolean {
+export function readsOverpaid(state: GameState, deps: EngineDeps, action: ActionRef): boolean {
   if (action.kind !== "playCard") return false;
   const card = cardOf(state, action.instanceId);
   return !!card && printedAbilityRefs(card).some((ref) => mentionsOverpaid(deps.abilities[ref.id]));
