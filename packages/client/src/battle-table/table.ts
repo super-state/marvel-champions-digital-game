@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { CARD_BACKS } from "../art/art-source.js";
 import { cardRadius } from "../art/card-shape.js";
 import rooftop from "../art/tabletop/rooftop.webp?url";
-import { fitBoard, fitToBox, type TableBox } from "./board-fit.js";
+import { fitBoard, fitToBox, type BoardFit, type ScreenRect, type TableBox } from "./board-fit.js";
 import { TokenKit, placeTokens } from "./tokens3d.js";
 
 export interface TableCard {
@@ -1330,6 +1330,16 @@ export class BattleTable {
     piece.target = { position: center, scale: widthPoint.x - center.x, pitch, roll };
   }
 
+  /** The screen the table's cards may fill: under the phase chip, above a hand of any size and a one-line bar. */
+  #tableRoom(): { room: ScreenRect; handCard: number } {
+    const w = this.#width,
+      h = this.#height;
+    const handCard = Math.min(h * 0.215, (h * (w < 740 ? 0.4 : 0.36) - 50) / 1.5, w * 0.245);
+    // A phone's turn bar spans the screen and wraps its buttons under the question, so it stands taller.
+    const bar = w < 740 ? 92 : 50;
+    return { room: { left: 12, right: w - 12, top: 50, bottom: h - bar - handCard * 1.48 - 26 }, handCard };
+  }
+
   /**
    * Scale and slide the table's cards so they fill the room between the top of the screen and the hand: a busy board
    * shrinks instead of scrolling, a quiet one grows. Only lasting cards decide the fit (`rests`), and the room is
@@ -1350,9 +1360,16 @@ export class BattleTable {
       z0: Math.min(...rests.map((r) => r.z0)),
       z1: Math.max(...rests.map((r) => r.z1)),
     };
-    const handCard = Math.min(h * 0.215, (h * (w < 740 ? 0.4 : 0.36) - 50) / 1.5, w * 0.245);
-    const room = { left: 12, right: w - 12, top: 50, bottom: h - 50 - handCard * 1.48 - 26 };
-    const fit = fitBoard(box, this.#project, room);
+    const { room, handCard } = this.#tableRoom();
+    let fit = fitBoard(box, this.#project, room);
+    // A quiet table stops growing once its cards are about two thirds the size of the hand's.
+    const cardOnScreen = (f: BoardFit) => {
+      const middle = fitToBox(f, { x: f.cx, y: 0, z: f.cz });
+      return this.#project(middle.x + f.scale, 0, middle.z).x - this.#project(middle.x, 0, middle.z).x;
+    };
+    const cap = handCard * 0.68;
+    const size = cardOnScreen(fit);
+    if (size > cap) fit = fitBoard(box, this.#project, room, { maxScale: fit.scale * (cap / size) });
     const place = (p: THREE.Vector3) => {
       const q = fitToBox(fit, p);
       return p.set(q.x, q.y, q.z);
@@ -1468,17 +1485,27 @@ export class BattleTable {
     const isScheme = (card: TableCard) => card.type === "main_scheme" || card.type === "side_scheme";
     const schemes = enemies.filter(isScheme);
     const otherEnemies = enemies.filter((card) => !isScheme(card));
+    // A tall, narrow room (a tablet held upright) stacks the table: the schemes and the encounter piles go above the
+    // villain, and the hero's row wraps.
+    const { room } = this.#tableRoom();
+    const narrow = (room.right - room.left) / Math.max(1, room.bottom - room.top) < 1.6;
     // The main scheme beside the villain; side schemes stack up behind it, in two columns once there are three.
     const schemeAcross = HEIGHT * SCHEME;
     const schemeStep = SCHEME + 0.42;
-    const schemeColumns = schemes.length >= 3 ? 2 : 1;
-    const schemeRight = villainLeft - GAP * 1.2;
+    const schemeColumns = schemes.length >= (narrow ? 2 : 3) ? 2 : 1;
+    const villainTop = (-VILLAIN * HEIGHT) / 2;
+    const schemeRight = narrow ? -0.2 : villainLeft - GAP * 1.2;
+    const schemeBase = narrow ? villainTop - 0.55 - SCHEME / 2 : 0.3;
     schemes.forEach((card, i) => {
       const column = i % schemeColumns;
       const tier = Math.floor(i / schemeColumns);
-      poseEnemy(card, schemeRight - schemeAcross / 2 - column * (schemeAcross + GAP), 0.3 - tier * schemeStep, SCHEME);
+      const x = schemeRight - schemeAcross / 2 - column * (schemeAcross + GAP);
+      poseEnemy(card, x, schemeBase - tier * schemeStep, SCHEME);
     });
-    const schemeLeft = schemeRight - schemeColumns * schemeAcross - (schemeColumns - 1) * GAP;
+    const schemeLeft = Math.min(
+      narrow ? villainLeft : Infinity,
+      schemeRight - schemeColumns * schemeAcross - (schemeColumns - 1) * GAP,
+    );
     // Minions to the villain's right, past the room a boost card takes, so a dealt boost card never moves them.
     let next = VILLAIN / 2 + BOOST * 0.7 + GAP;
     for (const card of otherEnemies) {
@@ -1487,10 +1514,14 @@ export class BattleTable {
       poseEnemy(card, next + MINION * TAB * tabs + across / 2, 0, MINION);
       next += MINION * TAB * tabs + across + GAP;
     }
-    const encounterX = next + GAP * 0.4 + ENCOUNTER / 2;
-    const encounterGoal = { position: at(encounterX, -0.25, 0.025), scale: ENCOUNTER };
-    const encounterDiscardGoal = { position: at(encounterX + ENCOUNTER + GAP * 0.7, -0.25, 0.025), scale: ENCOUNTER };
-    const villainRowRight = encounterX + ENCOUNTER * 1.5 + GAP * 0.7;
+    const encounterX = narrow ? 0.2 + ENCOUNTER / 2 : next + GAP * 0.4 + ENCOUNTER / 2;
+    const encounterZ = narrow ? villainTop - 0.4 - (ENCOUNTER * HEIGHT) / 2 : -0.25;
+    const encounterGoal = { position: at(encounterX, encounterZ, 0.025), scale: ENCOUNTER };
+    const encounterDiscardGoal = {
+      position: at(encounterX + ENCOUNTER + GAP * 0.7, encounterZ, 0.025),
+      scale: ENCOUNTER,
+    };
+    const villainRowRight = Math.max(next - GAP, encounterX + ENCOUNTER * 1.5 + GAP * 0.7);
     let waiting = 0;
     const boosts = new Map<string, number>();
     for (const card of this.#encounters.values()) {
@@ -1532,47 +1563,70 @@ export class BattleTable {
     const tabs = upgrades.length * TAB;
     this.#heroShadow.visible = upgrades.some((card) => card.id !== state.staged?.id);
     // Airborne cards can sweep over their neighbours. Space the row for their settled poses.
-    const footprints = row.map((card) => (card.exhausted !== card.landscape ? HEIGHT : 1));
     const tabScale = state.hero.exhausted ? 1 / HEIGHT : 1;
+    const perLine = narrow ? 4 : row.length;
     // A busy row closes up.
-    const gap = row.length > 5 ? 0.16 : 0.28;
-    const rowWidth = tabs * tabScale + footprints.reduce((total, width) => total + width, 0) + gap * (row.length - 1);
-    let left = -rowWidth / 2 + tabs * tabScale;
-    const centers = footprints.map((width) => {
-      const center = left + width / 2;
-      left += width + gap;
-      return center;
-    });
-    const first = centers[0]!;
+    const gap = Math.min(row.length, perLine) > 5 ? 0.16 : 0.28;
     const rowZ = (VILLAIN * HEIGHT) / 2 + 0.85 + HEIGHT / 2;
-    const posePermanent = (card: TableCard, x: number, elevation: number) => {
+    const lineStep = HEIGHT + 0.6;
+    const spots: { card: TableCard; x: number; z: number }[] = [];
+    let widest = 0;
+    for (let start = 0, line = 0; start < row.length; start += perLine, line++) {
+      const cards = row.slice(start, start + perLine);
+      const footprints = cards.map((card) => (card.exhausted !== card.landscape ? HEIGHT : 1));
+      const lineTabs = line === 0 ? tabs * tabScale : 0;
+      const width = lineTabs + footprints.reduce((total, w) => total + w, 0) + gap * (cards.length - 1);
+      widest = Math.max(widest, width);
+      let left = -width / 2 + lineTabs;
+      cards.forEach((card, i) => {
+        spots.push({ card, x: left + footprints[i]! / 2, z: rowZ + line * lineStep });
+        left += footprints[i]! + gap;
+      });
+    }
+    const first = spots[0]!.x;
+    const posePermanent = (card: TableCard, x: number, z: number, elevation: number) => {
       if (card.id === state.staged?.id) {
-        place(card.id, x, rowZ - 0.3, 1.12, 1.15, 0, flat + 0.12);
+        place(card.id, x, z - 0.3, 1.12, 1.15, 0, flat + 0.12);
         // Where it will land, so the table is already fitted for it.
-        rest(at(x, rowZ, elevation), 1, card.landscape);
+        rest(at(x, z, elevation), 1, card.landscape);
       } else {
-        lay(card, x, rowZ, 1, elevation, card.exhausted !== card.landscape);
+        lay(card, x, z, 1, elevation, card.exhausted !== card.landscape);
         if (card.exhausted) this.#pieces.get(card.id)!.target.roll = -Math.PI / 2;
       }
     };
     const heroHalf = (state.hero.exhausted ? HEIGHT : 1) / 2;
     upgrades.forEach((card, i) => {
       const x = first - heroHalf + tabScale * 0.5 - tabScale * TAB * (upgrades.length - i);
-      if (card.id === state.staged?.id) posePermanent(card, x, 0.05);
+      if (card.id === state.staged?.id) posePermanent(card, x, rowZ, 0.05);
       else {
         this.#tucked.set(card.id, { host: state.hero.id, depth: upgrades.length - i });
         place(card.id, x, rowZ, tabScale, 0.045 + i * 0.035);
         rest(at(x, rowZ, 0), tabScale, false);
       }
     });
-    row.forEach((card, i) => posePermanent(card, centers[i]!, 0.08 + (i === 0 ? upgrades.length * 0.035 : 0)));
-    // The player's deck and discard pile flank the hero's row, out at the table's edges when the villain's row is wider.
+    spots.forEach(({ card, x, z }, i) => posePermanent(card, x, z, 0.08 + (i === 0 ? upgrades.length * 0.035 : 0)));
+    // The player's deck and discard pile flank the hero's row, out at the table's edges when the villain's row is wider;
+    // on a narrow table they sit on a line of their own under it.
+    const lines = Math.ceil(row.length / perLine);
+    const pileZ = narrow ? rowZ + lines * lineStep : rowZ;
     const deckGoal = {
-      position: at(Math.min(schemeLeft + PILE / 2, -rowWidth / 2 - 0.5 - PILE / 2), rowZ, 0.025),
+      position: at(
+        narrow
+          ? -Math.max(widest, 2 * PILE + 1) / 2 + PILE / 2
+          : Math.min(schemeLeft + PILE / 2, -widest / 2 - 0.5 - PILE / 2),
+        pileZ,
+        0.025,
+      ),
       scale: PILE,
     };
     const discardGoal = {
-      position: at(Math.max(villainRowRight - PILE / 2, rowWidth / 2 + 0.5 + PILE / 2), rowZ, 0.025),
+      position: at(
+        narrow
+          ? Math.max(widest, 2 * PILE + 1) / 2 - PILE / 2
+          : Math.max(villainRowRight - PILE / 2, widest / 2 + 0.5 + PILE / 2),
+        pileZ,
+        0.025,
+      ),
       scale: PILE,
     };
     const hand = state.hand.filter((card) => card.id !== state.staged?.id);
