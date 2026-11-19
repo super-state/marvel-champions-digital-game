@@ -1832,6 +1832,7 @@ async function present(beats: Snapshot["beats"]) {
       if (state.outcome) {
         await sleep(650);
       } else if (beat.reveal.quick) {
+        element("announcer").textContent = `Revealed ${beat.reveal.name}`;
         // A minion with no When Revealed shows itself, then goes straight to its place: nothing to read out first.
         narrate(beat, null, {
           eyebrow: { text: "Revealed", icon: "forced", tone: "villain" },
