@@ -1248,18 +1248,15 @@ function placeLabels() {
       tag.style.transform = `translate(${Math.round(card.right - card.width * 0.32)}px,${Math.round(card.y)}px)`;
   }
   if (!focusBlur.hidden) {
-    // A hole around the hand, so only the cards being decided on stay sharp.
-    const held = new Set(displayedHand.map((card) => card.id));
-    const cards = projected.filter((p) => held.has(p.id));
-    if (cards.length) {
-      const pad = 14;
-      const left = Math.min(...cards.map((c) => c.left)) - pad;
-      const right = Math.max(...cards.map((c) => c.right)) + pad;
-      const top = Math.min(...cards.map((c) => c.top)) - pad;
-      const bottom = Math.max(...cards.map((c) => c.bottom)) + pad;
-      focusBlur.style.clipPath = `polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${left}px ${top}px, ${right}px ${top}px, ${right}px ${bottom}px, ${left}px ${bottom}px, ${left}px ${top}px)`;
-    }
+    // Fades out above the hand with no edge to see, measured from where the hand rests, so hovering moves nothing.
+    const edge = table.paymentEdge;
+    const mask = `linear-gradient(to bottom, #000 ${Math.round(edge - 30)}px, transparent ${Math.round(edge + 90)}px)`;
+    focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = mask;
+    // Fades in only once the dealt cards have landed in the hand; then it stays, whatever the hand does.
+    if (table.handSettled) focusBlur.dataset.ready = "";
   }
+  // The mulligan question waits for the dealt cards to land too.
+  dock.toggleAttribute("data-waiting", !focusBlur.hidden && !("ready" in focusBlur.dataset));
   if (heldEncounter && !choiceShade.hidden) {
     const card = projected.find((p) => p.id === heldEncounter);
     if (card)
@@ -2078,6 +2075,7 @@ function render() {
             : "hero",
     );
   focusBlur.hidden = !state.choice?.mulligan;
+  if (focusBlur.hidden) delete focusBlur.dataset.ready;
   choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
   const asked = paintDock(dockView());
   // A question about the hand sends a ripple through it, so the eye goes where the answer is.

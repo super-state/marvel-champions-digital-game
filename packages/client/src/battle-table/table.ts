@@ -483,6 +483,13 @@ export class BattleTable {
   get paymentEdge(): number {
     return this.#paymentEdge + this.#extension;
   }
+  /** True once every card in the hand has landed: none flying in, none still easing into place. */
+  get handSettled(): boolean {
+    return (this.#state?.hand ?? []).every((card) => {
+      const piece = this.#pieces.get(card.id);
+      return !this.#flights.has(card.id) && (!piece || piece.root.position.distanceTo(piece.target.position) < 0.02);
+    });
+  }
   #width = 1;
   #height = 1;
   #extension = 0;
