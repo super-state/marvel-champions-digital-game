@@ -474,6 +474,8 @@ test("01102 Sandman: enters play with a tough status the table shows", () => {
   expect(marker(sandman, "tough")).toBe(1);
   const reveal = at(run, "Sandman revealed", (b) => b.reveal?.name === "Sandman");
   expect(at(run, "tough given", statusBeat(sandman.id, "tough", 1))).toBeGreaterThan(reveal);
+  // No When Revealed to read out: the table lands him without waiting for Continue.
+  expect(run.beats[reveal]!.reveal!.quick).toBe(true);
 });
 
 test("01102 Sandman: the first hit is absorbed by tough, leaving his HP alone", () => {
@@ -518,6 +520,8 @@ test("01103 Shocker: When Revealed deals 1 damage to Spider-Man in hero form", (
   toHero(battle);
   const run = endTurn(battle);
   const reveal = at(run, "Shocker revealed", (b) => b.reveal?.name === "Shocker");
+  // A minion with a When Revealed is still shown for reading before it resolves.
+  expect(run.beats[reveal]!.reveal!.quick).toBe(false);
   const hit = at(run, "1 damage", (b) => b.hit?.target === heroId(battle) && b.hit.amount === 1);
   expect(hit).toBeGreaterThan(reveal);
   expect(snap(battle).heroHp).toBe(7);

@@ -1812,7 +1812,7 @@ async function present(beats: Snapshot["beats"]) {
     }
     if (beat.reveal) {
       untagBoost(beat.reveal.id);
-      readingCard = beat.reveal.boost ? null : beat.reveal.id;
+      readingCard = beat.reveal.boost || beat.reveal.quick ? null : beat.reveal.id;
       table?.revealEncounter(beat.reveal);
       await sleep(360);
       if (beat.reveal.art) showPreview(beat.reveal, !beat.reveal.boost);
@@ -1831,6 +1831,13 @@ async function present(beats: Snapshot["beats"]) {
       }
       if (state.outcome) {
         await sleep(650);
+      } else if (beat.reveal.quick) {
+        // A minion with no When Revealed shows itself, then goes straight to its place: nothing to read out first.
+        narrate(beat, null, {
+          eyebrow: { text: "Revealed", icon: "forced", tone: "villain" },
+          title: beat.reveal.name,
+        });
+        await sleep(reducedMotion() ? 700 : 1150);
       } else {
         readReveal.setAttribute("aria-label", `Continue after reading ${beat.reveal.name}`);
         readReveal.hidden = false;

@@ -32,6 +32,7 @@ import {
   schemePanel,
 } from "../view/board-model.js";
 import { answeredEventsOf, triggerEffectOf, triggerWindowContextOf } from "../view/trigger-window-context.js";
+import { plainRulesTextOf } from "../view/card-search-document.js";
 import { choiceSourcePanelOf } from "../view/choice-source-panel.js";
 import { choiceSourceOf, promptTitleOf } from "../view/choice-source.js";
 import { faceUpName, optionLabelOf, shortIdentityNameOf } from "../view/names.js";
@@ -173,6 +174,8 @@ export interface BattleBeat {
     art: string;
     landscape: boolean;
     boost: { icons: number; enemy: string } | null;
+    /** Nothing to read out: a minion with no When Revealed takes its place without waiting for Continue. */
+    quick: boolean;
   };
   actor?: string | null;
   phase?: "hero" | "villain";
@@ -458,6 +461,7 @@ export class BattleModel {
             boost: e.type === "boostCardFlipped" ? { icons: e.boostIcons, enemy: e.enemyInstanceId } : null,
             art: artFor(card, { kind: "front" })?.url ?? "",
             landscape: isLandscapeType(card?.type ?? ""),
+            quick: card?.type === "minion" && !/\bWhen Revealed\b/i.test(plainRulesTextOf(card)),
           },
         });
       } else if (
