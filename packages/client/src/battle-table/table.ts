@@ -6,6 +6,8 @@ import { TokenKit, placeTokens } from "./tokens3d.js";
 
 export interface TableCard {
   readonly attachedTo?: string | null;
+  /** A facedown boost card: the enemy it was dealt to. */
+  readonly boostFor?: string | null;
   readonly id: string;
   readonly name: string;
   readonly art: string;
@@ -106,14 +108,14 @@ const HEIGHT = 1.407;
 const TAB = 0.18;
 
 // Keep the original scan coordinates so the printed title stays on the exposed edge.
-function upgradeTab(topTitle = false) {
+function upgradeTab() {
   const geo = new THREE.ShapeGeometry(roundedRect(TAB, HEIGHT, 0.025), 8);
   geo.translate((TAB - 1) / 2, 0, 0);
   const { position, uv } = geo.attributes;
   for (let i = 0; i < position!.count; i++) {
     const x = position!.getX(i) + 0.5;
     const y = position!.getY(i) / HEIGHT + 0.5;
-    uv!.setXY(i, topTitle ? y : x, topTitle ? 1 - x / HEIGHT : y);
+    uv!.setXY(i, x, y);
   }
   return geo;
 }
@@ -327,7 +329,6 @@ export class BattleTable {
     curveSegments: 8,
   });
   readonly #tab = upgradeTab();
-  readonly #attachmentTab = upgradeTab(true);
   readonly #heroShadow = contactShadow();
   readonly #villainShadow = this.#heroShadow.clone();
   readonly #actionShadow = new THREE.Mesh(
@@ -938,11 +939,12 @@ export class BattleTable {
     this.#requestFrame();
   }
 
-  dealEncounter(id: string): void {
+  dealEncounter(id: string, boostFor: string | null = null): void {
     if (!this.#state || this.#encounters.has(id)) return;
     this.#encounters.set(id, {
       id,
-      name: "Encounter card",
+      boostFor,
+      name: boostFor ? "Boost card" : "Encounter card",
       art: CARD_BACKS.encounter.url,
       type: "facedown",
       landscape: false,
@@ -1340,7 +1342,9 @@ export class BattleTable {
     this.#hoverFootprint = null;
     this.#tucked.clear();
     const enemies = state.enemyCards.filter((c) => !c.attachedTo);
+    const enemyPoses = new Map<string, { x: number; y: number; width: number }>();
     const poseEnemy = (host: TableCard, x: number, y: number, width: number) => {
+      enemyPoses.set(host.id, { x, y, width });
       const attachments = state.enemyCards.filter((c) => c.attachedTo === host.id);
       attachments.forEach((card, i) => {
         this.#tucked.set(card.id, { host: host.id, depth: attachments.length - i });
@@ -1405,7 +1409,9 @@ export class BattleTable {
       });
     }
     let waiting = 0;
+    const boosts = new Map<string, number>();
     for (const card of this.#encounters.values()) {
+      const host = card.boostFor ? enemyPoses.get(card.boostFor) : undefined;
       if (card.id === this.#revealing)
         this.#pose(
           card.id,
@@ -1415,7 +1421,22 @@ export class BattleTable {
           1.75,
           this.#camera.rotation.x,
         );
-      else
+      else if (card.boostFor && host) {
+        // A boost card waits facedown beside the enemy it was dealt to, tucked under its right edge, until the
+        // activation turns it up.
+        const stacked = boosts.get(card.boostFor) ?? 0;
+        boosts.set(card.boostFor, stacked + 1);
+        const width = Math.min(host.width * 0.62, h * 0.125, w * 0.105);
+        this.#pose(
+          card.id,
+          host.x + host.width * 0.5 + width * (0.14 + stacked * 0.3),
+          host.y + host.width * 0.2,
+          width,
+          0.02 + stacked * 0.008,
+          flat,
+          -0.13,
+        );
+      } else
         this.#pose(
           card.id,
           w * (0.67 + (waiting++ % 3) * 0.034),
@@ -2003,13 +2024,8 @@ export class BattleTable {
         const onEnemy = !!piece.card.attachedTo && this.#state.enemyCards.some((c) => c.id === id);
         if (piece.card.type !== "upgrade" && piece.card.type !== "attachment" && !onEnemy) continue;
         const tucked = this.#tucked.has(id) && !this.#flights.has(id) && this.#state.staged?.id !== id;
-        const geometry = tucked
-          ? onEnemy && piece.card.type === "attachment"
-            ? this.#attachmentTab
-            : this.#tab
-          : piece.card.landscape
-            ? this.#landscapeFace
-            : this.#face;
+        // Upgrades and attachments both print their title down the left edge: that strip is what shows when tucked.
+        const geometry = tucked ? this.#tab : piece.card.landscape ? this.#landscapeFace : this.#face;
         piece.face.geometry = geometry;
         piece.root.children[0]!.visible = !tucked;
         piece.back.visible = !tucked;
@@ -2224,7 +2240,6 @@ export class BattleTable {
       this.#auraPlane,
       this.#interruptPuff.geometry,
       this.#tab,
-      this.#attachmentTab,
       this.#face,
       this.#stock,
       this.#landscapeFace,

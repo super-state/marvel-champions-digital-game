@@ -151,6 +151,8 @@ const ICONS = {
         "M12 13.9l1.4 2.5h-2.8zM9.7 18.4h1.1v2.4H9.7zM13.2 18.4h1.1v2.4h-1.1z",
     },
   ],
+  /** The game menu. */
+  menu: [{ d: "M4 6.5h16M4 12h16M4 17.5h16", stroke: 2.4 }],
   /** Close a panel. */
   close: [{ d: "M6 6l12 12M18 6L6 18", stroke: 2.4 }],
   /** Attack: a strike with speed lines. */

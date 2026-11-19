@@ -8,11 +8,6 @@
   </head>
   <body>
     <main class="battle">
-      <header class="mast">
-        <div class="wordmark" aria-label="Marvel Champions"><span>Marvel</span> Champions</div>
-        <h1>Spider-Man <i>vs.</i> Rhino</h1>
-        <button class="btn btn-ghost reset" id="reset" type="button" disabled>New game</button>
-      </header>
       <div class="arena">
         <section class="playfield" aria-label="Battle table">
           <div id="board-viewport" role="region" aria-label="Playmat">
@@ -76,6 +71,7 @@
                 <rect width="100%" height="100%" fill="#050911" opacity=".72" mask="url(#defense-mask)" />
               </svg>
               <div id="attack-reticle" aria-hidden="true" hidden></div>
+              <div id="pending-mark" aria-hidden="true" hidden></div>
               <div id="choice-shade" hidden></div>
               <span id="reveal-hint" aria-hidden="true" hidden></span>
               <div id="impact" aria-hidden="true" hidden></div>
@@ -83,6 +79,7 @@
             </div>
           </div>
           <div class="phase-status" aria-live="polite">
+            <button type="button" id="menu-button" class="menu-button" aria-label="Menu" title="Menu (Esc)"></button>
             <span class="phase-chip" id="turn-status" data-phase="hero" role="status">Hero phase</span>
             <span class="dock-round" id="round-label">Round 1</span>
           </div>
@@ -122,6 +119,14 @@
         </aside>
       </div>
     </main>
+    <dialog id="menu" aria-labelledby="menu-title">
+      <p class="eyebrow">Marvel Champions</p>
+      <h2 id="menu-title">Spider-Man <i>vs.</i> Rhino</h2>
+      <div class="menu-actions">
+        <button type="button" id="menu-resume" class="btn btn-primary" autofocus>Resume</button>
+        <button type="button" id="reset" class="btn btn-secondary" disabled>New game</button>
+      </div>
+    </dialog>
     <dialog id="game-over" aria-labelledby="game-over-title" aria-describedby="game-over-detail">
       <div class="outcome-glow" aria-hidden="true"><div class="outcome-rays"></div></div>
       <div class="outcome-confetti" id="outcome-confetti" aria-hidden="true"></div>

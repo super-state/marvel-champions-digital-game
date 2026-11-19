@@ -29,48 +29,6 @@ button:focus-visible {
   flex-direction: column;
   overflow: hidden;
 }
-.mast {
-  display: flex;
-  gap: clamp(14px, 2vw, 32px);
-  align-items: center;
-  padding: 0 clamp(14px, 2vw, 28px);
-  min-height: 54px;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, #0f1821, #0b1118);
-}
-.wordmark {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font: 30px/0.9 var(--font-logo);
-  letter-spacing: 0.035em;
-  white-space: nowrap;
-}
-.wordmark span {
-  padding: 3px 4px 2px;
-  color: white;
-  background: #c8102e;
-  transform: skew(-4deg);
-  font: 20px/0.98 var(--font-logo);
-  letter-spacing: -0.025em;
-}
-h1 {
-  margin: 0;
-  padding-left: clamp(14px, 2vw, 32px);
-  border-left: 1px solid var(--line);
-  font: 800 clamp(14px, 1.2vw, 18px)/1.2 var(--font-ui);
-  letter-spacing: -0.01em;
-}
-h1 i {
-  padding: 0 0.2em;
-  color: var(--text-3);
-  font-weight: 600;
-}
-.reset {
-  margin-left: auto;
-  min-height: 38px;
-  font-size: 13px;
-}
 .arena {
   --sidebar-width: clamp(300px, 24vw, 400px);
   flex: 1;
@@ -85,7 +43,32 @@ h1 i {
   min-width: 0;
   min-height: 0;
 }
-/* Whose phase it is and the round, in the table's top-left corner. */
+/* The menu button, whose phase it is and the round, in the table's top-left corner. */
+.menu-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #ffffff22;
+  border-radius: 50%;
+  background: #0c141cd9;
+  color: var(--text-2);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    color 140ms,
+    border-color 140ms;
+}
+.menu-button:hover,
+.menu-button:focus-visible {
+  color: var(--text);
+  border-color: var(--gold);
+}
+.menu-button .icon {
+  width: 18px;
+  height: 18px;
+}
 .phase-status {
   position: absolute;
   z-index: 6;
@@ -910,6 +893,154 @@ h1 i {
     animation: none;
   }
 }
+/* Asked to defend: the attacker glows an angry red over the darkened table. */
+#ability-glow polygon[data-tone="attack"] {
+  stroke: #ff6a52;
+  filter: drop-shadow(0 0 5px #ff2a14) drop-shadow(0 0 16px #ff2a14b3);
+  animation: attack-pulse 0.85s ease-in-out infinite alternate;
+}
+@keyframes attack-pulse {
+  from {
+    opacity: 0.7;
+    stroke-width: 3px;
+  }
+  to {
+    opacity: 1;
+    stroke-width: 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #ability-glow polygon[data-tone="attack"] {
+    animation: none;
+    stroke-width: 5px;
+  }
+}
+
+#ability-glow polygon[data-tone="threat"] {
+  stroke: #ffc06a;
+  filter: drop-shadow(0 0 5px #ff8a1c) drop-shadow(0 0 14px #ff8a1cb3);
+}
+/* An amount about to land on a card (threat on a scheme, damage on a hero) while the game waits on an answer. */
+#pending-mark {
+  position: absolute;
+  z-index: 3;
+  translate: -50% calc(-100% - 4px);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 13px 5px 8px;
+  border: 2px solid var(--threat);
+  border-radius: var(--r-pill);
+  background: linear-gradient(180deg, #3d2408f2, #1f1204f2);
+  box-shadow:
+    0 0 0 3px #0009,
+    0 0 24px #ff8a1c99;
+  color: #ffe4c4;
+  pointer-events: none;
+}
+#pending-mark[hidden] {
+  display: none;
+}
+#pending-mark .icon {
+  width: 22px;
+  height: 22px;
+  color: var(--threat);
+}
+#pending-mark b {
+  font: italic 900 22px/1 var(--font-ui);
+}
+#pending-mark[data-kind="damage"] {
+  border-color: var(--damage);
+  background: linear-gradient(180deg, #3f0f0bf2, #220604f2);
+  box-shadow:
+    0 0 0 3px #0009,
+    0 0 24px #f04a3699;
+}
+#pending-mark[data-kind="damage"] .icon {
+  color: var(--damage);
+}
+#pending-mark[data-kind="thwart"] {
+  border-color: var(--hero);
+  background: linear-gradient(180deg, #0c2a44f2, #061624f2);
+  box-shadow:
+    0 0 0 3px #0009,
+    0 0 24px #5cb4ff80;
+}
+#pending-mark[data-kind="thwart"] .icon {
+  color: var(--hero);
+}
+@media (prefers-reduced-motion: no-preference) {
+  #pending-mark:not([hidden]) {
+    animation: pending-bob 0.8s ease-in-out infinite alternate;
+  }
+  @keyframes pending-bob {
+    from {
+      scale: 1;
+    }
+    to {
+      scale: 1.1;
+    }
+  }
+}
+/* A facedown boost card waiting beside its enemy. */
+.boost-tag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  translate: -50% -50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 5px;
+  border: 1.5px solid var(--boost);
+  border-radius: var(--r-pill);
+  background: #1c1704eb;
+  box-shadow: 0 2px 8px #000a;
+  color: var(--boost);
+  font: 800 10px/1 var(--font-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.boost-tag[hidden] {
+  display: none;
+}
+.boost-tag .icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* ── Menu ────────────────────────────────────────────────────────────────── */
+#menu {
+  width: min(340px, calc(100% - 32px));
+  padding: 26px 24px 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: var(--glass);
+  color: var(--text);
+  text-align: center;
+  box-shadow: var(--shadow-2);
+}
+#menu::backdrop {
+  background: rgb(4 7 12 / 72%);
+}
+#menu .eyebrow {
+  justify-content: center;
+}
+#menu h2 {
+  margin: 6px 0 20px;
+  font: italic 900 26px/1.1 var(--font-ui);
+  letter-spacing: -0.01em;
+}
+#menu h2 i {
+  color: var(--text-3);
+  font-weight: 700;
+}
+.menu-actions {
+  display: grid;
+  gap: 10px;
+}
 
 /* ── Reading a revealed card ─────────────────────────────────────────────── */
 #read-reveal {
@@ -1392,27 +1523,6 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
   }
 }
 @media (max-width: 740px) {
-  .mast {
-    min-height: 48px;
-    gap: 10px;
-    padding: 0 10px;
-  }
-  .wordmark {
-    flex-direction: column;
-    gap: 2px;
-    font-size: 16px;
-  }
-  .wordmark span {
-    padding: 1px 3px;
-    font-size: 10px;
-  }
-  h1 {
-    padding-left: 10px;
-    font-size: 14px;
-  }
-  .reset {
-    padding: 0 8px;
-  }
   #board-viewport {
     height: clamp(320px, 66svh, 660px);
   }
@@ -1438,8 +1548,17 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
   .dock-help {
     font-size: 12px;
   }
+  .dock-actions {
+    min-width: 0;
+    max-width: 100%;
+  }
   .dock-actions .btn {
+    min-width: 0;
     min-height: 40px;
+    white-space: normal;
+  }
+  .dock-actions .btn-icon {
+    flex-shrink: 0;
   }
   .phase-status {
     top: 8px;
@@ -1477,9 +1596,6 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
   }
 }
 @media (min-width: 741px) and (max-height: 700px) {
-  .mast {
-    min-height: 44px;
-  }
   .playfield > .dock {
     bottom: 8px;
     min-height: 54px;

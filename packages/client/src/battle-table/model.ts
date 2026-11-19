@@ -19,6 +19,7 @@ import {
   type LegalAction,
   type LegalActions,
   type ResourceType,
+  type TriggerEvent,
 } from "@mc/engine";
 import { artFor } from "../art/art-source.js";
 import { abilityShortLabelOf } from "../view/ability-label.js";
@@ -78,12 +79,50 @@ export interface BattlePayment {
   }[];
 }
 
+/** The card a reaction window is about and the amount at stake, so the table can point at it before asking. */
+function triggerSubjectOf(event: TriggerEvent, before: boolean): NonNullable<BattleChoice["event"]> {
+  const about = (subject: string | null, amount: number | null = null) => ({
+    kind: event.kind,
+    subject,
+    amount,
+    before,
+  });
+  switch (event.kind) {
+    case "placeThreat":
+    case "removeThreat":
+      return about(event.schemeInstanceId, event.amount);
+    case "dealDamage":
+      return about(event.targetInstanceId, before ? event.amount : (event.taken ?? event.amount));
+    case "enemyAttack":
+    case "enemyScheme":
+      return about(event.enemyInstanceId);
+    case "attack":
+      return about(event.attackerInstanceId);
+    case "thwart":
+      return about(event.thwarterInstanceId);
+    case "boostCardTurnedFaceup":
+      return about(event.boostInstanceId);
+    case "cardRevealed":
+    case "encounterCardRevealing":
+    case "encounterCardBeingRevealed":
+    case "cardEntersPlay":
+    case "characterDefeated":
+    case "cardPlayed":
+    case "cardBeingPlayed":
+      return about(event.instanceId);
+    default:
+      return about(null);
+  }
+}
+
 export interface BattleChoice {
   prompt: string;
   explanation?: string;
   sourceTitle?: string;
   offers?: { id: string; cardId: string; question: string; effect: string | null }[];
-  defense?: { attacker: string; target: string };
+  /** What a reaction window is about: the card it touches and the amount at stake, before (interrupt) or after. */
+  event?: { kind: string; subject: string | null; amount: number | null; before: boolean };
+  defense?: { attacker: string; attackerId: string; target: string };
   decline?: string;
   options: { id: string; label: string; cardId: string | null }[];
   canSkip: boolean;
@@ -121,6 +160,8 @@ export interface BattleBeat {
   returned?: string[];
   /** Cards discarded from the top of the player's deck (Black Cat). */
   milled?: string[];
+  /** On a facedown deal: the enemy the card goes to as its boost card. */
+  boostFor?: string;
   /** The encounter card whose surge deals the player another encounter card (the deal beat follows). */
   surge?: string;
   reveal?: {
@@ -146,6 +187,8 @@ export interface BattleSnapshot {
   encounterCount: number;
   encounterDiscard: BattleCard[];
   facedownEncounters: readonly string[];
+  /** The facedown boost cards waiting beside their enemies, until an activation turns them up. */
+  facedownBoosts: readonly { id: string; enemy: string }[];
   choiceSource: string | null;
   drawn: readonly string[];
   hero: BattleCard;
@@ -397,6 +440,7 @@ export class BattleModel {
           text:
             e.type === "boostCardDealt" ? `Deal a boost card to ${name(e.enemyInstanceId)}` : "Deal an encounter card",
           encounterDeal: e.instanceId,
+          ...(e.type === "boostCardDealt" ? { boostFor: e.enemyInstanceId } : {}),
         });
       } else if (e.type === "encounterCardRevealed" || e.type === "boostCardFlipped") {
         const card = cardOf(result.state, e.instanceId) ?? cardOf(this.#game, e.instanceId);
@@ -842,6 +886,7 @@ export class BattleModel {
                     : "No defender available",
                   defense: {
                     attacker: faceUpName(state, pending.prompt.attack.enemyInstanceId),
+                    attackerId: pending.prompt.attack.enemyInstanceId,
                     target: pending.prompt.attack.targetCharacterInstanceId,
                   },
                 }
@@ -854,6 +899,7 @@ export class BattleModel {
               : {}),
             ...(trigger && pending.prompt.kind === "chooseTriggers"
               ? {
+                  event: triggerSubjectOf(pending.prompt.event, pending.prompt.timing === "interrupt"),
                   offers: pending.options.flatMap((option) => {
                     const ref = option.ref;
                     if (ref.kind !== "ability") return [];
@@ -917,6 +963,9 @@ export class BattleModel {
         ...player.dealtEncounter,
         ...[villain.instanceId, ...player.playArea].flatMap((id) => getInstance(state, id)?.boostCards ?? []),
       ],
+      facedownBoosts: [villain.instanceId, ...player.playArea].flatMap((enemy) =>
+        (getInstance(state, enemy)?.boostCards ?? []).map((id) => ({ id, enemy })),
+      ),
       enemyCards: [...enemyIds].map((id) => this.#card(id)),
       hero: this.#card(player.identity.instanceId),
       villain: this.#card(villain.instanceId),

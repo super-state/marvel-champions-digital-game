@@ -740,6 +740,9 @@ test("01061 Great Responsibility: accepting makes the hero take the threat as da
   expect(offer.question).toBe("Interrupt with Great Responsibility?");
   expect(offer.effect).toMatch(/damage/i);
   const main = at.enemyCards.find((c) => c.type === "main_scheme")!;
+  // The window says what is about to happen before it asks: the main scheme is about to get its threat.
+  expect(at.choice!.event).toMatchObject({ kind: "placeThreat", subject: main.id, amount: 1, before: true });
+  expect(at.choice!.prompt).toMatch(/is about to get 1 threat$/);
   p.mark();
   p.run(() => p.battle.chooseMany([offer.id]));
   if (p.snap.payment) {

@@ -68,6 +68,18 @@ const SCENES: Record<string, Scene> = {
   surge: {
     encounterTop: ["01110", "01104", "01105"],
   },
+  /** Great Responsibility in hand as the villain phase starts: the main scheme's threat waits on the interrupt. */
+  threat: {
+    hero: { form: "hero" },
+    hand: ["01061"],
+  },
+  /** Rhino attacks with Sandman as his boost card and Enhanced Ivory Horn attached: Spider-Sense, then the defense. */
+  attack: {
+    hero: { form: "hero" },
+    villainAttachments: [{ code: "01100" }],
+    hand: ["01060", "01093", "01083", "01007", "01005"],
+    encounterTop: ["01102", "01108"],
+  },
   /** A quiet mid-game board: one minion, one side scheme, a couple of supports. */
   midgame: {
     hero: { form: "hero", damage: 2 },

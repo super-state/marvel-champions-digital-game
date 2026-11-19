@@ -245,6 +245,8 @@ test("01094 Rhino (alter-ego): schemes with the boost card's icons; boost is dea
   );
   expect(deal).toBeLessThan(flip);
   expect(flip).toBeLessThan(threat);
+  // The deal says whose boost card it is, so the table can lay it beside Rhino and tag it.
+  expect(run.beats[deal]!.boostFor).toBe(rhinoId(battle));
   expect(run.beats[flip]!.reveal!.name).toBe("Sandman");
   // step 1 places 1 threat, Rhino's 1 SCH + 2 boost places 3 more.
   expect(mainScheme(battle).threat).toBe(4);
@@ -255,7 +257,15 @@ test("01094 Rhino (alter-ego): schemes with the boost card's icons; boost is dea
 test("01094 Rhino (hero): attacks Spider-Man and adds the boost icons to his ATK", () => {
   const battle = scenario({ top: ["01102", "01108"] });
   toHero(battle);
-  const run = endTurn(battle);
+  // While Spider-Man is asked to defend, Rhino's boost card waits facedown beside him (RRG v1.8 "Boost": dealt before
+  // the defender is declared, turned up after).
+  let waiting: readonly { id: string; enemy: string }[] = [];
+  const run = endTurn(battle, (choice) => {
+    if (choice.defense) waiting = snap(battle).facedownBoosts;
+    return undefined;
+  });
+  expect(waiting).toEqual([{ id: expect.any(String), enemy: rhinoId(battle) }]);
+  expect(run.prompts.find((c) => c.defense)?.defense?.attackerId).toBe(rhinoId(battle));
   const flip = at(run, "boost flipped", (b) => b.reveal?.boost?.icons === 2);
   const hit = at(run, "Rhino hit", (b) => b.hit?.source === rhinoId(battle) && b.hit.target === heroId(battle));
   expect(run.beats[hit]!.hit!.amount).toBe(4);

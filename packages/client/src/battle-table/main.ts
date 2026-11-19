@@ -46,10 +46,26 @@ const abilityGlow = document.querySelector<SVGSVGElement>("#ability-glow")!;
 const abilityOutlines = document.querySelector<SVGGElement>("#ability-outlines")!;
 const defenderCutouts = document.querySelector<SVGGElement>("#defender-cutouts")!;
 const reticle = element("attack-reticle");
+const pendingMark = element("pending-mark");
 let aimTarget: string | null = null;
 let heldEncounter: string | null = null;
+/** How a card stands out of the darkened table: an attacker red, a scheme taking threat orange, the asking card gold. */
+type GlowTone = "ability" | "attack" | "threat";
+interface Spot {
+  glow: { id: string; tone: GlowTone }[];
+  /** Every card left out of the shade: the glowing ones and any the question needs (defenders to pick). */
+  cutouts: string[];
+  /** An amount about to land on a card while the game waits on the player: threat on a scheme, damage on a hero. */
+  mark?: { id: string; kind: "threat" | "damage" | "thwart"; amount: number } | null;
+}
+let spot: Spot | null = null;
+let markKey = "";
+/** Facedown boost cards beside their enemies, each with a "Boost" tag until an activation turns it up. */
+const boostTags = new Map<string, HTMLElement>();
 const instruction = element("instruction");
 const restart = element<HTMLButtonElement>("reset");
+const gameMenu = element<HTMLDialogElement>("menu");
+const menuButton = element<HTMLButtonElement>("menu-button");
 const pile = element<HTMLButtonElement>("discard-label");
 const discardFan = element("discard-fan");
 const pileCount = element("discard-count");
@@ -99,6 +115,7 @@ pile.prepend(icon("discard"));
 encounterPile.prepend(icon("discard"));
 undoButton.prepend(icon("undo"));
 restart.prepend(icon("mulligan"));
+menuButton.append(icon("menu"));
 
 type ResourceSource = Payment["sources"][number];
 function resourcePieceId(source: ResourceSource) {
@@ -168,7 +185,7 @@ interface DockView {
   tone: "hero" | "villain";
   /** True while the game waits for the player's answer. */
   asking: boolean;
-  eyebrow?: { text: string; icon?: IconName; tone?: "villain" | "hero" | "reaction" } | null;
+  eyebrow?: { text: string; icon?: IconName; tone?: "villain" | "hero" | "reaction" | "threat" } | null;
   title: string;
   help?: string | null;
   options?: readonly DockOption[];
@@ -384,6 +401,11 @@ function defend(choice: TriggerChoice) {
   render();
 }
 
+/** What an offered ability does, without the "Use <card> to" its button already says. */
+function offerDoes(effect: string) {
+  return effect.replace(/\.$/, "").replace(/^Use .+? to (?:you )?(?=[a-z])/, "");
+}
+
 function choiceView(choice: Choice): DockView {
   const tone = state.turn === "enemy" ? "villain" : "hero";
   if (choice.offers?.length) {
@@ -393,15 +415,17 @@ function choiceView(choice: Choice): DockView {
     const interrupt = /^interrupt/i.test(offer.question);
     // "Interrupt with Spider-Sense?": the button names the ability, the eyebrow says what kind of reaction it is.
     const ability = / with ([^?]+)\?$/.exec(offer.question)?.[1] ?? card;
+    const look = choice.event ? eventLook(choice.event) : null;
     return {
       tone,
       asking: true,
+      // What is happening comes first ("The Break-In! is about to get 1 threat"); the title asks what to do about it.
       eyebrow: {
-        text: interrupt ? "Interrupt" : "Response",
-        icon: interrupt ? "energy" : "response",
-        tone: "reaction",
+        text: choice.prompt,
+        icon: look?.icon ?? (interrupt ? "energy" : "response"),
+        tone: look?.glow === "threat" ? "threat" : look?.glow === "attack" ? "villain" : "reaction",
       },
-      title: offer.effect ? capitalize(offer.effect.replace(/\.$/, "")) + "?" : offer.question,
+      title: offer.effect ? capitalize(offerDoes(offer.effect)) + "?" : offer.question,
       secondary: { label: "Pass", onClick: () => answerOffer(false) },
       primary: {
         label: ability ? `Use ${ability}` : "Use it",
@@ -770,8 +794,7 @@ function pay() {
 function closeDecision() {
   decision.hidden = true;
   choiceShade.hidden = true;
-  defenseShade.setAttribute("hidden", "");
-  abilityGlow.setAttribute("hidden", "");
+  setSpot(null);
 }
 
 function animateDiscards(ids: readonly string[], message: string, onComplete: () => void) {
@@ -1076,13 +1099,118 @@ function synchronizeLabels() {
   }
 }
 
-function updateOutlines(group: SVGGElement, ids: readonly string[]) {
+function updateOutlines(group: SVGGElement, ids: readonly string[], tones?: readonly GlowTone[]) {
   while (group.childElementCount > ids.length) group.lastElementChild!.remove();
   ids.forEach((id, i) => {
     const polygon =
       group.children[i] ?? group.appendChild(document.createElementNS("http://www.w3.org/2000/svg", "polygon"));
     polygon.setAttribute("points", table!.cardOutline(id).join(" "));
+    const tone = tones?.[i];
+    if (tone && tone !== "ability") polygon.setAttribute("data-tone", tone);
+    else polygon.removeAttribute("data-tone");
   });
+}
+
+/** Darken the table around the cards that matter now, or (null) lift the shade. */
+function setSpot(next: Spot | null) {
+  spot = next?.cutouts.length ? next : null;
+  defenseShade.toggleAttribute("hidden", !spot);
+  abilityGlow.toggleAttribute("hidden", !spot?.glow.length);
+  const mark = spot?.mark ?? null;
+  pendingMark.hidden = !mark;
+  const key = mark ? `${mark.kind}|${mark.amount}` : "";
+  if (mark && key !== markKey) {
+    pendingMark.dataset.kind = mark.kind;
+    pendingMark.replaceChildren(
+      icon(mark.kind),
+      make("b", "", `${mark.kind === "threat" ? "+" : mark.kind === "thwart" ? "−" : ""}${mark.amount}`),
+    );
+  }
+  markKey = key;
+}
+
+/** How a reaction window's event reads: its symbol, and whether it threatens the hero (red), the plan (orange) or neither. */
+function eventLook(event: NonNullable<Choice["event"]>): { icon: IconName | null; glow: GlowTone } {
+  const ours = event.subject === state.hero.id || state.inPlay.some((card) => card.id === event.subject);
+  switch (event.kind) {
+    case "placeThreat":
+      return { icon: "threat", glow: "threat" };
+    case "enemyScheme":
+      return { icon: "scheme", glow: "threat" };
+    case "removeThreat":
+      return { icon: "thwart", glow: "ability" };
+    case "dealDamage":
+      return { icon: "damage", glow: ours ? "attack" : "ability" };
+    case "enemyAttack":
+      return { icon: "attack", glow: "attack" };
+    case "attack":
+      return { icon: "attack", glow: ours ? "ability" : "attack" };
+    case "cardRevealed":
+    case "encounterCardRevealing":
+    case "encounterCardBeingRevealed":
+      return { icon: "forced", glow: "attack" };
+    case "boostCardTurnedFaceup":
+    case "boostCardTurningFaceup":
+      return { icon: "boost", glow: "attack" };
+    default:
+      return { icon: null, glow: "ability" };
+  }
+}
+
+/** What a question spotlights: the attacker and its boost cards, or what an interrupt would change and the card asking. */
+function spotOf(choice: Choice | null): Spot | null {
+  if (!choice) return null;
+  if (choice.defense) {
+    const attacker = choice.defense.attackerId;
+    const boosts = state.facedownBoosts.filter((boost) => boost.enemy === attacker).map((boost) => boost.id);
+    const attachments = state.enemyCards.filter((card) => card.attachedTo === attacker).map((card) => card.id);
+    const defenders = defenseQuestionDecline(choice)
+      ? []
+      : choice.options.flatMap((option) => (option.cardId ? [option.cardId] : []));
+    return { glow: [{ id: attacker, tone: "attack" }], cutouts: [attacker, ...attachments, ...boosts, ...defenders] };
+  }
+  const offer = choice.offers?.[offerIndex];
+  if (!offer) return null;
+  const event = choice.event;
+  const glow: Spot["glow"] = [];
+  if (event?.subject && event.subject !== offer.cardId) glow.push({ id: event.subject, tone: eventLook(event).glow });
+  glow.push({ id: offer.cardId, tone: "ability" });
+  const boosts =
+    event?.kind === "enemyAttack" || event?.kind === "enemyScheme"
+      ? state.facedownBoosts.filter((boost) => boost.enemy === event.subject).map((boost) => boost.id)
+      : [];
+  const kind =
+    event?.kind === "placeThreat"
+      ? "threat"
+      : event?.kind === "removeThreat"
+        ? "thwart"
+        : event?.kind === "dealDamage"
+          ? "damage"
+          : null;
+  const amount = event?.before ? (event.amount ?? 0) : 0;
+  return {
+    glow,
+    cutouts: [...glow.map((item) => item.id), ...boosts, ...(heldEncounter ? [heldEncounter] : [])],
+    mark: event?.subject && kind && amount > 0 ? { id: event.subject, kind, amount } : null,
+  };
+}
+
+function tagBoost(id: string) {
+  if (boostTags.has(id)) return;
+  const tag = make("span", "boost-tag");
+  tag.append(icon("boost"), make("span", "", "Boost"));
+  boardLabels.append(tag);
+  boostTags.set(id, tag);
+}
+
+function untagBoost(id: string) {
+  boostTags.get(id)?.remove();
+  boostTags.delete(id);
+}
+
+function syncBoostTags() {
+  for (const id of [...boostTags.keys()]) if (!state.facedownBoosts.some((boost) => boost.id === id)) untagBoost(id);
+  for (const boost of state.facedownBoosts) tagBoost(boost.id);
 }
 
 function centerDecisionInViewport() {
@@ -1144,13 +1272,25 @@ function placeLabels() {
       reticle.style.width = Math.min(100, Math.max(34, target.width * 0.65)) + "px";
     }
   }
-  if (!abilityGlow.hasAttribute("hidden"))
-    updateOutlines(abilityOutlines, state.choice?.offers?.slice(offerIndex, offerIndex + 1).map((o) => o.cardId) ?? []);
-  if (state.choice?.defense && !defenseShade.hasAttribute("hidden")) {
+  if (spot) {
     updateOutlines(
-      defenderCutouts,
-      state.choice.options.flatMap((o) => (o.cardId ? [o.cardId] : [])),
+      abilityOutlines,
+      spot.glow.map((item) => item.id),
+      spot.glow.map((item) => item.tone),
     );
+    updateOutlines(defenderCutouts, spot.cutouts);
+    const marked = spot.mark ? projected.find((p) => p.id === spot!.mark!.id) : undefined;
+    if (marked) {
+      pendingMark.style.left = marked.x + "px";
+      pendingMark.style.top = marked.top + "px";
+    }
+  }
+  for (const [id, tag] of boostTags) {
+    const card = projected.find((p) => p.id === id);
+    tag.hidden = !card;
+    // The tag sits on the part of the card showing past its enemy's edge.
+    if (card)
+      tag.style.transform = `translate(${Math.round(card.right - card.width * 0.32)}px,${Math.round(card.y)}px)`;
   }
   if (heldEncounter && !choiceShade.hidden) {
     const card = projected.find((p) => p.id === heldEncounter);
@@ -1296,7 +1436,7 @@ function floatNumber(
   ]);
 }
 
-function stampCard(id: string, text: string, tone?: "status" | "confused" | "tough" | "surge") {
+function stampCard(id: string, text: string, tone?: "status" | "confused" | "tough" | "surge" | "boost") {
   const node = make("div", "card-stamp", text);
   if (tone) node.dataset.tone = tone;
   floatOver(id, node, 1100, [
@@ -1372,7 +1512,8 @@ const STATUS_STAMP: Record<string, ["status" | "confused" | "tough", string]> = 
 
 /** The dock line for a beat: an icon and a tone, so the feed reads at a glance. */
 function feedLineOf(beat: Beat): FeedLine | null {
-  if (beat.phase || beat.turned || beat.encounterDeal) return null;
+  if (beat.phase || beat.turned || (beat.encounterDeal && !beat.boostFor)) return null;
+  if (beat.boostFor) return { text: beat.text, icon: "boost", tone: "villain" };
   if (beat.draw) return { text: `Draw ${plural(beat.draw.length, "card")}`, icon: "draw", tone: "hero" };
   if (beat.handDiscard)
     return {
@@ -1457,10 +1598,15 @@ async function present(beats: Snapshot["beats"]) {
   anchors.inert = true;
   undoButton.disabled = restart.disabled = true;
   const pendingDraws = new Set(beats.flatMap((beat) => beat.draw ?? []));
+  let spotted = false;
   // The payment screen's stand-ins for resource abilities (Peter Parker's Scientist) are spent by now.
   displayedHand = displayedHand.filter((card) => !card.id.startsWith("ability:"));
   for (let index = 0; index < beats.length; index++) {
     const beat = beats[index]!;
+    if (spotted) {
+      setSpot(null);
+      spotted = false;
+    }
     if (beat.gameEnded) break;
     if (beat.draw) {
       for (const id of beat.draw) pendingDraws.delete(id);
@@ -1687,11 +1833,22 @@ async function present(beats: Snapshot["beats"]) {
       continue;
     }
     if (beat.encounterDeal) {
-      table?.dealEncounter(beat.encounterDeal);
+      table?.dealEncounter(beat.encounterDeal, beat.boostFor ?? null);
       const count = element("encounter-count");
       count.textContent = String(Math.max(0, Number(count.textContent) - 1));
+      if (beat.boostFor) {
+        // A boost card lands facedown beside its enemy: say so on the card, then tag it until it turns up.
+        await sleep(reducedMotion() ? 120 : 480);
+        stampCard(beat.encounterDeal, "Boost", "boost");
+        await sleep(reducedMotion() ? 300 : 860);
+        tagBoost(beat.encounterDeal);
+        placeLabels();
+        await sleep(200);
+        continue;
+      }
     }
     if (beat.reveal) {
+      untagBoost(beat.reveal.id);
       readingCard = beat.reveal.boost ? null : beat.reveal.id;
       table?.revealEncounter(beat.reveal);
       await sleep(360);
@@ -1738,6 +1895,19 @@ async function present(beats: Snapshot["beats"]) {
       }
     }
     if (beat.threat) {
+      if (beat.enemy && beat.threat.delta > 0) {
+        // The scheme's moment: the table darkens around it and its threat shows coming in before it lands.
+        const scheme = beat.threat.scheme;
+        spotted = true;
+        setSpot({
+          glow: [{ id: scheme, tone: "threat" }],
+          cutouts: [scheme],
+          mark: { id: scheme, kind: "threat", amount: beat.threat.delta },
+        });
+        placeLabels();
+        await sleep(reducedMotion() ? 260 : 620);
+        setSpot({ glow: [{ id: scheme, tone: "threat" }], cutouts: [scheme] });
+      }
       activationRing(beat.threat.scheme);
       const counter = labels.get(beat.threat.scheme)?.querySelector<HTMLElement>(".scheme-threat");
       if (counter) {
@@ -1784,6 +1954,7 @@ async function present(beats: Snapshot["beats"]) {
   }
   impact.hidden = true;
   announcement.hidden = true;
+  setSpot(null);
   delete stage.dataset.resolving;
   anchors.inert = false;
   presenting = false;
@@ -1817,8 +1988,7 @@ function render() {
   else if (!state.choice) aimTarget = null;
   reticle.hidden =
     defenseQuestion || !aimTarget || (!defending && !state.choice?.options.some((o) => o.cardId === aimTarget));
-  abilityGlow.setAttribute("hidden", "");
-  defenseShade.setAttribute("hidden", "");
+  setSpot(null);
   if (presented !== state.beats) {
     presented = state.beats;
     if (presented.length) {
@@ -1889,6 +2059,7 @@ function render() {
   });
   table?.markActor(state.choiceSource);
   discardFan.hidden = !discardOpen;
+  syncBoostTags();
   synchronizeLabels();
   pile.disabled = !state.discard.length || flying || discarding || !!state.payment;
   pile.setAttribute("aria-expanded", String(discardOpen && !viewingEncounterDiscard));
@@ -1908,18 +2079,15 @@ function render() {
     turnStatus.textContent = state.outcome.result === "win" ? "Victory" : "Defeat";
     turnStatus.dataset.phase = state.outcome.result === "win" ? "hero" : "villain";
   } else phaseIndicator(state.choice?.mulligan ? "setup" : state.turn === "enemy" ? "villain" : "hero");
-  choiceShade.hidden = !state.choice || !(heldEncounter || state.choice.offers?.length || defenseQuestion);
+  choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
   paintDock(dockView());
-  if (state.choice) {
-    if (defending) {
-      defenseShade.removeAttribute("hidden");
-      reticle.hidden = false;
-    }
-    if (state.choice.offers?.length) {
-      abilityGlow.removeAttribute("hidden");
-      inspect(state.choice.offers[offerIndex]?.cardId ?? null);
-    }
+  // A question darkens the table around what it is about: the attacker (red), or what an interrupt would change.
+  setSpot(spotOf(state.choice));
+  if (state.choice?.defense) {
+    inspect(state.choice.defense.attackerId);
+    if (defending) reticle.hidden = false;
   }
+  if (state.choice?.offers?.length) inspect(state.choice.offers[offerIndex]?.cardId ?? null);
   placeLabels();
   showOutcome(state.outcome);
 }
@@ -2069,12 +2237,20 @@ undoButton.onclick = () => {
   table?.reconcileEncounters([]);
   say("Move undone");
   render();
-  for (const id of state.facedownEncounters) table?.dealEncounter(id);
+  for (const id of state.facedownEncounters)
+    table?.dealEncounter(id, state.facedownBoosts.find((boost) => boost.id === id)?.enemy ?? null);
   if (view?.reveal) table?.revealEncounter(view.reveal);
   if (staged?.type === "event") table?.channelEvent(staged.id);
   inspect(heldEncounter ?? state.hero.id);
 };
-restart.onclick = start;
+restart.onclick = () => {
+  if (gameMenu.open) gameMenu.close();
+  start();
+};
+menuButton.onclick = () => {
+  if (!gameMenu.open) gameMenu.showModal();
+};
+element<HTMLButtonElement>("menu-resume").onclick = () => gameMenu.close();
 tryAgain.onclick = start;
 gameOverUndo.onclick = () => undoButton.click();
 gameOver.oncancel = (event) => event.preventDefault();
@@ -2110,6 +2286,12 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     setDiscardOpen(false);
     pile.focus({ preventScroll: true });
+    return;
+  }
+  // Nothing else to put away: Escape opens the menu (the dialog closes itself on a second Escape).
+  if (event.key === "Escape" && !gameMenu.open && !gameOver.open) {
+    event.preventDefault();
+    gameMenu.showModal();
   }
 });
 // The hand sits just above the turn bar, however tall the bar's current question makes it.
