@@ -1367,15 +1367,16 @@ export class BattleTable {
     // A phone's turn bar spans the screen and wraps its buttons under the question, so it stands taller.
     const bar = w < 740 ? 92 : 50;
     const room = { left: 6, right: w - 6, top: 6, bottom: h - bar - handCard * 1.48 - 26 };
-    // The table keeps its own layout, villain in the middle, while everything is on screen; only a board that runs
-    // off it (a tall stack of side schemes, a long row) shrinks, about the middle, until it fits.
-    const onScreen = [box.x0, box.x1].every((x) =>
-      [box.z0, box.z1].every((z) => {
-        const p = this.#project(x, 0.06, z);
-        return p.x >= room.left && p.x <= room.right && p.y >= room.top && p.y <= room.bottom;
-      }),
-    );
-    const fit: BoardFit = onScreen ? IDENTITY_FIT : fitBoard(box, this.#project, room, { maxScale: 1 });
+    // The table keeps its own layout, villain in the middle, while it fits across the screen and its top stays on it.
+    // Only a board that runs off (a tall stack of side schemes) shrinks until it fits. The hero's row sits where the
+    // layout puts it, over the top of the hand, so the bottom edge never starts a fit, and a fitted board keeps that
+    // row's edge where it was.
+    const corners = [box.x0, box.x1].flatMap((x) => [box.z0, box.z1].map((z) => this.#project(x, 0.06, z)));
+    const lowest = Math.max(...corners.map((p) => p.y));
+    const spills = corners.some((p) => p.x < room.left || p.x > room.right || p.y < room.top);
+    const fit: BoardFit = spills
+      ? fitBoard(box, this.#project, { ...room, bottom: Math.max(room.bottom, lowest) }, { maxScale: 1 })
+      : IDENTITY_FIT;
     const place = (p: THREE.Vector3) => {
       const q = fitToBox(fit, p);
       return p.set(q.x, q.y, q.z);
@@ -1599,7 +1600,8 @@ export class BattleTable {
         rest(center, this.#point(x + playWidth, rowY, elevation).x - center.x, card.landscape);
       } else {
         const resting = this.#tablePose(card.id, x, rowY, playWidth, elevation, flat);
-        rest(resting.center, resting.scale, card.exhausted !== card.landscape);
+        // Counted upright: turning sideways to exhaust, and back to ready, never moves a fitted table.
+        rest(resting.center, resting.scale, card.landscape);
         if (card.exhausted) this.#pieces.get(card.id)!.target.roll = -Math.PI / 2;
       }
     };
