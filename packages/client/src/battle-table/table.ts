@@ -107,12 +107,12 @@ const READY_TURN_END = 0.78;
 const HEIGHT = 1.407;
 const TAB = 0.18;
 
-// Keep the original scan coordinates so the printed title stays on the exposed edge.
 /** A facedown boost card beside its enemy: smaller than the enemy, never bigger than a waiting encounter card. */
 function boostCardWidth(hostWidth: number, w: number, h: number) {
   return Math.min(hostWidth * 0.62, h * 0.125, w * 0.105);
 }
 
+// Keep the original scan coordinates so the printed title stays on the exposed edge.
 function upgradeTab() {
   const geo = new THREE.ShapeGeometry(roundedRect(TAB, HEIGHT, 0.025), 8);
   geo.translate((TAB - 1) / 2, 0, 0);
