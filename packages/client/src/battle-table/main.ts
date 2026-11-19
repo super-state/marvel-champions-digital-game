@@ -2288,6 +2288,11 @@ document.addEventListener("keydown", (event) => {
     pile.focus({ preventScroll: true });
     return;
   }
+  if (event.key === "Escape" && state?.choice?.canCancel && !discarding && !presenting) {
+    event.preventDefault();
+    cancel();
+    return;
+  }
   // Nothing else to put away: Escape opens the menu (the dialog closes itself on a second Escape).
   if (event.key === "Escape" && !gameMenu.open && !gameOver.open) {
     event.preventDefault();

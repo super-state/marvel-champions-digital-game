@@ -1394,7 +1394,13 @@ export class BattleTable {
         root.rotation.x = flat;
         return this.#anchor(root, card.landscape);
       };
-      const left = bounds(state.villain, w * 0.5, h * 0.237, villainWidth, villainTabs).right;
+      const villainBoosts = [...this.#encounters.values()].filter(
+        (card) => card.boostFor === state.villain.id && card.id !== this.#revealing,
+      ).length;
+      const boostWidth = Math.min(villainWidth * 0.62, h * 0.125, w * 0.105);
+      const left =
+        bounds(state.villain, w * 0.5, h * 0.237, villainWidth, villainTabs).right +
+        (villainBoosts ? boostWidth * (0.7 + (villainBoosts - 1) * 0.3) : 0);
       const right = this.encounterAnchor().left;
       const slotWidth = (right - left) / otherEnemies.length;
       otherEnemies.forEach((card, i) => {
