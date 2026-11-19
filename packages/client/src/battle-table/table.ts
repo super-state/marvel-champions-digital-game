@@ -108,11 +108,6 @@ const READY_TURN_END = 0.78;
 const HEIGHT = 1.407;
 const TAB = 0.18;
 
-/** A facedown boost card beside its enemy: smaller than the enemy, never bigger than a waiting encounter card. */
-function boostCardWidth(hostWidth: number, w: number, h: number) {
-  return Math.min(hostWidth * 0.62, h * 0.125, w * 0.105);
-}
-
 // Keep the original scan coordinates so the printed title stays on the exposed edge.
 function upgradeTab() {
   const geo = new THREE.ShapeGeometry(roundedRect(TAB, HEIGHT, 0.025), 8);
@@ -327,7 +322,6 @@ export class BattleTable {
   readonly #ray = new THREE.Raycaster();
   readonly #ndc = new THREE.Vector2();
   readonly #scratch = new THREE.Vector3();
-  readonly #layoutCard = new THREE.Group();
   readonly #floor = new THREE.Plane(new THREE.Vector3(0, 1, 0));
   readonly #tucked = new Map<string, { host: string; depth: number }>();
   readonly #pieces = new Map<string, Piece>();
@@ -1336,27 +1330,6 @@ export class BattleTable {
     piece.target = { position: center, scale: widthPoint.x - center.x, pitch, roll };
   }
 
-  /** Pose a card on the table, lifted while hovered or picked; returns where it rests, for fitting the table. */
-  #tablePose(
-    id: string,
-    x: number,
-    y: number,
-    width: number,
-    elevation: number,
-    pitch: number,
-  ): { center: THREE.Vector3; scale: number } {
-    const center = this.#point(x, y, elevation);
-    const rest = { center, scale: this.#point(x + width, y, elevation).x - center.x };
-    const hovered = this.#hovered === id;
-    if ((hovered || this.#state?.selected.includes(id)) && !this.#flights.has(id)) {
-      if (hovered) this.#hoverRest = rest;
-      this.#pose(id, x, y - width * 0.09, width * 1.065, elevation + 0.35, pitch + 0.07);
-    } else {
-      this.#pose(id, x, y, width, elevation, pitch);
-    }
-    return rest;
-  }
-
   /**
    * Scale and slide the table's cards so they fill the room between the top of the screen and the hand: a busy board
    * shrinks instead of scrolling, a quiet one grows. Only lasting cards decide the fit (`rests`), and the room is
@@ -1431,25 +1404,13 @@ export class BattleTable {
     if (!state) return;
     const w = this.#width,
       h = this.#height;
-    const boardWidth = Math.min(w * 0.2, h * 0.22);
     const flat = -Math.PI / 2;
-    // Piles sit out at the mat's edges, leaving the middle to the cards in play.
-    const pileX = w * 0.885;
-    const pileY = h * 0.505;
-    const base = this.#point(pileX, pileY, 0.025);
-    const encounterWidth = Math.min(w * 0.088, h * 0.088);
-    const encounterPile = (y: number) => {
-      const position = this.#point(pileX, y, 0.025);
-      const scale = this.#point(pileX + encounterWidth, y, 0.025).x - position.x;
-      // Align the piles on the table itself, accounting for the camera perspective.
-      position.x = base.x;
-      return { position, scale };
-    };
-    const encounterGoal = encounterPile(h * 0.23);
     this.#hoverFootprint = null;
     this.#hoverRest = null;
     this.#tucked.clear();
-    // The cards lying on the table (fitted to the screen at the end) and where the lasting ones rest.
+    // The table is laid out by what is on it, in card widths; `#fitTable` then sizes it to the screen. Villain row at
+    // z = 0, the hero's row nearer the player; schemes and the deck down the left, the encounter piles and the
+    // discard pile down the right.
     const onBoard = new Set<string>();
     const rests: TableBox[] = [];
     const rest = (center: THREE.Vector3, scale: number, wide: boolean) => {
@@ -1463,89 +1424,77 @@ export class BattleTable {
         z1: center.z + halfZ + scale * 0.3,
       });
     };
+    const at = (x: number, z: number, elevation: number) => new THREE.Vector3(x, elevation, z);
+    const place = (id: string, x: number, z: number, width: number, elevation: number, roll = 0, pitch = flat) => {
+      const piece = this.#pieces.get(id);
+      if (!piece) return;
+      piece.target = { position: at(x, z, elevation), scale: width, pitch, roll };
+      onBoard.add(id);
+    };
+    /** A lasting card: lifted towards the camera while hovered or picked; where it rests counts towards the fit. */
+    const lay = (card: TableCard, x: number, z: number, width: number, elevation: number, wide: boolean) => {
+      const resting = { center: at(x, z, elevation), scale: width };
+      const hovered = this.#hovered === card.id;
+      if ((hovered || state.selected.includes(card.id)) && !this.#flights.has(card.id)) {
+        if (hovered) this.#hoverRest = resting;
+        place(card.id, x, z - width * 0.1, width * 1.065, elevation + 0.35, 0, flat + 0.07);
+      } else place(card.id, x, z, width, elevation);
+      rest(resting.center, width, wide);
+    };
+    const VILLAIN = 1.55;
+    const MINION = 1;
+    const SCHEME = 1;
+    const PILE = 1.05;
+    const ENCOUNTER = 0.82;
+    const BOOST = 0.72;
+    const GAP = 0.3;
     const enemies = state.enemyCards.filter((c) => !c.attachedTo);
-    const enemyPoses = new Map<string, { x: number; y: number; width: number }>();
-    const poseEnemy = (host: TableCard, x: number, y: number, width: number) => {
-      enemyPoses.set(host.id, { x, y, width });
+    const enemyPoses = new Map<string, { x: number; z: number; width: number }>();
+    const poseEnemy = (host: TableCard, x: number, z: number, width: number) => {
+      enemyPoses.set(host.id, { x, z, width });
       const attachments = state.enemyCards.filter((c) => c.attachedTo === host.id);
       attachments.forEach((card, i) => {
+        const tucked = x - width * TAB * (attachments.length - i);
         this.#tucked.set(card.id, { host: host.id, depth: attachments.length - i });
-        this.#pose(card.id, x - width * TAB * (attachments.length - i), y, width, 0.045 + i * 0.035, flat);
-        onBoard.add(card.id);
-        const target = this.#pieces.get(card.id)?.target;
-        if (target) rest(target.position, target.scale, false);
+        place(card.id, tucked, z, width, 0.045 + i * 0.035);
+        rest(at(tucked, z, 0), width, false);
       });
-      const resting = this.#tablePose(host.id, x, y, width, 0.05 + attachments.length * 0.035, flat);
-      onBoard.add(host.id);
-      rest(resting.center, resting.scale, host.landscape);
+      lay(host, x, z, width, 0.05 + attachments.length * 0.035, host.landscape);
     };
     const villainTabs = state.enemyCards.filter((c) => c.attachedTo === state.villain.id).length;
     this.#villainShadow.visible = villainTabs > 0;
-    const villainWidth = Math.min(boardWidth, (w * 0.3) / (1 + 2 * TAB * villainTabs));
-    poseEnemy(state.villain, w * 0.5, h * 0.237, villainWidth);
+    poseEnemy(state.villain, 0, 0, VILLAIN);
+    const villainLeft = -VILLAIN / 2 - VILLAIN * TAB * villainTabs;
     const isScheme = (card: TableCard) => card.type === "main_scheme" || card.type === "side_scheme";
     const schemes = enemies.filter(isScheme);
     const otherEnemies = enemies.filter((card) => !isScheme(card));
-    const enemyRow = h * 0.242;
-    const enemyCardWidth = Math.min(w * 0.117, h * 0.145);
-    const schemeX = w * 0.255;
-    const schemeElevation = 0.05;
-    const schemeOrigin = this.#point(schemeX, enemyRow, schemeElevation);
-    const schemeScale = this.#point(schemeX + enemyCardWidth, enemyRow, schemeElevation).x - schemeOrigin.x;
-    // Leave room below each full-size scheme for its threat label.
-    const schemeStep = Math.max(
-      schemeScale * 1.75,
-      schemeOrigin.z - this.#point(schemeX, h * 0.105, schemeElevation).z,
-    );
+    // The main scheme beside the villain; side schemes stack up behind it, in two columns once there are three.
+    const schemeAcross = HEIGHT * SCHEME;
+    const schemeStep = SCHEME + 0.42;
+    const schemeColumns = schemes.length >= 3 ? 2 : 1;
+    const schemeRight = villainLeft - GAP * 1.2;
     schemes.forEach((card, i) => {
-      const position = schemeOrigin.clone();
-      position.z -= i * schemeStep;
-      const projected = this.#scratch.copy(position).project(this.#camera);
-      const x = (projected.x + 1) * w * 0.5;
-      const y = (1 - projected.y) * this.#canvasHeight * 0.5 - this.#extension;
-      position.x += schemeScale;
-      const right = (position.project(this.#camera).x + 1) * w * 0.5;
-      poseEnemy(card, x, y, right - x);
+      const column = i % schemeColumns;
+      const tier = Math.floor(i / schemeColumns);
+      poseEnemy(card, schemeRight - schemeAcross / 2 - column * (schemeAcross + GAP), 0.3 - tier * schemeStep, SCHEME);
     });
-    if (otherEnemies.length) {
-      const bounds = (card: TableCard, x: number, y: number, width: number, tabs: number) => {
-        const elevation = 0.05 + tabs * 0.035;
-        const root = this.#layoutCard;
-        root.position.copy(this.#point(x, y, elevation));
-        root.scale.setScalar(this.#point(x + width, y, elevation).x - root.position.x);
-        root.rotation.x = flat;
-        return this.#anchor(root, card.landscape);
-      };
-      const villainBoosts = [...this.#encounters.values()].filter(
-        (card) => card.boostFor === state.villain.id && card.id !== this.#revealing,
-      ).length;
-      const boostWidth = boostCardWidth(villainWidth, w, h);
-      const left =
-        bounds(state.villain, w * 0.5, h * 0.237, villainWidth, villainTabs).right +
-        (villainBoosts ? boostWidth * (0.7 + (villainBoosts - 1) * 0.3) : 0);
-      const right = this.#project(
-        encounterGoal.position.x - encounterGoal.scale * 0.5,
-        0.025,
-        encounterGoal.position.z,
-      ).x;
-      const slotWidth = (right - left) / otherEnemies.length;
-      otherEnemies.forEach((card, i) => {
-        const tabs = state.enemyCards.filter((c) => c.attachedTo === card.id).length;
-        const footprint = (card.landscape ? HEIGHT : 1) + TAB * tabs;
-        const width = Math.min(enemyCardWidth, Math.max(1, slotWidth * 0.78) / footprint);
-        const center = left + (i + 0.5) * slotWidth;
-        const x = center + (width * TAB * tabs) / 2;
-        const { left: cardLeft, right: cardRight } = bounds(card, x, enemyRow, width, tabs);
-        const perspectiveOffset = (cardLeft + cardRight) / 2 - x;
-        poseEnemy(card, x - perspectiveOffset, enemyRow, width);
-      });
+    const schemeLeft = schemeRight - schemeColumns * schemeAcross - (schemeColumns - 1) * GAP;
+    // Minions to the villain's right, past the room a boost card takes, so a dealt boost card never moves them.
+    let next = VILLAIN / 2 + BOOST * 0.7 + GAP;
+    for (const card of otherEnemies) {
+      const tabs = state.enemyCards.filter((c) => c.attachedTo === card.id).length;
+      const across = (card.landscape ? HEIGHT : 1) * MINION;
+      poseEnemy(card, next + MINION * TAB * tabs + across / 2, 0, MINION);
+      next += MINION * TAB * tabs + across + GAP;
     }
+    const encounterX = next + GAP * 0.4 + ENCOUNTER / 2;
+    const encounterGoal = { position: at(encounterX, -0.25, 0.025), scale: ENCOUNTER };
+    const encounterDiscardGoal = { position: at(encounterX + ENCOUNTER + GAP * 0.7, -0.25, 0.025), scale: ENCOUNTER };
+    const villainRowRight = encounterX + ENCOUNTER * 1.5 + GAP * 0.7;
     let waiting = 0;
     const boosts = new Map<string, number>();
     for (const card of this.#encounters.values()) {
       const host = card.boostFor ? enemyPoses.get(card.boostFor) : undefined;
-      // Facedown cards come and go each villain phase: they lie on the table but never move the fit.
-      if (card.id !== this.#revealing) onBoard.add(card.id);
       if (card.id === this.#revealing)
         this.#pose(
           card.id,
@@ -1557,28 +1506,23 @@ export class BattleTable {
         );
       else if (card.boostFor && host) {
         // A boost card waits facedown beside the enemy it was dealt to, tucked under its right edge, until the
-        // activation turns it up.
+        // activation turns it up. Facedown cards come and go each villain phase, so they never move the fit.
         const stacked = boosts.get(card.boostFor) ?? 0;
         boosts.set(card.boostFor, stacked + 1);
-        const width = boostCardWidth(host.width, w, h);
-        this.#pose(
+        const width = Math.min(BOOST, host.width * 0.62);
+        place(
           card.id,
           host.x + host.width * 0.5 + width * (0.14 + stacked * 0.3),
-          host.y + host.width * 0.2,
+          host.z + host.width * 0.2,
           width,
           0.02 + stacked * 0.008,
-          flat,
           -0.13,
         );
-      } else
-        this.#pose(
-          card.id,
-          w * (0.67 + (waiting++ % 3) * 0.034),
-          h * 0.26,
-          Math.min(h * 0.125, w * 0.105),
-          0.07 + waiting * 0.045,
-          flat,
-        );
+      } else {
+        // Dealt to the player: waiting in front of the encounter deck until it is revealed.
+        place(card.id, encounterX + (waiting % 3) * 0.28, 1.45, ENCOUNTER, 0.07 + waiting * 0.045);
+        waiting++;
+      }
     }
     const permanents = state.inPlay.filter((c) => c.id !== state.staged?.id);
     if (state.staged && ["ally", "support", "upgrade"].includes(state.staged.type)) permanents.push(state.staged);
@@ -1590,45 +1534,47 @@ export class BattleTable {
     // Airborne cards can sweep over their neighbours. Space the row for their settled poses.
     const footprints = row.map((card) => (card.exhausted !== card.landscape ? HEIGHT : 1));
     const tabScale = state.hero.exhausted ? 1 / HEIGHT : 1;
-    // A busy row closes up before its cards shrink.
+    // A busy row closes up.
     const gap = row.length > 5 ? 0.16 : 0.28;
     const rowWidth = tabs * tabScale + footprints.reduce((total, width) => total + width, 0) + gap * (row.length - 1);
-    const playWidth = Math.min(w * 0.1134, h * 0.133, (w * 0.62) / rowWidth);
-    let left = (w - rowWidth * playWidth) / 2 + tabs * tabScale * playWidth;
+    let left = -rowWidth / 2 + tabs * tabScale;
     const centers = footprints.map((width) => {
-      const center = left + (width * playWidth) / 2;
-      left += (width + gap) * playWidth;
+      const center = left + width / 2;
+      left += width + gap;
       return center;
     });
     const first = centers[0]!;
-    const rowY = h * 0.532;
+    const rowZ = (VILLAIN * HEIGHT) / 2 + 0.85 + HEIGHT / 2;
     const posePermanent = (card: TableCard, x: number, elevation: number) => {
-      onBoard.add(card.id);
       if (card.id === state.staged?.id) {
-        this.#pose(card.id, x, rowY - playWidth * 0.3, playWidth * 1.12, 1.15, flat + 0.12);
+        place(card.id, x, rowZ - 0.3, 1.12, 1.15, 0, flat + 0.12);
         // Where it will land, so the table is already fitted for it.
-        const center = this.#point(x, rowY, elevation);
-        rest(center, this.#point(x + playWidth, rowY, elevation).x - center.x, card.landscape);
+        rest(at(x, rowZ, elevation), 1, card.landscape);
       } else {
-        const resting = this.#tablePose(card.id, x, rowY, playWidth, elevation, flat);
-        rest(resting.center, resting.scale, card.exhausted !== card.landscape);
+        lay(card, x, rowZ, 1, elevation, card.exhausted !== card.landscape);
         if (card.exhausted) this.#pieces.get(card.id)!.target.roll = -Math.PI / 2;
       }
     };
-    const heroHalf = (playWidth * (state.hero.exhausted ? HEIGHT : 1)) / 2;
+    const heroHalf = (state.hero.exhausted ? HEIGHT : 1) / 2;
     upgrades.forEach((card, i) => {
-      const width = playWidth * tabScale;
-      const x = first - heroHalf + width * 0.5 - width * TAB * (upgrades.length - i);
+      const x = first - heroHalf + tabScale * 0.5 - tabScale * TAB * (upgrades.length - i);
       if (card.id === state.staged?.id) posePermanent(card, x, 0.05);
       else {
         this.#tucked.set(card.id, { host: state.hero.id, depth: upgrades.length - i });
-        this.#pose(card.id, x, rowY, width, 0.045 + i * 0.035, flat);
-        onBoard.add(card.id);
-        const target = this.#pieces.get(card.id)!.target;
-        rest(target.position, target.scale, false);
+        place(card.id, x, rowZ, tabScale, 0.045 + i * 0.035);
+        rest(at(x, rowZ, 0), tabScale, false);
       }
     });
     row.forEach((card, i) => posePermanent(card, centers[i]!, 0.08 + (i === 0 ? upgrades.length * 0.035 : 0)));
+    // The player's deck and discard pile flank the hero's row, out at the table's edges when the villain's row is wider.
+    const deckGoal = {
+      position: at(Math.min(schemeLeft + PILE / 2, -rowWidth / 2 - 0.5 - PILE / 2), rowZ, 0.025),
+      scale: PILE,
+    };
+    const discardGoal = {
+      position: at(Math.max(villainRowRight - PILE / 2, rowWidth / 2 + 0.5 + PILE / 2), rowZ, 0.025),
+      scale: PILE,
+    };
     const hand = state.hand.filter((card) => card.id !== state.staged?.id);
     const handLeft = 14;
     // A phone's hand overlaps more so each card stays big enough to read; a hovered card lifts clear.
@@ -1688,26 +1634,8 @@ export class BattleTable {
       pose.scale *= ratio;
     });
     if (state.staged && this.#power !== state.staged.id && !permanents.includes(state.staged)) {
-      onBoard.add(state.staged.id);
-      this.#pose(
-        state.staged.id,
-        first + playWidth * 0.92,
-        rowY - playWidth * 0.48,
-        playWidth * 1.12,
-        1.18,
-        flat + 0.12,
-      );
+      place(state.staged.id, first + 0.92, rowZ - 0.48, 1.12, 1.18, 0, flat + 0.12);
     }
-    const pileWidth = Math.min(w * 0.125, h * 0.125);
-    const discardGoal = { position: base.clone(), scale: this.#point(pileX + pileWidth, pileY, 0.025).x - base.x };
-    const deckX = w * 0.115,
-      deckY = h * 0.505;
-    const deckCenter = this.#point(deckX, deckY, 0.025);
-    const deckGoal = {
-      position: deckCenter,
-      scale: this.#point(deckX + Math.min(w * 0.125, h * 0.125), deckY, 0.025).x - deckCenter.x,
-    };
-    const encounterDiscardGoal = encounterPile(h * 0.102);
     this.#encounterDiscardSlot.visible = state.encounterDiscard.length > 0;
     // The piles are part of the table too, the encounter discard pile even while it is empty, so a first discard
     // doesn't move everything.
