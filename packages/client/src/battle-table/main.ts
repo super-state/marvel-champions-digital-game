@@ -606,8 +606,59 @@ function hoverCard(id: string | null) {
   if (!readingCard) inspect(id);
 }
 
+/**
+ * Open the card reader wide over the table's edge for a landscape card (a scheme), or close it back to the sidebar.
+ * Both ways it slides: the reader's width eases, and the card inside it grows or settles back with it.
+ */
+let readerSlide: Animation | null = null;
+function setWidePreview(wide: boolean) {
+  const reader = element("reader");
+  const opening = wide && !rail.hasAttribute("data-wide-preview");
+  const closing = !wide && rail.hasAttribute("data-wide-preview") && !readerSlide?.id;
+  if (!opening && !closing) {
+    // Hovering back onto a scheme while the reader is closing: open it again from where it is.
+    if (wide && readerSlide?.id === "closing") {
+      readerSlide.cancel();
+      readerSlide = null;
+    }
+    return;
+  }
+  const from = reader.getBoundingClientRect().width;
+  readerSlide?.cancel();
+  readerSlide = null;
+  if (opening) {
+    rail.setAttribute("data-wide-preview", "");
+    if (reducedMotion()) return;
+    const to = reader.getBoundingClientRect().width;
+    readerSlide = reader.animate([{ width: `${from}px` }, { width: `${to}px` }], {
+      duration: 240,
+      easing: "cubic-bezier(.2,.8,.3,1)",
+    });
+    readerSlide.onfinish = () => (readerSlide = null);
+    return;
+  }
+  if (reducedMotion()) {
+    rail.removeAttribute("data-wide-preview");
+    return;
+  }
+  const to = rail.getBoundingClientRect().width;
+  const slide = reader.animate([{ width: `${from}px` }, { width: `${to}px` }], {
+    duration: 200,
+    easing: "cubic-bezier(.4,0,.6,1)",
+    // Held at the narrow width until the reader is back in the sidebar, so it never flicks wide for a frame.
+    fill: "forwards",
+  });
+  slide.id = "closing";
+  readerSlide = slide;
+  slide.onfinish = () => {
+    rail.removeAttribute("data-wide-preview");
+    slide.cancel();
+    readerSlide = null;
+  };
+}
+
 function showPreview(card: Pick<BattleCard, "art" | "name" | "landscape">, expand: boolean) {
-  rail.toggleAttribute("data-wide-preview", expand && card.landscape);
+  setWidePreview(expand && card.landscape);
   if (preview.getAttribute("src") !== card.art) preview.src = card.art;
   preview.alt = card.name;
   preview.hidden = false;
@@ -617,7 +668,7 @@ function inspect(id: string | null) {
   if (discarding) return;
   const card = cards().find((item) => item.id === id) ?? state.payment?.subject;
   if (card?.art) showPreview(card, card.id === hoveredCard || card.id === heldEncounter);
-  else if (!heldEncounter) rail.removeAttribute("data-wide-preview");
+  else if (!heldEncounter) setWidePreview(false);
 }
 
 function setDiscardOpen(open: boolean, encounter = viewingEncounterDiscard) {
@@ -1869,7 +1920,7 @@ async function present(beats: Snapshot["beats"]) {
         narrate(beat, null);
       }
       readingCard = null;
-      rail.removeAttribute("data-wide-preview");
+      setWidePreview(false);
       const permanent = state.enemyCards.find((c) => c.id === beat.reveal!.id);
       if (permanent) table?.landEncounter(permanent);
       else {

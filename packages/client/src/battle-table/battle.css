@@ -192,6 +192,10 @@ button:focus-visible {
     background-color: var(--bg-2);
     pointer-events: none;
   }
+  /* The landscape card fills the wider reader, with the same margin round it as a portrait card has. */
+  .rail[data-wide-preview] .reader img {
+    max-width: none;
+  }
 }
 .log {
   flex: none;
