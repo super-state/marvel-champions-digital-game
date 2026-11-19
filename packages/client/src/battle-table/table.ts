@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { CARD_BACKS } from "../art/art-source.js";
 import { cardRadius } from "../art/card-shape.js";
 import rooftop from "../art/tabletop/rooftop.webp?url";
+import { fitBoard, fitToBox, type TableBox } from "./board-fit.js";
 import { TokenKit, placeTokens } from "./tokens3d.js";
 
 export interface TableCard {
@@ -247,10 +248,11 @@ function faceGeometry(shape: THREE.Shape, width: number, height: number): THREE.
 }
 
 /** A single cloth print, including the stitched binding. Card scans keep their own sRGB textures. */
-function matPrint(redraw: () => void): THREE.CanvasTexture {
+function matPrint(redraw: () => void): { texture: THREE.CanvasTexture; reshape(aspect: number): void } {
   const canvas = document.createElement("canvas");
   canvas.width = 1536;
   canvas.height = 976;
+  let image: HTMLImageElement | undefined;
   const ctx = canvas.getContext("2d")!;
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -300,9 +302,19 @@ function matPrint(redraw: () => void): THREE.CanvasTexture {
   }
   paint();
   const img = new Image();
-  img.onload = () => paint(img);
+  img.onload = () => paint((image = img));
   img.src = rooftop;
-  return texture;
+  return {
+    texture,
+    reshape(aspect: number) {
+      const height = Math.round(THREE.MathUtils.clamp(canvas.width / aspect, 560, 1800));
+      if (height === canvas.height) return;
+      canvas.height = height;
+      // A new canvas size needs a new texture on the GPU.
+      texture.dispose();
+      paint(image);
+    },
+  };
 }
 
 /** The scene presents engine state. Only the UI can decide what picking a particular card does. */
@@ -354,6 +366,16 @@ export class BattleTable {
 
   /** Pixels at the bottom of the table that the turn bar covers; the hand sits just above them. */
   #bottomReserve = 0;
+  /** Where the mat is easing to: it moves with the cards when the fit changes. */
+  #matGoal: { x: number; z: number; width: number; depth: number } | null = null;
+  #matPrint: { texture: THREE.CanvasTexture; reshape(aspect: number): void } | null = null;
+  #matAspect = 0;
+  /** Where the pile slots are easing to. */
+  readonly #slotGoals = new Map<THREE.Object3D, { position: THREE.Vector3; scale: number }>();
+  /** Jump the mat and the slots to their goals on the next frame (first layout, a resize). */
+  #snapBoard = true;
+  /** The resting pose of a hovered table card, for its footprint once the fit has placed it. */
+  #hoverRest: { center: THREE.Vector3; scale: number } | null = null;
   setBottomReserve(px: number): void {
     const reserve = Math.round(px);
     if (Math.abs(reserve - this.#bottomReserve) < 2) return;
@@ -516,7 +538,8 @@ export class BattleTable {
       new THREE.MeshStandardMaterial({ color: 0x152032, roughness: 0.8 }),
     );
     binding.position.z = -0.105;
-    const print = matPrint(this.#requestFrame);
+    this.#matPrint = matPrint(this.#requestFrame);
+    const print = this.#matPrint.texture;
     print.anisotropy = Math.min(4, this.#renderer.capabilities.getMaxAnisotropy());
     this.#cloth.map = print;
     this.#cloth.onBeforeCompile = (shader) => {
@@ -1279,40 +1302,30 @@ export class BattleTable {
     this.#renderer.setSize(this.#width, this.#canvasHeight, false);
   }
 
-  #fitMat(farthestCardEdge?: number): void {
-    const far = this.#point(this.#width / 2, this.#height * 0.045, 0);
-    const near = this.#point(this.#width * 0.985, this.#height * 0.98, 0);
-    const extend = farthestCardEdge !== undefined && farthestCardEdge < far.z;
-    if (extend) far.z = farthestCardEdge;
-    this.#mat.position.z = (near.z + far.z) / 2;
-    this.#mat.scale.set(near.x * 2, near.z - far.z, 1);
-    const top = (1 - far.project(this.#camera).y) * this.#canvasHeight * 0.5 - this.#extension;
-    const extension = extend ? Math.max(0, Math.ceil(this.#height * 0.045 - top)) : 0;
-    if (extension !== this.#extension) {
-      const grew = extension > this.#extension;
-      this.#extension = extension;
-      this.#viewport.style.setProperty("--mat-extension", `${extension}px`);
-      this.#viewport.toggleAttribute("data-extended", extension > 0);
-      this.#viewport.tabIndex = extension > 0 ? 0 : -1;
-      this.#resizeCanvas();
-      // The mat grows upward for extra schemes; keep the view on the hand and the hero, scrolled to the bottom.
-      if (grew)
-        requestAnimationFrame(() => {
-          this.#viewport.scrollTop = this.#viewport.scrollHeight;
-        });
-    }
-  }
-
   readonly #resize = (): void => {
     this.#width = Math.max(1, this.#viewport.clientWidth);
     this.#height = Math.max(1, this.#viewport.clientHeight);
     this.#resizeCanvas();
-    if (!this.#state) this.#fitMat();
+    this.#snapBoard = true;
+    if (!this.#state) this.#defaultMat();
     this.#layout();
     for (const [id, piece] of this.#pieces) {
       if (!this.#flights.has(id)) this.#apply(piece, 1);
     }
     this.#requestFrame();
+  };
+
+  /** Before any cards: the mat fills the screen. */
+  #defaultMat(): void {
+    const far = this.#point(this.#width / 2, this.#height * 0.045, 0);
+    const near = this.#point(this.#width * 0.985, this.#height * 0.98, 0);
+    this.#matGoal = { x: 0, z: (near.z + far.z) / 2, width: near.x * 2, depth: near.z - far.z };
+  }
+
+  /** Screen pixels of a world point. */
+  readonly #project = (x: number, y: number, z: number): { x: number; y: number } => {
+    this.#scratch.set(x, y, z).project(this.#camera);
+    return { x: ((this.#scratch.x + 1) / 2) * this.#width, y: ((1 - this.#scratch.y) / 2) * this.#height };
   };
 
   #pose(id: string, x: number, y: number, width: number, elevation: number, pitch: number, roll = 0): void {
@@ -1323,13 +1336,93 @@ export class BattleTable {
     piece.target = { position: center, scale: widthPoint.x - center.x, pitch, roll };
   }
 
-  #tablePose(id: string, x: number, y: number, width: number, elevation: number, pitch: number): void {
+  /** Pose a card on the table, lifted while hovered or picked; returns where it rests, for fitting the table. */
+  #tablePose(
+    id: string,
+    x: number,
+    y: number,
+    width: number,
+    elevation: number,
+    pitch: number,
+  ): { center: THREE.Vector3; scale: number } {
+    const center = this.#point(x, y, elevation);
+    const rest = { center, scale: this.#point(x + width, y, elevation).x - center.x };
     const hovered = this.#hovered === id;
     if ((hovered || this.#state?.selected.includes(id)) && !this.#flights.has(id)) {
-      if (hovered) this.#hoverFootprint = { x, y, width };
+      if (hovered) this.#hoverRest = rest;
       this.#pose(id, x, y - width * 0.09, width * 1.065, elevation + 0.35, pitch + 0.07);
     } else {
       this.#pose(id, x, y, width, elevation, pitch);
+    }
+    return rest;
+  }
+
+  /**
+   * Scale and slide the table's cards so they fill the room between the top of the screen and the hand: a busy board
+   * shrinks instead of scrolling, a quiet one grows. Only lasting cards decide the fit (`rests`), and the room is
+   * measured from a hand of any size and a turn bar of one line, so hovering, picking, a dealt card or a long question
+   * never rescale the table. The mat is sized around the fitted cards and reaches under the hand.
+   */
+  #fitTable(
+    onBoard: ReadonlySet<string>,
+    rests: readonly TableBox[],
+    slots: readonly (readonly [THREE.Object3D, { position: THREE.Vector3; scale: number }])[],
+  ): void {
+    const w = this.#width,
+      h = this.#height;
+    if (!rests.length) return;
+    const box: TableBox = {
+      x0: Math.min(...rests.map((r) => r.x0)),
+      x1: Math.max(...rests.map((r) => r.x1)),
+      z0: Math.min(...rests.map((r) => r.z0)),
+      z1: Math.max(...rests.map((r) => r.z1)),
+    };
+    const handCard = Math.min(h * 0.215, (h * (w < 740 ? 0.4 : 0.36) - 50) / 1.5, w * 0.245);
+    const room = { left: 12, right: w - 12, top: 50, bottom: h - 50 - handCard * 1.48 - 26 };
+    const fit = fitBoard(box, this.#project, room);
+    const place = (p: THREE.Vector3) => {
+      const q = fitToBox(fit, p);
+      return p.set(q.x, q.y, q.z);
+    };
+    for (const id of onBoard) {
+      const target = this.#pieces.get(id)?.target;
+      if (!target) continue;
+      place(target.position);
+      target.scale *= fit.scale;
+    }
+    for (const [slot, goal] of slots) {
+      place(goal.position);
+      goal.scale *= fit.scale;
+      // A pile's first place is taken at once; after that it eases with the cards.
+      if (!this.#slotGoals.has(slot)) {
+        slot.position.copy(goal.position);
+        slot.scale.setScalar(goal.scale);
+      }
+      this.#slotGoals.set(slot, goal);
+    }
+    if (this.#hoverRest) {
+      const center = place(this.#hoverRest.center.clone());
+      const at = this.#project(center.x, center.y, center.z);
+      const edge = this.#project(center.x + this.#hoverRest.scale * fit.scale, center.y, center.z);
+      this.#hoverFootprint = { x: at.x, y: at.y, width: edge.x - at.x };
+    }
+    const far = fitToBox(fit, { x: box.x0, y: 0, z: box.z0 });
+    const near = fitToBox(fit, { x: box.x1, y: 0, z: box.z1 });
+    const margin = (fitToBox(fit, { x: 0.32, y: 0, z: 0 }).x - fitToBox(fit, { x: 0, y: 0, z: 0 }).x) * 1.4;
+    // The mat runs on under the hand to the bottom of the screen.
+    const bottom = this.#point(w / 2, h, 0).z;
+    const top = far.z - margin;
+    const front = Math.max(near.z + margin, bottom);
+    this.#matGoal = {
+      x: (far.x + near.x) / 2,
+      z: (top + front) / 2,
+      width: near.x - far.x + margin * 2,
+      depth: front - top,
+    };
+    const aspect = this.#matGoal.width / this.#matGoal.depth;
+    if (Math.abs(aspect - this.#matAspect) > this.#matAspect * 0.04) {
+      this.#matAspect = aspect;
+      this.#matPrint?.reshape(aspect);
     }
   }
 
@@ -1345,16 +1438,31 @@ export class BattleTable {
     const pileY = h * 0.505;
     const base = this.#point(pileX, pileY, 0.025);
     const encounterWidth = Math.min(w * 0.088, h * 0.088);
-    const placeEncounterPile = (slot: THREE.Group, y: number) => {
-      slot.position.copy(this.#point(pileX, y, 0.025));
-      const width = this.#point(pileX + encounterWidth, y, 0.025).x - slot.position.x;
-      slot.scale.setScalar(width);
+    const encounterPile = (y: number) => {
+      const position = this.#point(pileX, y, 0.025);
+      const scale = this.#point(pileX + encounterWidth, y, 0.025).x - position.x;
       // Align the piles on the table itself, accounting for the camera perspective.
-      slot.position.x = base.x;
+      position.x = base.x;
+      return { position, scale };
     };
-    placeEncounterPile(this.#encounterSlot, h * 0.23);
+    const encounterGoal = encounterPile(h * 0.23);
     this.#hoverFootprint = null;
+    this.#hoverRest = null;
     this.#tucked.clear();
+    // The cards lying on the table (fitted to the screen at the end) and where the lasting ones rest.
+    const onBoard = new Set<string>();
+    const rests: TableBox[] = [];
+    const rest = (center: THREE.Vector3, scale: number, wide: boolean) => {
+      const halfX = (wide ? HEIGHT : 1) * scale * 0.5;
+      const halfZ = (wide ? 1 : HEIGHT) * scale * 0.5;
+      // A little room under each card for its hit points, threat or count.
+      rests.push({
+        x0: center.x - halfX,
+        x1: center.x + halfX,
+        z0: center.z - halfZ,
+        z1: center.z + halfZ + scale * 0.3,
+      });
+    };
     const enemies = state.enemyCards.filter((c) => !c.attachedTo);
     const enemyPoses = new Map<string, { x: number; y: number; width: number }>();
     const poseEnemy = (host: TableCard, x: number, y: number, width: number) => {
@@ -1363,8 +1471,13 @@ export class BattleTable {
       attachments.forEach((card, i) => {
         this.#tucked.set(card.id, { host: host.id, depth: attachments.length - i });
         this.#pose(card.id, x - width * TAB * (attachments.length - i), y, width, 0.045 + i * 0.035, flat);
+        onBoard.add(card.id);
+        const target = this.#pieces.get(card.id)?.target;
+        if (target) rest(target.position, target.scale, false);
       });
-      this.#tablePose(host.id, x, y, width, 0.05 + attachments.length * 0.035, flat);
+      const resting = this.#tablePose(host.id, x, y, width, 0.05 + attachments.length * 0.035, flat);
+      onBoard.add(host.id);
+      rest(resting.center, resting.scale, host.landscape);
     };
     const villainTabs = state.enemyCards.filter((c) => c.attachedTo === state.villain.id).length;
     this.#villainShadow.visible = villainTabs > 0;
@@ -1384,11 +1497,6 @@ export class BattleTable {
       schemeScale * 1.75,
       schemeOrigin.z - this.#point(schemeX, h * 0.105, schemeElevation).z,
     );
-    const departingSchemes = state.encounterDiscard.filter(
-      (card) => isScheme(card) && this.#flights.get(card.id)?.kind === "discard",
-    ).length;
-    const schemeCount = schemes.length + departingSchemes;
-    this.#fitMat(schemeCount ? schemeOrigin.z - (schemeCount - 1) * schemeStep - schemeScale * 0.64 : undefined);
     schemes.forEach((card, i) => {
       const position = schemeOrigin.clone();
       position.z -= i * schemeStep;
@@ -1415,7 +1523,11 @@ export class BattleTable {
       const left =
         bounds(state.villain, w * 0.5, h * 0.237, villainWidth, villainTabs).right +
         (villainBoosts ? boostWidth * (0.7 + (villainBoosts - 1) * 0.3) : 0);
-      const right = this.encounterAnchor().left;
+      const right = this.#project(
+        encounterGoal.position.x - encounterGoal.scale * 0.5,
+        0.025,
+        encounterGoal.position.z,
+      ).x;
       const slotWidth = (right - left) / otherEnemies.length;
       otherEnemies.forEach((card, i) => {
         const tabs = state.enemyCards.filter((c) => c.attachedTo === card.id).length;
@@ -1432,6 +1544,8 @@ export class BattleTable {
     const boosts = new Map<string, number>();
     for (const card of this.#encounters.values()) {
       const host = card.boostFor ? enemyPoses.get(card.boostFor) : undefined;
+      // Facedown cards come and go each villain phase: they lie on the table but never move the fit.
+      if (card.id !== this.#revealing) onBoard.add(card.id);
       if (card.id === this.#revealing)
         this.#pose(
           card.id,
@@ -1489,10 +1603,15 @@ export class BattleTable {
     const first = centers[0]!;
     const rowY = h * 0.532;
     const posePermanent = (card: TableCard, x: number, elevation: number) => {
+      onBoard.add(card.id);
       if (card.id === state.staged?.id) {
         this.#pose(card.id, x, rowY - playWidth * 0.3, playWidth * 1.12, 1.15, flat + 0.12);
+        // Where it will land, so the table is already fitted for it.
+        const center = this.#point(x, rowY, elevation);
+        rest(center, this.#point(x + playWidth, rowY, elevation).x - center.x, card.landscape);
       } else {
-        this.#tablePose(card.id, x, rowY, playWidth, elevation, flat);
+        const resting = this.#tablePose(card.id, x, rowY, playWidth, elevation, flat);
+        rest(resting.center, resting.scale, card.exhausted !== card.landscape);
         if (card.exhausted) this.#pieces.get(card.id)!.target.roll = -Math.PI / 2;
       }
     };
@@ -1504,6 +1623,9 @@ export class BattleTable {
       else {
         this.#tucked.set(card.id, { host: state.hero.id, depth: upgrades.length - i });
         this.#pose(card.id, x, rowY, width, 0.045 + i * 0.035, flat);
+        onBoard.add(card.id);
+        const target = this.#pieces.get(card.id)!.target;
+        rest(target.position, target.scale, false);
       }
     });
     row.forEach((card, i) => posePermanent(card, centers[i]!, 0.08 + (i === 0 ? upgrades.length * 0.035 : 0)));
@@ -1566,6 +1688,7 @@ export class BattleTable {
       pose.scale *= ratio;
     });
     if (state.staged && this.#power !== state.staged.id && !permanents.includes(state.staged)) {
+      onBoard.add(state.staged.id);
       this.#pose(
         state.staged.id,
         first + playWidth * 0.92,
@@ -1576,23 +1699,34 @@ export class BattleTable {
       );
     }
     const pileWidth = Math.min(w * 0.125, h * 0.125);
-    const scale = this.#point(pileX + pileWidth, pileY, 0.025).x - base.x;
-    this.#discardSlot.position.copy(base);
-    this.#discardSlot.scale.setScalar(scale);
+    const discardGoal = { position: base.clone(), scale: this.#point(pileX + pileWidth, pileY, 0.025).x - base.x };
     const deckX = w * 0.115,
       deckY = h * 0.505;
-    this.#deckSlot.position.copy(this.#point(deckX, deckY, 0.025));
-    const deckScale = this.#point(deckX + Math.min(w * 0.125, h * 0.125), deckY, 0.025).x - this.#deckSlot.position.x;
-    this.#deckSlot.scale.setScalar(deckScale);
-    const slot = this.#encounterDiscardSlot;
-    placeEncounterPile(slot, h * 0.102);
-    slot.visible = state.encounterDiscard.length > 0;
-    const encounterScale = slot.scale.x;
+    const deckCenter = this.#point(deckX, deckY, 0.025);
+    const deckGoal = {
+      position: deckCenter,
+      scale: this.#point(deckX + Math.min(w * 0.125, h * 0.125), deckY, 0.025).x - deckCenter.x,
+    };
+    const encounterDiscardGoal = encounterPile(h * 0.102);
+    this.#encounterDiscardSlot.visible = state.encounterDiscard.length > 0;
+    // The piles are part of the table too, the encounter discard pile even while it is empty, so a first discard
+    // doesn't move everything.
+    for (const goal of [discardGoal, deckGoal, encounterGoal, encounterDiscardGoal])
+      rest(goal.position, goal.scale, false);
+    this.#fitTable(onBoard, rests, [
+      [this.#discardSlot, discardGoal],
+      [this.#deckSlot, deckGoal],
+      [this.#encounterSlot, encounterGoal],
+      [this.#encounterDiscardSlot, encounterDiscardGoal],
+    ]);
+    const base2 = discardGoal.position;
+    const scale = discardGoal.scale;
+    const encounterScale = encounterDiscardGoal.scale;
     state.encounterDiscard.forEach((card, index) => {
       const piece = this.#pieces.get(card.id);
       if (!piece || this.#encounters.has(card.id)) return;
       piece.target = {
-        position: slot.position.clone(),
+        position: encounterDiscardGoal.position.clone(),
         pitch: flat,
         roll: card.landscape ? -Math.PI / 2 : 0,
         scale: encounterScale,
@@ -1615,7 +1749,7 @@ export class BattleTable {
     pileIds.forEach((id, i) => {
       const piece = this.#pieces.get(id);
       if (!piece) return;
-      const position = base.clone();
+      const position = base2.clone();
       position.y += (0.012 + i * 0.023) * scale;
       position.x += Math.min(i, 8) * scale * 0.008;
       piece.target = { position, pitch: flat, roll: 0, scale };
@@ -1750,10 +1884,35 @@ export class BattleTable {
     this.#lastFrame = now;
     const handSlide = this.#reduced.matches ? 1 : 1 - Math.exp(-dt * 10);
     const smooth = this.#reduced.matches ? 1 : 1 - Math.exp(-dt * 22);
+    const settle = this.#snapBoard ? 1 : smooth;
+    this.#snapBoard = false;
+    let easingBoard = false;
+    const goal = this.#matGoal;
+    if (goal) {
+      const mat = this.#mat;
+      const gap =
+        Math.abs(goal.x - mat.position.x) +
+        Math.abs(goal.z - mat.position.z) +
+        Math.abs(goal.width - mat.scale.x) +
+        Math.abs(goal.depth - mat.scale.y);
+      const k = gap < 0.0005 ? 1 : settle;
+      mat.position.x += (goal.x - mat.position.x) * k;
+      mat.position.z += (goal.z - mat.position.z) * k;
+      mat.scale.x += (goal.width - mat.scale.x) * k;
+      mat.scale.y += (goal.depth - mat.scale.y) * k;
+      if (k < 1) easingBoard = true;
+    }
+    for (const [slot, target] of this.#slotGoals) {
+      const gap = slot.position.distanceTo(target.position) + Math.abs(slot.scale.x - target.scale);
+      const k = gap < 0.0005 ? 1 : settle;
+      slot.position.lerp(target.position, k);
+      slot.scale.setScalar(slot.scale.x + (target.scale - slot.scale.x) * k);
+      if (k < 1) easingBoard = true;
+    }
     const light = this.#villainLight;
     const transitioning = Math.abs(light.value - this.#phaseTarget) > 0.001 && !this.#reduced.matches;
     light.value = transitioning ? THREE.MathUtils.damp(light.value, this.#phaseTarget, 3.4, dt) : this.#phaseTarget;
-    let moving = transitioning;
+    let moving = transitioning || easingBoard;
     let landed: string | null = null;
     for (const [id, piece] of this.#pieces) {
       if (this.#press?.dragging && this.#press.id === id) continue;
