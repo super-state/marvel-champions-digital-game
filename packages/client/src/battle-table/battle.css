@@ -178,7 +178,7 @@ h1 i {
   filter: drop-shadow(0 14px 18px #05090b87);
 }
 @media (min-width: 741px) {
-  /* A landscape card (a scheme) opens wide over the table's edge, keeping the dock clear. */
+  /* A landscape card (a scheme) opens wide over the table's edge. */
   .rail[data-wide-preview] .reader {
     position: absolute;
     z-index: 3;
@@ -406,46 +406,81 @@ h1 i {
   min-height: 52px;
   padding: 0 14px;
 }
+/* A basic power is drawn like the stat printed on the card: a coloured starburst with the value, on a banner. */
 #decision .menu-action.stat-action {
+  position: relative;
   display: grid;
-  grid-template-columns: auto auto;
-  grid-template-rows: auto auto;
-  align-items: center;
-  column-gap: 8px;
-  padding: 6px 14px 6px 8px;
-  text-align: left;
+  justify-items: center;
+  align-content: start;
+  width: 62px;
+  min-width: 0;
+  height: 66px;
+  min-height: 0;
+  padding: 2px 0 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  /* The parent's shadow outlines the clipped burst, the way the printed icon has a pale rim. */
+  filter: drop-shadow(0 0 0.6px #fff) drop-shadow(0 0 0.6px #fff) drop-shadow(0 3px 4px #000b);
+  transition:
+    transform 140ms var(--ease-spring),
+    filter 140ms;
+}
+#decision .menu-action.stat-action:enabled:hover,
+#decision .menu-action.stat-action:focus-visible {
+  transform: translateY(-2px) scale(1.08);
+  filter: drop-shadow(0 0 0.6px #fff) drop-shadow(0 0 0.6px #fff) drop-shadow(0 0 10px #f5c35bcc);
+  outline: none;
 }
 #decision .stat-action .stat-value {
-  grid-row: 1 / 3;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
-  background: var(--stat-color);
-  color: white;
-  font: 900 20px/1 var(--font-ui);
-  box-shadow:
-    inset 0 1px 0 #fff5,
-    inset 0 -2px 0 #0004;
-  text-shadow: 0 1px 2px #0008;
+  width: 50px;
+  height: 48px;
+  background: radial-gradient(circle at 42% 34%, #ffffff40, transparent 58%), var(--stat-color);
+  clip-path: polygon(
+    50% 0%,
+    62.1% 12.9%,
+    79.4% 9.5%,
+    81.6% 27.1%,
+    97.6% 34.5%,
+    89% 50%,
+    97.6% 65.5%,
+    81.6% 72.9%,
+    79.4% 90.5%,
+    62.1% 87.1%,
+    50% 100%,
+    37.9% 87.1%,
+    20.6% 90.5%,
+    18.4% 72.9%,
+    2.4% 65.5%,
+    11% 50%,
+    2.4% 34.5%,
+    18.4% 27.1%,
+    20.6% 9.5%,
+    37.9% 12.9%
+  );
+  color: #fff;
+  font: italic 900 25px/1 var(--font-ui);
+  text-shadow:
+    0 0 2px #000,
+    0 2px 0 #000a;
 }
 #decision .stat-action .stat-ribbon {
-  color: var(--text-3);
-  font: 800 10px/1 var(--font-ui);
-  letter-spacing: 0.12em;
-}
-#decision .stat-action .stat-name {
-  font: 800 14px/1 var(--font-ui);
+  position: absolute;
+  bottom: 4px;
+  padding: 2px 7px 1px;
+  border: 1px solid #ffffff66;
+  background: #10202c;
+  color: #fff;
+  font: 900 10.5px/1.1 var(--font-ui);
+  letter-spacing: 0.06em;
+  transform: skew(-8deg);
 }
 #decision .menu-action .icon {
   width: 20px;
   height: 20px;
   color: var(--gold);
-}
-#decision .menu-close {
-  min-height: 52px;
-  min-width: 40px;
 }
 #decision .menu-note {
   align-self: center;
@@ -1293,12 +1328,33 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
     max-width: 320px;
   }
 }
+/* Portrait tablets and phones: the table takes the full width, the card reader and log follow under it. */
 @media (max-width: 740px) {
   .battle {
     height: auto;
     min-height: 100svh;
     overflow: visible;
   }
+  .arena {
+    --sidebar-width: 0px;
+    display: flex;
+    flex-direction: column;
+  }
+  #board-viewport {
+    flex: none;
+    height: clamp(320px, 68svh, 760px);
+  }
+  .rail {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .reader img {
+    width: auto;
+    height: clamp(220px, 50svh, 460px);
+    max-width: 90%;
+  }
+}
+@media (max-width: 740px) {
   .mast {
     min-height: 48px;
     gap: 10px;
@@ -1320,18 +1376,8 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
   .reset {
     padding: 0 8px;
   }
-  .arena {
-    --sidebar-width: 0px;
-    display: flex;
-    flex-direction: column;
-  }
   #board-viewport {
-    flex: none;
-    height: clamp(300px, 58svh, 620px);
-  }
-  .rail {
-    border-left: 0;
-    border-top: 1px solid var(--line);
+    height: clamp(320px, 66svh, 660px);
   }
   /* On a phone the turn bar spans the bottom of the table and wraps its buttons under the question. */
   .playfield > .dock {

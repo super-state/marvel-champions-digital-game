@@ -4,9 +4,9 @@
  * It plays whole games through BattleModel's public API only, and only with gestures that `main.ts` really offers:
  * hand cards that are `playable`, the hero menu (`heroActions`), `fieldActions` on visible cards while it is the
  * player's turn, End Turn when `canEndTurn`, payment sources that are `available` and displayable
- * (`resourcePieceId`), trigger offers answered yes/no in order (`showOffer`), the defend question
+ * (`resourcePieceId`), trigger offers answered yes/no in order (`answerOffer`), the defend question
  * (`defenseQuestionDecline`), option buttons for cards that are not `onTable` and card clicks for the rest.
- * Mirrors: main.ts pick() 209, showOffer() 433, showChoice() 483, pay()/cancel() 321-347, render() 1240.
+ * Mirrors main.ts: pick(), choiceView() and answerOffer(), pay()/cancel(), render().
  *
  * Nothing here changes engine, card or model code. A move the model accepts but the UI cannot reach is not a way
  * forward, so stuck detection counts only UI-reachable gestures.
@@ -367,7 +367,8 @@ function playGame(seed: number, policy: Policy): GameResult {
     ]);
     for (const b of s.beats)
       for (const [field, id] of beatIds(b))
-        if (!known.has(id))
+        // A card tucked facedown under a scheme (Highway Robbery) is hidden on purpose: its host shows a count.
+        if (!known.has(id) && !isTucked(id))
           note(
             "beat-orphan",
             field,
@@ -914,6 +915,11 @@ test("fuzz summary: no failure kinds outside the known set", () => {
   ).toEqual([]);
 });
 
+function isTucked(id: string): boolean {
+  const st = lastEngineState;
+  return !!st && engine.locateCard(st, id as engine.InstanceId)?.kind === "tucked";
+}
+
 function orphanZone(id: string): string {
   const st = lastEngineState;
   if (!st) return "?";
@@ -927,8 +933,9 @@ function orphanZone(id: string): string {
 // Oddity, not a crash: a card drawn this move ends up tucked under a side scheme in the villain area and appears on
 // no zone of the table (not in snapshot().hand / inPlay / enemyCards). Seed 2258, policy "careful", move ~109.
 // Passes while the oddity exists; when it starts failing, the snapshot now shows the card, so delete this test.
-test.fails("odd: a drawn card tucked under a side scheme is on no table zone (seed 2258, careful)", () => {
+// Seed 2258: Highway Robbery tucks a just-drawn card facedown. It leaves every zone on purpose; the scheme counts it.
+test("a drawn card tucked under a side scheme is not an orphan beat (seed 2258, careful)", () => {
   const game = playGame(2258, "careful");
   const orphan = game.notes.find((n) => n.kind === "beat-orphan" && n.key === "draw");
-  if (orphan) throw new Error(orphan.detail);
+  expect(orphan?.detail).toBeUndefined();
 });

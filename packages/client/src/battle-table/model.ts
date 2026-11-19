@@ -229,8 +229,6 @@ export class BattleModel {
   #handOrder: InstanceId[] = [];
 
   #history: { game: GameState; handOrder: InstanceId[]; activity: string; beats: BattleBeat[] }[] = [];
-  /** The card whose ability the player last set going: a follow-up target prompt with no frame of its own names it. */
-  #lastSource: InstanceId | null = null;
 
   get canUndo(): boolean {
     return this.#history.length > 0;
@@ -405,7 +403,7 @@ export class BattleModel {
         });
       } else if (
         e.type === "cardMoved" &&
-        ["playArea", "villainArea", "attachment", "scenarioArea", "scenarioPlayArea"].includes(e.from.kind) &&
+        ["playArea", "villainArea", "attachment", "scenarioPlayArea"].includes(e.from.kind) &&
         (e.to.kind === "discard" || e.to.kind === "encounterDiscard")
       ) {
         // A defeat already sends the card to its pile; anything else that leaves play goes there on its own beat.
@@ -902,12 +900,7 @@ export class BattleModel {
     for (const host of enemyIds) for (const id of getInstance(state, host)?.attachments ?? []) enemyIds.add(id);
     this.#view = {
       beats: this.#beats,
-      choiceSource: pending
-        ? (choiceSourceOf(state, pending)?.instanceId ??
-          (pending.prompt.kind === "chooseTarget" && this.#lastSource && getInstance(state, this.#lastSource)
-            ? this.#lastSource
-            : null))
-        : null,
+      choiceSource: pending ? (choiceSourceOf(state, pending)?.instanceId ?? null) : null,
       facedownEncounters: [
         ...player.dealtEncounter,
         ...[villain.instanceId, ...player.playArea].flatMap((id) => getInstance(state, id)?.boostCards ?? []),
@@ -1079,7 +1072,6 @@ export class BattleModel {
   }
 
   fieldAction(id: string, kind: string): boolean {
-    this.#lastSource = id as InstanceId;
     const power = this.#allyPowers(id).find(({ action }) => action.kind === kind);
     if (power) return this.#usePower(power);
     const entry = this.#fieldAbilities(id).find((action) => action.kind === kind)?.entry;
@@ -1145,10 +1137,6 @@ export class BattleModel {
 
   chooseMany(ids: readonly string[]): boolean {
     const choice = this.#game.pendingChoice;
-    if (choice?.prompt.kind === "chooseTriggers") {
-      const picked = choice.options.find((option) => ids.includes(option.optionId))?.ref;
-      if (picked?.kind === "ability") this.#lastSource = picked.instanceId;
-    }
     if (
       !choice ||
       ids.length < choice.minSelections ||

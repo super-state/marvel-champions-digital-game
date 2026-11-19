@@ -346,6 +346,16 @@ export class BattleTable {
   readonly #villainLight = { value: 0 };
   #phaseTarget = 0;
 
+  /** Pixels at the bottom of the table that the turn bar covers; the hand sits just above them. */
+  #bottomReserve = 0;
+  setBottomReserve(px: number): void {
+    const reserve = Math.round(px);
+    if (Math.abs(reserve - this.#bottomReserve) < 2) return;
+    this.#bottomReserve = reserve;
+    this.#layout();
+    this.#requestFrame();
+  }
+
   setPhase(phase: "hero" | "villain"): void {
     const target = phase === "villain" ? 1 : 0;
     if (target === this.#phaseTarget) return;
@@ -991,7 +1001,8 @@ export class BattleTable {
   discardDefeatedCard(id: string, discarded: TableCard | undefined, pile: "discard" | "encounterDiscard"): void {
     const state = this.#state;
     if (!state || !this.#pieces.has(id)) return;
-    const stillInPlay = (card: TableCard) => card.id !== id && card.attachedTo !== id;
+    // Only the defeated card leaves here: anything attached to it keeps its place until its own beat discards it.
+    const stillInPlay = (card: TableCard) => card.id !== id;
     if (discarded) this.#startFlight(id, "discard");
     this.setCards({
       ...state,
@@ -1440,11 +1451,12 @@ export class BattleTable {
     row.forEach((card, i) => posePermanent(card, centers[i]!, 0.08 + (i === 0 ? upgrades.length * 0.035 : 0)));
     const hand = state.hand.filter((card) => card.id !== state.staged?.id);
     const handLeft = 14;
-    const spread = w < 550 ? 0.73 : 1.03;
-    // The turn bar floats under the hand; keep its strip of the table clear.
-    const bottomMargin = w < 740 ? 112 : Math.min(100, Math.max(78, h * 0.105));
+    // A phone's hand overlaps more so each card stays big enough to read; a hovered card lifts clear.
+    const spread = w < 550 ? 0.6 : 1.03;
+    // The turn bar floats under the hand: keep its strip of the table clear, measured from the bar itself.
+    const bottomMargin = Math.max(40, this.#bottomReserve + 10);
     const cardWidth = Math.min(
-      Math.min(h * 0.215, (h * 0.36 - bottomMargin) / 1.5),
+      Math.min(h * 0.215, (h * (w < 740 ? 0.4 : 0.36) - bottomMargin) / 1.5),
       (w - handLeft - 14) / (1 + Math.max(0, hand.length - 1) * spread),
       w * 0.245,
     );
@@ -1490,8 +1502,8 @@ export class BattleTable {
       const pose = this.#pieces.get(card.id)!.target;
       const ray = pose.position.clone().sub(eye);
       const ratio = raised
-        ? (raisedDepth + (hovered ? -0.12 : picked.indexOf(card) * 0.026) * pose.scale) / ray.dot(forward)
-        : (planeDistance + i * 0.035 * pose.scale) / ray.dot(normal);
+        ? (raisedDepth + (hovered ? -0.16 : picked.indexOf(card) * 0.026) * pose.scale) / ray.dot(forward)
+        : (planeDistance + i * 0.12 * pose.scale) / ray.dot(normal);
       pose.position.copy(eye).addScaledVector(ray, ratio);
       pose.scale *= ratio;
     });
@@ -1618,6 +1630,22 @@ export class BattleTable {
     root.scale.setScalar(THREE.MathUtils.lerp(from.scale, target.scale, sweep));
   }
 
+  readonly #forward = new THREE.Vector3();
+  readonly #goal = new THREE.Vector3();
+
+  /** Slide a card along its line of sight to its target's depth: unchanged on screen, but already in its layer. */
+  #holdDepth(piece: Piece): void {
+    const eye = this.#camera.position;
+    const forward = this.#camera.getWorldDirection(this.#forward);
+    const goal = this.#goal.copy(piece.target.position).sub(eye).dot(forward);
+    const ray = this.#scratch.copy(piece.root.position).sub(eye);
+    const depth = ray.dot(forward);
+    if (depth <= 0.001 || Math.abs(goal - depth) < 1e-5) return;
+    const ratio = goal / depth;
+    piece.root.position.copy(eye).addScaledVector(ray, ratio);
+    piece.root.scale.multiplyScalar(ratio);
+  }
+
   #apply(piece: Piece, t: number): void {
     const { root, target } = piece;
     root.position.lerp(target.position, t);
@@ -1636,6 +1664,12 @@ export class BattleTable {
       let goal = 0;
       if (card.id === this.#hovered && footprint && this.#pointer && !this.#reduced.matches)
         goal = THREE.MathUtils.clamp((this.#pointer.x - footprint.x) / footprint.width, -0.5, 0.5) * 0.32;
+      // The lean eases in under the pointer but drops at once when the card is let go, so a card settling back
+      // into the fan never swings through its neighbour.
+      if (card.id !== this.#hovered) {
+        piece.root.rotation.y = 0;
+        continue;
+      }
       const y = this.#reduced.matches ? goal : THREE.MathUtils.damp(piece.root.rotation.y, goal, 14, dt);
       piece.root.rotation.y = Math.abs(y - goal) < 0.0008 ? goal : y;
       if (piece.root.rotation.y !== goal) easing = true;
@@ -1858,15 +1892,18 @@ export class BattleTable {
           }
         } else moving = true;
       } else {
+        const inHand = !!this.#state?.hand.some((card) => card.id === id);
+        // A hand card that rises in front of a picked neighbour would pass through it on the way. Jump it straight
+        // to its new depth instead, sliding along its line of sight so it looks no different, and animate only
+        // where it sits on screen; then no two hand cards can ever cut through each other.
+        if (inHand) this.#holdDepth(piece);
         const delta =
           piece.root.position.distanceToSquared(piece.target.position) +
           Math.abs(piece.root.scale.x - piece.target.scale) +
           Math.abs(piece.root.rotation.z - piece.target.roll) +
           Math.abs(piece.root.rotation.x - piece.target.pitch);
         if (delta > 0.00025 && smooth < 1) moving = true;
-        const shifting =
-          Math.abs(piece.target.position.x - piece.root.position.x) > 0.0005 &&
-          this.#state?.hand.some((card) => card.id === id);
+        const shifting = inHand && Math.abs(piece.target.position.x - piece.root.position.x) > 0.0005;
         this.#apply(piece, delta > 0.00025 ? (shifting ? handSlide : smooth) : 1);
       }
     }

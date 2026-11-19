@@ -1412,7 +1412,8 @@ function narrate(beat: Beat, line: FeedLine | null, extra: Partial<DockView> = {
     },
     title: line?.text ?? (beat.text || (villain ? "Villain phase" : "Resolving")),
     help: null,
-    primary: { label: villain ? "Villain phase" : "Resolving", disabled: true, onClick: () => undefined },
+    // Nothing to press while the table plays out a move; the bar keeps its width so it doesn't jump.
+    primary: null,
     ...extra,
   });
 }
@@ -1426,6 +1427,8 @@ async function present(beats: Snapshot["beats"]) {
   anchors.inert = true;
   undoButton.disabled = restart.disabled = true;
   const pendingDraws = new Set(beats.flatMap((beat) => beat.draw ?? []));
+  // The payment screen's stand-ins for resource abilities (Peter Parker's Scientist) are spent by now.
+  displayedHand = displayedHand.filter((card) => !card.id.startsWith("ability:"));
   for (let index = 0; index < beats.length; index++) {
     const beat = beats[index]!;
     if (beat.gameEnded) break;
@@ -1907,11 +1910,8 @@ function renderCardMenu() {
       button.title = description;
       button.classList.add("stat-action");
       button.style.setProperty("--stat-color", statHue[stat].css);
-      button.replaceChildren(
-        make("b", "stat-value", String(value)),
-        make("span", "stat-ribbon", stat.toUpperCase()),
-        make("span", "stat-name", action.label),
-      );
+      // Drawn like the printed stat on a card: the value in a coloured starburst over a THW/ATK/REC banner.
+      button.replaceChildren(make("b", "stat-value", String(value)), make("span", "stat-ribbon", stat.toUpperCase()));
     } else if (action.kind === "changeForm") {
       button.classList.add("form-action");
       button.replaceChildren(icon("flip"), make("span", "", action.label));
@@ -1934,15 +1934,7 @@ function renderCardMenu() {
     };
     decision.append(button);
   }
-  const close = make("button", "btn btn-ghost btn-icon menu-close");
-  close.type = "button";
-  close.setAttribute("aria-label", "Close");
-  close.append(icon("close"));
-  close.onclick = () => {
-    menuCard = null;
-    render();
-  };
-  decision.append(close);
+  // No close button: a click anywhere else, or Escape (a controller's B later), puts the menu away.
 }
 
 // ── Starting a game ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -1962,8 +1954,10 @@ function deal() {
   feed = [];
   paintFeed();
   const seed = seedFromUrl() ?? Math.floor(Math.random() * 2 ** 31) + 1;
-  // `?scene=crowded` skips the mulligan and lays out a busy table for checking the presentation.
-  const arrange = arrangeScene(new URLSearchParams(location.search).get("scene") ?? "");
+  // Dev builds only: `?scene=crowded` skips the mulligan and lays out a busy table for checking the presentation.
+  const arrange = import.meta.env.DEV
+    ? arrangeScene(new URLSearchParams(location.search).get("scene") ?? "")
+    : undefined;
   model.reset(arrange ? { seed, arrange } : { seed, mulligan: true });
   state = model.snapshot();
   presented = state.beats;
@@ -1978,7 +1972,10 @@ function deal() {
         pileCount.textContent = String(count);
       },
     });
+    // Dev builds expose the scene for checking it from the console and from scripted screenshots.
+    if (import.meta.env.DEV) (window as unknown as { battleTable?: BattleTable }).battleTable = table;
   }
+  table?.setBottomReserve(Math.max(0, boardViewport.getBoundingClientRect().bottom - dock.getBoundingClientRect().top));
   render();
   inspect(state.hand.find((card) => card.playable)?.id ?? state.hero.id);
   restart.disabled = false;
@@ -2079,6 +2076,12 @@ document.addEventListener("keydown", (event) => {
     pile.focus({ preventScroll: true });
   }
 });
+// The hand sits just above the turn bar, however tall the bar's current question makes it.
+new ResizeObserver(() => {
+  const bar = dock.getBoundingClientRect();
+  const view = boardViewport.getBoundingClientRect();
+  table?.setBottomReserve(Math.max(0, view.bottom - bar.top));
+}).observe(dock);
 boardViewport.addEventListener("scroll", centerDecisionInViewport, { passive: true });
 new ResizeObserver(centerDecisionInViewport).observe(boardViewport);
 start();

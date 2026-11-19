@@ -181,6 +181,7 @@ interface Face {
 
 export class TokenKit {
   readonly #faces = new Map<string, Face>();
+  readonly #faceMaterials = new Map<string, THREE.MeshBasicMaterial>();
   readonly #anisotropy: number;
   readonly #damageBody = new THREE.CylinderGeometry(0.15, 0.155, 0.05, 40);
   readonly #damageFace = new THREE.CircleGeometry(0.148, 40);
@@ -255,8 +256,13 @@ export class TokenKit {
     return face.texture;
   }
 
-  #faceMaterial(texture: THREE.Texture) {
-    return new THREE.MeshBasicMaterial({ map: texture, transparent: true, toneMapped: false });
+  #faceMaterial(key: string, texture: THREE.Texture) {
+    let material = this.#faceMaterials.get(key);
+    if (!material) {
+      material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, toneMapped: false });
+      this.#faceMaterials.set(key, material);
+    }
+    return material;
   }
 
   /**
@@ -278,7 +284,10 @@ export class TokenKit {
       rim.position.z = 0.05;
       const face = new THREE.Mesh(
         this.#damageFace,
-        this.#faceMaterial(this.#face(`damage:${count}`, 256, 256, (ctx) => paintDamage(ctx, 256, count))),
+        this.#faceMaterial(
+          `damage:${count}`,
+          this.#face(`damage:${count}`, 256, 256, (ctx) => paintDamage(ctx, 256, count)),
+        ),
       );
       face.position.z = 0.0515;
       piece.add(body, rim, face);
@@ -289,6 +298,7 @@ export class TokenKit {
       const face = new THREE.Mesh(
         this.#counterFace,
         this.#faceMaterial(
+          `counter:${name}:${count}`,
           this.#face(`counter:${name}:${count}`, 256, 256, (ctx) => paintCounter(ctx, 256, name, count)),
         ),
       );
@@ -308,7 +318,10 @@ export class TokenKit {
       body.castShadow = true;
       const face = new THREE.Mesh(
         this.#statusFace,
-        this.#faceMaterial(this.#face(`status:${name}`, 400, 170, (ctx) => paintStatus(ctx, 400, 170, name))),
+        this.#faceMaterial(
+          `status:${name}`,
+          this.#face(`status:${name}`, 400, 170, (ctx) => paintStatus(ctx, 400, 170, name)),
+        ),
       );
       face.position.z = 0.036;
       piece.add(body, face);
@@ -318,6 +331,7 @@ export class TokenKit {
       const face = new THREE.Mesh(
         this.#modifierFace,
         this.#faceMaterial(
+          `modifier:${name}:${count}`,
           this.#face(`modifier:${name}:${count}`, 330, 120, (ctx) => paintModifier(ctx, 330, 120, name, count)),
         ),
       );
@@ -337,7 +351,10 @@ export class TokenKit {
     body.castShadow = true;
     const face = new THREE.Mesh(
       this.#chipFace,
-      this.#faceMaterial(this.#face("threat-chip", 128, 128, (ctx) => paintThreatChip(ctx, 128))),
+      this.#faceMaterial(
+        "threat-chip",
+        this.#face("threat-chip", 128, 128, (ctx) => paintThreatChip(ctx, 128)),
+      ),
     );
     face.position.z = 0.0455;
     piece.add(body, face);
@@ -346,6 +363,7 @@ export class TokenKit {
 
   dispose(): void {
     for (const face of this.#faces.values()) face.texture.dispose();
+    for (const material of this.#faceMaterials.values()) material.dispose();
     for (const geometry of [
       this.#damageBody,
       this.#damageFace,

@@ -242,3 +242,53 @@ describe("Peter Parker and Rhino's practice turn", () => {
     expect(battle.snapshot().discard.at(-1)?.art).toBe(kick.art);
   });
 });
+
+describe("the opening hand", () => {
+  test("a dealt game waits on the mulligan, swaps the picked cards and then starts the hero phase", () => {
+    const battle = new BattleModel();
+    battle.reset({ seed: 75, mulligan: true });
+    const opening = battle.snapshot();
+    expect(opening.choice).toMatchObject({ mulligan: true, min: 0, max: opening.hand.length });
+    expect(opening.canEndTurn).toBe(false);
+    const picks = opening.choice!.options.slice(0, 2);
+    const swapped = picks.map((option) => option.cardId!);
+    expect(battle.chooseMany(picks.map((option) => option.id))).toBe(true);
+
+    const after = battle.snapshot();
+    expect(after.choice).toBeNull();
+    expect(after.turn).toBe("player");
+    expect(after.hand).toHaveLength(opening.hand.length);
+    expect(after.discard.map((card) => card.id)).toEqual(expect.arrayContaining(swapped));
+    const discarded = after.beats.findIndex((beat) => beat.handDiscard);
+    const drawn = after.beats.findIndex((beat) => beat.draw?.length === 2);
+    const heroPhase = after.beats.findIndex((beat) => beat.phase === "hero");
+    expect(after.beats[discarded]?.handDiscard).toEqual(expect.arrayContaining(swapped));
+    expect(drawn).toBeGreaterThan(discarded);
+    expect(heroPhase).toBeGreaterThan(drawn);
+
+    // Undo goes back to the same opening hand, still waiting on the mulligan.
+    expect(battle.undo()).toBe(true);
+    expect(battle.snapshot().choice?.mulligan).toBe(true);
+    expect(battle.snapshot().hand.map((card) => card.id)).toEqual(opening.hand.map((card) => card.id));
+    expect(battle.canUndo).toBe(false);
+  });
+
+  test("keeping the hand shows only the hero phase starting", () => {
+    const battle = new BattleModel();
+    battle.reset({ seed: 75, mulligan: true });
+    expect(battle.chooseMany([])).toBe(true);
+    const { beats } = battle.snapshot();
+    expect(beats.filter((beat) => beat.handDiscard || beat.draw)).toHaveLength(0);
+    expect(beats.some((beat) => beat.phase === "hero")).toBe(true);
+  });
+
+  test("each seed is its own deal, and the same seed deals the same hand again", () => {
+    const hand = (seed: number) => {
+      const battle = new BattleModel();
+      battle.reset({ seed, mulligan: true });
+      return battle.snapshot().hand.map((card) => card.name);
+    };
+    expect(hand(1234)).toEqual(hand(1234));
+    expect(hand(1234)).not.toEqual(hand(75));
+  });
+});

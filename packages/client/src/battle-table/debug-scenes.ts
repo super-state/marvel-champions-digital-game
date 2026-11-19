@@ -26,6 +26,10 @@ interface Scene {
   schemes?: Placement[];
   /** Encounter attachments on Rhino. */
   villainAttachments?: Placement[];
+  /** Cards to have in hand (the rest of the hand is refilled from the deck). */
+  hand?: string[];
+  /** The top of the player's deck, top first. */
+  deckTop?: string[];
 }
 
 const SCENES: Record<string, Scene> = {
@@ -52,6 +56,11 @@ const SCENES: Record<string, Scene> = {
       { code: "01109", threat: 1 },
     ],
     villainAttachments: [{ code: "01099" }, { code: "01098", damage: 2 }],
+  },
+  /** Black Cat in hand with Genius on top of the deck: her pick-up while paying with Peter Parker's Scientist. */
+  blackcat: {
+    hand: ["01002", "01090"],
+    deckTop: ["01089", "01087"],
   },
   /** A quiet mid-game board: one minion, one side scheme, a couple of supports. */
   midgame: {
@@ -125,10 +134,15 @@ function arrange(state: GameState, scene: Scene): GameState {
   if (scene.mainThreat !== undefined) instances[main] = { ...instances[main]!, threat: scene.mainThreat };
   const gone = (list: readonly InstanceId[]) => list.filter((id) => !used.has(id));
   const deckId = activeEncounterDeckId(state);
-  // Keep the hand full: refill it from the deck for anything a scene took out of it.
-  const hand = gone(player.hand);
-  const deck = gone(player.deck);
+  // Chosen cards first, then keep the hand full from the deck; chosen deck-top cards go back on top.
+  const handIds = (scene.hand ?? []).map(take);
+  const topIds = (scene.deckTop ?? []).map(take);
+  const held = [...handIds, ...gone(player.hand)];
+  const hand = held.slice(0, player.hand.length);
+  // Anything the chosen cards pushed out of the hand goes back into the deck, so no card ends up nowhere.
+  const deck = [...held.slice(player.hand.length), ...gone(player.deck)];
   while (hand.length < player.hand.length && deck.length) hand.push(deck.shift()!);
+  deck.unshift(...topIds);
   return {
     ...state,
     instances,
