@@ -190,11 +190,6 @@ button:focus-visible {
       opacity 160ms ease-out,
       visibility 0s linear 160ms;
   }
-  /* A hand card risen to be read goes in front of the bar. */
-  .playfield > .dock[data-ducked] {
-    opacity: 0.12;
-    pointer-events: none;
-  }
   .rail-toggle {
     display: inline-flex;
     position: absolute;

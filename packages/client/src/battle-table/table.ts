@@ -1094,6 +1094,18 @@ export class BattleTable {
     this.#startFlight(id, boostFor ? "tuck" : "place");
   }
 
+  #question = false;
+  /**
+   * A question is up in the turn bar just above the hand: the table eases up to make room for it, and a hovered hand
+   * card lifts a small step instead of growing, so it never comes up over the buttons.
+   */
+  setQuestion(up: boolean): void {
+    if (this.#question === up) return;
+    this.#question = up;
+    this.#layout();
+    this.#requestFrame();
+  }
+
   #revealHeld = false;
   /** The revealed card waits to be read before Continue: it stands full size in the middle of the table. */
   holdReveal(held: boolean): void {
@@ -1500,12 +1512,15 @@ export class BattleTable {
       right: w - 6,
       top: 6,
       // A sunk hand shows the top of its cards (`SUNK_SHOWS`); the table comes down to just above them. Paying or
-      // picking from it raises the hand whole with the question over it, and the table eases up to make room.
+      // picking from it raises the hand whole; a question in the turn bar sits just above the hand, and the table
+      // eases up to make room for it.
       bottom: !this.#hand.sunk
         ? h - bar - handCard * 1.48 - 26
         : this.#state?.paymentSources || this.#state?.handPick
           ? h - 12 - handCard * 1.64 - QUESTION_ROOM
-          : h - handCard * SUNK_SHOWS - 20,
+          : this.#question
+            ? h - handCard * (SUNK_SHOWS + 0.24) - QUESTION_ROOM
+            : h - handCard * SUNK_SHOWS - 20,
     };
     // The table fills the room above the hand: a quiet board grows up into empty space at the top (up to a quarter
     // bigger), a busy one (a tall stack of side schemes) shrinks until it fits. The hero's row keeps its edge where
@@ -1808,7 +1823,7 @@ export class BattleTable {
       const outward = center ? offset / center : 0;
       const hovered = this.#hovered === card.id && !this.#press?.dragging;
       const raised = hovered || state.selected.includes(card.id);
-      const zoomed = hovered && sunk && !lifted && !state.selected.includes(card.id);
+      const zoomed = hovered && sunk && !lifted && !this.#question && !state.selected.includes(card.id);
       const handCenter = Math.max(w * 0.5, handLeft + cardWidth * (0.5 + center * spread));
       const restX = handCenter + offset * cardWidth * spread;
       const restY = baseline + outward ** 2 * cardWidth * 0.045;

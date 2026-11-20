@@ -107,8 +107,6 @@ const pinnedPicture = pinnedCard.querySelector("img")!;
 let pinnedId: string | null = null;
 /** Wider than a phone: the hand sinks, the turn corner shows and the card panel can fold away. */
 const roomy = matchMedia("(min-width: 741px)");
-/** Width the turn corner takes at the bottom right of the table: a bar along the bottom keeps clear of it. */
-let cornerReserve = 0;
 const roundLabel = element("round-label");
 const undoButton = element<HTMLButtonElement>("undo");
 const turnStatus = element("turn-status");
@@ -273,6 +271,7 @@ function paintDock(view: DockView): boolean {
   const pressable = [view.primary, view.secondary].some((button) => button && !button.endTurn && !button.disabled);
   const folded = !!view.idle || (!view.asking && !pressable && !view.options?.length);
   dock.toggleAttribute("data-idle", folded);
+  table?.setQuestion(!folded && roomy.matches);
   // The turn corner's End Turn answers only while nothing else is asked; the bar's own copy is the phone's.
   const ending = view.idle && view.primary?.endTurn ? view.primary : null;
   endTurnButton.disabled = !ending || !!ending.disabled;
@@ -2627,15 +2626,13 @@ endTurnButton.onclick = (event) => {
 };
 
 /**
- * The table sizes the hand around the turn corner and the card panel. A narrow table (a tablet held upright beside
- * the panel) has no width to spare beside the corner, so its hand stands whole above the corner instead of sinking.
+ * The table sinks the hand on a wider screen. A narrow table (a tablet held upright beside the card panel) has no
+ * width to spare beside the corners, so its hand stands whole above them instead of sinking.
  */
 let handOverCorner = false;
 function layoutHand() {
   handOverCorner = roomy.matches && boardViewport.clientWidth < 720;
   const sunk = roomy.matches && !handOverCorner;
-  // The corner's own width, its 16px inset and a 12px gap to the last card.
-  cornerReserve = sunk ? turnCorner.offsetWidth + 28 : 0;
   if (handOverCorner) table?.setBottomReserve(turnCorner.offsetHeight + 16);
   table?.setHandLayout({ sunk });
   placeDock();
@@ -2771,7 +2768,6 @@ function placeHoverCard() {
 function placeDock() {
   if (!roomy.matches || !table) {
     for (const property of ["top", "left", "bottom", "translate"]) dock.style.removeProperty(property);
-    dock.removeAttribute("data-ducked");
     return;
   }
   if (dock.hasAttribute("data-idle")) return;
@@ -2782,17 +2778,12 @@ function placeDock() {
     stage: { left: view.left - field.left, top: view.top - field.top, width: view.width },
     // Layout sizes, not the bounding box: the bar turning over to a new question must not shake it.
     bar: { width: dock.offsetWidth, height: dock.offsetHeight },
-    hand: table.handTop,
-    asking: dock.hasAttribute("data-asking"),
-    aboutHand: !!(state?.payment || state?.choice?.mulligan || state?.choice?.discardFromHand),
-    handOverCorner,
-    corners: { left: undoCorner.offsetWidth + 28, right: cornerReserve },
+    handTop: table.handTop.resting,
   });
   dock.style.left = `${Math.round(spot.left)}px`;
   dock.style.top = `${Math.round(spot.top)}px`;
   dock.style.bottom = "auto";
   dock.style.translate = "none";
-  dock.toggleAttribute("data-ducked", spot.ducked);
 }
 
 // Right-click a card (on the table, in the hand or by its nameplate) to pin it; right-click the pin to let it go.
