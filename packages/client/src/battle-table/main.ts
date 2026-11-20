@@ -1711,6 +1711,20 @@ function floatNumber(
   ]);
 }
 
+/** The villain phase's threat step, called out on the scheme before a card gets the chance to interrupt it. */
+let threatStepCalled: string | null = null;
+async function threatStep(beat: Beat, scheme: string, amount: number) {
+  threatStepCalled = scheme;
+  narrate(beat, null, {
+    eyebrow: { text: "Place threat", icon: "threat", tone: "villain" },
+    title: `${nameOf(scheme)} gains threat`,
+  });
+  setSpot({ glow: [{ id: scheme, tone: "threat" }], cutouts: [scheme], mark: { id: scheme, kind: "threat", amount } });
+  placeLabels();
+  stampCard(scheme, "Threat");
+  await sleep(reducedMotion() ? 500 : 1300);
+}
+
 function stampCard(id: string, text: string, tone?: "status" | "confused" | "tough" | "surge" | "boost") {
   const node = make("div", "card-stamp", text);
   if (tone) node.dataset.tone = tone;
@@ -1942,6 +1956,20 @@ async function present(beats: Snapshot["beats"]) {
       phaseIndicator(beat.phase, true);
       narrate(beat, null, { title: beat.phase === "hero" ? "Your turn" : "Villain phase", eyebrow: null });
       await sleep(PHASE_BANNER_MS);
+      // The villain phase opens with threat on the main scheme. When a card can interrupt it (Great Responsibility),
+      // the game stops before the threat lands: the step is still called out first, so the question that follows
+      // reads as part of it rather than appearing out of nowhere.
+      const pending = state.choice?.event;
+      if (
+        beat.phase === "villain" &&
+        pending?.kind === "placeThreat" &&
+        pending.before &&
+        pending.subject &&
+        !beats.slice(index + 1).some((later) => later.threat)
+      ) {
+        await threatStep(beat, pending.subject, pending.amount ?? 1);
+        spotted = true;
+      }
       continue;
     }
     if (beat.defeatedCard) {
@@ -2242,7 +2270,12 @@ async function present(beats: Snapshot["beats"]) {
           mark: { id: scheme, kind: "threat", amount: beat.threat.delta },
         });
         placeLabels();
-        await sleep(reducedMotion() ? 260 : 620);
+        // The villain phase's own threat step is stamped like the encounter step, so each step reads as one; once
+        // only, so after a question about it (Great Responsibility, passed) the threat just lands.
+        const step = beat.activity === "Place threat" && threatStepCalled !== scheme;
+        if (step) stampCard(scheme, "Threat");
+        threatStepCalled = null;
+        await sleep(reducedMotion() ? 260 : step ? 900 : 620);
         setSpot({ glow: [{ id: scheme, tone: "threat" }], cutouts: [scheme] });
       }
       activationRing(beat.threat.scheme);
