@@ -2034,7 +2034,9 @@ export class BattleTable {
                 : kind === "tuck"
                   ? 560
                   : kind === "draw"
-                    ? 560
+                    ? this.#state?.hand.some((card) => card.id === id)
+                      ? 640
+                      : 560
                     : kind === "discard"
                       ? 460
                       : 310;
@@ -2071,8 +2073,15 @@ export class BattleTable {
           const turn = fromDeck ? THREE.MathUtils.smoothstep(progress, 0, 0.6) : t;
           piece.root.rotation.y = Math.PI * (1 - turn);
           if (fromDeck) {
-            const fly = THREE.MathUtils.smoothstep(progress, 0.2, 1);
+            // It carries a touch past its place in the direction it flew, then eases back (an ease-out-back curve).
+            const travel = THREE.MathUtils.clamp((progress - 0.2) / 0.8, 0, 1);
+            const fly = 1 + 1.85 * (travel - 1) ** 3 + 0.85 * (travel - 1) ** 2;
             piece.root.position.lerpVectors(from.position, piece.target.position, fly);
+            piece.root.position.y = THREE.MathUtils.lerp(
+              from.position.y,
+              piece.target.position.y,
+              THREE.MathUtils.smoothstep(progress, 0.2, 1),
+            );
             piece.root.position.y += Math.sin(progress * Math.PI) * 1.55;
           }
         }
@@ -2085,17 +2094,10 @@ export class BattleTable {
             const lean = THREE.MathUtils.clamp((piece.target.position.x - from.position.x) * -0.045, -0.16, 0.16);
             piece.root.rotation.z += Math.sin(Math.PI * progress) * (1 - progress) * lean * 1.6;
           }
-          if (kind === "play" || kind === "draw") {
+          if (kind === "play" || (kind === "draw" && !this.#state?.hand.some((card) => card.id === id))) {
             // A small pop as the card settles.
             const settle = THREE.MathUtils.clamp((progress - 0.7) / 0.3, 0, 1);
             piece.root.scale.multiplyScalar(1 + Math.sin(Math.PI * settle) * 0.045);
-          }
-          if (kind === "draw" && this.#state?.hand.some((card) => card.id === id)) {
-            // Landing in the hand on a soft spring: it dips past its place, bounces back once and settles.
-            const settle = THREE.MathUtils.clamp((progress - 0.62) / 0.38, 0, 1);
-            const spring = Math.sin(settle * Math.PI * 2) * Math.exp(-3.2 * settle) * (1 - settle);
-            piece.root.position.y -= spring * piece.root.scale.x * 0.09;
-            piece.root.rotation.z += spring * 0.035;
           }
           if (kind === "place") {
             const settle = Math.max(0, (progress - 0.54) / 0.46);

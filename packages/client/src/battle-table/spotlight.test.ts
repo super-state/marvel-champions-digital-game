@@ -85,10 +85,13 @@ describe("spotOf: the defend question", () => {
     ],
   });
 
-  test("darkens all but the attacker, glowing red, with its attachment and its facedown boost card", () => {
+  test("darkens all but the attacker, glowing red, with its attachment, its facedown boost card and its target", () => {
     expect(spotOf(defense, table, at)).toEqual({
-      glow: [{ id: "rhino", tone: "attack" }],
-      cutouts: ["rhino", "ivory-horn", "sandman"],
+      glow: [
+        { id: "rhino", tone: "attack" },
+        { id: "spider-man", tone: "target" },
+      ],
+      cutouts: ["rhino", "ivory-horn", "sandman", "spider-man"],
     });
   });
 

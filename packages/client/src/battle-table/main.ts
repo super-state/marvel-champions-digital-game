@@ -1183,6 +1183,18 @@ function updateOutlines(group: SVGGElement, ids: readonly string[], tones?: read
   });
 }
 
+/** The attack target flies from the attacker onto its target. */
+function aimFrom(from: { x: number; y: number } | undefined, to: { x: number; y: number } | undefined) {
+  if (!from || !to || reducedMotion()) return;
+  reticle.animate(
+    [
+      { transform: `translate(${from.x - to.x}px, ${from.y - to.y}px) scale(1.45)`, opacity: 0.25 },
+      { transform: "translate(0,0) scale(1)", opacity: 1 },
+    ],
+    { duration: 380, easing: "cubic-bezier(.2,.7,.2,1)" },
+  );
+}
+
 /** Darken the table around the cards that matter now, or (null) lift the shade. */
 function setSpot(next: Spot | null) {
   spot = next?.cutouts.length ? next : null;
@@ -1377,6 +1389,10 @@ function phaseIndicator(phase: "hero" | "villain" | "ending" | "setup", announce
   if (announce && phase !== "setup") {
     const banner = element("phase-banner");
     banner.dataset.phase = phase;
+    // Centred on the table, above the hand, rather than on the whole height with the hand in it.
+    const handTop = table?.paymentEdge ?? 0;
+    const height = banner.parentElement?.clientHeight ?? 0;
+    banner.style.bottom = handTop > height * 0.4 && handTop < height ? `${height - handTop}px` : "";
     const lettering = banner.querySelector("b")!;
     lettering.textContent = title;
     banner.getAnimations({ subtree: true }).forEach((a) => a.cancel());
@@ -1387,8 +1403,8 @@ function phaseIndicator(phase: "hero" | "villain" | "ending" | "setup", announce
       lettering.animate(
         [
           { transform: "translateX(-100%)", easing: "cubic-bezier(.18,.74,.28,1)" },
-          { transform: "translateX(-2.5%)", offset: 0.24, easing: "linear" },
-          { transform: "translateX(2.5%)", offset: 0.73, easing: "cubic-bezier(.6,.02,.9,.5)" },
+          { transform: "translateX(-0.6%)", offset: 0.24, easing: "linear" },
+          { transform: "translateX(0.6%)", offset: 0.73, easing: "cubic-bezier(.6,.02,.9,.5)" },
           { transform: "translateX(100%)" },
         ],
         { duration: PHASE_BANNER_MS },
@@ -1780,14 +1796,7 @@ async function present(beats: Snapshot["beats"]) {
       aimTarget = target;
       reticle.hidden = false;
       placeLabels();
-      if (from && to && !reducedMotion())
-        reticle.animate(
-          [
-            { transform: `translate(${from.x - to.x}px, ${from.y - to.y}px) scale(1.45)`, opacity: 0.25 },
-            { transform: "translate(0,0) scale(1)", opacity: 1 },
-          ],
-          { duration: 300, easing: "ease-out" },
-        );
+      aimFrom(from, to);
     }
     if (beat.activate) {
       const event = [staged, ...state.discard, ...displayedHand].find((c) => c?.id === beat.activate!.card);
@@ -2023,8 +2032,9 @@ function render() {
   const defending = !!state.choice?.defense && !defenseQuestion;
   if (state.choice?.defense) aimTarget = state.choice!.defense!.target;
   else if (!state.choice) aimTarget = null;
-  reticle.hidden =
-    defenseQuestion || !aimTarget || (!defending && !state.choice?.options.some((o) => o.cardId === aimTarget));
+  // Asked to defend, the target is on the hero being attacked; it flies there from the attacker if it wasn't showing.
+  const aimWasHidden = reticle.hidden;
+  reticle.hidden = !aimTarget || (!state.choice?.defense && !state.choice?.options.some((o) => o.cardId === aimTarget));
   setSpot(null);
   if (presented !== state.beats) {
     presented = state.beats;
@@ -2139,12 +2149,16 @@ function render() {
       heldEncounter,
     }),
   );
-  if (state.choice?.defense) {
-    inspect(state.choice.defense.attackerId);
-    if (defending) reticle.hidden = false;
-  }
+  if (state.choice?.defense) inspect(state.choice.defense.attackerId);
   if (state.choice?.offers?.length) inspect(state.choice.offers[offerIndex]?.cardId ?? null);
   placeLabels();
+  if (state.choice?.defense && aimWasHidden && !reticle.hidden) {
+    const projected = table?.anchors();
+    aimFrom(
+      projected?.find((a) => a.id === state.choice!.defense!.attackerId),
+      projected?.find((a) => a.id === aimTarget),
+    );
+  }
   showOutcome(state.outcome);
 }
 

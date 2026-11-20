@@ -976,6 +976,13 @@ button:focus-visible {
   }
 }
 
+/* The hero an attack is aimed at, lit a steady cool white under the reticle. */
+#ability-glow polygon[data-tone="target"] {
+  stroke: #f4f8ff;
+  stroke-width: 3px;
+  filter: drop-shadow(0 0 4px #9cc8ff) drop-shadow(0 0 14px #6fa8ffb3);
+  animation: none;
+}
 #ability-glow polygon[data-tone="threat"] {
   stroke: #ffc06a;
   filter: drop-shadow(0 0 5px #ff8a1c) drop-shadow(0 0 14px #ff8a1cb3);

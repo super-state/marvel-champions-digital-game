@@ -6,7 +6,7 @@ import type { BattleChoice } from "./model.js";
  * it is about (an attacker red, a scheme taking threat orange, the card that could answer gold) and pins an amount
  * about to land ("+1" threat) on its card. Plain data from the snapshot: main.ts draws it.
  */
-export type GlowTone = "ability" | "attack" | "threat";
+export type GlowTone = "ability" | "attack" | "threat" | "target";
 
 export interface Spot {
   glow: { id: string; tone: GlowTone }[];
@@ -78,8 +78,8 @@ export function eventLook(
 }
 
 /**
- * What a question spotlights. Asked to defend: the attacker, with its attachments and facedown boost cards (and the
- * defenders once the player is choosing one). A reaction window: the card its event touches and the card that could
+ * What a question spotlights. Asked to defend: the attacker, with its attachments and facedown boost cards, and the
+ * hero it attacks (and the defenders once the player is choosing one). A reaction window: the card its event touches and the card that could
  * answer, with the amount an interrupt would change pinned on the first.
  */
 export function spotOf(
@@ -94,9 +94,14 @@ export function spotOf(
     const defenders = at.choosingDefender
       ? choice.options.flatMap((option) => (option.cardId ? [option.cardId] : []))
       : [];
+    // The hero being attacked stands out too, under the target, so the question shows who is hit.
+    const target = choice.defense.target;
     return {
-      glow: [{ id: attacker, tone: "attack" }],
-      cutouts: [attacker, ...attachments, ...boostsOf(table, attacker), ...defenders],
+      glow: [
+        { id: attacker, tone: "attack" },
+        { id: target, tone: "target" },
+      ],
+      cutouts: [...new Set([attacker, ...attachments, ...boostsOf(table, attacker), target, ...defenders])],
     };
   }
   const offer = choice.offers?.[at.offerIndex];
