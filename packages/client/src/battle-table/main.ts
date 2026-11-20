@@ -268,12 +268,16 @@ function paintDock(view: DockView): boolean {
     turnMark.replaceChildren(icon(side));
   }
   dock.toggleAttribute("data-asking", view.asking);
-  dock.toggleAttribute("data-idle", !!view.idle);
+  // On a wider screen the bar shows only when there is something to press: a question, Continue, Play again. What
+  // the game is doing (the villain phase, an ability resolving) plays out on the table and goes in the log.
+  const pressable = [view.primary, view.secondary].some((button) => button && !button.endTurn && !button.disabled);
+  const folded = !!view.idle || (!view.asking && !pressable && !view.options?.length);
+  dock.toggleAttribute("data-idle", folded);
   // The turn corner's End Turn answers only while nothing else is asked; the bar's own copy is the phone's.
   const ending = view.idle && view.primary?.endTurn ? view.primary : null;
   endTurnButton.disabled = !ending || !!ending.disabled;
   // Folding away with the keyboard on it (Enter on Keep hand): the keyboard goes on to End Turn, or else Undo.
-  if (view.idle && roomy.matches && dock.contains(document.activeElement))
+  if (folded && roomy.matches && dock.contains(document.activeElement))
     (endTurnButton.disabled ? undoButton : endTurnButton).focus({ preventScroll: true });
   const eyebrow = view.eyebrow;
   dockEyebrow.hidden = !eyebrow;
@@ -1816,8 +1820,7 @@ async function present(beats: Snapshot["beats"]) {
       const deckSize = state.deckCount + pendingDraws.size;
       table?.showDraw(displayedHand, beat.draw, deckSize, state.discard);
       deckCount.textContent = String(deckSize);
-      // The cards flying in say it already: on a wider screen the bar stays folded (the log still has the line).
-      narrate(beat, feedLineOf(beat), { idle: true });
+      narrate(beat, feedLineOf(beat));
       await sleep(680 + (beat.draw.length - 1) * 180);
       continue;
     }
@@ -1866,12 +1869,7 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.phase) {
       announcement.hidden = true;
       phaseIndicator(beat.phase, true);
-      // The phase banner says whose turn it is; on a wider screen the bar stays folded for the hero's.
-      narrate(beat, null, {
-        title: beat.phase === "hero" ? "Your turn" : "Villain phase",
-        eyebrow: null,
-        idle: beat.phase === "hero",
-      });
+      narrate(beat, null, { title: beat.phase === "hero" ? "Your turn" : "Villain phase", eyebrow: null });
       await sleep(PHASE_BANNER_MS);
       continue;
     }
