@@ -295,7 +295,8 @@ button:focus-visible {
   transition:
     border-color 140ms,
     background-color 140ms,
-    box-shadow 140ms;
+    box-shadow 140ms,
+    filter 200ms ease;
 }
 .anchor .plate-name {
   min-width: 0;
@@ -527,12 +528,13 @@ button:focus-visible {
 }
 
 /* ── Phase banner ────────────────────────────────────────────────────────── */
+/* Right across the middle of the whole window, sidebar and all. */
 #phase-banner {
   --phase-color: #bfe6ff;
   --phase-band: linear-gradient(90deg, #0d2a40e6, #164a6ef2 50%, #0d2a40e6);
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 5;
+  z-index: 40;
   display: grid;
   align-items: center;
   overflow: hidden;
@@ -1707,4 +1709,13 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
   .dock-help {
     -webkit-line-clamp: 1;
   }
+}
+
+/* Paying: the pile counts and the badges of cards that aren't paying dim with the table, so only what can pay is lit. */
+#board-viewport .pile-label {
+  transition: filter 200ms ease;
+}
+#board-viewport[data-paying] .pile-label,
+.anchor[data-dimmed] {
+  filter: brightness(0.45) saturate(0.7);
 }

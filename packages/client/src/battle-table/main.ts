@@ -48,6 +48,8 @@ const abilityGlow = document.querySelector<SVGSVGElement>("#ability-glow")!;
 const abilityOutlines = document.querySelector<SVGGElement>("#ability-outlines")!;
 const defenderCutouts = document.querySelector<SVGGElement>("#defender-cutouts")!;
 const reticle = element("attack-reticle");
+// The phase banner runs right across the window, over the sidebar too, so it lives on the page, not in the table.
+document.body.append(element("phase-banner"));
 const pendingMark = element("pending-mark");
 let aimTarget: string | null = null;
 let heldEncounter: string | null = null;
@@ -1096,6 +1098,8 @@ function synchronizeLabels() {
     const handPick = !!(state.choice?.discardFromHand || state.choice?.mulligan) && !!target;
     label.disabled = (!!state.payment && !source?.available) || (!!state.choice?.defense && !target);
     label.toggleAttribute("data-target", !!target);
+    // Paying: a badge on a card that isn't paying dims with the table, like its card.
+    label.toggleAttribute("data-dimmed", !!state.payment && !source && !displayedHand.some((c) => c.id === card.id));
     label.toggleAttribute(
       "data-tucked",
       ((isTuckedUpgrade(card) && state.inPlay.some((c) => c.id === card.id)) ||
@@ -1389,10 +1393,6 @@ function phaseIndicator(phase: "hero" | "villain" | "ending" | "setup", announce
   if (announce && phase !== "setup") {
     const banner = element("phase-banner");
     banner.dataset.phase = phase;
-    // Centred on the table, above the hand, rather than on the whole height with the hand in it.
-    const handTop = table?.paymentEdge ?? 0;
-    const height = banner.parentElement?.clientHeight ?? 0;
-    banner.style.bottom = handTop > height * 0.4 && handTop < height ? `${height - handTop}px` : "";
     const lettering = banner.querySelector("b")!;
     lettering.textContent = title;
     banner.getAnimations({ subtree: true }).forEach((a) => a.cancel());
@@ -2108,6 +2108,7 @@ function render() {
   discardFan.hidden = !discardOpen;
   syncBoostTags();
   synchronizeLabels();
+  element("board-viewport").toggleAttribute("data-paying", !!state.payment);
   pile.disabled = !state.discard.length || flying || discarding || !!state.payment;
   pile.setAttribute("aria-expanded", String(discardOpen && !viewingEncounterDiscard));
   encounterPile.setAttribute("aria-expanded", String(discardOpen && viewingEncounterDiscard));

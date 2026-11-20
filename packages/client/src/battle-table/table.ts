@@ -768,9 +768,40 @@ export class BattleTable {
     return state.viewingEncounterDiscard ? state.encounterDiscard : state.discard;
   }
 
+  /** Paying: true for a card that isn't paying, so it and its tokens sit back in the dim with the table. */
+  #dimFor(id: string): boolean {
+    return !!this.#state?.paymentSources && !this.#state.paymentSources.includes(id);
+  }
+
+  readonly #dimMaterials = new Map<THREE.Material, THREE.Material>();
+  /** Swap a card's tokens to darkened copies of their materials (shared with every other token), or back. */
+  #shadeTokens(piece: Piece, dim: boolean): void {
+    for (const group of [piece.tokens, piece.markers])
+      group.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        if (!mesh.isMesh || Array.isArray(mesh.material)) return;
+        const lit: THREE.Material = mesh.userData.lit ?? mesh.material;
+        if (!dim) {
+          mesh.material = lit;
+          delete mesh.userData.lit;
+          return;
+        }
+        let dark = this.#dimMaterials.get(lit);
+        if (!dark) {
+          dark = lit.clone();
+          (dark as THREE.MeshBasicMaterial).color?.multiplyScalar(0.36);
+          this.#dimMaterials.set(lit, dark);
+        }
+        mesh.userData.lit = lit;
+        mesh.material = dark;
+      });
+  }
+
   #lightCards(state: TableCards): void {
     this.#cloth.color.setHex(state.paymentSources ? 0x3d444e : 0xffffff);
     this.#deckBack.material.color.setHex(state.paymentSources ? 0x51545b : 0xffffff);
+    this.#encounterBack.material.color.setHex(state.paymentSources ? 0x51545b : 0xffffff);
+    this.#stockMaterial.color.setHex(state.paymentSources ? 0x3f3e39 : 0xb7b2a2);
     for (const [id, piece] of this.#pieces) {
       const color =
         state.paymentSources && !state.paymentSources.includes(id)
@@ -781,6 +812,7 @@ export class BattleTable {
             ? 0x848993
             : 0xffffff;
       piece.face.material.color.setHex(color);
+      this.#shadeTokens(piece, !!state.paymentSources && !state.paymentSources.includes(id));
     }
   }
 
@@ -1137,6 +1169,7 @@ export class BattleTable {
       }
       group.add(token);
     });
+    this.#shadeTokens(piece, this.#dimFor(piece.card.id));
   }
 
   setThreat(id: string, total: number): void {
@@ -1178,6 +1211,7 @@ export class BattleTable {
       group.add(token);
       this.#drops.set(token, performance.now() + Math.min(i, 4) * 45);
     }
+    this.#shadeTokens(piece, this.#dimFor(id));
     this.#requestFrame();
   }
 
@@ -2433,6 +2467,7 @@ export class BattleTable {
 
   dispose(): void {
     this.#disposed = true;
+    for (const material of this.#dimMaterials.values()) material.dispose();
     for (const spark of this.#sparks) spark.sprite.material.dispose();
     this.#sparks.length = 0;
     this.#sparkMap.dispose();
