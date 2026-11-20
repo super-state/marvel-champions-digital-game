@@ -433,6 +433,17 @@ button:focus-visible {
   min-height: 52px;
   padding: 0 14px;
 }
+/* The menu is the frame: its actions are plain rows inside it, lit on hover, not boxes within a box. */
+#decision .menu-action:not(.stat-action) {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+#decision .menu-action:not(.stat-action):enabled:hover,
+#decision .menu-action:not(.stat-action):focus-visible {
+  border-color: transparent;
+  background: #ffffff14;
+}
 /* A basic power is drawn like the stat printed on the card: a coloured starburst with the value, on a banner. */
 #decision .menu-action.stat-action {
   position: relative;
