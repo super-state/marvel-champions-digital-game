@@ -2075,7 +2075,7 @@ export class BattleTable {
           if (fromDeck) {
             // It carries a touch past its place in the direction it flew, then eases back (an ease-out-back curve).
             const travel = THREE.MathUtils.clamp((progress - 0.2) / 0.8, 0, 1);
-            const fly = 1 + 1.85 * (travel - 1) ** 3 + 0.85 * (travel - 1) ** 2;
+            const fly = 1 + 1.6 * (travel - 1) ** 3 + 0.6 * (travel - 1) ** 2;
             piece.root.position.lerpVectors(from.position, piece.target.position, fly);
             piece.root.position.y = THREE.MathUtils.lerp(
               from.position.y,
