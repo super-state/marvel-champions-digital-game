@@ -2,6 +2,7 @@ import { statHue } from "../tokens.js";
 import "./design.css";
 import "./battle.css";
 import { besideSpot, dockSpot } from "./dock-spot.js";
+import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js";
 import { arrangeScene } from "./debug-scenes.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
@@ -70,6 +71,8 @@ let heldEncounter: string | null = null;
 let revealWindowHeld: string | null = null;
 /** A held card let go as new beats arrive: it plays out (When Revealed, then away) before them. */
 let releaseHeld: string | null = null;
+/** The reveal of the card held up, kept for moves whose own beats don't carry it (paying for a reaction to it). */
+let heldReveal: Beat["reveal"] = undefined;
 /** What the table is darkened around right now (`spotlight.ts`). */
 let spot: Spot | null = null;
 let markKey = "";
@@ -124,7 +127,7 @@ let staged: BattleCard | null = null;
  * activate. The rule is the reaction window's own subject, so it holds for every card, not one by one. Threat stopped
  * at a scheme that the card turns into damage is shown turning into a damage token and flying to the hero.
  */
-let reacting: { card: string; subject: string; kind: string; amount: number } | null = null;
+let reacting: Reaction | null = null;
 /** A targeted attachment (Spider-Tracer) staged while its host is chosen: it waits over the villain's side. */
 let stagedAttachment: string | null = null;
 const readReveal = element<HTMLButtonElement>("read-reveal");
@@ -134,7 +137,7 @@ let menuCard: string | null = null;
 let actionCard: string | null = null;
 const moveViews = new WeakMap<
   Snapshot["beats"],
-  { staged: BattleCard | null; reveal: Beat["reveal"]; aim: string | null }
+  { staged: BattleCard | null; reveal: Beat["reveal"]; aim: string | null; reacting?: Reaction | null }
 >();
 let presented: Snapshot["beats"] | undefined;
 let presenting = false;
@@ -2231,6 +2234,7 @@ async function present(beats: Snapshot["beats"]) {
         );
         continue;
       }
+      heldReveal = beat.reveal;
       if (state.choice?.sourceTitle && state.choiceSource === beat.reveal.id) {
         heldEncounter = beat.reveal.id;
         readingCard = null;
@@ -2381,17 +2385,6 @@ async function present(beats: Snapshot["beats"]) {
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────────────────────────────────────────────────
-/**
- * A revealed encounter card stays up, full size, while anything is about it: its own question, a card that can
- * interrupt its reveal, paying for that card, and that card cancelling it as the next beats play out.
- */
-function holdsEncounter(id: string): boolean {
-  if (state.choice?.sourceTitle && state.choiceSource === id) return true;
-  const event = state.choice?.event;
-  if (event?.kind === "encounterCardRevealing" && event.subject === id) return true;
-  return reacting?.subject === id && (!!state.payment || state.beats.some((beat) => beat.interrupt === reacting!.card));
-}
-
 function letGoOfEncounter(id: string) {
   const permanent = state.enemyCards.find((c) => c.id === id);
   if (permanent) table?.landEncounter(permanent);
@@ -2408,7 +2401,7 @@ function render() {
   state = model.snapshot();
   if (!formHint.hidden) clearFormHint();
   if (state.payment || state.choice || state.turn !== "player") element("play-refusal").hidden = true;
-  if (heldEncounter && !holdsEncounter(heldEncounter)) {
+  if (heldEncounter && !holdsEncounter(state, reacting, heldEncounter)) {
     // Passed on interrupting its reveal: it stays up for its When Revealed to play out first, with the new beats.
     if (revealWindowHeld === heldEncounter && presented !== state.beats && state.beats.length)
       releaseHeld = heldEncounter;
@@ -2416,6 +2409,9 @@ function render() {
     revealWindowHeld = null;
     heldEncounter = null;
     inspect(hoveredCard);
+  } else if (heldEncounter && revealWindowHeld === heldEncounter && !revealWindowFor(state, reacting, heldEncounter)) {
+    // Passed, and the card's When Revealed asks its own question: that question shows it; nothing to fire after.
+    revealWindowHeld = null;
   }
   if (!heldEncounter) choiceShade.style.clipPath = "";
   if (!state.choice?.offers?.length) triggerChoice = null;
@@ -2441,14 +2437,18 @@ function render() {
     ...(state.choiceSource ? [state.choiceSource] : []),
     ...(heldEncounter ? [heldEncounter] : []),
   ]);
-  if (!flying && !state.payment && !state.choice?.canCancel) {
+  // Paying for a reaction is a move of its own that Undo can come back to: it keeps its card and reaction too.
+  if (!flying && (!state.payment || model.payingForReaction) && !state.choice?.canCancel) {
     const reveal = heldEncounter
-      ? (state.beats.find((b) => b.reveal?.id === heldEncounter)?.reveal ?? moveViews.get(state.beats)?.reveal)
+      ? (state.beats.find((b) => b.reveal?.id === heldEncounter)?.reveal ??
+        moveViews.get(state.beats)?.reveal ??
+        (heldReveal?.id === heldEncounter ? heldReveal : undefined))
       : undefined;
     moveViews.set(state.beats, {
       staged: staged && !state.hand.some((c) => c.id === staged!.id) ? staged : null,
       reveal,
       aim: aimTarget,
+      reacting: state.payment ? reacting : null,
     });
   }
   const paymentSubject = state.payment?.subject;
@@ -2637,6 +2637,8 @@ function deal() {
   discardOpen = false;
   choicePicks.clear();
   staged = null;
+  heldEncounter = revealWindowHeld = releaseHeld = null;
+  reacting = null;
   feed = [];
   paintFeed();
   const seed = seedFromUrl() ?? Math.floor(Math.random() * 2 ** 31) + 1;
@@ -2722,9 +2724,9 @@ undoButton.onclick = () => {
   const view = moveViews.get(state.beats);
   staged = view?.staged ?? null;
   heldEncounter = view?.reveal?.id ?? null;
-  revealWindowHeld = heldEncounter && state.choice?.event?.subject === heldEncounter ? heldEncounter : null;
+  reacting = view?.reacting ?? null;
+  revealWindowHeld = heldEncounter && revealWindowFor(state, reacting, heldEncounter) ? heldEncounter : null;
   releaseHeld = null;
-  reacting = null;
   aimTarget = view?.aim ?? null;
   menuCard = actionCard = null;
   discardOpen = false;
@@ -2735,10 +2737,12 @@ undoButton.onclick = () => {
   for (const id of state.facedownEncounters)
     table?.dealEncounter(id, state.facedownBoosts.find((boost) => boost.id === id)?.enemy ?? null);
   if (view?.reveal) {
-    table?.holdReveal(true);
+    // Full size only when it waits on a reaction to its reveal; a card's own question shows it at table size.
+    if (revealWindowHeld) table?.holdReveal(true);
     table?.revealEncounter(view.reveal);
   }
-  if (staged?.type === "event") {
+  // An event being paid for waits where payments put it, not on the hero.
+  if (staged?.type === "event" && !state.payment) {
     if (awaitsTarget(staged.id)) table?.holdEvent(staged.id);
     else table?.channelEvent(staged.id);
   }

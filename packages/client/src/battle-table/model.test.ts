@@ -315,10 +315,33 @@ describe("reacting to a revealed encounter card", () => {
     const { battle, offer } = atTheOffer();
     battle.chooseMany([offer.id]);
     expect(battle.payingForReaction).toBe(true);
+    battle.toggle(battle.snapshot().payment!.sources[0]!.id);
+    expect(battle.snapshot().payment!.sources.some((source) => source.selected)).toBe(true);
     expect(battle.undo()).toBe(true);
     const back = battle.snapshot();
     expect(back.payment).toBeNull();
     expect(back.choice?.offers?.some((o) => o.id === offer.id)).toBe(true);
+  });
+
+  test("Cancel while paying for the reaction passes on it: the reveal goes on, the event back in hand", () => {
+    const { battle, offer, revealed } = atTheOffer();
+    const event = battle.snapshot().hand.find((card) => card.name === "Enhanced Spider-Sense")!;
+    battle.chooseMany([offer.id]);
+    battle.cancel();
+    const after = battle.snapshot();
+    expect(after.payment).toBeNull();
+    expect(after.choice?.event?.subject).not.toBe(revealed);
+    expect(after.beats.some((beat) => beat.interrupt)).toBe(false);
+    expect(after.hand.some((card) => card.id === event.id)).toBe(true);
+  });
+
+  test("paying for a card from the hand is not paying for a reaction", () => {
+    const battle = new BattleModel();
+    battle.reset({ seed: 7, arrange: arrangeScene("kick")! });
+    const kick = battle.snapshot().hand.find((card) => card.name === "Swinging Web Kick")!;
+    expect(battle.pick(kick.id)).toBe(true);
+    expect(battle.snapshot().payment).not.toBeNull();
+    expect(battle.payingForReaction).toBe(false);
   });
 
   test("paying cancels the card's When Revealed and it is discarded, with the event after it", () => {

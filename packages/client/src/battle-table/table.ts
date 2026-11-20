@@ -1026,10 +1026,6 @@ export class BattleTable {
     this.#requestFrame();
   }
 
-  /**
-   * A When Revealed firing: the card rises toward the player, flashes white with a burst of light, and settles back,
-   * so its effect reads as the card's own and not an ordinary attack.
-   */
   /** A card whose effect was cancelled (Enhanced Spider-Sense) flickers out and back, like a signal cut. */
   #flicker: { piece: Piece; start: number } | null = null;
   flickerCancelled(id: string): void {
@@ -1040,6 +1036,10 @@ export class BattleTable {
     this.#requestFrame();
   }
 
+  /**
+   * A When Revealed firing: the card rises toward the player, flashes white with a burst of light, and settles back,
+   * so its effect reads as the card's own and not an ordinary attack.
+   */
   activateWhenRevealed(id: string): void {
     this.pulseInterrupt(id);
     if (this.#interrupt?.piece === this.#pieces.get(id)) this.#interrupt!.activation = { flashed: false };

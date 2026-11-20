@@ -295,8 +295,7 @@ export class BattleModel {
   undo(): boolean {
     const previous = this.#history.pop();
     if (!previous) return false;
-    // Undo from the middle of paying (for a reaction) drops the payment with the move it belonged to.
-    this.#clearPayment();
+    // Undo from the middle of paying (for a reaction) drops the payment too: `#setGame` clears it.
     this.#handOrder = previous.handOrder;
     this.#villainActivity = previous.activity;
     this.#beats = previous.beats;
