@@ -2151,6 +2151,13 @@ async function present(beats: Snapshot["beats"]) {
       clearAim();
       untagBoost(beat.reveal.id);
       readingCard = beat.reveal.boost || beat.reveal.quick ? null : beat.reveal.id;
+      // A card that will wait for Continue grows to full size while it turns over, not in a jump after.
+      const willHold =
+        !beat.reveal.boost &&
+        !beat.reveal.quick &&
+        !state.outcome &&
+        !(state.choice?.sourceTitle && state.choiceSource === beat.reveal.id);
+      if (willHold) table?.holdReveal(true);
       table?.revealEncounter(beat.reveal);
       await sleep(360);
       if (beat.reveal.art) showPreview(beat.reveal, !beat.reveal.boost);
