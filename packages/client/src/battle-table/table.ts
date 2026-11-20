@@ -1796,7 +1796,7 @@ export class BattleTable {
     const picked = hand.filter((card) => state.selected.includes(card.id));
     // Hovering a sunk hand card shows it full size where it is, standing on the bottom edge, so it reads without the
     // card panel. Not while paying or picking from the hand, where the whole hand is up and a card only lifts a step.
-    const zoomWidth = Math.max(cardWidth * 1.09, Math.min(h * 0.4, w * 0.3));
+    const zoomWidth = cardWidth * 1.45;
     this.#zoom = null;
     hand.forEach((card, i) => {
       const offset = i - center;
