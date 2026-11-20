@@ -987,6 +987,14 @@ export class BattleTable {
 
   #deflection: { token: THREE.Group; start: number } | null = null;
 
+  /** How high above its face a card's tokens reach, in the card's own units (0 with none). */
+  #tokenTop(piece: Piece): number {
+    let top = 0;
+    for (const token of [...piece.markers.children, ...piece.tokens.children])
+      top = Math.max(top, token.position.z + 0.085 * token.scale.z);
+    return top;
+  }
+
   deflectDamage(id: string, amount: number): void {
     const piece = this.#pieces.get(id);
     if (!piece) return;
@@ -1004,8 +1012,8 @@ export class BattleTable {
     const hero = this.#state && this.#pieces.get(this.#state.hero.id);
     if (hero) {
       // Project the shadow onto the receiving face, with a small offset beyond the action card's edge.
-      this.#actionShadow.position.set(-0.061, -0.08, 0.023);
-      this.#actionShadow.scale.setScalar(0.87);
+      this.#actionShadow.position.set(-0.04, -0.06, 0.023);
+      this.#actionShadow.scale.setScalar(1);
       this.#actionShadow.rotation.z = 0.035;
       hero.root.add(this.#actionShadow);
     }
@@ -2050,12 +2058,15 @@ export class BattleTable {
       }
       // The hero is updated first. Follow its live face, including its lift and roll during a strike.
       if (id === this.#power && this.#state) {
-        const hero = this.#pieces.get(this.#state.hero.id)!.root;
+        const heroPiece = this.#pieces.get(this.#state.hero.id)!;
+        const hero = heroPiece.root;
         hero.updateMatrixWorld();
-        piece.target.position.set(-0.07, -0.07, 0.032).applyMatrix4(hero.matrixWorld);
+        // Full size on the hero, and laid over the top of any tokens on it rather than through them.
+        const above = Math.max(0.032, this.#tokenTop(heroPiece) + 0.012);
+        piece.target.position.set(-0.05, -0.05, above).applyMatrix4(hero.matrixWorld);
         piece.target.pitch = hero.rotation.x;
         piece.target.roll = hero.rotation.z + 0.035;
-        piece.target.scale = hero.scale.x * 0.87;
+        piece.target.scale = hero.scale.x;
         if (!this.#flights.has(id)) {
           this.#apply(piece, 1);
           continue;

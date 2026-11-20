@@ -95,6 +95,11 @@ const SCENES: Record<string, Scene> = {
     hand: ["01007"],
     minions: [{ code: "01110" }, { code: "01103" }],
   },
+  /** Swinging Web Kick in hand and tokens on Spider-Man: the event lands full size, laid over the tokens. */
+  kick: {
+    hero: { form: "hero", damage: 3, statuses: { tough: 1 } },
+    hand: ["01005", "01089", "01087", "01090"],
+  },
 };
 
 export function sceneNames(): string[] {
