@@ -148,12 +148,17 @@
     border-color 140ms,
     color 140ms,
     box-shadow 140ms,
+    filter 140ms,
     transform 120ms var(--ease-out);
   -webkit-tap-highlight-color: transparent;
 }
 .btn .icon {
   width: 18px;
   height: 18px;
+}
+/* Every button the pointer is over rises a step, so it is plain what a click will press. */
+.btn:enabled:hover {
+  transform: translateY(-2px);
 }
 .btn:enabled:active {
   transform: translateY(1px) scale(0.98);
@@ -178,11 +183,16 @@
     0 6px 18px #f5b2402e;
 }
 .btn-primary:enabled:hover {
-  filter: brightness(1.07);
+  filter: brightness(1.16) saturate(1.1);
   box-shadow:
     inset 0 1px 0 #fff8,
     inset 0 -2px 0 #0002,
-    0 8px 24px #f5b24055;
+    0 0 0 3px #f5c35b66,
+    0 10px 30px #f5b24099;
+}
+/* The pulse that asks for a press gives way to the hover glow while the pointer is on it. */
+.btn-primary[data-attention]:enabled:hover {
+  animation: none;
 }
 .btn-primary:disabled {
   --btn-bg: var(--bg-3);
@@ -211,8 +221,11 @@
   }
 }
 .btn-secondary:enabled:hover {
-  --btn-bg: var(--bg-4);
-  --btn-border: #5b7286;
+  --btn-bg: #2a3b4b;
+  --btn-border: var(--gold);
+  box-shadow:
+    0 0 0 2px #f5c35b40,
+    0 8px 22px #000a;
 }
 .btn-ghost {
   --btn-bg: transparent;
@@ -222,7 +235,8 @@
 }
 .btn-ghost:enabled:hover {
   --btn-fg: var(--text);
-  --btn-bg: #ffffff0f;
+  --btn-bg: #ffffff24;
+  --btn-border: #f5c35b99;
 }
 .btn-icon {
   min-width: 44px;
@@ -259,10 +273,13 @@
 .btn-option:not(:has(.icon)) small {
   grid-column: 1;
 }
-.btn-option:enabled:hover,
 .btn-option[aria-pressed="true"] {
   --btn-border: var(--gold);
   --btn-bg: #2a2716;
+}
+.btn-option:enabled:hover {
+  --btn-border: var(--gold);
+  --btn-bg: #3a3418;
 }
 
 /* ── Chips and labels ───────────────────────────────────────────────────── */

@@ -174,6 +174,9 @@ button:focus-visible {
   .turn-corner .btn-ghost {
     background: #0c141ce6;
   }
+  .turn-corner .btn-ghost:enabled:hover {
+    background: #22313fee;
+  }
   .turn-corner-left {
     right: auto;
     left: 16px;
@@ -607,8 +610,9 @@ button:focus-visible {
 }
 #decision .menu-action:not(.stat-action):enabled:hover,
 #decision .menu-action:not(.stat-action):focus-visible {
-  border-color: transparent;
-  background: #ffffff14;
+  border-color: #f5c35b88;
+  background: #ffffff26;
+  color: #fff;
 }
 /* A basic power is drawn like the stat printed on the card: a coloured starburst with the value, on a banner. */
 #decision .menu-action.stat-action {

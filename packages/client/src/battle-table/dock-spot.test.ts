@@ -17,6 +17,12 @@ describe("dockSpot", () => {
     expect(dockSpot({ ...base, stage: { left: 0, top: -40, width: 1086 }, handTop: 60 }).top).toBe(8);
     expect(dockSpot({ ...base, bar: { width: 1200, height: 64 } }).left).toBe(8);
   });
+
+  it("drops below a card standing over it, never into the hand", () => {
+    expect(dockSpot({ ...base, below: 612 }).top).toBe(630);
+    expect(dockSpot({ ...base, below: 680 }).top).toBe(700 - 64);
+    expect(dockSpot({ ...base, below: 400 }).top).toBe(700 - 64 - 12);
+  });
 });
 
 describe("besideSpot", () => {

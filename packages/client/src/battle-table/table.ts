@@ -432,6 +432,8 @@ export class BattleTable {
   readonly #reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
   #state: TableCards | null = null;
   #hovered: string | null = null;
+  /** The card the `onHover` handler last heard about. */
+  #reported: string | null = null;
   #hoverFootprint: { x: number; y: number; width: number } | null = null;
   /** The hand card shown full size under the pointer, and the top of the resting hand (viewport pixels): over the
    * hand itself, the pointer moves on to the neighbour underneath rather than staying on the big card. */
@@ -1702,8 +1704,14 @@ export class BattleTable {
       if (card.id !== this.#revealing) onBoard.add(card.id);
       if (card.id === this.#revealing) {
         // Waiting to be read it stands full size, its top kept on screen; otherwise it shows briefly at table size.
-        const width = this.#revealHeld && w >= 741 ? Math.min(h * 0.4, w * 0.3) : Math.min(h * 0.245, w * 0.24);
-        const y = Math.max(h * (w < 550 ? 0.3 : 0.38), 16 + width * (card.landscape ? 0.5 : 0.7));
+        const held = this.#revealHeld && w >= 741;
+        // Held, it ends a little above the turn bar's room over the hand, so the bar never presses up against it.
+        const floor = this.#handTop.resting - QUESTION_ROOM - 16;
+        let width = held ? Math.min(h * 0.4, w * 0.3) : Math.min(h * 0.245, w * 0.24);
+        const half = card.landscape ? 0.5 : 0.7;
+        if (held && floor > 0) width = Math.max(h * 0.245, Math.min(width, (floor - 16) / (half * 2)));
+        let y = Math.max(h * (w < 550 ? 0.3 : 0.38), 16 + width * half);
+        if (held && floor > 0) y = Math.max(16 + width * half, Math.min(y, floor - width * half));
         this.#pose(card.id, w * 0.5, y, width, 1.75, this.#camera.rotation.x);
       } else if (card.boostFor && host) {
         // A boost card waits facedown beside the enemy it was dealt to, tucked under its right edge, until the
@@ -2574,8 +2582,11 @@ export class BattleTable {
 
   #notifyHover(id: string | null): void {
     this.#renderer.domElement.style.cursor = id ? "var(--cursor-hand)" : "var(--cursor-arrow)";
-    if (this.#hovered === id) return;
-    this.setHovered(id);
+    // The table sometimes marks a card hovered by itself (the card whose menu is open), so the handler is told about
+    // every change from what it last heard, not from what the table shows.
+    if (this.#hovered !== id) this.setHovered(id);
+    if (this.#reported === id) return;
+    this.#reported = id;
     this.#handlers.onHover(id);
   }
 

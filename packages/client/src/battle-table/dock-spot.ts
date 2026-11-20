@@ -8,6 +8,8 @@ export interface DockSpotInput {
   readonly bar: { readonly width: number; readonly height: number };
   /** The top of the hand in stage pixels, a hovered card's small lift included (`BattleTable.handTop.resting`). */
   readonly handTop: number;
+  /** The bottom of a card standing just above the bar (a revealed encounter card), in stage pixels, to keep clear of. */
+  readonly below?: number | undefined;
 }
 
 /**
@@ -19,7 +21,11 @@ export function dockSpot(input: DockSpotInput): { left: number; top: number } {
   const { field, stage, bar } = input;
   // Kept on the playfield; a bar wider than the playfield starts at its left edge.
   const left = Math.max(8, Math.min(stage.left + stage.width / 2 - bar.width / 2, field.width - bar.width - 8));
-  const top = Math.min(Math.max(8, stage.top + input.handTop - bar.height - 12), field.height - bar.height - 8);
+  let top = stage.top + input.handTop - bar.height - 12;
+  // Clear of a card standing above it, as far down as the top of the hand allows.
+  if (input.below !== undefined)
+    top = Math.max(top, Math.min(stage.top + input.below + 18, stage.top + input.handTop - bar.height));
+  top = Math.min(Math.max(8, top), field.height - bar.height - 8);
   return { left, top };
 }
 

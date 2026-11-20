@@ -295,13 +295,15 @@ function paintDock(view: DockView): boolean {
   }
   if (asked) {
     questionAt = performance.now();
-    // The bar turns over like a card to a new question, so it never reads as the button just pressed.
+    // The bar turns over like a card to a new question, so it never reads as the button just pressed. Only its
+    // turn is animated, never its opacity, so a bar told to wait (the mulligan, until the dealt cards land) stays
+    // hidden through it.
     if (!reducedMotion())
       dock.animate(
         [
-          { transform: "perspective(700px) rotateX(-78deg)", opacity: 0.2 },
-          { transform: "perspective(700px) rotateX(9deg)", opacity: 1, offset: 0.68 },
-          { transform: "none", opacity: 1 },
+          { transform: "perspective(700px) rotateX(-78deg)" },
+          { transform: "perspective(700px) rotateX(9deg)", offset: 0.68 },
+          { transform: "none" },
         ],
         { duration: 360, easing: "cubic-bezier(.2,.8,.3,1)" },
       );
@@ -690,12 +692,35 @@ function dockView(): DockView {
 
 // ── Reading cards ─────────────────────────────────────────────────────────────────────────────────────────────────
 let hoveredCard: string | null = null;
+/** The card the table (or a nameplate) says the pointer is on, and whether the pointer is in the open card menu. */
+let pointedCard: string | null = null;
+let overMenu = false;
 function hoverCard(id: string | null) {
-  hoveredCard = id;
+  pointedCard = id;
+  showHovered();
+}
+/**
+ * The card being read: the one pointed at, or the card whose menu is open while the pointer is in that menu, so
+ * moving from Peter Parker onto his Flip button keeps his picture up until the pointer leaves both.
+ */
+function showHovered() {
+  hoveredCard = pointedCard ?? (overMenu && menuCard ? menuCard : null);
   paintReading();
   placeHoverCard();
-  if (!readingCard) inspect(id);
+  if (!readingCard) inspect(hoveredCard);
 }
+decision.addEventListener("pointerenter", (event) => {
+  if (event.pointerType === "touch") return;
+  overMenu = true;
+  showHovered();
+});
+decision.addEventListener("pointerleave", () => {
+  overMenu = false;
+  // A frame later, so a pointer going straight back onto the card is seen there first and the picture stays put.
+  requestAnimationFrame(() => {
+    if (!overMenu) showHovered();
+  });
+});
 
 /**
  * Open the card reader wide over the table's edge for a landscape card (a scheme), or close it back to the sidebar.
@@ -2381,7 +2406,14 @@ function renderCardMenu() {
   decision.replaceChildren();
   decision.hidden = !menuCard || discardOpen;
   decision.toggleAttribute("data-identity", !!menuCard);
-  if (!menuCard) return;
+  if (!menuCard) {
+    // A hidden menu sends no pointerleave: let go of it here, and of the menu card's picture with it.
+    if (overMenu) {
+      overMenu = false;
+      showHovered();
+    }
+    return;
+  }
   const id = menuCard;
   const card = [state.hero, ...state.inPlay].find((c) => c.id === id);
   const actions = id === state.hero.id ? state.heroActions : model.fieldActions(id);
@@ -2749,11 +2781,18 @@ function placeHoverCard() {
   // Clear of a pinned card, so the two can be read side by side.
   const pinned = pinnedCard.hidden ? 0 : pinnedCard.offsetWidth + 28;
   const pinnedLeft = arena.dataset.rail === "left";
-  const spot = besideSpot(
-    { left: dx + point.left, right: dx + point.right, top: dy + point.top, bottom: dy + point.bottom },
-    size,
-    { left: pinnedLeft ? pinned : 0, width: field.width - pinned, height: field.height },
-  );
+  // The card's open menu counts as part of it, so the picture never lies over its buttons.
+  const around = { left: dx + point.left, right: dx + point.right, top: dy + point.top, bottom: dy + point.bottom };
+  if (id === menuCard && !decision.hidden) {
+    const menu = decision.getBoundingClientRect();
+    around.left = Math.min(around.left, menu.left - field.left);
+    around.right = Math.max(around.right, menu.right - field.left);
+  }
+  const spot = besideSpot(around, size, {
+    left: pinnedLeft ? pinned : 0,
+    width: field.width - pinned,
+    height: field.height,
+  });
   hoverPicture.style.width = `${Math.round(size.width)}px`;
   hoverPicture.style.height = `${Math.round(size.height)}px`;
   hoverPicture.style.left = `${Math.round(spot.left)}px`;
@@ -2779,6 +2818,8 @@ function placeDock() {
     // Layout sizes, not the bounding box: the bar turning over to a new question must not shake it.
     bar: { width: dock.offsetWidth, height: dock.offsetHeight },
     handTop: table.handTop.resting,
+    // A revealed card stands full size right above the bar: the bar keeps a little air below it.
+    below: revealFocus ? table.anchors().find((anchor) => anchor.id === revealFocus)?.bottom : undefined,
   });
   dock.style.left = `${Math.round(spot.left)}px`;
   dock.style.top = `${Math.round(spot.top)}px`;
