@@ -287,9 +287,16 @@ export class BattleModel {
     return this.#history.length > 0;
   }
 
+  /** Paying for a reaction the player chose in a window (Enhanced Spider-Sense), not for a card played from hand. */
+  get payingForReaction(): boolean {
+    return !this.#payment && !!this.snapshot().payment;
+  }
+
   undo(): boolean {
     const previous = this.#history.pop();
     if (!previous) return false;
+    // Undo from the middle of paying (for a reaction) drops the payment with the move it belonged to.
+    this.#clearPayment();
     this.#handOrder = previous.handOrder;
     this.#villainActivity = previous.activity;
     this.#beats = previous.beats;

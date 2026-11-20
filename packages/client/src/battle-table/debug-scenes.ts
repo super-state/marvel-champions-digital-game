@@ -107,6 +107,12 @@ const SCENES: Record<string, Scene> = {
     play: [{ code: "01002", damage: 1 }],
     hand: ["01086", "01089", "01087"],
   },
+  /** Enhanced Spider-Sense in hand as Hard to Keep Down is revealed: cancel its When Revealed, or pass. */
+  sense: {
+    hero: { form: "hero" },
+    hand: ["01004", "01089", "01087"],
+    encounterTop: ["01110", "01104", "01105"],
+  },
   /** Two Backflips in hand as Rhino attacks: one question covers both copies. */
   backflips: {
     hero: { form: "hero" },

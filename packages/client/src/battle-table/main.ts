@@ -66,6 +66,10 @@ let aimTarget: string | null = null;
 /** The enemy whose attack is under way, from its aim until the attack resolves. */
 let attacker: string | null = null;
 let heldEncounter: string | null = null;
+/** The held encounter card is up because a card can interrupt its reveal (Enhanced Spider-Sense): passed, it fires. */
+let revealWindowHeld: string | null = null;
+/** A held card let go as new beats arrive: it plays out (When Revealed, then away) before them. */
+let releaseHeld: string | null = null;
 /** What the table is darkened around right now (`spotlight.ts`). */
 let spot: Spot | null = null;
 let markKey = "";
@@ -971,6 +975,8 @@ function act(work: () => void) {
 
 function cancel() {
   const returned = staged?.name;
+  // A reaction called off goes with its question: what it was about plays out as if passed.
+  reacting = null;
   model.cancel();
   staged = null;
   flying = false;
@@ -1889,6 +1895,14 @@ async function present(beats: Snapshot["beats"]) {
   anchors.inert = true;
   undoButton.disabled = restart.disabled = true;
   const pendingDraws = new Set(beats.flatMap((beat) => beat.draw ?? []));
+  // Out of a payment that was called off (a reaction cancelled), the table stops dimming for it before playing on.
+  if (!state.payment) {
+    boardViewport.removeAttribute("data-paying");
+    table?.endPayment(
+      state.hand.filter((card) => card.id !== staged?.id && !pendingDraws.has(card.id)),
+      staged,
+    );
+  }
   let spotted = false;
   // The payment screen's stand-ins for resource abilities (Peter Parker's Scientist) are spent by now.
   displayedHand = displayedHand.filter((card) => !card.id.startsWith("ability:"));
@@ -1899,6 +1913,14 @@ async function present(beats: Snapshot["beats"]) {
       spotted = false;
     }
     if (beat.gameEnded) break;
+    if (releaseHeld) {
+      // The encounter card nobody interrupted: its When Revealed fires where it stands, then it goes.
+      const id = releaseHeld;
+      releaseHeld = null;
+      await whenRevealedFires(beat, { id, name: nameOf(id) });
+      letGoOfEncounter(id);
+      await sleep(reducedMotion() ? 150 : 450);
+    }
     if (beat.draw) {
       for (const id of beat.draw) pendingDraws.delete(id);
       displayedHand = state.hand.filter((card) => !pendingDraws.has(card.id));
@@ -2092,6 +2114,18 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.interrupt) {
       table?.pulseInterrupt(beat.interrupt);
       await sleep(INTERRUPT_MS);
+      const cancelled = heldEncounter;
+      if (cancelled && reacting?.card === beat.interrupt && reacting.subject === cancelled) {
+        // The interrupt cancels the card it is held up over: that card flickers out, then goes to its discard pile,
+        // and only after that does the event that cancelled it follow it to the player's.
+        table?.flickerCancelled(cancelled);
+        stampCard(cancelled, "Cancelled");
+        await sleep(reducedMotion() ? 300 : 760);
+        table?.holdEvent(beat.interrupt);
+        letGoOfEncounter(cancelled);
+        heldEncounter = revealWindowHeld = null;
+        await sleep(reducedMotion() ? 200 : 620);
+      }
       continue;
     }
     if (beat.deflection) {
@@ -2199,6 +2233,14 @@ async function present(beats: Snapshot["beats"]) {
       }
       if (state.choice?.sourceTitle && state.choiceSource === beat.reveal.id) {
         heldEncounter = beat.reveal.id;
+        readingCard = null;
+        continue;
+      }
+      // A card can interrupt its reveal (Enhanced Spider-Sense): it stays up while the player decides, with no
+      // Continue; the question is the next step.
+      const revealWindow = state.choice?.event;
+      if (revealWindow?.kind === "encounterCardRevealing" && revealWindow.subject === beat.reveal.id) {
+        heldEncounter = revealWindowHeld = beat.reveal.id;
         readingCard = null;
         continue;
       }
@@ -2339,19 +2381,39 @@ async function present(beats: Snapshot["beats"]) {
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * A revealed encounter card stays up, full size, while anything is about it: its own question, a card that can
+ * interrupt its reveal, paying for that card, and that card cancelling it as the next beats play out.
+ */
+function holdsEncounter(id: string): boolean {
+  if (state.choice?.sourceTitle && state.choiceSource === id) return true;
+  const event = state.choice?.event;
+  if (event?.kind === "encounterCardRevealing" && event.subject === id) return true;
+  return reacting?.subject === id && (!!state.payment || state.beats.some((beat) => beat.interrupt === reacting!.card));
+}
+
+function letGoOfEncounter(id: string) {
+  const permanent = state.enemyCards.find((c) => c.id === id);
+  if (permanent) table?.landEncounter(permanent);
+  else
+    table?.retireEncounter(
+      id,
+      state.encounterDiscard.find((c) => c.id === id),
+    );
+  table?.holdReveal(false);
+}
+
 function render() {
   if (presenting) return;
   state = model.snapshot();
   if (!formHint.hidden) clearFormHint();
   if (state.payment || state.choice || state.turn !== "player") element("play-refusal").hidden = true;
-  if (heldEncounter && (state.choiceSource !== heldEncounter || !state.choice?.sourceTitle)) {
-    const permanent = state.enemyCards.find((c) => c.id === heldEncounter);
-    if (permanent) table?.landEncounter(permanent);
-    else
-      table?.retireEncounter(
-        heldEncounter,
-        state.encounterDiscard.find((c) => c.id === heldEncounter),
-      );
+  if (heldEncounter && !holdsEncounter(heldEncounter)) {
+    // Passed on interrupting its reveal: it stays up for its When Revealed to play out first, with the new beats.
+    if (revealWindowHeld === heldEncounter && presented !== state.beats && state.beats.length)
+      releaseHeld = heldEncounter;
+    else letGoOfEncounter(heldEncounter);
+    revealWindowHeld = null;
     heldEncounter = null;
     inspect(hoveredCard);
   }
@@ -2374,7 +2436,11 @@ function render() {
       return;
     }
   }
-  table?.reconcileEncounters([...state.facedownEncounters, ...(state.choiceSource ? [state.choiceSource] : [])]);
+  table?.reconcileEncounters([
+    ...state.facedownEncounters,
+    ...(state.choiceSource ? [state.choiceSource] : []),
+    ...(heldEncounter ? [heldEncounter] : []),
+  ]);
   if (!flying && !state.payment && !state.choice?.canCancel) {
     const reveal = heldEncounter
       ? (state.beats.find((b) => b.reveal?.id === heldEncounter)?.reveal ?? moveViews.get(state.beats)?.reveal)
@@ -2450,7 +2516,14 @@ function render() {
   element("encounter-count").textContent = String(state.encounterCount);
   deckCount.textContent = String(state.deckCount);
   renderCardMenu();
-  undoButton.disabled = !model.canUndo || flying || discarding || !!state.payment || !!state.choice?.canCancel;
+  // While paying for a reaction (Enhanced Spider-Sense) Undo still goes back to its question; paying for a card from
+  // the hand has Cancel for that.
+  undoButton.disabled =
+    !model.canUndo ||
+    flying ||
+    discarding ||
+    (!!state.payment && !model.payingForReaction) ||
+    !!state.choice?.canCancel;
   restart.disabled = discarding || !!state.payment;
   if (state.outcome) {
     turnStatus.textContent = state.outcome.result === "win" ? "Victory" : "Defeat";
@@ -2649,6 +2722,9 @@ undoButton.onclick = () => {
   const view = moveViews.get(state.beats);
   staged = view?.staged ?? null;
   heldEncounter = view?.reveal?.id ?? null;
+  revealWindowHeld = heldEncounter && state.choice?.event?.subject === heldEncounter ? heldEncounter : null;
+  releaseHeld = null;
+  reacting = null;
   aimTarget = view?.aim ?? null;
   menuCard = actionCard = null;
   discardOpen = false;
@@ -2658,7 +2734,10 @@ undoButton.onclick = () => {
   render();
   for (const id of state.facedownEncounters)
     table?.dealEncounter(id, state.facedownBoosts.find((boost) => boost.id === id)?.enemy ?? null);
-  if (view?.reveal) table?.revealEncounter(view.reveal);
+  if (view?.reveal) {
+    table?.holdReveal(true);
+    table?.revealEncounter(view.reveal);
+  }
   if (staged?.type === "event") {
     if (awaitsTarget(staged.id)) table?.holdEvent(staged.id);
     else table?.channelEvent(staged.id);

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { BattleModel } from "./model.js";
+import { arrangeScene } from "./debug-scenes.js";
 
 describe("Peter Parker and Rhino's practice turn", () => {
   let battle: BattleModel;
@@ -290,5 +291,44 @@ describe("the opening hand", () => {
     };
     expect(hand(1234)).toEqual(hand(1234));
     expect(hand(1234)).not.toEqual(hand(75));
+  });
+});
+
+describe("reacting to a revealed encounter card", () => {
+  /** End the turn on the Spider-Sense table and answer everything until Enhanced Spider-Sense is offered. */
+  function atTheOffer() {
+    const battle = new BattleModel();
+    battle.reset({ seed: 7, arrange: arrangeScene("sense")! });
+    battle.endTurn();
+    let s = battle.snapshot();
+    for (let i = 0; i < 12 && !s.choice?.offers?.some((o) => /Enhanced/.test(o.question)); i++) {
+      if (s.choice?.offers?.length) battle.chooseMany([]);
+      else if (s.choice) battle.choose(s.choice.options.at(-1)?.id ?? null);
+      s = battle.snapshot();
+    }
+    const offer = s.choice!.offers!.find((o) => /Enhanced/.test(o.question))!;
+    expect(s.choice!.event).toMatchObject({ kind: "encounterCardRevealing", before: true });
+    return { battle, offer, revealed: s.choice!.event!.subject! };
+  }
+
+  test("Undo while paying for the reaction goes back to its question, with the payment dropped", () => {
+    const { battle, offer } = atTheOffer();
+    battle.chooseMany([offer.id]);
+    expect(battle.payingForReaction).toBe(true);
+    expect(battle.undo()).toBe(true);
+    const back = battle.snapshot();
+    expect(back.payment).toBeNull();
+    expect(back.choice?.offers?.some((o) => o.id === offer.id)).toBe(true);
+  });
+
+  test("paying cancels the card's When Revealed and it is discarded, with the event after it", () => {
+    const { battle, offer, revealed } = atTheOffer();
+    battle.chooseMany([offer.id]);
+    battle.toggle(battle.snapshot().payment!.sources[0]!.id);
+    expect(battle.pay()).toBe(true);
+    const after = battle.snapshot();
+    expect(after.encounterDiscard.some((c) => c.id === revealed)).toBe(true);
+    const order = after.beats.flatMap((b) => (b.interrupt ? ["interrupt"] : b.discardEvent ? ["discard"] : []));
+    expect(order).toEqual(["interrupt", "discard"]);
   });
 });

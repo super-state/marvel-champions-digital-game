@@ -102,6 +102,7 @@ interface Spark {
 const SUNK_SHOWS = 1.2;
 /** Room a sunk hand's raised question needs over the hand: the turn bar, its gap and a margin. */
 const QUESTION_ROOM = 64 + 12 + 8;
+const FLICKER_MS = 560;
 /** How the hand meets the bottom of the table (`BattleTable.setHandLayout`). */
 export interface HandLayout {
   /**
@@ -881,6 +882,16 @@ export class BattleTable {
     this.#requestFrame();
   }
 
+  /**
+   * A payment ended without the screen being redrawn (it was called off and the game played on): the table stops
+   * dimming everything but the resources, and the hand and staged card are set to what they are now.
+   */
+  endPayment(hand: readonly TableCard[], staged: TableCard | null): void {
+    const s = this.#state;
+    if (!s?.paymentSources) return;
+    this.setCards({ ...s, paymentSources: null, selected: [], hand, staged });
+  }
+
   stageEvent(card: TableCard): void {
     const s = this.#state;
     if (!s || s.staged?.id === card.id) return;
@@ -1019,6 +1030,16 @@ export class BattleTable {
    * A When Revealed firing: the card rises toward the player, flashes white with a burst of light, and settles back,
    * so its effect reads as the card's own and not an ordinary attack.
    */
+  /** A card whose effect was cancelled (Enhanced Spider-Sense) flickers out and back, like a signal cut. */
+  #flicker: { piece: Piece; start: number } | null = null;
+  flickerCancelled(id: string): void {
+    const piece = this.#pieces.get(id);
+    if (!piece || this.#reduced.matches) return;
+    if (this.#flicker) this.#flicker.piece.root.visible = true;
+    this.#flicker = { piece, start: performance.now() };
+    this.#requestFrame();
+  }
+
   activateWhenRevealed(id: string): void {
     this.pulseInterrupt(id);
     if (this.#interrupt?.piece === this.#pieces.get(id)) this.#interrupt!.activation = { flashed: false };
@@ -2227,10 +2248,15 @@ export class BattleTable {
         // Held up over the card it protects, overlapping its edge, so it reads as standing in front of it.
         shielded.root.updateMatrixWorld();
         const lift = Math.max(0.2, this.#tokenTop(shielded) + 0.08);
-        piece.target.position.set(0.42, 0.06, lift).applyMatrix4(shielded.root.matrixWorld);
+        // Over a revealed card held up full size it stands off to the side, just over its edge, so the card it
+        // cancels stays readable (and its flicker visible).
+        const revealed = shielded.card.id === this.#revealing;
+        piece.target.position
+          .set(revealed ? 0.86 : 0.42, revealed ? -0.12 : 0.06, lift)
+          .applyMatrix4(shielded.root.matrixWorld);
         piece.target.pitch = shielded.root.rotation.x;
         piece.target.roll = shielded.root.rotation.z - 0.06;
-        piece.target.scale = shielded.root.scale.x * (shielded.card.landscape ? 0.8 : 0.92);
+        piece.target.scale = shielded.root.scale.x * (revealed ? 0.66 : shielded.card.landscape ? 0.8 : 0.92);
         if (!this.#flights.has(id)) {
           this.#apply(piece, 1);
           continue;
@@ -2476,7 +2502,9 @@ export class BattleTable {
       const rise = pulse.activation
         ? THREE.MathUtils.smoothstep(t, 0, 0.3) - THREE.MathUtils.smoothstep(t, 0.68, 1)
         : Math.sin(Math.PI * t) ** 2;
-      pulse.lift = this.#reduced.matches ? 0 : pulse.piece.root.scale.x * (pulse.activation ? 0.9 : 0.12) * rise;
+      // A revealed card already held up full size near the camera rises only a little, or it would leave the screen.
+      const rises = pulse.activation ? (pulse.piece.card.id === this.#revealing ? 0.18 : 0.9) : 0.12;
+      pulse.lift = this.#reduced.matches ? 0 : pulse.piece.root.scale.x * rises * rise;
       pulse.piece.root.position.y += pulse.lift;
       if (pulse.activation && !pulse.activation.flashed && t >= 0.3) {
         pulse.activation.flashed = true;
@@ -2491,6 +2519,14 @@ export class BattleTable {
         this.#interruptSheen.removeFromParent();
         this.#interrupt = null;
       } else moving = true;
+    }
+    if (this.#flicker) {
+      const age = now - this.#flicker.start;
+      // Out and back four times, the gaps shortening, then it stays.
+      const done = age >= FLICKER_MS;
+      this.#flicker.piece.root.visible = done || Math.floor((age / FLICKER_MS) ** 0.8 * 8) % 2 === 0;
+      if (done) this.#flicker = null;
+      else moving = true;
     }
     if (this.#wave && now - this.#wave.start >= 380 + (this.#state?.hand.length ?? 0) * 65) this.#wave = null;
     if (this.#wave) {
