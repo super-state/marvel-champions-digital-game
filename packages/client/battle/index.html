@@ -116,6 +116,11 @@
               <button type="button" id="dock-primary" class="btn btn-primary" disabled>End Turn</button>
             </div>
           </section>
+          <!-- A card pinned full size at the table's side with a right-click, to compare others against. -->
+          <figure id="pinned-card" class="pinned-card" hidden>
+            <img alt="" />
+            <button type="button" class="pinned-close" aria-label="Unpin card" title="Unpin (Esc)">×</button>
+          </figure>
           <!-- A hovered table card, full size beside it, while the card panel is folded away. -->
           <img id="hover-card" class="hover-card" alt="" hidden />
           <!-- Wider screens: Undo (moved here from the bar) keeps the bottom-left corner, End Turn the bottom-right. -->

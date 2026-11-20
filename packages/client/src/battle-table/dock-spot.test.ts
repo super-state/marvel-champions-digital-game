@@ -54,6 +54,12 @@ describe("besideSpot", () => {
   it("goes to the left when the right has no room", () => {
     expect(besideSpot({ left: 750, right: 850, top: 300, bottom: 440 }, size, field).left).toBe(406);
   });
+  it("keeps clear of a card pinned at the side", () => {
+    const right = besideSpot({ left: 750, right: 850, top: 300, bottom: 440 }, size, { ...field, width: 700 });
+    expect(right.left).toBe(392);
+    const left = besideSpot({ left: 20, right: 120, top: 300, bottom: 440 }, size, { ...field, left: 340, width: 660 });
+    expect(left.left).toBe(348);
+  });
   it("stays on the playfield near its edges", () => {
     expect(besideSpot({ left: 100, right: 200, top: 0, bottom: 100 }, size, field).top).toBe(8);
     expect(besideSpot({ left: 100, right: 200, top: 700, bottom: 790 }, size, field).top).toBe(800 - 420 - 8);

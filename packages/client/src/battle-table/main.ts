@@ -101,6 +101,10 @@ const undoCorner = element("undo-corner");
 const endTurnButton = element<HTMLButtonElement>("end-turn");
 const railToggle = element<HTMLButtonElement>("rail-toggle");
 const hoverPicture = element<HTMLImageElement>("hover-card");
+const pinnedCard = element("pinned-card");
+const pinnedPicture = pinnedCard.querySelector("img")!;
+/** The card pinned at the table's side with a right-click (`pinCard`). */
+let pinnedId: string | null = null;
 /** Wider than a phone: the hand sinks, the turn corner shows and the card panel can fold away. */
 const roomy = matchMedia("(min-width: 741px)");
 /** Width the turn corner takes at the bottom right of the table: a bar along the bottom keeps clear of it. */
@@ -2476,6 +2480,7 @@ function deal() {
 }
 
 function start() {
+  pinCard(null);
   try {
     deal();
   } catch (error) {
@@ -2580,6 +2585,11 @@ document.addEventListener(
 );
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && (gameMenu.open || gameOver.open)) return;
+  if (event.key === "Escape" && pinnedId) {
+    event.preventDefault();
+    pinCard(null);
+    return;
+  }
   if (event.key === "Escape" && menuCard) {
     menuCard = null;
     render();
@@ -2684,6 +2694,29 @@ function paintReading() {
  * With the card panel folded, a hovered table card shows full size right beside it (`besideSpot`), following it on
  * every frame the table draws. A hand card needs none: the table grows it where it stands.
  */
+/**
+ * Right-click a card to pin it full size at the table's side (the card panel's side), to compare others against as
+ * they are hovered. Right-clicking it again, its close button or Escape unpins it; another card replaces it.
+ */
+function pinCard(id: string | null) {
+  const card = id
+    ? (cards().find((item) => item.id === id) ?? (state.payment?.subject.id === id ? state.payment.subject : undefined))
+    : undefined;
+  if (!card?.art || id === pinnedId) {
+    pinnedId = null;
+    pinnedCard.hidden = true;
+    placeHoverCard();
+    return;
+  }
+  pinnedId = card.id;
+  pinnedPicture.src = card.art;
+  pinnedPicture.alt = card.name;
+  pinnedCard.toggleAttribute("data-landscape", !!card.landscape);
+  pinnedCard.hidden = false;
+  if (!reducedMotion()) pinnedCard.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 140, easing: "ease-out" });
+  placeHoverCard();
+}
+
 function placeHoverCard() {
   const id = hoveredCard;
   const folded = roomy.matches && arena.hasAttribute("data-collapsed");
@@ -2707,10 +2740,13 @@ function placeHoverCard() {
   // Half the table's height for an upright card; a scheme lies on its side at the same long edge.
   const long = Math.min(field.height * 0.5, 440);
   const size = card.landscape ? { width: long, height: long / 1.4 } : { width: long / 1.4, height: long };
+  // Clear of a pinned card, so the two can be read side by side.
+  const pinned = pinnedCard.hidden ? 0 : pinnedCard.offsetWidth + 28;
+  const pinnedLeft = arena.dataset.rail === "left";
   const spot = besideSpot(
     { left: dx + point.left, right: dx + point.right, top: dy + point.top, bottom: dy + point.bottom },
     size,
-    field,
+    { left: pinnedLeft ? pinned : 0, width: field.width - pinned, height: field.height },
   );
   hoverPicture.style.width = `${Math.round(size.width)}px`;
   hoverPicture.style.height = `${Math.round(size.height)}px`;
@@ -2750,6 +2786,22 @@ function placeDock() {
   dock.toggleAttribute("data-ducked", spot.ducked);
 }
 
+// Right-click a card (on the table, in the hand or by its nameplate) to pin it; right-click the pin to let it go.
+document.addEventListener("contextmenu", (event) => {
+  if (!roomy.matches || !(event.target instanceof Element) || gameMenu.open || gameOver.open) return;
+  if (event.target.closest("#pinned-card")) {
+    event.preventDefault();
+    pinCard(null);
+    return;
+  }
+  const plate = event.target.closest<HTMLElement>(".anchor[data-card]");
+  const onTable = event.target.closest("#space") ? (table?.cardAt(event as PointerEvent) ?? null) : null;
+  const id = plate ? (plate.dataset.card ?? null) : onTable;
+  if (!id) return;
+  event.preventDefault();
+  pinCard(id);
+});
+pinnedCard.querySelector<HTMLButtonElement>(".pinned-close")!.onclick = () => pinCard(null);
 roomy.addEventListener("change", () => {
   placeUndo();
   layoutHand();

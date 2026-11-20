@@ -242,6 +242,50 @@ button:focus-visible {
     opacity: 1;
   }
 }
+/* A card pinned full size at the table's side with a right-click (main.ts pinCard), on the card panel's side. */
+.pinned-card {
+  position: absolute;
+  z-index: 9;
+  top: 50%;
+  right: 16px;
+  margin: 0;
+  translate: 0 -50%;
+  width: min(calc(62vh / 1.4), 330px);
+  filter: drop-shadow(0 14px 18px #05090bb8);
+}
+.pinned-card[data-landscape] {
+  width: min(62vh, 460px);
+}
+.arena[data-rail="left"] .pinned-card {
+  right: auto;
+  left: 16px;
+}
+.pinned-card img {
+  display: block;
+  width: 100%;
+  border-radius: 5% / 3.6%;
+}
+.pinned-close {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--gold);
+  border-radius: 50%;
+  background: #0c141cf0;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+}
+.pinned-close:hover,
+.pinned-close:focus-visible {
+  background: var(--gold);
+  color: #1a1206;
+}
 /* A hovered table card, full size beside it while the card panel is folded (main.ts placeHoverCard). */
 .hover-card {
   position: absolute;
