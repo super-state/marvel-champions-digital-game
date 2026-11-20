@@ -164,6 +164,8 @@ export interface BattleBeat {
   returned?: string[];
   /** Cards discarded from the top of the player's deck (Black Cat). */
   milled?: string[];
+  /** The card whose ability discarded `milled` (Black Cat), when one did, and what kind of ability it was. */
+  millSource?: { card: string; label: string };
   /** On a facedown deal: the enemy the card goes to as its boost card. */
   boostFor?: string;
   /** The encounter card whose surge deals the player another encounter card (the deal beat follows). */
@@ -381,8 +383,11 @@ export class BattleModel {
         e.type === "characterDefeated" || e.type === "schemeDefeated" ? [e.instanceId as string] : [],
       ),
     );
+    // The card whose ability is resolving: its effects (Black Cat discarding from the deck) are its doing.
+    let resolving: { card: InstanceId; label: string } | null = null;
     for (const e of events) {
       const before = this.#beats.length;
+      if (e.type === "abilityResolved") resolving = { card: e.instanceId, label: triggerLabel(e.abilityId) };
       if (
         e.type === "stepChanged" &&
         e.to.phase === "villain" &&
@@ -493,7 +498,13 @@ export class BattleModel {
       } else if (e.type === "cardMoved" && e.from.kind === "deck" && e.to.kind === "discard") {
         const last = this.#beats.at(-1);
         if (last?.milled) last.milled.push(e.instanceId);
-        else this.#beats.push({ enemy, text: "Discard from the top of your deck", milled: [e.instanceId] });
+        else
+          this.#beats.push({
+            enemy,
+            text: "Discard from the top of your deck",
+            milled: [e.instanceId],
+            ...(resolving ? { millSource: resolving } : {}),
+          });
       } else if (e.type === "cardMoved" && e.to.kind === "hand" && e.from.kind !== "deck") {
         const last = this.#beats.at(-1);
         if (last?.returned) last.returned.push(e.instanceId);
@@ -1247,4 +1258,16 @@ export class BattleModel {
     this.#accept(result);
     return true;
   }
+}
+
+/** How a card's ability is printed: "Forced Response", "Interrupt", "Action". */
+function triggerLabel(abilityId: string): string {
+  const trigger = CORE_DEPS.abilities[abilityId]?.trigger;
+  if (!trigger) return "Ability";
+  if (trigger.kind === "response" || trigger.kind === "interrupt") {
+    const kind = trigger.kind === "response" ? "Response" : "Interrupt";
+    return "forced" in trigger && trigger.forced ? `Forced ${kind}` : kind;
+  }
+  if (trigger.kind === "action") return trigger.forced ? "Forced Action" : "Action";
+  return "Ability";
 }

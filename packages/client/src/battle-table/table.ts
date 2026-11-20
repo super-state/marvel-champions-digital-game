@@ -655,6 +655,7 @@ export class BattleTable {
       ...state.encounterDiscard,
     ];
     for (const card of this.#encounters.values()) if (!cards.some((c) => c.id === card.id)) cards.push(card);
+    for (const card of this.#deckReveal) if (!cards.some((c) => c.id === card.id)) cards.push(card);
     if (state.staged) cards.push(state.staged);
     const live = new Set(cards.map((card) => card.id));
     for (const [id, piece] of this.#pieces) {
@@ -752,7 +753,8 @@ export class BattleTable {
         state.enemyCards.some((item) => item.id === card.id);
       this.#setMarkers(piece, onBoard ? (card.markers ?? []) : [], tucked);
       if (card.threat !== null) this.setThreat(card.id, card.threat);
-      piece.rim.visible = state.selected.includes(card.id) || state.targets.includes(card.id);
+      piece.rim.visible =
+        state.selected.includes(card.id) || state.targets.includes(card.id) || this.#deckPicks.has(card.id);
     }
     this.#lightCards(state);
     if (previous !== state.staged?.id) {
@@ -1155,6 +1157,66 @@ export class BattleTable {
 
   #revealHeld = false;
   /** The revealed card waits to be read before Continue: it stands full size in the middle of the table. */
+  /** Cards turned up off the top of the player's deck (Black Cat's discard), standing in a row in the middle. */
+  #deckReveal: TableCard[] = [];
+  /** Of those, the ones the effect keeps for the hand: they rise and glow. */
+  readonly #deckPicks = new Set<string>();
+
+  /** Turn `cards` up off the top of the deck, one after another, into a row in the middle of the table. */
+  revealFromDeck(cards: readonly TableCard[]): void {
+    if (!this.#state || !cards.length) return;
+    this.#deckReveal = [...cards];
+    this.#deckPicks.clear();
+    this.setCards(this.#state);
+    const start = performance.now();
+    cards.forEach((card, index) => {
+      const root = this.#pieces.get(card.id)?.root;
+      if (!root) return;
+      root.position.copy(this.#deckSlot.position);
+      root.position.y += this.#deckBack.position.z * this.#deckSlot.scale.x + 0.03;
+      root.scale.copy(this.#deckSlot.scale);
+      root.rotation.set(-Math.PI / 2, Math.PI, 0);
+      this.#startFlight(card.id, "draw", start + index * 180);
+    });
+  }
+
+  /** The revealed cards the effect keeps rise out of the row and glow. */
+  pickFromReveal(ids: readonly string[]): void {
+    for (const id of ids) if (this.#deckReveal.some((card) => card.id === id)) this.#deckPicks.add(id);
+    if (this.#state) this.setCards(this.#state);
+  }
+
+  /** Revealed cards the effect doesn't keep go to the discard pile, the last one on top. */
+  discardFromReveal(ids: readonly string[]): void {
+    const s = this.#state;
+    const going = this.#deckReveal.filter((card) => ids.includes(card.id));
+    if (!s || !going.length) return;
+    this.#deckReveal = this.#deckReveal.filter((card) => !ids.includes(card.id));
+    for (const id of ids) this.#deckPicks.delete(id);
+    const left = s.discard.filter((card) => !ids.includes(card.id));
+    this.setCards({ ...s, discard: [...[...going].reverse(), ...left] });
+    for (const card of going) this.#startFlight(card.id, "discard");
+  }
+
+  /**
+   * Cards put back in the hand from where they lie (a revealed card Black Cat keeps, a card returned from the discard
+   * pile) fly there from that spot, not out of the deck like a draw.
+   */
+  returnToHand(hand: readonly TableCard[], ids: readonly string[]): void {
+    const s = this.#state;
+    if (!s) return;
+    this.#deckReveal = this.#deckReveal.filter((card) => !ids.includes(card.id));
+    for (const id of ids) this.#deckPicks.delete(id);
+    this.setCards({ ...s, hand, discard: s.discard.filter((card) => !ids.includes(card.id)), selected: [] });
+    for (const id of ids) if (this.#pieces.has(id)) this.#startFlight(id, "return");
+  }
+
+  /** Drop any cards still standing revealed off the deck (a new game). */
+  endDeckReveal(): void {
+    this.#deckReveal = [];
+    this.#deckPicks.clear();
+  }
+
   holdReveal(held: boolean): void {
     if (this.#revealHeld === held) return;
     this.#revealHeld = held;
@@ -1774,6 +1836,20 @@ export class BattleTable {
           flat,
         );
     }
+    // Cards turned up off the deck stand in a row in the middle, above the hand; the ones being kept rise a little.
+    if (this.#deckReveal.length) {
+      const count = this.#deckReveal.length;
+      const floor = this.#handTop.resting - 24;
+      let width = Math.min(h * 0.3, (w * 0.8) / (count * 1.22));
+      if (floor > 0) width = Math.max(h * 0.12, Math.min(width, (floor - 16) / 1.6));
+      let y = Math.max(16 + width * 0.8, h * 0.42);
+      if (floor > 0) y = Math.min(y, floor - width * 0.7);
+      this.#deckReveal.forEach((card, index) => {
+        const x = w * 0.5 + (index - (count - 1) / 2) * width * 1.22;
+        const rise = this.#deckPicks.has(card.id) ? width * 0.1 : 0;
+        this.#pose(card.id, x, y - rise, width, 1.75 + index * 0.01, this.#camera.rotation.x);
+      });
+    }
     const permanents = state.inPlay.filter((c) => c.id !== state.staged?.id);
     if (state.staged && !state.stagedOverEnemies && ["ally", "support", "upgrade"].includes(state.staged.type))
       permanents.push(state.staged);
@@ -2333,7 +2409,8 @@ export class BattleTable {
           piece.root.position.y += (rise - descent) * (Math.max(0.58, piece.target.scale * 0.5) + liftOffset);
         } else piece.root.position.y += Math.sin(Math.PI * progress) * (kind === "discard" ? 0.95 : 0.46);
         if (kind === "draw") {
-          const fromDeck = this.#state?.hand.some((card) => card.id === id);
+          const fromDeck =
+            this.#state?.hand.some((card) => card.id === id) || this.#deckReveal.some((card) => card.id === id);
           // Turn face-up over the first 60% of the flight, as before the ease-out curve.
           const turn = fromDeck ? THREE.MathUtils.smoothstep(progress, 0, 0.6) : t;
           piece.root.rotation.y = Math.PI * (1 - turn);

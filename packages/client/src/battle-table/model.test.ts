@@ -355,3 +355,22 @@ describe("reacting to a revealed encounter card", () => {
     expect(order).toEqual(["interrupt", "discard"]);
   });
 });
+
+describe("Black Cat's Forced Response", () => {
+  test("the deck discard names Black Cat and her ability, and the card she keeps comes back on the next beat", () => {
+    const battle = new BattleModel();
+    battle.reset({ seed: 7, arrange: arrangeScene("blackcat")! });
+    const cat = battle.snapshot().hand.find((card) => card.name === "Black Cat")!;
+    expect(battle.pick(cat.id)).toBe(true);
+    for (const source of battle.snapshot().payment!.sources.slice(0, 2)) battle.toggle(source.id);
+    expect(battle.pay()).toBe(true);
+    const { beats, hand } = battle.snapshot();
+    const milledAt = beats.findIndex((beat) => beat.milled);
+    const milled = beats[milledAt]!;
+    expect(milled.milled).toHaveLength(2);
+    expect(milled.millSource).toEqual({ card: cat.id, label: "Forced Response" });
+    const kept = beats[milledAt + 1]!.returned!;
+    expect(kept.every((id) => milled.milled!.includes(id))).toBe(true);
+    expect(hand.find((card) => kept.includes(card.id))?.name).toBe("Genius");
+  });
+});

@@ -178,6 +178,8 @@ function cards() {
     ...state.inPlay,
     ...state.discard,
     ...state.encounterDiscard,
+    // Last: a card on its way to the hand (Black Cat's pick-up) is named before it gets there.
+    ...state.hand,
   ];
 }
 
@@ -1404,6 +1406,48 @@ async function whenRevealedFires(beat: Beat, card: { id: string; name: string })
   await sleep(ACTIVATION_MS);
 }
 
+/**
+ * Cards discarded off the top of the player's deck are seen going: the card whose ability does it fires first (Black
+ * Cat's Forced Response), the cards turn up off the deck into a row, the ones its effect keeps (a printed [mental]
+ * resource, for Black Cat) rise and glow, and the rest go to the discard pile. The kept ones go to the hand on the
+ * `returned` beat that follows.
+ */
+async function revealMilled(beat: Beat, next: Beat | undefined) {
+  const milled = beat.milled!;
+  const source = beat.millSource;
+  if (source && table?.anchors().some((point) => point.id === source.card)) {
+    table.activateWhenRevealed(source.card);
+    narrate(beat, null, {
+      eyebrow: { text: source.label, icon: "response", tone: "hero" },
+      title: nameOf(source.card),
+    });
+    await sleep(ACTIVATION_MS);
+  }
+  narrate(beat, feedLineOf(beat));
+  const cards = milled.flatMap((id) => {
+    const card = state.discard.find((c) => c.id === id) ?? state.hand.find((c) => c.id === id);
+    return card ? [card] : [];
+  });
+  deckCount.textContent = String(Math.max(0, Number(deckCount.textContent) - milled.length));
+  if (!table || !cards.length) {
+    await sleep(700);
+    return;
+  }
+  table.revealFromDeck(cards);
+  await sleep(reducedMotion() ? 300 : 560 + (cards.length - 1) * 180 + 650);
+  const kept = next?.returned?.filter((id) => milled.includes(id)) ?? [];
+  if (kept.length) {
+    table.pickFromReveal(kept);
+    for (const id of kept) stampCard(id, "To hand", "boost");
+    await sleep(reducedMotion() ? 300 : 900);
+  }
+  const going = milled.filter((id) => !kept.includes(id));
+  if (going.length) {
+    table.discardFromReveal(going);
+    await sleep(reducedMotion() ? 200 : 520);
+  }
+}
+
 /** The attack target fades off once its attack is over. */
 function clearAim() {
   if (!aimTarget && reticle.hidden) return;
@@ -1829,7 +1873,11 @@ function feedLineOf(beat: Beat): FeedLine | null {
       tone: beat.enemy ? "villain" : "hero",
     };
   if (beat.returned)
-    return { text: `${plural(beat.returned.length, "card")} back to your hand`, icon: "draw", tone: "hero" };
+    return {
+      text: `${beat.returned.map(nameOf).filter(Boolean).join(", ") || plural(beat.returned.length, "card")} to your hand`,
+      icon: "draw",
+      tone: "hero",
+    };
   if (beat.leftPlay) return { text: beat.text, icon: "discard", tone: beat.enemy ? "villain" : "hero" };
   if (beat.surge)
     return { text: `Surge: ${nameOf(beat.surge) || "another card"} deals one more`, icon: "surge", tone: "villain" };
@@ -1958,8 +2006,9 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.returned) {
       narrate(beat, feedLineOf(beat));
       displayedHand = handBetweenBeats(displayedHand, state.hand, beats.slice(index + 1), staged?.id ?? null);
-      table?.showDraw(displayedHand, beat.returned, state.deckCount + pendingDraws.size, state.discard);
-      await sleep(760);
+      // From where it lies (the row turned up off the deck, the discard pile), not out of the deck like a draw.
+      table?.returnToHand(displayedHand, beat.returned);
+      await sleep(620);
       continue;
     }
     if (beat.surge) {
@@ -1969,9 +2018,7 @@ async function present(beats: Snapshot["beats"]) {
       continue;
     }
     if (beat.milled) {
-      narrate(beat, feedLineOf(beat));
-      deckCount.textContent = String(Math.max(0, Number(deckCount.textContent) - beat.milled.length));
-      await sleep(700);
+      await revealMilled(beat, beats[index + 1]);
       continue;
     }
     if (beat.leftPlay) {
@@ -2649,6 +2696,7 @@ function deal() {
   staged = null;
   heldEncounter = revealWindowHeld = releaseHeld = null;
   reacting = null;
+  table?.endDeckReveal();
   feed = [];
   paintFeed();
   const seed = seedFromUrl() ?? Math.floor(Math.random() * 2 ** 31) + 1;
