@@ -1352,7 +1352,7 @@ function centerDecisionInViewport() {
 function placeLabels() {
   if (!table) return;
   // Intersect the cutouts so even overlapping hand cards hide the label beneath them.
-  const clips = table.foregroundCardClips();
+  const clips = table.foregroundCardClips([readingCard, heldEncounter, revealFocus]);
   while (labelClips.length < clips.length) {
     const inner = labelClips[labelClips.length - 1]!;
     const outer = make("div", "label-clip");

@@ -1286,13 +1286,21 @@ export class BattleTable {
     });
   }
 
-  foregroundCardClips(): string[] {
+  /** `extra`: cards the caller knows are held up in front (a revealed card being read). */
+  foregroundCardClips(extra: readonly (string | null)[] = []): string[] {
     if (!this.#state) return [];
     const ids = new Set(this.#state.hand.map((card) => card.id));
+    for (const id of extra) if (id) ids.add(id);
     if (this.#flights.get(this.#state.hero.id)?.kind === "flip") ids.add(this.#state.hero.id);
     if (this.#flights.get(this.#state.villain.id)?.kind === "flip") ids.add(this.#state.villain.id);
     if (this.#revealing) ids.add(this.#revealing);
     if (this.#state.staged) ids.add(this.#state.staged.id);
+    // Anything raised off the table or moving over it sits in front of the labels, so it hides any it covers: a card
+    // dealt or revealed from the encounter deck, a card in flight, an event at work, a card lifted by its ability.
+    for (const [id, card] of this.#encounters) if (!("boostFor" in card && card.boostFor)) ids.add(id);
+    for (const [id, flight] of this.#flights) if (flight.kind !== "tuck") ids.add(id);
+    if (this.#power) ids.add(this.#power);
+    if (this.#interrupt) ids.add(this.#interrupt.piece.card.id);
     if (this.#state.discardOpen) for (const card of this.#viewedPile(this.#state)) ids.add(card.id);
     const clips: string[] = [];
     for (const id of ids) {
