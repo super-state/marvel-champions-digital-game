@@ -431,7 +431,14 @@ function answerOffer(yes: boolean) {
       kind: choice.event.kind,
       amount: choice.event.amount ?? 1,
     };
-  if (++offerIndex < choice.offers.length && acceptedOffers.length < choice.max) {
+  // Another copy of the same card is asked about only when it could still add something: never after a no (no to one
+  // Backflip is no to both), and not after a yes whose effect covers everything ("prevent all", "instead"), since the
+  // second copy would then do nothing. A copy that stacks (Emergency's "reduce by 1") is still offered after a yes.
+  const covers = yes && /\b(all|instead)\b/i.test(offer.effect ?? offer.question);
+  const name = nameOf(offer.cardId);
+  do offerIndex++;
+  while (offerIndex < choice.offers.length && (!yes || covers) && nameOf(choice.offers[offerIndex]!.cardId) === name);
+  if (offerIndex < choice.offers.length && acceptedOffers.length < choice.max) {
     render();
     return;
   }

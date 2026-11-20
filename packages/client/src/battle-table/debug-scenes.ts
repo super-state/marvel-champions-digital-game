@@ -100,6 +100,11 @@ const SCENES: Record<string, Scene> = {
     hero: { form: "hero", damage: 3, statuses: { tough: 1 } },
     hand: ["01005", "01089", "01087", "01090"],
   },
+  /** Two Backflips in hand as Rhino attacks: one question covers both copies. */
+  backflips: {
+    hero: { form: "hero" },
+    hand: ["01003", "01003", "01089"],
+  },
 };
 
 export function sceneNames(): string[] {
