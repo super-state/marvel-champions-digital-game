@@ -2,6 +2,7 @@ import { statHue } from "../tokens.js";
 import "./design.css";
 import "./battle.css";
 import { besideSpot, dockSpot } from "./dock-spot.js";
+import { handBetweenBeats } from "./hand-flow.js";
 import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js";
 import { arrangeScene } from "./debug-scenes.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
@@ -976,15 +977,21 @@ function act(work: () => void) {
   }
 }
 
+/** Set by `cancel` for the render it makes: the beats that follow come out of a called-off payment. */
+let paymentCalledOff = false;
+
 function cancel() {
   const returned = staged?.name;
   // A reaction called off goes with its question: what it was about plays out as if passed.
   reacting = null;
+  paymentCalledOff = !!state.payment;
   model.cancel();
   staged = null;
   flying = false;
   if (returned) say(`${returned} back to hand`);
+  // `present` starts inside this render, so the flag lasts only for the beats the cancel itself set off.
   render();
+  paymentCalledOff = false;
 }
 
 function pay() {
@@ -1899,7 +1906,9 @@ async function present(beats: Snapshot["beats"]) {
   undoButton.disabled = restart.disabled = true;
   const pendingDraws = new Set(beats.flatMap((beat) => beat.draw ?? []));
   // Out of a payment that was called off (a reaction cancelled), the table stops dimming for it before playing on.
-  if (!state.payment) {
+  // Only then: after a real payment the hand has already settled, and the final hand would open a slot for a card
+  // still on its way (Black Cat's pick-up) before it arrives.
+  if (paymentCalledOff && !state.payment) {
     boardViewport.removeAttribute("data-paying");
     table?.endPayment(
       state.hand.filter((card) => card.id !== staged?.id && !pendingDraws.has(card.id)),
@@ -1926,7 +1935,7 @@ async function present(beats: Snapshot["beats"]) {
     }
     if (beat.draw) {
       for (const id of beat.draw) pendingDraws.delete(id);
-      displayedHand = state.hand.filter((card) => !pendingDraws.has(card.id));
+      displayedHand = handBetweenBeats(displayedHand, state.hand, beats.slice(index + 1), staged?.id ?? null);
       const deckSize = state.deckCount + pendingDraws.size;
       table?.showDraw(displayedHand, beat.draw, deckSize, state.discard);
       deckCount.textContent = String(deckSize);
@@ -1937,6 +1946,8 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.handDiscard) {
       const fresh = beat.handDiscard.filter((id) => !preAnimated.has(id));
       for (const id of beat.handDiscard) preAnimated.delete(id);
+      // Discarded already (a payment's resources fly off when paid): out of the hand being shown all the same.
+      displayedHand = displayedHand.filter((card) => fresh.includes(card.id) || !beat.handDiscard!.includes(card.id));
       if (!fresh.length) continue;
       narrate(beat, feedLineOf(beat));
       await new Promise<void>((resolve) => (table ? table.animateDiscards(fresh, resolve) : resolve()));
@@ -1946,8 +1957,7 @@ async function present(beats: Snapshot["beats"]) {
     }
     if (beat.returned) {
       narrate(beat, feedLineOf(beat));
-      const back = state.hand.filter((card) => beat.returned!.includes(card.id));
-      displayedHand = [...displayedHand.filter((card) => !beat.returned!.includes(card.id)), ...back];
+      displayedHand = handBetweenBeats(displayedHand, state.hand, beats.slice(index + 1), staged?.id ?? null);
       table?.showDraw(displayedHand, beat.returned, state.deckCount + pendingDraws.size, state.discard);
       await sleep(760);
       continue;

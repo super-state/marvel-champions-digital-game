@@ -64,6 +64,11 @@ const SCENES: Record<string, Scene> = {
     hand: ["01002", "01090"],
     deckTop: ["01089", "01087"],
   },
+  /** Avengers Mansion ready on the table: use it to watch a card drawn by an effect come into the hand. */
+  mansion: {
+    play: [{ code: "01091" }],
+    hand: ["01089", "01087"],
+  },
   /** Hard to Keep Down on an unhurt Rhino surges into "I'm Tough!": end the turn to watch it. */
   surge: {
     encounterTop: ["01110", "01104", "01105"],
