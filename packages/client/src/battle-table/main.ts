@@ -941,6 +941,8 @@ function pay() {
   if (discarding || !payment?.canPay || !table) return;
   const flights = payment.discards;
   if (!model.pay()) return;
+  // Paid: the bar folds away at once, before the hand settles back down under where it was.
+  dock.setAttribute("data-idle", "");
   animateDiscards(flights, "", () => {
     // Keep a resolving event on the mat while the player chooses its target.
     staged = !payment.ability && state.choice && payment.subject.type === "event" ? payment.subject : null;
@@ -2116,12 +2118,14 @@ async function present(beats: Snapshot["beats"]) {
           primary: { label: "Continue", icon: "next", attention: true, onClick: () => readReveal.click() },
         });
         readReveal.focus({ preventScroll: true });
+        table?.holdReveal(true);
         // The table goes soft around the revealed card while it waits to be read.
         revealFocus = beat.reveal.id;
         focusBlur.hidden = false;
         placeLabels();
         requestAnimationFrame(() => (focusBlur.dataset.ready = ""));
         await new Promise<void>((resolve) => readReveal.addEventListener("click", () => resolve(), { once: true }));
+        table?.holdReveal(false);
         revealFocus = null;
         delete focusBlur.dataset.ready;
         focusBlur.hidden = !state.choice?.mulligan;
@@ -2481,6 +2485,7 @@ function deal() {
 
 function start() {
   pinCard(null);
+  table?.holdReveal(false);
   try {
     deal();
   } catch (error) {
@@ -2683,12 +2688,14 @@ try {
 setRailCollapsed(railStored ? railStored === "1" : matchMedia("(hover: hover) and (max-width: 1100px)").matches, false);
 
 /**
- * A folded card panel floats the card whose menu is open over the table's edge (a touch screen has no hover). A
+ * A folded card panel floats the card whose menu is open over the table's edge on a touch screen (no hover). A
  * hovered card shows beside itself instead (`placeHoverCard`), or full size in place if it is in the hand.
  */
 function paintReading() {
-  arena.toggleAttribute("data-reading", !!menuCard && !hoveredCard);
+  // Only without a mouse: with one, the card being pointed at already shows beside itself or grows in the hand.
+  arena.toggleAttribute("data-reading", !!menuCard && !hoveredCard && touchOnly.matches);
 }
+const touchOnly = matchMedia("(hover: none)");
 
 /**
  * With the card panel folded, a hovered table card shows full size right beside it (`besideSpot`), following it on
@@ -2717,11 +2724,15 @@ function pinCard(id: string | null) {
   placeHoverCard();
 }
 
+/** The card is in the hand as the table shows it, a payment's stand-in for a resource ability included. */
+function inHand(id: string) {
+  return displayedHand.some((card) => card.id === id) || !!state?.hand.some((card) => card.id === id);
+}
+
 function placeHoverCard() {
   const id = hoveredCard;
   const folded = roomy.matches && arena.hasAttribute("data-collapsed");
-  const card =
-    id && folded && !state?.hand.some((item) => item.id === id) ? cards().find((item) => item.id === id) : undefined;
+  const card = id && folded && !inHand(id) ? cards().find((item) => item.id === id) : undefined;
   const point = card?.art && table ? table.anchors().find((anchor) => anchor.id === id) : undefined;
   if (!card || !point) {
     hoverPicture.hidden = true;

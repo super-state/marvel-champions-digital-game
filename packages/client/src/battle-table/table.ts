@@ -1094,6 +1094,15 @@ export class BattleTable {
     this.#startFlight(id, boostFor ? "tuck" : "place");
   }
 
+  #revealHeld = false;
+  /** The revealed card waits to be read before Continue: it stands full size in the middle of the table. */
+  holdReveal(held: boolean): void {
+    if (this.#revealHeld === held) return;
+    this.#revealHeld = held;
+    this.#layout();
+    this.#requestFrame();
+  }
+
   revealEncounter(card: { id: string; name: string; art: string; landscape: boolean }): void {
     if (!this.#state) return;
     if (!this.#encounters.has(card.id)) this.dealEncounter(card.id);
@@ -1667,16 +1676,12 @@ export class BattleTable {
       const host = card.boostFor ? enemyPoses.get(card.boostFor) : undefined;
       // Facedown cards come and go each villain phase: they lie on the table but never move the fit.
       if (card.id !== this.#revealing) onBoard.add(card.id);
-      if (card.id === this.#revealing)
-        this.#pose(
-          card.id,
-          w * 0.5,
-          h * (w < 550 ? 0.3 : 0.38),
-          Math.min(h * 0.245, w * 0.24),
-          1.75,
-          this.#camera.rotation.x,
-        );
-      else if (card.boostFor && host) {
+      if (card.id === this.#revealing) {
+        // Waiting to be read it stands full size, its top kept on screen; otherwise it shows briefly at table size.
+        const width = this.#revealHeld && w >= 741 ? Math.min(h * 0.4, w * 0.3) : Math.min(h * 0.245, w * 0.24);
+        const y = Math.max(h * (w < 550 ? 0.3 : 0.38), 16 + width * (card.landscape ? 0.5 : 0.7));
+        this.#pose(card.id, w * 0.5, y, width, 1.75, this.#camera.rotation.x);
+      } else if (card.boostFor && host) {
         // A boost card waits facedown beside the enemy it was dealt to, tucked under its right edge, until the
         // activation turns it up.
         const stacked = boosts.get(card.boostFor) ?? 0;
