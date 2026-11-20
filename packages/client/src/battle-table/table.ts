@@ -423,6 +423,8 @@ export class BattleTable {
     origin: THREE.Vector3;
     color: THREE.Color;
     burst?: boolean;
+    /** The target got out of the way (Backflip): it neither recoils nor flashes red. */
+    dodged?: boolean;
   } | null = null;
 
   /** Throw a burst of additive sparks from a point; they fly, fall and fade inside the frame loop. */
@@ -468,7 +470,7 @@ export class BattleTable {
     this.#burst(at, 0xe8fff0, 6, 0.4, 1.6);
   }
 
-  strike(source: string | null, target: string): void {
+  strike(source: string | null, target: string, options: { dodged?: boolean } = {}): void {
     const piece = source && this.#pieces.get(source);
     if (!source || source === target || !piece || !this.#pieces.has(target) || this.#reduced.matches) return;
     this.#strike = {
@@ -477,6 +479,7 @@ export class BattleTable {
       start: performance.now(),
       origin: piece.root.position.clone(),
       color: this.#pieces.get(target)!.face.material.color.clone(),
+      dodged: !!options.dodged,
     };
     this.#requestFrame();
   }
@@ -2056,7 +2059,7 @@ export class BattleTable {
             // Coil a little on the wind-up, stretch into the dash.
             const stretch = 1 - 0.04 * pull * (1 - dash) + 0.07 * dash * (1 - recovery);
             piece.root.scale.setScalar(piece.target.scale * stretch);
-          } else if (raw >= HIT_CONTACT_MS) {
+          } else if (raw >= HIT_CONTACT_MS && !strike.dodged) {
             const age = ms - HIT_CONTACT_MS;
             const recoil = Math.sin(Math.min(1, age / 220) * Math.PI) * Math.exp(-age / 180);
             piece.root.position.lerpVectors(piece.target.position, strike.origin, -0.28 * recoil);
@@ -2291,13 +2294,16 @@ export class BattleTable {
         this.#sheen.visible = false;
       } else {
         this.#sheen.visible = true;
+        // Bursts out of the card where the blow lands, then the Backflip knocks it away.
         token.position.set(
-          -0.14 * (1 - fall) + 1.14 * rebound,
+          1.14 * rebound,
           0.08 + 0.45 * rebound,
-          0.075 + 1.2 * (1 - fall * fall) + 0.75 * Math.sin(Math.PI * rebound),
+          0.075 + 0.32 * Math.sin(Math.PI * fall) + 0.75 * Math.sin(Math.PI * rebound),
         );
         token.rotation.z = -0.15 * (1 - fall) + rebound * 0.72;
-        token.scale.setScalar(1 - THREE.MathUtils.smoothstep(rebound, 0.68, 1));
+        token.scale.setScalar(
+          THREE.MathUtils.smoothstep(fall, 0, 0.45) * 1.15 * (1 - THREE.MathUtils.smoothstep(rebound, 0.68, 1)),
+        );
       }
       if (t === 1) {
         token.removeFromParent();

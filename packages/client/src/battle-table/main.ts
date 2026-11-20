@@ -62,6 +62,8 @@ const reticle = element("attack-reticle");
 document.body.append(element("phase-banner"));
 const pendingMark = element("pending-mark");
 let aimTarget: string | null = null;
+/** The enemy whose attack is under way, from its aim until the attack resolves. */
+let attacker: string | null = null;
 let heldEncounter: string | null = null;
 /** What the table is darkened around right now (`spotlight.ts`). */
 let spot: Spot | null = null;
@@ -1905,6 +1907,7 @@ async function present(beats: Snapshot["beats"]) {
     }
     if (beat.attackAim) {
       const { source, target } = beat.attackAim;
+      attacker = source;
       table?.windUp(source);
       await sleep(90);
       const projected = table?.anchors();
@@ -1944,6 +1947,13 @@ async function present(beats: Snapshot["beats"]) {
       continue;
     }
     if (beat.deflection) {
+      // The attack still comes in: the attacker charges, and the damage bursts out where it would land before the
+      // card knocks it away. The hero dodged, so it neither recoils nor flashes red.
+      if (attacker && !reducedMotion()) {
+        table?.strike(attacker, state.hero.id, { dodged: true });
+        await sleep(HIT_CONTACT_MS);
+        clearAim();
+      }
       table?.deflectDamage(beat.deflection.card, beat.deflection.amount);
       floatNumber(beat.deflection.card, "blocked", "Blocked", `${beat.deflection.amount} damage`);
     }
