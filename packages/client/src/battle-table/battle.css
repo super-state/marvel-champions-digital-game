@@ -598,6 +598,15 @@ button:focus-visible {
   flex-wrap: wrap;
   justify-content: center;
 }
+/* Opened toward one side of the card, away from its full-size picture. */
+#decision[data-identity][data-align="end"] {
+  left: max(8px, var(--hero-x));
+  translate: -100% -100%;
+}
+#decision[data-identity][data-align="start"] {
+  left: var(--hero-x);
+  translate: 0 -100%;
+}
 #decision .menu-action {
   min-height: 52px;
   padding: 0 14px;

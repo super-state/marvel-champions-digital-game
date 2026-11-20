@@ -704,8 +704,21 @@ function hoverCard(id: string | null) {
  * The card being read: the one pointed at, or the card whose menu is open while the pointer is in that menu, so
  * moving from Peter Parker onto his Flip button keeps his picture up until the pointer leaves both.
  */
+let hoverGrace = 0;
 function showHovered() {
-  hoveredCard = pointedCard ?? (overMenu && menuCard ? menuCard : null);
+  const next = pointedCard ?? (overMenu && menuCard ? menuCard : null);
+  clearTimeout(hoverGrace);
+  // Crossing the gap between a card and its open menu lets go only after a moment, so the picture doesn't blink.
+  if (!next && menuCard && hoveredCard === menuCard) {
+    hoverGrace = window.setTimeout(() => {
+      hoveredCard = null;
+      paintReading();
+      placeHoverCard();
+      if (!readingCard) inspect(null);
+    }, 220);
+    return;
+  }
+  hoveredCard = next;
   paintReading();
   placeHoverCard();
   if (!readingCard) inspect(hoveredCard);
@@ -1013,7 +1026,12 @@ function animateDiscards(ids: readonly string[], message: string, onComplete: ()
 
 /** A played event whose target the player is still to pick: the choice waiting now is that event's own. */
 function awaitsTarget(id: string): boolean {
-  return !!state.choice && !state.payment && state.choiceSource === id && state.choice.options.some((option) => option.cardId);
+  return (
+    !!state.choice &&
+    !state.payment &&
+    state.choiceSource === id &&
+    state.choice.options.some((option) => option.cardId)
+  );
 }
 
 function choose(id: string | null) {
@@ -1550,7 +1568,14 @@ function placeLabels() {
   if (menuCard) {
     const hero = projected.find((p) => p.id === menuCard);
     if (hero) {
-      decision.style.setProperty("--hero-x", hero.x + "px");
+      // With the card's picture showing beside it, the menu opens over the card toward the other side, so the picture
+      // stays where it is and never covers the buttons.
+      const side = previewSpot(menuCard)?.side;
+      decision.dataset.align = side === "right" ? "end" : side === "left" ? "start" : "";
+      decision.style.setProperty(
+        "--hero-x",
+        (side === "right" ? hero.right : side === "left" ? hero.left : hero.x) + "px",
+      );
       decision.style.setProperty("--hero-y", hero.y - (hero.bottom - hero.y) * 0.74 + "px");
     }
   }
@@ -2786,20 +2811,34 @@ function inHand(id: string) {
 }
 
 function placeHoverCard() {
-  const id = hoveredCard;
-  const folded = roomy.matches && arena.hasAttribute("data-collapsed");
-  const card = id && folded && !inHand(id) ? cards().find((item) => item.id === id) : undefined;
-  const point = card?.art && table ? table.anchors().find((anchor) => anchor.id === id) : undefined;
-  if (!card || !point) {
+  const preview = hoveredCard ? previewSpot(hoveredCard) : null;
+  if (!preview) {
     hoverPicture.hidden = true;
     return;
   }
+  const { card, size, spot } = preview;
   // A short fade as it appears or moves on to another card, so it never snaps in from nowhere.
   const fresh = hoverPicture.hidden || hoverPicture.getAttribute("src") !== card.art;
-  if (hoverPicture.getAttribute("src") !== card.art) hoverPicture.src = card.art;
+  if (hoverPicture.getAttribute("src") !== card.art) hoverPicture.src = card.art!;
   hoverPicture.alt = card.name;
   if (fresh && !reducedMotion())
     hoverPicture.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
+  hoverPicture.style.width = `${Math.round(size.width)}px`;
+  hoverPicture.style.height = `${Math.round(size.height)}px`;
+  hoverPicture.style.left = `${Math.round(spot.left)}px`;
+  hoverPicture.style.top = `${Math.round(spot.top)}px`;
+  hoverPicture.hidden = false;
+}
+
+/**
+ * Where a table card's full-size picture shows while it is hovered (the card panel folded), and on which side of the
+ * card: `besideSpot`, clear of a pinned card. The card's own menu opens on the other side, so neither moves the other.
+ */
+function previewSpot(id: string) {
+  const folded = roomy.matches && arena.hasAttribute("data-collapsed");
+  const card = folded && !inHand(id) ? cards().find((item) => item.id === id) : undefined;
+  const point = card?.art && table ? table.anchors().find((anchor) => anchor.id === id) : undefined;
+  if (!card || !point) return null;
   const field = playfield.getBoundingClientRect();
   const view = stage.getBoundingClientRect();
   const dx = view.left - field.left;
@@ -2810,23 +2849,13 @@ function placeHoverCard() {
   // Clear of a pinned card, so the two can be read side by side.
   const pinned = pinnedCard.hidden ? 0 : pinnedCard.offsetWidth + 28;
   const pinnedLeft = arena.dataset.rail === "left";
-  // The card's open menu counts as part of it, so the picture never lies over its buttons.
   const around = { left: dx + point.left, right: dx + point.right, top: dy + point.top, bottom: dy + point.bottom };
-  if (id === menuCard && !decision.hidden) {
-    const menu = decision.getBoundingClientRect();
-    around.left = Math.min(around.left, menu.left - field.left);
-    around.right = Math.max(around.right, menu.right - field.left);
-  }
   const spot = besideSpot(around, size, {
     left: pinnedLeft ? pinned : 0,
     width: field.width - pinned,
     height: field.height,
   });
-  hoverPicture.style.width = `${Math.round(size.width)}px`;
-  hoverPicture.style.height = `${Math.round(size.height)}px`;
-  hoverPicture.style.left = `${Math.round(spot.left)}px`;
-  hoverPicture.style.top = `${Math.round(spot.top)}px`;
-  hoverPicture.hidden = false;
+  return { card, size, spot, side: spot.left >= around.right ? ("right" as const) : ("left" as const) };
 }
 
 /**
