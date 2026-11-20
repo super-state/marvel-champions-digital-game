@@ -1995,13 +1995,10 @@ async function present(beats: Snapshot["beats"]) {
       const count = element("encounter-count");
       count.textContent = String(Math.max(0, Number(count.textContent) - 1));
       if (beat.boostFor) {
-        // A boost card lands facedown beside its enemy: say so on the card, then tag it until it turns up.
-        await sleep(reducedMotion() ? 120 : 480);
-        stampCard(beat.encounterDeal, "Boost", "boost");
-        await sleep(reducedMotion() ? 300 : 860);
+        // A boost card slides facedown under its enemy carrying its boost tag, which stays until it turns up.
         tagBoost(beat.encounterDeal);
         placeLabels();
-        await sleep(200);
+        await sleep(reducedMotion() ? 300 : 900);
         continue;
       }
       // The encounter step, called out like the others: the table darkens around the card dealt to the player.
