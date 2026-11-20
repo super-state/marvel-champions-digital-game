@@ -43,6 +43,8 @@ const preview = element<HTMLImageElement>("preview");
 const decision = element("decision");
 const choiceShade = element("choice-shade");
 const focusBlur = element("focus-blur");
+/** A revealed encounter card waiting on Continue: the table blurs around it. */
+let revealFocus: string | null = null;
 const defenseShade = document.querySelector<SVGSVGElement>("#defense-shade")!;
 const abilityGlow = document.querySelector<SVGSVGElement>("#ability-glow")!;
 const abilityOutlines = document.querySelector<SVGGElement>("#ability-outlines")!;
@@ -1314,7 +1316,16 @@ function placeLabels() {
     if (card)
       tag.style.transform = `translate(${Math.round(card.right - card.width * 0.32)}px,${Math.round(card.y)}px)`;
   }
-  if (!focusBlur.hidden) {
+  if (!focusBlur.hidden && revealFocus) {
+    // Everything but the revealed card, cut out along its outline.
+    const outline = table.cardOutline(revealFocus);
+    const { width, height } = focusBlur.getBoundingClientRect();
+    focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = "";
+    focusBlur.style.clipPath = outline.length
+      ? `path(evenodd, "M0 0 H${Math.round(width)} V${Math.round(height)} H0 Z M${outline.join(" L")} Z")`
+      : "";
+  } else if (!focusBlur.hidden) {
+    focusBlur.style.clipPath = "";
     // Fades out above the hand with no edge to see, measured from where the hand rests, so hovering moves nothing.
     const edge = table.paymentEdge;
     const mask = `linear-gradient(to bottom, #000 ${Math.round(edge - 30)}px, transparent ${Math.round(edge + 90)}px)`;
@@ -1323,7 +1334,7 @@ function placeLabels() {
     if (table.handSettled) focusBlur.dataset.ready = "";
   }
   // The mulligan question waits for the dealt cards to land too.
-  dock.toggleAttribute("data-waiting", !focusBlur.hidden && !("ready" in focusBlur.dataset));
+  dock.toggleAttribute("data-waiting", !focusBlur.hidden && !revealFocus && !("ready" in focusBlur.dataset));
   if (heldEncounter && !choiceShade.hidden) {
     const card = projected.find((p) => p.id === heldEncounter);
     if (card)
@@ -1923,8 +1934,16 @@ async function present(beats: Snapshot["beats"]) {
           primary: { label: "Continue", icon: "next", attention: true, onClick: () => readReveal.click() },
         });
         readReveal.focus({ preventScroll: true });
+        // The table goes soft around the revealed card while it waits to be read.
+        revealFocus = beat.reveal.id;
+        focusBlur.hidden = false;
         placeLabels();
+        requestAnimationFrame(() => (focusBlur.dataset.ready = ""));
         await new Promise<void>((resolve) => readReveal.addEventListener("click", () => resolve(), { once: true }));
+        revealFocus = null;
+        delete focusBlur.dataset.ready;
+        focusBlur.hidden = !state.choice?.mulligan;
+        focusBlur.style.clipPath = "";
         revealHint.hidden = readReveal.hidden = true;
         narrate(beat, null);
       }
@@ -2136,7 +2155,7 @@ function render() {
             ? "ending"
             : "hero",
     );
-  focusBlur.hidden = !state.choice?.mulligan;
+  focusBlur.hidden = !state.choice?.mulligan && !revealFocus;
   if (focusBlur.hidden) delete focusBlur.dataset.ready;
   choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
   const asked = paintDock(dockView());
