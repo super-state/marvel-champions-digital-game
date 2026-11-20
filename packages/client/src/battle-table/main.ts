@@ -1189,6 +1189,25 @@ function updateOutlines(group: SVGGElement, ids: readonly string[], tones?: read
   });
 }
 
+/** The attack target fades off once its attack is over. */
+function clearAim() {
+  if (!aimTarget && reticle.hidden) return;
+  aimTarget = null;
+  if (reticle.hidden || reducedMotion()) {
+    reticle.hidden = true;
+    return;
+  }
+  const fade = reticle.animate([{ opacity: 1 }, { opacity: 0, transform: "scale(0.7)" }], {
+    duration: 220,
+    easing: "ease-in",
+    fill: "forwards",
+  });
+  fade.onfinish = () => {
+    if (!aimTarget) reticle.hidden = true;
+    fade.cancel();
+  };
+}
+
 /** The attack target flies from the attacker onto its target. */
 function aimFrom(from: { x: number; y: number } | undefined, to: { x: number; y: number } | undefined) {
   if (!from || !to || reducedMotion()) return;
@@ -1893,6 +1912,8 @@ async function present(beats: Snapshot["beats"]) {
       }
     }
     if (beat.reveal) {
+      // Nothing is aimed while a card is revealed, and no target sits over it.
+      clearAim();
       untagBoost(beat.reveal.id);
       readingCard = beat.reveal.boost || beat.reveal.quick ? null : beat.reveal.id;
       table?.revealEncounter(beat.reveal);
@@ -1988,6 +2009,8 @@ async function present(beats: Snapshot["beats"]) {
       );
     }
     if (beat.hit) {
+      // The attack has landed: its target goes.
+      clearAim();
       table?.strike(beat.hit.source, beat.hit.target);
       await sleep(HIT_CONTACT_MS);
       if (beat.hit.tough) table?.changeStatus(beat.hit.target, "tough", -1);
