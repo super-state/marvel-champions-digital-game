@@ -94,6 +94,11 @@ const choicePicks = new Set<string>();
 let table: BattleTable | undefined;
 let state: Snapshot;
 let staged: BattleCard | null = null;
+/**
+ * An interrupt taken against threat about to land on a scheme (Great Responsibility): the card goes over to the scheme,
+ * and if it turns the threat into damage, the threat is shown turning into a damage token and flying to the hero.
+ */
+let shielding: { card: string; scheme: string; amount: number } | null = null;
 /** A targeted attachment (Spider-Tracer) staged while its host is chosen: it waits over the villain's side. */
 let stagedAttachment: string | null = null;
 const readReveal = element<HTMLButtonElement>("read-reveal");
@@ -417,6 +422,8 @@ function answerOffer(yes: boolean) {
   if (!choice?.offers || discarding || presenting) return;
   const offer = choice.offers[offerIndex]!;
   if (yes) acceptedOffers.push(offer.id);
+  if (yes && choice.event?.kind === "placeThreat" && choice.event.before && choice.event.subject)
+    shielding = { card: offer.cardId, scheme: choice.event.subject, amount: choice.event.amount ?? 1 };
   if (++offerIndex < choice.offers.length && acceptedOffers.length < choice.max) {
     render();
     return;
@@ -1199,6 +1206,45 @@ function updateOutlines(group: SVGGElement, ids: readonly string[], tones?: read
   });
 }
 
+/** Threat stopped at a scheme becomes a damage token there, then flies across to the hero who takes it. */
+async function convertThreat(scheme: string, target: string, amount: number) {
+  const projected = table?.anchors();
+  const from = projected?.find((a) => a.id === scheme);
+  const to = projected?.find((a) => a.id === target);
+  if (!from || !to || reducedMotion()) return;
+  const token = make("div", "convert-token");
+  token.append(icon("threat"), make("b", "", String(amount)));
+  token.style.left = from.x + "px";
+  token.style.top = from.y + "px";
+  stage.append(token);
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  // Appears as threat on the scheme, turns red, then arcs over to the hero.
+  const appear = token.animate(
+    [
+      { transform: "scale(.3)", opacity: 0 },
+      { transform: "scale(1.15)", opacity: 1, offset: 0.6 },
+      { transform: "scale(1)", opacity: 1 },
+    ],
+    { duration: 320, easing: "ease-out" },
+  );
+  await appear.finished;
+  await sleep(160);
+  token.dataset.kind = "damage";
+  token.replaceChildren(icon("damage"), make("b", "", String(amount)));
+  await sleep(260);
+  const fly = token.animate(
+    [
+      { transform: "translate(0, 0) scale(1)" },
+      { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - 70}px) scale(1.1)`, offset: 0.5 },
+      { transform: `translate(${dx}px, ${dy}px) scale(.85)` },
+    ],
+    { duration: 520, easing: "cubic-bezier(.45,0,.55,1)", fill: "forwards" },
+  );
+  await fly.finished;
+  token.remove();
+}
+
 /** A When Revealed firing: the card rises with a flash, and the dock says what is happening. */
 async function whenRevealedFires(beat: Beat, card: { id: string; name: string }) {
   table?.activateWhenRevealed(card.id);
@@ -1857,10 +1903,16 @@ async function present(beats: Snapshot["beats"]) {
       }
       activationRing(beat.activate.card);
       await sleep(360);
-      table?.channelEvent(beat.activate.card);
-      await sleep(450);
-      table?.markActor(beat.activate.hero);
-      activationRing(beat.activate.hero);
+      if (shielding?.card === beat.activate.card) {
+        // It goes to the scheme it protects, not onto the hero.
+        table?.channelEventTo(beat.activate.card, shielding.scheme);
+        await sleep(560);
+      } else {
+        table?.channelEvent(beat.activate.card);
+        await sleep(450);
+        table?.markActor(beat.activate.hero);
+        activationRing(beat.activate.hero);
+      }
     }
     if (beat.interrupt) {
       table?.pulseInterrupt(beat.interrupt);
@@ -1872,6 +1924,7 @@ async function present(beats: Snapshot["beats"]) {
       floatNumber(beat.deflection.card, "blocked", "Blocked", `${beat.deflection.amount} damage`);
     }
     if (beat.discardEvent) {
+      if (shielding?.card === beat.discardEvent) shielding = null;
       const card = state.discard.find((c) => c.id === beat.discardEvent);
       if (card) {
         table?.discardEvent(card);
@@ -2048,8 +2101,13 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.hit) {
       // The attack has landed: its target goes.
       clearAim();
-      table?.strike(beat.hit.source, beat.hit.target);
-      await sleep(HIT_CONTACT_MS);
+      if (shielding && beat.hit.source === shielding.card) {
+        // The threat it stopped turns into damage at the scheme and flies to the hero.
+        await convertThreat(shielding.scheme, beat.hit.target, beat.hit.amount);
+      } else {
+        table?.strike(beat.hit.source, beat.hit.target);
+        await sleep(HIT_CONTACT_MS);
+      }
       if (beat.hit.tough) table?.changeStatus(beat.hit.target, "tough", -1);
       if (beat.hit.amount) {
         shakeStage(beat.hit.amount >= 4 ? "heavy" : "light");

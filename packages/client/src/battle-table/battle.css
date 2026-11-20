@@ -1730,3 +1730,38 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
 .anchor[data-dimmed] {
   filter: brightness(0.45) saturate(0.7);
 }
+
+/* Threat stopped at a scheme (Great Responsibility) turning into damage on its way to the hero. */
+.convert-token {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  translate: -50% -50%;
+  padding: 7px 11px 7px 8px;
+  border: 2px solid #ffd27a;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 30%, #ffb347, #c96a0c);
+  color: #fff;
+  box-shadow:
+    0 6px 18px #000a,
+    0 0 18px #ff9a3c99;
+  font: 900 22px/1 var(--font-ui);
+  pointer-events: none;
+  transition:
+    background 200ms,
+    border-color 200ms,
+    box-shadow 200ms;
+}
+.convert-token .icon {
+  width: 22px;
+  height: 22px;
+}
+.convert-token[data-kind="damage"] {
+  border-color: #ffb0a0;
+  background: radial-gradient(circle at 35% 30%, #ff6a52, #9c1a10);
+  box-shadow:
+    0 6px 18px #000a,
+    0 0 22px #ff2a14b3;
+}

@@ -601,6 +601,7 @@ export class BattleTable {
     const newDraw = this.#state?.drawn !== state.drawn;
     if (this.#power !== state.staged?.id) {
       this.#power = null;
+      this.#powerHost = null;
       this.#actionShadow.removeFromParent();
     }
     if (state.menuCard || this.#state?.menuCard) this.#hovered = state.menuCard;
@@ -1006,9 +1007,23 @@ export class BattleTable {
     this.#requestFrame();
   }
 
+  /** The card a played event goes to when it is not the hero: the scheme Great Responsibility shields, say. */
+  #powerHost: string | null = null;
+
+  /** A played event goes over to the card it acts on (a scheme it shields) instead of onto the hero. */
+  channelEventTo(id: string, host: string): void {
+    if (!this.#pieces.has(id) || !this.#pieces.has(host)) return this.channelEvent(id);
+    this.#power = id;
+    this.#powerHost = host;
+    this.#layout();
+    this.#startFlight(id, "place");
+    this.#requestFrame();
+  }
+
   channelEvent(id: string): void {
     if (!this.#pieces.has(id)) return;
     this.#power = id;
+    this.#powerHost = null;
     const hero = this.#state && this.#pieces.get(this.#state.hero.id);
     if (hero) {
       // Project the shadow onto the receiving face, with a small offset beyond the action card's edge.
@@ -2057,7 +2072,20 @@ export class BattleTable {
         }
       }
       // The hero is updated first. Follow its live face, including its lift and roll during a strike.
-      if (id === this.#power && this.#state) {
+      const shielded = id === this.#power && this.#powerHost ? this.#pieces.get(this.#powerHost) : undefined;
+      if (shielded) {
+        // Held up over the card it protects, overlapping its edge, so it reads as standing in front of it.
+        shielded.root.updateMatrixWorld();
+        const lift = Math.max(0.2, this.#tokenTop(shielded) + 0.08);
+        piece.target.position.set(0.42, 0.06, lift).applyMatrix4(shielded.root.matrixWorld);
+        piece.target.pitch = shielded.root.rotation.x;
+        piece.target.roll = shielded.root.rotation.z - 0.06;
+        piece.target.scale = shielded.root.scale.x * (shielded.card.landscape ? 0.8 : 0.92);
+        if (!this.#flights.has(id)) {
+          this.#apply(piece, 1);
+          continue;
+        }
+      } else if (id === this.#power && this.#state) {
         const heroPiece = this.#pieces.get(this.#state.hero.id)!;
         const hero = heroPiece.root;
         hero.updateMatrixWorld();
