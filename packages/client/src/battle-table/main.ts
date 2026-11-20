@@ -269,6 +269,9 @@ function paintDock(view: DockView): boolean {
     ? (document.activeElement as HTMLElement).dataset.option
     : undefined;
   dockOptions.hidden = !view.options?.length;
+  // An even grid: up to three side by side, four as two by two, more in rows of three.
+  const optionCount = view.options?.length ?? 0;
+  dockOptions.style.setProperty("--columns", String(optionCount === 4 ? 2 : Math.min(3, Math.max(1, optionCount))));
   dockOptions.replaceChildren(
     ...(view.options ?? []).map((option) => {
       const button = make("button", "btn btn-secondary btn-option");
@@ -1934,7 +1937,10 @@ async function present(beats: Snapshot["beats"]) {
       setSpot({ glow: [{ id: beat.encounterDeal, tone: "attack" }], cutouts: [beat.encounterDeal] });
       spotted = true;
       placeLabels();
-      await sleep(reducedMotion() ? 300 : 760);
+      // Stamped on landing, like a boost card.
+      await sleep(reducedMotion() ? 120 : 480);
+      stampCard(beat.encounterDeal, "Encounter");
+      await sleep(reducedMotion() ? 300 : 900);
       continue;
     }
     if (beat.reveal) {
