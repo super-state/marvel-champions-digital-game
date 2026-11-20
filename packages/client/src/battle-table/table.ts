@@ -639,6 +639,7 @@ export class BattleTable {
     if (this.#power !== state.staged?.id) {
       this.#power = null;
       this.#powerHost = null;
+      this.#powerWaiting = false;
       this.#actionShadow.removeFromParent();
     }
     if (state.menuCard || this.#state?.menuCard) this.#hovered = state.menuCard;
@@ -1048,19 +1049,32 @@ export class BattleTable {
   #powerHost: string | null = null;
 
   /**
-   * An event at work lies over the card it acts on (the hero, or a scheme it shields), unless that card is one the
-   * player must now pick (First Aid's target): then it waits beside the hero like a card being paid for, clear of it.
+   * An event that still needs its target picked (First Aid) waits beside the row like a card being paid for, clear of
+   * every card, until `channelEvent` or `channelEventTo` sends it onto the one picked.
    */
+  #powerWaiting = false;
   get #powerAside(): boolean {
-    const host = this.#powerHost ?? this.#state?.hero.id;
-    return !!this.#power && !!host && !!this.#state?.targets.includes(host);
+    return !!this.#power && this.#powerWaiting;
+  }
+
+  /** A played event waits for its target to be picked, on the mat clear of every card, nothing under it. */
+  holdEvent(id: string): void {
+    if (!this.#pieces.has(id)) return;
+    this.#power = id;
+    this.#powerHost = null;
+    this.#powerWaiting = true;
+    this.#actionShadow.removeFromParent();
+    this.#layout();
+    this.#requestFrame();
   }
 
   /** A played event goes over to the card it acts on (a scheme it shields) instead of onto the hero. */
   channelEventTo(id: string, host: string): void {
-    if (!this.#pieces.has(id) || !this.#pieces.has(host)) return this.channelEvent(id);
+    if (!this.#pieces.has(id) || !this.#pieces.has(host) || host === this.#state?.hero.id) return this.channelEvent(id);
     this.#power = id;
     this.#powerHost = host;
+    this.#powerWaiting = false;
+    this.#actionShadow.removeFromParent();
     this.#layout();
     this.#startFlight(id, "place");
     this.#requestFrame();
@@ -1070,6 +1084,7 @@ export class BattleTable {
     if (!this.#pieces.has(id)) return;
     this.#power = id;
     this.#powerHost = null;
+    this.#powerWaiting = false;
     const hero = this.#state && this.#pieces.get(this.#state.hero.id);
     if (hero) {
       // Project the shadow onto the receiving face, with a small offset beyond the action card's edge.

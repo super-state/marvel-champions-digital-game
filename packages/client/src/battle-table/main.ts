@@ -1010,8 +1010,29 @@ function animateDiscards(ids: readonly string[], message: string, onComplete: ()
   });
 }
 
+/** A played event whose target the player is still to pick: the choice waiting now is that event's own. */
+function awaitsTarget(id: string): boolean {
+  return !!state.choice && !state.payment && state.choiceSource === id && state.choice.options.some((option) => option.cardId);
+}
+
 function choose(id: string | null) {
   actionCard = null;
+  // An event waiting for its target goes onto the card picked first, then does its work there and leaves.
+  const target = id ? state.choice?.options.find((option) => option.id === id)?.cardId : undefined;
+  if (staged?.type === "event" && target && awaitsTarget(staged.id) && table && !flying) {
+    const event = staged.id;
+    flying = true;
+    table.channelEventTo(event, target);
+    void sleep(reducedMotion() ? 0 : 520).then(() => {
+      flying = false;
+      if (staged?.id === event) resolveChoice(id);
+    });
+    return;
+  }
+  resolveChoice(id);
+}
+
+function resolveChoice(id: string | null) {
   act(() => {
     if (!model.choose(id)) return;
     state = model.snapshot();
@@ -2000,7 +2021,10 @@ async function present(beats: Snapshot["beats"]) {
       }
       activationRing(beat.activate.card);
       await sleep(360);
-      if (reacting?.card === beat.activate.card && reacting.subject !== beat.activate.hero) {
+      if (awaitsTarget(beat.activate.card)) {
+        // Its target is still to be picked (First Aid): it waits on the mat, on no one, until the player picks.
+        table?.holdEvent(beat.activate.card);
+      } else if (reacting?.card === beat.activate.card && reacting.subject !== beat.activate.hero) {
         // It goes to what the moment is happening to (a scheme, a revealed card, an enemy), not onto the hero.
         table?.channelEventTo(beat.activate.card, reacting.subject);
         await sleep(560);
@@ -2568,7 +2592,10 @@ undoButton.onclick = () => {
   for (const id of state.facedownEncounters)
     table?.dealEncounter(id, state.facedownBoosts.find((boost) => boost.id === id)?.enemy ?? null);
   if (view?.reveal) table?.revealEncounter(view.reveal);
-  if (staged?.type === "event") table?.channelEvent(staged.id);
+  if (staged?.type === "event") {
+    if (awaitsTarget(staged.id)) table?.holdEvent(staged.id);
+    else table?.channelEvent(staged.id);
+  }
   inspect(heldEncounter ?? state.hero.id);
 };
 restart.onclick = start;
