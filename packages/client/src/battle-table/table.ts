@@ -2071,7 +2071,10 @@ export class BattleTable {
           const turn = fromDeck ? THREE.MathUtils.smoothstep(progress, 0, 0.6) : t;
           piece.root.rotation.y = Math.PI * (1 - turn);
           if (fromDeck) {
-            const fly = THREE.MathUtils.smoothstep(progress, 0.2, 1);
+            // The usual glide, then a 1% carry past its place in the direction it flew, and back.
+            const fly =
+              THREE.MathUtils.smoothstep(progress, 0.2, 0.9) +
+              Math.sin(Math.PI * THREE.MathUtils.clamp((progress - 0.82) / 0.18, 0, 1)) * 0.01;
             piece.root.position.lerpVectors(from.position, piece.target.position, fly);
             piece.root.position.y += Math.sin(progress * Math.PI) * 1.55;
           }
