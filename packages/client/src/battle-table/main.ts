@@ -94,6 +94,8 @@ const choicePicks = new Set<string>();
 let table: BattleTable | undefined;
 let state: Snapshot;
 let staged: BattleCard | null = null;
+/** A targeted attachment (Spider-Tracer) staged while its host is chosen: it waits over the villain's side. */
+let stagedAttachment: string | null = null;
 const readReveal = element<HTMLButtonElement>("read-reveal");
 const revealHint = element("reveal-hint");
 let readingCard: string | null = null;
@@ -800,10 +802,7 @@ function pick(id: string) {
     return;
   }
   clearFormHint();
-  if (model.isTargetedAttachment(card.id)) {
-    beginPlay(card);
-    return;
-  }
+  stagedAttachment = model.isTargetedAttachment(card.id) ? card.id : null;
   staged = card;
   flying = true;
   render();
@@ -2135,12 +2134,7 @@ function render() {
     });
   }
   const paymentSubject = state.payment?.subject;
-  if (
-    paymentSubject &&
-    !staged &&
-    !model.isTargetedAttachment(paymentSubject.id) &&
-    state.hand.some((card) => card.id === paymentSubject.id)
-  ) {
+  if (paymentSubject && !staged && state.hand.some((card) => card.id === paymentSubject.id)) {
     staged = paymentSubject;
   }
   const abilityCards =
@@ -2181,6 +2175,7 @@ function render() {
     discardOpen,
     hand: displayedHand,
     staged,
+    stagedOverEnemies: !!staged && staged.id === stagedAttachment,
     paymentSources: state.payment?.sources.filter((s) => s.available).map(resourcePieceId) ?? null,
     selected,
   });

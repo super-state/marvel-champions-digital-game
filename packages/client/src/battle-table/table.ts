@@ -43,6 +43,8 @@ export interface TableCards {
   readonly deckCount: number;
   readonly discardOpen: boolean;
   readonly staged: TableCard | null;
+  /** The staged card is an attachment waiting for its host: it hovers over the villain's side, not the hero's. */
+  readonly stagedOverEnemies?: boolean;
   readonly selected: readonly string[];
   readonly defending: boolean;
   readonly menuCard: string | null;
@@ -1623,7 +1625,8 @@ export class BattleTable {
         );
     }
     const permanents = state.inPlay.filter((c) => c.id !== state.staged?.id);
-    if (state.staged && ["ally", "support", "upgrade"].includes(state.staged.type)) permanents.push(state.staged);
+    if (state.staged && !state.stagedOverEnemies && ["ally", "support", "upgrade"].includes(state.staged.type))
+      permanents.push(state.staged);
     const upgrades = permanents.filter(isTuckedUpgrade);
     const visibleUpgrades = permanents.filter((card) => card.type === "upgrade" && card.showAsFullCard);
     const row = [state.hero, ...visibleUpgrades, ...permanents.filter((card) => card.type !== "upgrade")];
@@ -1730,7 +1733,11 @@ export class BattleTable {
       pose.position.copy(eye).addScaledVector(ray, ratio);
       pose.scale *= ratio;
     });
-    if (state.staged && this.#power !== state.staged.id && !permanents.includes(state.staged)) {
+    if (state.staged && state.stagedOverEnemies) {
+      // Out of the hand and held up over the villain's side, in the open space beside the minions, until its host is chosen.
+      onBoard.add(state.staged.id);
+      this.#pose(state.staged.id, w * 0.71, h * 0.5, playWidth * 1.1, 1.18, flat + 0.12);
+    } else if (state.staged && this.#power !== state.staged.id && !permanents.includes(state.staged)) {
       onBoard.add(state.staged.id);
       this.#pose(
         state.staged.id,

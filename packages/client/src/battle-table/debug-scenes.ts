@@ -89,6 +89,12 @@ const SCENES: Record<string, Scene> = {
     minions: [{ code: "01110", damage: 1 }],
     schemes: [{ code: "01107", threat: 3 }],
   },
+  /** Spider-Tracer in hand with two minions out: the attachment waits over the villain's side while its host is chosen. */
+  tracer: {
+    hero: { form: "hero" },
+    hand: ["01007"],
+    minions: [{ code: "01110" }, { code: "01103" }],
+  },
 };
 
 export function sceneNames(): string[] {
