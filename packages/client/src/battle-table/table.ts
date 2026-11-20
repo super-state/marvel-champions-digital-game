@@ -1927,7 +1927,9 @@ export class BattleTable {
       const piece = this.#pieces.get(card.id);
       if (!piece || this.#flights.has(card.id) || (this.#press?.dragging && this.#press.id === card.id)) continue;
       let goal = 0;
-      if (card.id === this.#hovered && footprint && this.#pointer && !this.#reduced.matches)
+      // A picked card sits a card's thickness from its picked neighbours, so leaning it would cut through them.
+      const picked = this.#state?.selected.includes(card.id);
+      if (card.id === this.#hovered && !picked && footprint && this.#pointer && !this.#reduced.matches)
         goal = THREE.MathUtils.clamp((this.#pointer.x - footprint.x) / footprint.width, -0.5, 0.5) * 0.32;
       // The lean eases in under the pointer but drops at once when the card is let go, so a card settling back
       // into the fan never swings through its neighbour.
