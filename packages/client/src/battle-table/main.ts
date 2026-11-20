@@ -12,6 +12,7 @@ import {
   BattleTable,
   ACTIVATION_MS,
   INTERRUPT_MS,
+  SHINE_MS,
   EXHAUST_MS,
   READY_MS,
   HIT_CONTACT_MS,
@@ -1416,12 +1417,20 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   const milled = beat.milled!;
   const source = beat.millSource;
   if (source && table?.anchors().some((point) => point.id === source.card)) {
-    table.activateWhenRevealed(source.card);
     narrate(beat, null, {
       eyebrow: { text: source.label, icon: "response", tone: "hero" },
       title: nameOf(source.card),
     });
-    await sleep(ACTIVATION_MS);
+    // Just played (Black Cat): it lands in its place first, then shines as its ability starts. A card already in play
+    // fires the way any ability on the table does.
+    if (table.landStaged(source.card)) {
+      await sleep(reducedMotion() ? 150 : 620);
+      table.shinePlayed(source.card);
+      await sleep(reducedMotion() ? 200 : SHINE_MS);
+    } else {
+      table.activateWhenRevealed(source.card);
+      await sleep(ACTIVATION_MS);
+    }
   }
   narrate(beat, feedLineOf(beat));
   const cards = milled.flatMap((id) => {

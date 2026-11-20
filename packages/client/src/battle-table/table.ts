@@ -103,6 +103,8 @@ const SUNK_SHOWS = 1.2;
 /** Room a sunk hand's raised question needs over the hand: the turn bar, its gap and a margin. */
 const QUESTION_ROOM = 64 + 12 + 8;
 const FLICKER_MS = 560;
+/** A card just played shining as it starts its ability (Black Cat's Forced Response). */
+export const SHINE_MS = 760;
 /** How the hand meets the bottom of the table (`BattleTable.setHandLayout`). */
 export interface HandLayout {
   /**
@@ -1001,7 +1003,14 @@ export class BattleTable {
         }`,
     }),
   );
-  #interrupt: { piece: Piece; start: number; lift: number; activation?: { flashed: boolean } } | null = null;
+  #interrupt: {
+    piece: Piece;
+    start: number;
+    lift: number;
+    activation?: { flashed: boolean };
+    /** A card just played (`shinePlayed`): no rise and no smoke, a stretch it is put back from each frame. */
+    shine?: { flashed: boolean; stretch: number };
+  } | null = null;
   #wave: { start: number; lifts: Map<Piece, number> } | null = null;
 
   /** A ripple through the hand, each card hopping in turn: a question about the hand points at it. */
@@ -1045,6 +1054,32 @@ export class BattleTable {
   activateWhenRevealed(id: string): void {
     this.pulseInterrupt(id);
     if (this.#interrupt?.piece === this.#pieces.get(id)) this.#interrupt!.activation = { flashed: false };
+  }
+
+  /**
+   * A card just played that starts an ability as it lands (Black Cat's Forced Response): a light sweeps across it as it
+   * stretches a touch and settles, with a small glint. Not the smoke and rise of an ability on a card already in play.
+   */
+  shinePlayed(id: string): void {
+    const piece = this.#pieces.get(id);
+    if (!piece) return;
+    this.pulseInterrupt(id);
+    if (this.#interrupt?.piece !== piece) return;
+    this.#interruptPuff.removeFromParent();
+    this.#interrupt.shine = { flashed: false, stretch: 1 };
+  }
+
+  /**
+   * The staged card `id` goes down in its place on the table now, before the move ends, so an ability it starts on
+   * entering play fires once it is down. False when it isn't a card that stands on the hero's side.
+   */
+  landStaged(id: string): boolean {
+    const s = this.#state;
+    const card = s?.staged;
+    if (!s || card?.id !== id || s.stagedOverEnemies || !["ally", "support", "upgrade"].includes(card.type))
+      return false;
+    this.setCards({ ...s, staged: null, inPlay: [...s.inPlay.filter((c) => c.id !== id), card] });
+    return true;
   }
 
   #deflection: { token: THREE.Group; start: number } | null = null;
@@ -2193,6 +2228,10 @@ export class BattleTable {
   readonly #draw = (now: number): void => {
     this.#frame = 0;
     if (this.#interrupt) this.#interrupt.piece.root.position.y -= this.#interrupt.lift;
+    if (this.#interrupt?.shine) {
+      this.#interrupt.piece.root.scale.y /= this.#interrupt.shine.stretch;
+      this.#interrupt.shine.stretch = 1;
+    }
     if (this.#wave) {
       for (const [piece, lift] of this.#wave.lifts) piece.root.position.y -= lift;
       this.#wave.lifts.clear();
@@ -2575,13 +2614,23 @@ export class BattleTable {
     }
     if (this.#interrupt) {
       const pulse = this.#interrupt;
-      const t = THREE.MathUtils.clamp((now - pulse.start) / (pulse.activation ? ACTIVATION_MS : INTERRUPT_MS), 0, 1);
+      const length = pulse.shine ? SHINE_MS : pulse.activation ? ACTIVATION_MS : INTERRUPT_MS;
+      const t = THREE.MathUtils.clamp((now - pulse.start) / length, 0, 1);
       const rise = pulse.activation
         ? THREE.MathUtils.smoothstep(t, 0, 0.3) - THREE.MathUtils.smoothstep(t, 0.68, 1)
         : Math.sin(Math.PI * t) ** 2;
       // A revealed card already held up full size near the camera rises only a little, or it would leave the screen.
       const rises = pulse.activation ? (pulse.piece.card.id === this.#revealing ? 0.18 : 0.9) : 0.12;
-      pulse.lift = this.#reduced.matches ? 0 : pulse.piece.root.scale.x * rises * rise;
+      pulse.lift = this.#reduced.matches || pulse.shine ? 0 : pulse.piece.root.scale.x * rises * rise;
+      if (pulse.shine && !this.#reduced.matches) {
+        // Up a touch along its length and back, easing out, as the light crosses it.
+        pulse.shine.stretch = 1 + 0.05 * Math.sin(Math.PI * THREE.MathUtils.smoothstep(t, 0, 0.75));
+        pulse.piece.root.scale.y *= pulse.shine.stretch;
+        if (!pulse.shine.flashed && t >= 0.4) {
+          pulse.shine.flashed = true;
+          this.#burst(pulse.piece.root.position.clone(), 0xfff3d0, 10, 0.8, 0.9);
+        }
+      }
       pulse.piece.root.position.y += pulse.lift;
       if (pulse.activation && !pulse.activation.flashed && t >= 0.3) {
         pulse.activation.flashed = true;
