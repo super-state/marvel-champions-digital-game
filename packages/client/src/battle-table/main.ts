@@ -1962,15 +1962,17 @@ async function present(beats: Snapshot["beats"]) {
   anchors.inert = true;
   undoButton.disabled = restart.disabled = true;
   const pendingDraws = new Set(beats.flatMap((beat) => beat.draw ?? []));
-  // Out of a payment that was called off (a reaction cancelled), the table stops dimming for it before playing on.
-  // Only then: after a real payment the hand has already settled, and the final hand would open a slot for a card
-  // still on its way (Black Cat's pick-up) before it arrives.
-  if (paymentCalledOff && !state.payment) {
+  // Out of a payment, the table stops dimming for it before playing on. Called off (a reaction cancelled), the hand
+  // and staged card go back too; after a real payment the hand has already settled, and the final hand would open a
+  // slot for a card still on its way (Black Cat's pick-up), so only the dimming goes.
+  if (!state.payment) {
     boardViewport.removeAttribute("data-paying");
-    table?.endPayment(
-      state.hand.filter((card) => card.id !== staged?.id && !pendingDraws.has(card.id)),
-      staged,
-    );
+    if (paymentCalledOff)
+      table?.endPayment(
+        state.hand.filter((card) => card.id !== staged?.id && !pendingDraws.has(card.id)),
+        staged,
+      );
+    else table?.clearPaymentDim();
   }
   let spotted = false;
   // The payment screen's stand-ins for resource abilities (Peter Parker's Scientist) are spent by now.

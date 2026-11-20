@@ -896,6 +896,12 @@ export class BattleTable {
     this.setCards({ ...s, paymentSources: null, selected: [], hand, staged });
   }
 
+  /** Paid: the table stops dimming for the payment (a payment with no hand cards to fly off never got there). */
+  clearPaymentDim(): void {
+    const s = this.#state;
+    if (s?.paymentSources) this.setCards({ ...s, paymentSources: null, selected: [] });
+  }
+
   stageEvent(card: TableCard): void {
     const s = this.#state;
     if (!s || s.staged?.id === card.id) return;
@@ -1221,7 +1227,7 @@ export class BattleTable {
     if (this.#state) this.setCards(this.#state);
   }
 
-  /** Revealed cards the effect doesn't keep go to the discard pile, the last one on top. */
+  /** Revealed cards the effect doesn't keep go to the discard pile, the last one on top (the pile's last entry). */
   discardFromReveal(ids: readonly string[]): void {
     const s = this.#state;
     const going = this.#deckReveal.filter((card) => ids.includes(card.id));
@@ -1229,7 +1235,7 @@ export class BattleTable {
     this.#deckReveal = this.#deckReveal.filter((card) => !ids.includes(card.id));
     for (const id of ids) this.#deckPicks.delete(id);
     const left = s.discard.filter((card) => !ids.includes(card.id));
-    this.setCards({ ...s, discard: [...[...going].reverse(), ...left] });
+    this.setCards({ ...s, discard: [...left, ...going] });
     for (const card of going) this.#startFlight(card.id, "discard");
   }
 
@@ -1501,6 +1507,7 @@ export class BattleTable {
     for (const [id, flight] of this.#flights) if (flight.kind !== "tuck") ids.add(id);
     if (this.#power) ids.add(this.#power);
     if (this.#interrupt) ids.add(this.#interrupt.piece.card.id);
+    for (const card of this.#deckReveal) ids.add(card.id);
     if (this.#state.discardOpen) for (const card of this.#viewedPile(this.#state)) ids.add(card.id);
     const clips: string[] = [];
     for (const id of ids) {

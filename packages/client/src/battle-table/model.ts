@@ -388,6 +388,8 @@ export class BattleModel {
     for (const e of events) {
       const before = this.#beats.length;
       if (e.type === "abilityResolved") resolving = { card: e.instanceId, label: triggerLabel(e.abilityId) };
+      // Only the ability that resolved last owns what follows; a move into play or a new step ends its say.
+      else if (e.type === "stepChanged" || e.type === "cardPlayed") resolving = null;
       if (
         e.type === "stepChanged" &&
         e.to.phase === "villain" &&
