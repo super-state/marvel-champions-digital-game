@@ -1925,6 +1925,17 @@ async function present(beats: Snapshot["beats"]) {
         await sleep(200);
         continue;
       }
+      // The encounter step, called out like the others: the table darkens around the card dealt to the player.
+      narrate(
+        beat,
+        { text: "Deal an encounter card", icon: "forced", tone: "villain" },
+        { eyebrow: { text: "Encounter", icon: "forced", tone: "villain" }, title: "Deal an encounter card" },
+      );
+      setSpot({ glow: [{ id: beat.encounterDeal, tone: "attack" }], cutouts: [beat.encounterDeal] });
+      spotted = true;
+      placeLabels();
+      await sleep(reducedMotion() ? 300 : 760);
+      continue;
     }
     if (beat.reveal) {
       // Nothing is aimed while a card is revealed, and no target sits over it.
