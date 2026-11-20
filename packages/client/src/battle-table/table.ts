@@ -1725,9 +1725,8 @@ export class BattleTable {
     const raisedDepth = this.#point(w * 0.5, baseline - cardWidth * 0.17, 2.06)
       .sub(eye)
       .dot(forward);
-    const picked = hand.filter(
-      (card) => state.selected.includes(card.id) && !(this.#hovered === card.id && !this.#press?.dragging),
-    );
+    // A picked card keeps its layer when hovered: popping in front of a picked neighbour looks like the two clip.
+    const picked = hand.filter((card) => state.selected.includes(card.id));
     hand.forEach((card, i) => {
       const offset = i - center;
       const outward = center ? offset / center : 0;
@@ -1751,7 +1750,7 @@ export class BattleTable {
       const pose = this.#pieces.get(card.id)!.target;
       const ray = pose.position.clone().sub(eye);
       const ratio = raised
-        ? (raisedDepth + (hovered ? -0.16 : picked.indexOf(card) * 0.026) * pose.scale) / ray.dot(forward)
+        ? (raisedDepth + (picked.includes(card) ? picked.indexOf(card) * 0.026 : -0.16) * pose.scale) / ray.dot(forward)
         : (planeDistance + i * 0.12 * pose.scale) / ray.dot(normal);
       pose.position.copy(eye).addScaledVector(ray, ratio);
       pose.scale *= ratio;
