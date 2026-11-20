@@ -433,6 +433,9 @@ export class BattleTable {
   #state: TableCards | null = null;
   #hovered: string | null = null;
   #hoverFootprint: { x: number; y: number; width: number } | null = null;
+  /** The hand card shown full size under the pointer, and the top of the resting hand (viewport pixels): over the
+   * hand itself, the pointer moves on to the neighbour underneath rather than staying on the big card. */
+  #zoom: { id: string; handTop: number } | null = null;
   readonly #hitColor = new THREE.Color(0xff302a);
   readonly #flashColor = new THREE.Color(1.9, 1.9, 1.9);
   readonly #sparkMap = sparkTexture();
@@ -1791,23 +1794,33 @@ export class BattleTable {
       .dot(forward);
     // A picked card keeps its layer when hovered: popping in front of a picked neighbour looks like the two clip.
     const picked = hand.filter((card) => state.selected.includes(card.id));
+    // Hovering a sunk hand card shows it full size where it is, standing on the bottom edge, so it reads without the
+    // card panel. Not while paying or picking from the hand, where the whole hand is up and a card only lifts a step.
+    const zoomWidth = Math.max(cardWidth * 1.09, Math.min(h * 0.4, w * 0.3));
+    this.#zoom = null;
     hand.forEach((card, i) => {
       const offset = i - center;
       const outward = center ? offset / center : 0;
       const hovered = this.#hovered === card.id && !this.#press?.dragging;
       const raised = hovered || state.selected.includes(card.id);
+      const zoomed = hovered && sunk && !lifted && !state.selected.includes(card.id);
       const handCenter = Math.max(w * 0.5, handLeft + cardWidth * (0.5 + center * spread));
-      const x = handCenter + offset * cardWidth * spread;
+      const restX = handCenter + offset * cardWidth * spread;
       const restY = baseline + outward ** 2 * cardWidth * 0.045;
+      // Grown from its slot but kept on screen.
+      const x = zoomed ? Math.min(Math.max(restX, zoomWidth / 2 + 8), w - zoomWidth / 2 - 8) : restX;
+      const y = zoomed ? h - 8 - zoomWidth * 0.7 : restY - (raised ? lift : 0);
+      const width = zoomed ? zoomWidth : cardWidth * (raised ? 1.09 : 1);
       if (hovered) {
-        this.#hoverFootprint = { x, y: restY, width: cardWidth };
-        this.#handTop = { ...this.#handTop, hovered: restY - lift - cardWidth * 0.77 };
+        this.#hoverFootprint = { x: restX, y: restY, width: cardWidth };
+        this.#handTop = { ...this.#handTop, hovered: y - width * 0.7 };
       }
+      if (zoomed) this.#zoom = { id: card.id, handTop: baseline - cardWidth * 0.7 };
       this.#pose(
         card.id,
         x,
-        restY - (raised ? lift : 0),
-        cardWidth * (raised ? 1.09 : 1),
+        y,
+        width,
         1.34 + i * 0.012 + (raised ? 0.72 : 0),
         // Keep a little perspective in the resting fan; lift the print square to the camera for reading.
         raised ? this.#camera.rotation.x : restPitch,
@@ -2494,17 +2507,24 @@ export class BattleTable {
     this.#ray.setFromCamera(this.#ndc, this.#camera);
     let nearest = Infinity;
     let id: string | null = null;
+    let underZoom: { id: string; distance: number } | null = null;
+    const handIds = new Set(this.#state?.hand.map((card) => card.id));
     for (const piece of this.#pieces.values()) {
       if (this.#state?.defending && !this.#state.targets.includes(piece.card.id)) continue;
       if (this.#state?.paymentSources && !this.#state.paymentSources.includes(piece.card.id)) continue;
       if (this.#state?.discardOpen && !this.#viewedPile(this.#state).some((card) => card.id === piece.card.id))
         continue;
       const [hit] = this.#ray.intersectObjects(piece.card.reverseArt ? [piece.face, piece.back] : [piece.face], false);
+      if (hit && piece.card.id !== this.#zoom?.id && handIds.has(piece.card.id))
+        if (!underZoom || hit.distance < underZoom.distance) underZoom = { id: piece.card.id, distance: hit.distance };
       if (hit && hit.distance < nearest) {
         nearest = hit.distance;
         id = piece.card.id;
       }
     }
+    // Over the hand, the full-size card gives way to the hand card under the pointer, so the hand can be swept.
+    if (id && id === this.#zoom?.id && underZoom && event.clientY - rect.top - this.#extension > this.#zoom.handTop)
+      return underZoom.id;
     // The bottom edge rises away from the pointer. Keep its resting footprint active until the user leaves it.
     const footprint = this.#hoverFootprint;
     if (

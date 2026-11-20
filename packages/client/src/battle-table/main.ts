@@ -2669,9 +2669,13 @@ try {
 // floating; a touch screen keeps it open, with no hover to bring a folded card up.
 setRailCollapsed(railStored ? railStored === "1" : matchMedia("(hover: hover) and (max-width: 1100px)").matches, false);
 
-/** A folded card panel floats the card being read (hovered, or its menu open) over the table's edge. */
+/**
+ * A folded card panel floats the card being read (hovered, or its menu open) over the table's edge; not a hovered
+ * hand card, which the table already shows full size where it is.
+ */
 function paintReading() {
-  arena.toggleAttribute("data-reading", !!(hoveredCard || menuCard));
+  const inHand = !!hoveredCard && !!state?.hand.some((card) => card.id === hoveredCard);
+  arena.toggleAttribute("data-reading", !!((hoveredCard && !inHand) || menuCard));
 }
 
 /**
