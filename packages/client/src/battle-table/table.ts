@@ -2035,7 +2035,7 @@ export class BattleTable {
                   ? 560
                   : kind === "draw"
                     ? this.#state?.hand.some((card) => card.id === id)
-                      ? 640
+                      ? 600
                       : 560
                     : kind === "discard"
                       ? 460
