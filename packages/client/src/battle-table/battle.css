@@ -5,6 +5,28 @@
 * {
   box-sizing: border-box;
 }
+/*
+ * The battle table's own pointer: a small navy arrow edged in gold, lit gold over anything that can be pressed and
+ * while a card is held. Hotspot at the arrow's tip; the browser's own cursors stand behind each one.
+ */
+:root {
+  --cursor-arrow:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cpath d='M3 2.5 L3 21 L8 16.6 L11.6 24.4 L15 22.9 L11.5 15.3 L18 15.3 Z' fill='none' stroke='%23000' stroke-opacity='.55' stroke-width='4' stroke-linejoin='round'/%3E%3Cpath d='M3 2.5 L3 21 L8 16.6 L11.6 24.4 L15 22.9 L11.5 15.3 L18 15.3 Z' fill='%230f1a25' stroke='%23f5c35b' stroke-width='1.6' stroke-linejoin='round'/%3E%3Cpath d='M5 7 L5 15.5' stroke='%23f5c35b66' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E")
+      3 2,
+    default;
+  --cursor-hand:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cpath d='M3 2.5 L3 21 L8 16.6 L11.6 24.4 L15 22.9 L11.5 15.3 L18 15.3 Z' fill='none' stroke='%23000' stroke-opacity='.55' stroke-width='4' stroke-linejoin='round'/%3E%3Cpath d='M3 2.5 L3 21 L8 16.6 L11.6 24.4 L15 22.9 L11.5 15.3 L18 15.3 Z' fill='%23f5c35b' stroke='%23fff3cf' stroke-width='1.6' stroke-linejoin='round'/%3E%3Cpath d='M5 7 L5 15.5' stroke='%23ffffffcc' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E")
+      3 2,
+    pointer;
+  --cursor-held:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg transform='rotate%28-8 3 3%29'%3E%3Cpath d='M3 2.5 L3 21 L8 16.6 L11.6 24.4 L15 22.9 L11.5 15.3 L18 15.3 Z' fill='none' stroke='%23000' stroke-opacity='.55' stroke-width='4' stroke-linejoin='round'/%3E%3Cpath d='M3 2.5 L3 21 L8 16.6 L11.6 24.4 L15 22.9 L11.5 15.3 L18 15.3 Z' fill='%23ffd98a' stroke='%23fff3cf' stroke-width='1.6' stroke-linejoin='round'/%3E%3Cpath d='M5 7 L5 15.5' stroke='%23ffffffcc' stroke-width='1.4' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E")
+      3 2,
+    grabbing;
+  cursor: var(--cursor-arrow);
+}
+:where(*) {
+  cursor: inherit;
+}
 body {
   margin: 0;
   background: var(--bg-0);
@@ -12,7 +34,7 @@ body {
 button {
   color: inherit;
   font: inherit;
-  cursor: pointer;
+  cursor: var(--cursor-hand);
 }
 button:focus-visible {
   outline: 3px solid var(--gold);
@@ -75,7 +97,7 @@ button:focus-visible {
   border-radius: 50%;
   background: #0c141cd9;
   color: var(--text-2);
-  cursor: pointer;
+  cursor: var(--cursor-hand);
   pointer-events: auto;
   transition:
     color 140ms,
@@ -351,7 +373,7 @@ button:focus-visible {
   color: var(--text);
 }
 :is(#discard-label, #encounter-discard):disabled {
-  cursor: default;
+  cursor: var(--cursor-arrow);
 }
 :is(#discard-label, #encounter-discard)[aria-expanded="true"] {
   left: 50%;
@@ -1245,7 +1267,7 @@ button:focus-visible {
   padding: 0;
   border: 0;
   background: transparent;
-  cursor: pointer;
+  cursor: var(--cursor-hand);
 }
 @media (pointer: coarse) {
   #read-reveal {

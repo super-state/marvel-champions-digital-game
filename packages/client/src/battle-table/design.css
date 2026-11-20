@@ -142,7 +142,7 @@
   letter-spacing: 0.01em;
   text-align: center;
   white-space: nowrap;
-  cursor: pointer;
+  cursor: var(--cursor-hand);
   transition:
     background-color 140ms,
     border-color 140ms,
@@ -163,7 +163,7 @@
   outline-offset: 2px;
 }
 .btn:disabled {
-  cursor: default;
+  cursor: var(--cursor-arrow);
   opacity: 0.42;
 }
 .btn-primary {

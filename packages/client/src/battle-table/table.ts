@@ -2538,7 +2538,7 @@ export class BattleTable {
   }
 
   #notifyHover(id: string | null): void {
-    this.#renderer.domElement.style.cursor = id ? "pointer" : "default";
+    this.#renderer.domElement.style.cursor = id ? "var(--cursor-hand)" : "var(--cursor-arrow)";
     if (this.#hovered === id) return;
     this.setHovered(id);
     this.#handlers.onHover(id);
@@ -2570,7 +2570,7 @@ export class BattleTable {
     const rect = this.#renderer.domElement.getBoundingClientRect();
     piece.root.position.copy(this.#point(event.clientX - rect.left, event.clientY - rect.top - this.#extension, 1.9));
     piece.root.rotation.set(this.#camera.rotation.x, 0, 0);
-    this.#renderer.domElement.style.cursor = "grabbing";
+    this.#renderer.domElement.style.cursor = "var(--cursor-held)";
     this.#requestFrame();
   };
 
@@ -2610,7 +2610,7 @@ export class BattleTable {
     this.#press = null;
     const canvas = this.#renderer.domElement;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-    canvas.style.cursor = this.#hovered ? "pointer" : "default";
+    canvas.style.cursor = this.#hovered ? "var(--cursor-hand)" : "var(--cursor-arrow)";
     this.#layout();
     this.#requestFrame();
   };
