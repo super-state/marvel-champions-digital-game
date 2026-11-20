@@ -97,14 +97,6 @@ interface Spark {
 }
 
 export const INTERRUPT_MS = 440;
-/**
- * How far apart picked hand cards sit along the camera's line of sight, in card widths. It does not show on screen
- * (each slides along its own sight line), but it is the room a picked card has to lean in without cutting through a
- * picked neighbour.
- */
-const PICK_LAYER = 0.08;
-/** The steepest lean a picked card can take inside that room: its edge (half a card out) moves at most 80% of it. */
-const PICK_LEAN = Math.asin((0.8 * PICK_LAYER) / 0.5);
 /** A When Revealed firing: rise, flash, hold, settle. */
 export const ACTIVATION_MS = 1000;
 export const HIT_CONTACT_MS = 235;
@@ -1758,8 +1750,7 @@ export class BattleTable {
       const pose = this.#pieces.get(card.id)!.target;
       const ray = pose.position.clone().sub(eye);
       const ratio = raised
-        ? (raisedDepth + (picked.includes(card) ? picked.indexOf(card) * PICK_LAYER : -0.16) * pose.scale) /
-          ray.dot(forward)
+        ? (raisedDepth + (picked.includes(card) ? picked.indexOf(card) * 0.026 : -0.16) * pose.scale) / ray.dot(forward)
         : (planeDistance + i * 0.12 * pose.scale) / ray.dot(normal);
       pose.position.copy(eye).addScaledVector(ray, ratio);
       pose.scale *= ratio;
@@ -1936,10 +1927,10 @@ export class BattleTable {
       const piece = this.#pieces.get(card.id);
       if (!piece || this.#flights.has(card.id) || (this.#press?.dragging && this.#press.id === card.id)) continue;
       let goal = 0;
-      if (card.id === this.#hovered && footprint && this.#pointer && !this.#reduced.matches)
+      // A picked card sits a card's thickness from its picked neighbours, so leaning it would cut through them.
+      const picked = this.#state?.selected.includes(card.id);
+      if (card.id === this.#hovered && !picked && footprint && this.#pointer && !this.#reduced.matches)
         goal = THREE.MathUtils.clamp((this.#pointer.x - footprint.x) / footprint.width, -0.5, 0.5) * 0.32;
-      // A picked card leans only as far as the gap to its picked neighbours allows, so it never cuts through them.
-      if (this.#state?.selected.includes(card.id)) goal = THREE.MathUtils.clamp(goal, -PICK_LEAN, PICK_LEAN);
       // The lean eases in under the pointer but drops at once when the card is let go, so a card settling back
       // into the fan never swings through its neighbour.
       if (card.id !== this.#hovered) {
