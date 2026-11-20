@@ -81,6 +81,8 @@ const deckLabel = element("deck-label");
 const deckCount = element("deck-count");
 const dock = element("dock");
 const dockTitle = element("dock-title");
+/** Whose move it is, at a glance: your shield in blue, the enemy's mask in red, at the start of the turn bar. */
+const turnMark = element("turn-mark");
 const dockEyebrow = element("dock-eyebrow");
 const dockOptions = element("dock-options");
 const dockFeed = element("dock-feed");
@@ -234,6 +236,12 @@ function paintButton(button: HTMLButtonElement, spec: DockButton | null | undefi
 /** Paint the turn bar; true when it now asks a question it was not asking before. */
 function paintDock(view: DockView): boolean {
   dock.dataset.tone = view.tone;
+  const side = view.tone === "hero" || view.tone === "villain" ? view.tone : null;
+  turnMark.hidden = !side;
+  if (side && turnMark.dataset.side !== side) {
+    turnMark.dataset.side = side;
+    turnMark.replaceChildren(icon(side));
+  }
   dock.toggleAttribute("data-asking", view.asking);
   const eyebrow = view.eyebrow;
   dockEyebrow.hidden = !eyebrow;
@@ -1497,7 +1505,7 @@ function phaseIndicator(phase: "hero" | "villain" | "ending" | "setup", announce
           ? "End of turn"
           : "Setup";
   turnStatus.dataset.phase = phase === "villain" ? "villain" : phase === "ending" ? "ending" : "hero";
-  turnStatus.textContent = title;
+  turnStatus.replaceChildren(...(phase === "setup" ? [] : [icon(phase === "villain" ? "villain" : "hero")]), title);
   roundLabel.textContent = `Round ${state?.round ?? 1}`;
   if (announce && phase !== "setup") {
     const banner = element("phase-banner");

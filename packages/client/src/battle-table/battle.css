@@ -1765,3 +1765,41 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
     0 6px 18px #000a,
     0 0 22px #ff2a14b3;
 }
+
+/* Whose move it is: your shield (blue) or the enemy's mask (red), at the start of the turn bar and the phase chip. */
+.turn-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #3d8fe0, #154a86);
+  color: #e8f4ff;
+  box-shadow:
+    0 0 0 1px #9fd6ff55,
+    0 0 14px #2f8cff66;
+}
+.turn-mark[hidden] {
+  display: none;
+}
+.turn-mark .icon {
+  width: 20px;
+  height: 20px;
+}
+.turn-mark[data-side="villain"] {
+  background: radial-gradient(circle at 35% 30%, #e0503d, #861c15);
+  color: #fff0ec;
+  box-shadow:
+    0 0 0 1px #ffa09355,
+    0 0 14px #ff3a2466;
+}
+.phase-chip:has(.icon)::before {
+  display: none;
+}
+.phase-chip .icon {
+  width: 14px;
+  height: 14px;
+  filter: drop-shadow(0 0 6px currentColor);
+}

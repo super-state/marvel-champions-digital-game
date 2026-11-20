@@ -186,6 +186,39 @@ const ICONS = {
       stroke: 1.6,
     },
   ],
+  /** Your side: a shield with a star cut out of it. */
+  hero: [
+    {
+      d: "M12 1.8l8.6 3.1v6.3c0 5.3-3.6 9.6-8.6 11.2-5-1.6-8.6-5.9-8.6-11.2V4.9z" + star(12, 11.4, 5, 5, 2.05),
+    },
+  ],
+  /** The enemy's side: a horned mask with slit eyes. */
+  villain: [
+    {
+      d:
+        polygon([
+          [2.6, 2.4],
+          [8.2, 6.6],
+          [15.8, 6.6],
+          [21.4, 2.4],
+          [20, 12.2],
+          [12, 22],
+          [4, 12.2],
+        ]) +
+        polygon([
+          [6.6, 10.2],
+          [10.9, 11.7],
+          [10.5, 13.4],
+          [7.3, 12.4],
+        ]) +
+        polygon([
+          [17.4, 10.2],
+          [13.1, 11.7],
+          [13.5, 13.4],
+          [16.7, 12.4],
+        ]),
+    },
+  ],
 } satisfies Record<string, readonly Layer[]>;
 
 function octagon(cx: number, cy: number, r: number): [number, number][] {
