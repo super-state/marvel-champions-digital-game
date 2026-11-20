@@ -1928,10 +1928,9 @@ export class BattleTable {
     const encounterDiscardGoal = encounterPile(h * 0.102);
     this.#encounterDiscardSlot.visible = state.encounterDiscard.length > 0;
     // The piles are part of the table too, the encounter discard pile even while it is empty, so a first discard
-    // doesn't move everything.
-    for (const goal of [discardGoal, deckGoal, encounterGoal]) rest(goal.position, goal.scale, false);
-    // The encounter discard pile sits above the deck: the mat only reaches up for it once a card is on it.
-    if (state.encounterDiscard.length) rest(encounterDiscardGoal.position, encounterDiscardGoal.scale, false);
+    // doesn't move everything (the first encounter card discarded once shrank and slid the whole board).
+    for (const goal of [discardGoal, deckGoal, encounterGoal, encounterDiscardGoal])
+      rest(goal.position, goal.scale, false);
     this.#fitTable(onBoard, rests, [
       [this.#discardSlot, discardGoal],
       [this.#deckSlot, deckGoal],
@@ -2101,7 +2100,10 @@ export class BattleTable {
       for (const [piece, lift] of this.#wave.lifts) piece.root.position.y -= lift;
       this.#wave.lifts.clear();
     }
-    const dt = Math.min(40, Math.max(1, now - this.#lastFrame)) / 1000;
+    // The first frame after the table has been still counts as one ordinary frame, not the whole pause: otherwise a
+    // board that starts moving then jumps more than half its way in one step and judders.
+    const since = now - this.#lastFrame;
+    const dt = (since > 100 ? 1000 / 60 : Math.min(40, Math.max(1, since))) / 1000;
     this.#lastFrame = now;
     const handSlide = this.#reduced.matches ? 1 : 1 - Math.exp(-dt * 10);
     const smooth = this.#reduced.matches ? 1 : 1 - Math.exp(-dt * 22);

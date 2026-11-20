@@ -271,7 +271,8 @@ function paintDock(view: DockView): boolean {
   const pressable = [view.primary, view.secondary].some((button) => button && !button.endTurn && !button.disabled);
   const folded = !!view.idle || (!view.asking && !pressable && !view.options?.length);
   dock.toggleAttribute("data-idle", folded);
-  table?.setQuestion(!folded && roomy.matches);
+  // A revealed card's Continue moves nothing: the table stays still around the card, the bar fitting under it.
+  table?.setQuestion(!folded && roomy.matches && !revealFocus);
   // The turn corner's End Turn answers only while nothing else is asked; the bar's own copy is the phone's.
   const ending = view.idle && view.primary?.endTurn ? view.primary : null;
   endTurnButton.disabled = !ending || !!ending.disabled;
@@ -2158,6 +2159,8 @@ async function present(beats: Snapshot["beats"]) {
       } else {
         readReveal.setAttribute("aria-label", `Continue after reading ${beat.reveal.name}`);
         readReveal.hidden = false;
+        // Known before the bar asks, so its Continue leaves the table where it is.
+        revealFocus = beat.reveal.id;
         narrate(beat, null, {
           eyebrow: { text: "Revealed", icon: "forced", tone: "villain" },
           title: beat.reveal.name,
@@ -2166,7 +2169,6 @@ async function present(beats: Snapshot["beats"]) {
         readReveal.focus({ preventScroll: true });
         table?.holdReveal(true);
         // The table goes soft around the revealed card while it waits to be read.
-        revealFocus = beat.reveal.id;
         focusBlur.hidden = false;
         placeLabels();
         requestAnimationFrame(() => (focusBlur.dataset.ready = ""));
