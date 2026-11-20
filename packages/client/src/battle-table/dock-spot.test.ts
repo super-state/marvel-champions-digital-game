@@ -49,10 +49,10 @@ describe("besideSpot", () => {
   const field = { width: 1000, height: 800 };
   const size = { width: 300, height: 420 };
   it("shows the card on the right of the one hovered, level with its middle", () => {
-    expect(besideSpot({ left: 100, right: 200, top: 300, bottom: 440 }, size, field)).toEqual({ left: 228, top: 160 });
+    expect(besideSpot({ left: 100, right: 200, top: 300, bottom: 440 }, size, field)).toEqual({ left: 244, top: 160 });
   });
   it("goes to the left when the right has no room", () => {
-    expect(besideSpot({ left: 750, right: 850, top: 300, bottom: 440 }, size, field).left).toBe(422);
+    expect(besideSpot({ left: 750, right: 850, top: 300, bottom: 440 }, size, field).left).toBe(406);
   });
   it("stays on the playfield near its edges", () => {
     expect(besideSpot({ left: 100, right: 200, top: 0, bottom: 100 }, size, field).top).toBe(8);

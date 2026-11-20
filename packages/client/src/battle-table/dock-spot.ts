@@ -52,7 +52,7 @@ export function besideSpot(
   size: { readonly width: number; readonly height: number },
   field: { readonly width: number; readonly height: number },
 ): { left: number; top: number } {
-  const gap = 28;
+  const gap = 44;
   let left = card.right + gap;
   if (left + size.width > field.width - 8) left = card.left - gap - size.width;
   left = Math.max(8, Math.min(left, field.width - size.width - 8));
