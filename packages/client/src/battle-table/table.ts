@@ -1045,6 +1045,15 @@ export class BattleTable {
   /** The card a played event goes to when it is not the hero: the scheme Great Responsibility shields, say. */
   #powerHost: string | null = null;
 
+  /**
+   * An event at work lies over the card it acts on (the hero, or a scheme it shields), unless that card is one the
+   * player must now pick (First Aid's target): then it waits beside the hero like a card being paid for, clear of it.
+   */
+  get #powerAside(): boolean {
+    const host = this.#powerHost ?? this.#state?.hero.id;
+    return !!this.#power && !!host && !!this.#state?.targets.includes(host);
+  }
+
   /** A played event goes over to the card it acts on (a scheme it shields) instead of onto the hero. */
   channelEventTo(id: string, host: string): void {
     if (!this.#pieces.has(id) || !this.#pieces.has(host)) return this.channelEvent(id);
@@ -1859,11 +1868,16 @@ export class BattleTable {
       // Out of the hand and held up over the villain's side, in the open space beside the minions, until its host is chosen.
       onBoard.add(state.staged.id);
       this.#pose(state.staged.id, w * 0.71, h * 0.5, playWidth * 1.1, 1.18, flat + 0.12);
-    } else if (state.staged && this.#power !== state.staged.id && !permanents.includes(state.staged)) {
+    } else if (
+      state.staged &&
+      (this.#power !== state.staged.id || this.#powerAside) &&
+      !permanents.includes(state.staged)
+    ) {
       onBoard.add(state.staged.id);
       // Held up beside the hero while it is paid for, but never over a card that could pay for it (Web-Shooter):
       // right of the hero if that is clear, else left of the row, else up in the gap above the row.
-      const sources = new Set(state.paymentSources ?? []);
+      // Nor over a card the player must pick next (First Aid's target, the hero included).
+      const sources = new Set([...(state.paymentSources ?? []), ...state.targets]);
       const covers = (x: number, y: number) =>
         row.some((card, i) => {
           if (!sources.has(card.id) && !card.resourceAbility) return false;
@@ -2182,7 +2196,8 @@ export class BattleTable {
         }
       }
       // The hero is updated first. Follow its live face, including its lift and roll during a strike.
-      const shielded = id === this.#power && this.#powerHost ? this.#pieces.get(this.#powerHost) : undefined;
+      const aside = this.#powerAside;
+      const shielded = id === this.#power && this.#powerHost && !aside ? this.#pieces.get(this.#powerHost) : undefined;
       if (shielded) {
         // Held up over the card it protects, overlapping its edge, so it reads as standing in front of it.
         shielded.root.updateMatrixWorld();
@@ -2195,7 +2210,7 @@ export class BattleTable {
           this.#apply(piece, 1);
           continue;
         }
-      } else if (id === this.#power && this.#state) {
+      } else if (id === this.#power && this.#state && !aside) {
         const heroPiece = this.#pieces.get(this.#state.hero.id)!;
         const hero = heroPiece.root;
         hero.updateMatrixWorld();

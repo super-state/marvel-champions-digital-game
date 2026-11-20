@@ -101,6 +101,12 @@ const SCENES: Record<string, Scene> = {
     play: [{ code: "01008", counters: { web: 3 } }, { code: "01002" }],
     hand: ["01005", "01089", "01087", "01090"],
   },
+  /** First Aid in hand with Spider-Man and Black Cat hurt: the event waits clear of the hero while a target is picked. */
+  firstaid: {
+    hero: { form: "hero", damage: 4 },
+    play: [{ code: "01002", damage: 1 }],
+    hand: ["01086", "01089", "01087"],
+  },
   /** Two Backflips in hand as Rhino attacks: one question covers both copies. */
   backflips: {
     hero: { form: "hero" },
