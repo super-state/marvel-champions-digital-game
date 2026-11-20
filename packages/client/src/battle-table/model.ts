@@ -174,8 +174,10 @@ export interface BattleBeat {
     art: string;
     landscape: boolean;
     boost: { icons: number; enemy: string } | null;
-    /** Nothing to read out: a minion with no When Revealed takes its place without waiting for Continue. */
+    /** A minion: it takes its place without waiting for Continue (its When Revealed then plays out on the table). */
     quick: boolean;
+    /** The card has a When Revealed, which fires with a flash before its effect lands. */
+    whenRevealed: boolean;
   };
   actor?: string | null;
   phase?: "hero" | "villain";
@@ -461,7 +463,8 @@ export class BattleModel {
             boost: e.type === "boostCardFlipped" ? { icons: e.boostIcons, enemy: e.enemyInstanceId } : null,
             art: artFor(card, { kind: "front" })?.url ?? "",
             landscape: isLandscapeType(card?.type ?? ""),
-            quick: card?.type === "minion" && !/\bWhen Revealed\b/i.test(plainRulesTextOf(card)),
+            quick: card?.type === "minion",
+            whenRevealed: !!card && /\bWhen Revealed\b/i.test(plainRulesTextOf(card)),
           },
         });
       } else if (
@@ -1113,10 +1116,13 @@ export class BattleModel {
       if (action.kind !== "useAbility" || action.instanceId !== id) return [];
       const ability = CORE_DEPS.abilities[action.abilityId];
       if (ability?.trigger.kind !== "action") return [];
+      const short = abilityShortLabelOf(this.#game, action.instanceId, action.abilityId, CORE_DEPS) ?? "Use ability";
       const label =
         action.abilityId === "01092.helicarrier-action"
           ? "Exhaust · Next card costs 1 less"
-          : (abilityShortLabelOf(this.#game, action.instanceId, action.abilityId, CORE_DEPS) ?? "Use ability");
+          : action.abilityId === "01091.avengers-mansion-action"
+            ? "Exhaust · Draw 1 card"
+            : short.charAt(0).toUpperCase() + short.slice(1);
       return [{ kind: String(action.abilityId), label, exhausts: !!ability.cost?.exhaustSelf, entry }];
     });
   }

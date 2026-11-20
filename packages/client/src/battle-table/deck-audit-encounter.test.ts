@@ -520,8 +520,8 @@ test("01103 Shocker: When Revealed deals 1 damage to Spider-Man in hero form", (
   toHero(battle);
   const run = endTurn(battle);
   const reveal = at(run, "Shocker revealed", (b) => b.reveal?.name === "Shocker");
-  // A minion with a When Revealed is still shown for reading before it resolves.
-  expect(run.beats[reveal]!.reveal!.quick).toBe(false);
+  // A minion goes straight to the mat (no Continue), and its When Revealed fires with a flash before the hit.
+  expect(run.beats[reveal]!.reveal).toMatchObject({ quick: true, whenRevealed: true });
   const hit = at(run, "1 damage", (b) => b.hit?.target === heroId(battle) && b.hit.amount === 1);
   expect(hit).toBeGreaterThan(reveal);
   expect(snap(battle).heroHp).toBe(7);

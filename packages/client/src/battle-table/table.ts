@@ -95,6 +95,8 @@ interface Spark {
 }
 
 export const INTERRUPT_MS = 440;
+/** A When Revealed firing: rise, flash, hold, settle. */
+export const ACTIVATION_MS = 1000;
 export const HIT_CONTACT_MS = 235;
 export const EXHAUST_MS = 240;
 export const READY_MS = 520;
@@ -945,7 +947,7 @@ export class BattleTable {
         }`,
     }),
   );
-  #interrupt: { piece: Piece; start: number; lift: number } | null = null;
+  #interrupt: { piece: Piece; start: number; lift: number; activation?: { flashed: boolean } } | null = null;
   #wave: { start: number; lifts: Map<Piece, number> } | null = null;
 
   /** A ripple through the hand, each card hopping in turn: a question about the hand points at it. */
@@ -970,6 +972,15 @@ export class BattleTable {
     }
     this.#interrupt = { piece, start: performance.now(), lift: 0 };
     this.#requestFrame();
+  }
+
+  /**
+   * A When Revealed firing: the card rises toward the player, flashes white with a burst of light, and settles back,
+   * so its effect reads as the card's own and not an ordinary attack.
+   */
+  activateWhenRevealed(id: string): void {
+    this.pulseInterrupt(id);
+    if (this.#interrupt?.piece === this.#pieces.get(id)) this.#interrupt!.activation = { flashed: false };
   }
 
   #deflection: { token: THREE.Group; start: number } | null = null;
@@ -2262,9 +2273,18 @@ export class BattleTable {
     }
     if (this.#interrupt) {
       const pulse = this.#interrupt;
-      const t = THREE.MathUtils.clamp((now - pulse.start) / INTERRUPT_MS, 0, 1);
-      pulse.lift = this.#reduced.matches ? 0 : pulse.piece.root.scale.x * 0.12 * Math.sin(Math.PI * t) ** 2;
+      const t = THREE.MathUtils.clamp((now - pulse.start) / (pulse.activation ? ACTIVATION_MS : INTERRUPT_MS), 0, 1);
+      const rise = pulse.activation
+        ? THREE.MathUtils.smoothstep(t, 0, 0.3) - THREE.MathUtils.smoothstep(t, 0.68, 1)
+        : Math.sin(Math.PI * t) ** 2;
+      pulse.lift = this.#reduced.matches ? 0 : pulse.piece.root.scale.x * (pulse.activation ? 0.9 : 0.12) * rise;
       pulse.piece.root.position.y += pulse.lift;
+      if (pulse.activation && !pulse.activation.flashed && t >= 0.3) {
+        pulse.activation.flashed = true;
+        const at = pulse.piece.root.position.clone();
+        this.#burst(at, 0xffffff, 22, 1.5, 1.2);
+        this.#burst(at, 0xffe9a8, 12, 0.9, 1.8);
+      }
       this.#interruptPuff.material.uniforms.progress!.value = t;
       this.#interruptSheen.material.uniforms.sweep!.value = -0.25 + 2 * t;
       if (t === 1) {

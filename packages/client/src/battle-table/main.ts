@@ -5,7 +5,15 @@ import { arrangeScene } from "./debug-scenes.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
 import { eventLook, offerDoes, spotOf, type GlowTone, type Spot } from "./spotlight.js";
-import { BattleTable, INTERRUPT_MS, EXHAUST_MS, READY_MS, HIT_CONTACT_MS, isTuckedUpgrade } from "./table.js";
+import {
+  BattleTable,
+  ACTIVATION_MS,
+  INTERRUPT_MS,
+  EXHAUST_MS,
+  READY_MS,
+  HIT_CONTACT_MS,
+  isTuckedUpgrade,
+} from "./table.js";
 
 type Snapshot = ReturnType<BattleModel["snapshot"]>;
 type Beat = Snapshot["beats"][number];
@@ -1189,6 +1197,13 @@ function updateOutlines(group: SVGGElement, ids: readonly string[], tones?: read
   });
 }
 
+/** A When Revealed firing: the card rises with a flash, and the dock says what is happening. */
+async function whenRevealedFires(beat: Beat, card: { id: string; name: string }) {
+  table?.activateWhenRevealed(card.id);
+  narrate(beat, null, { eyebrow: { text: "When Revealed", icon: "forced", tone: "villain" }, title: card.name });
+  await sleep(ACTIVATION_MS);
+}
+
 /** The attack target fades off once its attack is over. */
 function clearAim() {
   if (!aimTarget && reticle.hidden) return;
@@ -1971,8 +1986,14 @@ async function present(beats: Snapshot["beats"]) {
       readingCard = null;
       setWidePreview(false);
       const permanent = state.enemyCards.find((c) => c.id === beat.reveal!.id);
-      if (permanent) table?.landEncounter(permanent);
-      else {
+      if (permanent) {
+        table?.landEncounter(permanent);
+        if (beat.reveal.whenRevealed && !reducedMotion()) {
+          // Lands on the mat first, then its When Revealed fires: it rises with a flash before the effect hits.
+          await sleep(520);
+          await whenRevealedFires(beat, beat.reveal);
+        }
+      } else {
         table?.retireEncounter(
           beat.reveal.id,
           state.encounterDiscard.find((c) => c.id === beat.reveal!.id),
