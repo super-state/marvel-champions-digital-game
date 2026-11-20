@@ -49,6 +49,8 @@ export interface TableCards {
   readonly defending: boolean;
   readonly menuCard: string | null;
   readonly paymentSources: readonly string[] | null;
+  /** Cards are being picked from the hand (a mulligan, the hand limit): a sunk hand rises so every card shows. */
+  readonly handPick?: boolean;
 }
 
 interface Handlers {
@@ -96,6 +98,18 @@ interface Spark {
   size: number;
 }
 
+/** How much of a sunk hand's cards shows above the bottom edge, in card widths: all but the bottom seventh. */
+const SUNK_SHOWS = 1.2;
+/** Room a sunk hand's raised question needs over the hand: the turn bar, its gap and a margin. */
+const QUESTION_ROOM = 64 + 12 + 8;
+/** How the hand meets the bottom of the table (`BattleTable.setHandLayout`). */
+export interface HandLayout {
+  /**
+   * The hand sits low, partly off the bottom edge, and the turn bar floats over the table only while it has something
+   * to say. Off (a phone): the hand stands above the turn bar, which spans the bottom of the table.
+   */
+  readonly sunk: boolean;
+}
 export const INTERRUPT_MS = 440;
 /** A When Revealed firing: rise, flash, hold, settle. */
 export const ACTIVATION_MS = 1000;
@@ -367,6 +381,21 @@ export class BattleTable {
   #snapBoard = true;
   /** The resting pose of a hovered table card, for its footprint once the fit has placed it. */
   #hoverRest: { center: THREE.Vector3; scale: number } | null = null;
+  #hand: HandLayout = { sunk: false };
+  setHandLayout(layout: HandLayout): void {
+    if (this.#hand.sunk === layout.sunk) return;
+    this.#hand = layout;
+    this.#layout();
+    this.#requestFrame();
+  }
+  #handTop = { resting: 0, hovered: null as number | null };
+  /**
+   * Viewport pixels from the top of the table to the top of the hand: `resting` allows for the lift a hovered card
+   * gets, `hovered` is the top of the hovered card, if one is.
+   */
+  get handTop(): { readonly resting: number; readonly hovered: number | null } {
+    return this.#handTop;
+  }
   setBottomReserve(px: number): void {
     const reserve = Math.round(px);
     if (Math.abs(reserve - this.#bottomReserve) < 2) return;
@@ -1454,7 +1483,18 @@ export class BattleTable {
     const handCard = Math.min(h * 0.215, (h * (w < 740 ? 0.4 : 0.36) - 50) / 1.5, w * 0.245);
     // A phone's turn bar spans the screen and wraps its buttons under the question, so it stands taller.
     const bar = w < 740 ? 92 : 50;
-    const room = { left: 6, right: w - 6, top: 6, bottom: h - bar - handCard * 1.48 - 26 };
+    const room = {
+      left: 6,
+      right: w - 6,
+      top: 6,
+      // A sunk hand shows the top of its cards (`SUNK_SHOWS`); the table comes down to just above them. Paying or
+      // picking from it raises the hand whole with the question over it, and the table eases up to make room.
+      bottom: !this.#hand.sunk
+        ? h - bar - handCard * 1.48 - 26
+        : this.#state?.paymentSources || this.#state?.handPick
+          ? h - 12 - handCard * 1.64 - QUESTION_ROOM
+          : h - handCard * SUNK_SHOWS - 20,
+    };
     // The table fills the room above the hand: a quiet board grows up into empty space at the top (up to a quarter
     // bigger), a busy one (a tall stack of side schemes) shrinks until it fits. The hero's row keeps its edge where
     // the layout put it, over the top of the hand, and the villain stays in the middle.
@@ -1713,17 +1753,30 @@ export class BattleTable {
     const handLeft = 14;
     // A phone's hand overlaps more so each card stays big enough to read; a hovered card lifts clear.
     const spread = w < 550 ? 0.6 : 1.03;
-    // The turn bar floats under the hand: keep its strip of the table clear, measured from the bar itself.
-    const bottomMargin = Math.max(40, this.#bottomReserve + 10);
+    // The hand is centred on the whole table and sized for its full width; the turn corner sits over its end.
+    const { sunk } = this.#hand;
+    // A sunk hand keeps the card size it had over a turn bar (the bar and its gap, 86px); otherwise the turn bar spans
+    // the bottom under the hand, so keep its strip of the table clear, measured from the bar itself.
+    const bottomMargin = sunk ? 86 : Math.max(40, this.#bottomReserve + 10);
     const cardWidth = Math.min(
       Math.min(h * 0.215, (h * (w < 740 ? 0.4 : 0.36) - bottomMargin) / 1.5),
       (w - handLeft - 14) / (1 + Math.max(0, hand.length - 1) * spread),
       w * 0.245,
     );
     const center = (hand.length - 1) / 2;
-    const baseline = h - bottomMargin - cardWidth * 0.78;
+    // Paying or picking from the hand lifts a sunk hand whole, so every card's resource icons and title show.
+    const lifted = sunk && (!!state.paymentSources || !!state.handPick);
+    const baseline = !sunk
+      ? h - bottomMargin - cardWidth * 0.78
+      : lifted
+        ? h - 12 - cardWidth * 0.7
+        : h - cardWidth * (SUNK_SHOWS - 0.7);
+    // A hovered card lifts by the same small step wherever the hand sits.
+    const lift = cardWidth * 0.17;
+    // A raised card is drawn 1.09 times its size: its top sits 0.77 card widths over its centre.
+    this.#handTop = { resting: baseline - lift - cardWidth * 0.77, hovered: null };
     // Reserve room for a fully raised card, independently of hover or selection.
-    this.#paymentEdge = baseline - cardWidth * 1.0 - 8;
+    this.#paymentEdge = sunk ? baseline - lift - cardWidth * 0.77 - 8 : baseline - cardWidth * 1.0 - 8;
     const restPitch = this.#camera.rotation.x + 0.1;
     const normal = new THREE.Vector3(0, -Math.sin(restPitch), Math.cos(restPitch));
     const eye = this.#camera.position;
@@ -1733,7 +1786,7 @@ export class BattleTable {
     // Raised cards face the camera, so they get layers along its view instead: the hovered card nearest, then each
     // picked card a card's thickness behind the last, so neighbours never cut through each other.
     const forward = this.#camera.getWorldDirection(new THREE.Vector3());
-    const raisedDepth = this.#point(w * 0.5, baseline - cardWidth * 0.17, 2.06)
+    const raisedDepth = this.#point(w * 0.5, baseline - lift, 2.06)
       .sub(eye)
       .dot(forward);
     // A picked card keeps its layer when hovered: popping in front of a picked neighbour looks like the two clip.
@@ -1746,11 +1799,14 @@ export class BattleTable {
       const handCenter = Math.max(w * 0.5, handLeft + cardWidth * (0.5 + center * spread));
       const x = handCenter + offset * cardWidth * spread;
       const restY = baseline + outward ** 2 * cardWidth * 0.045;
-      if (hovered) this.#hoverFootprint = { x, y: restY, width: cardWidth };
+      if (hovered) {
+        this.#hoverFootprint = { x, y: restY, width: cardWidth };
+        this.#handTop = { ...this.#handTop, hovered: restY - lift - cardWidth * 0.77 };
+      }
       this.#pose(
         card.id,
         x,
-        restY - (raised ? cardWidth * 0.17 : 0),
+        restY - (raised ? lift : 0),
         cardWidth * (raised ? 1.09 : 1),
         1.34 + i * 0.012 + (raised ? 0.72 : 0),
         // Keep a little perspective in the resting fan; lift the print square to the camera for reading.

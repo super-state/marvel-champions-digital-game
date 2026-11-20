@@ -129,6 +129,102 @@ button:focus-visible {
   translate: -50% 0;
   transition: opacity 400ms ease-out;
 }
+/* The turn corner and the panel toggle belong to wider screens; a phone's bar carries Undo and End Turn itself. */
+.turn-corner,
+.rail-toggle {
+  display: none;
+}
+@media (min-width: 741px) {
+  /* Undo keeps the bottom-left corner and End Turn the bottom-right, over the ends of the hand. */
+  .turn-corner {
+    position: absolute;
+    z-index: 7;
+    right: 16px;
+    bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  /* Bare buttons, lifted off the cards under them by a shadow; Undo gets a dark disc to stand on. */
+  .turn-corner .btn {
+    box-shadow: 0 8px 22px #000b;
+  }
+  .turn-corner .btn-ghost {
+    background: #0c141ce6;
+  }
+  .turn-corner-left {
+    right: auto;
+    left: 16px;
+  }
+  .dock-actions .btn[data-end-turn] {
+    display: none;
+  }
+  /* With nothing to say the bar folds away; while it shows, script floats it by the hand (dock-spot.ts). */
+  .playfield > .dock[data-idle] {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      opacity 160ms ease-out,
+      visibility 0s linear 160ms;
+  }
+  /* A hand card risen to be read goes in front of the bar. */
+  .playfield > .dock[data-ducked] {
+    opacity: 0.12;
+    pointer-events: none;
+  }
+  .rail-toggle {
+    display: inline-flex;
+    position: absolute;
+    z-index: 8;
+    top: 10px;
+    right: 12px;
+  }
+  /* The card panel folds away completely, and the table grows into its room. */
+  .arena {
+    position: relative;
+    transition: grid-template-columns 240ms ease;
+  }
+  .arena[data-collapsed] {
+    grid-template-columns: minmax(0, 1fr) 0px;
+  }
+  .arena[data-rail="left"][data-collapsed] {
+    grid-template-columns: 0px minmax(0, 1fr);
+  }
+  /* Folded, the card being read floats over the table's edge on the panel's side, with no panel behind it. */
+  .arena[data-collapsed] .rail {
+    position: absolute;
+    z-index: 9;
+    inset: 0 0 0 auto;
+    width: var(--sidebar-width);
+    border: 0;
+    background: transparent;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 140ms ease;
+  }
+  .arena[data-rail="left"][data-collapsed] .rail {
+    inset: 0 auto 0 0;
+  }
+  .arena[data-collapsed] .rail .log {
+    display: none;
+  }
+  .arena[data-collapsed] .reader {
+    background: none;
+  }
+  .arena[data-collapsed] .rail[data-wide-preview] .reader {
+    border-color: transparent;
+    background: none;
+  }
+  .arena[data-collapsed][data-reading] .rail {
+    opacity: 1;
+  }
+}
+@media (min-width: 741px) and (prefers-reduced-motion: reduce) {
+  .arena {
+    transition: none;
+  }
+}
 .playfield > .dock[data-waiting] {
   opacity: 0;
   pointer-events: none;

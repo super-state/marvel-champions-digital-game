@@ -87,14 +87,15 @@
               <span class="dock-round" id="round-label">Round 1</span>
             </div>
           </div>
-          <!-- The turn bar: what the game is asking, and the buttons that answer, right under the hand. -->
+          <p class="visually-hidden" id="announcer" role="status" aria-live="polite"></p>
+          <!-- The turn bar: what the game is asking, and the buttons that answer. On a wider screen it floats up by the
+               card it is about, and folds away when there is nothing to say. -->
           <section id="dock" class="dock" aria-labelledby="dock-title">
             <span class="turn-mark" id="turn-mark" aria-hidden="true" hidden></span>
             <div class="dock-body" id="dock-body">
               <p class="eyebrow" id="dock-eyebrow" hidden></p>
               <h2 class="dock-title" id="dock-title" tabindex="-1">Dealing the opening hand…</h2>
               <p class="dock-help" id="instruction" role="status" aria-live="polite"></p>
-              <p class="visually-hidden" id="announcer" role="status" aria-live="polite"></p>
             </div>
             <div class="meter" id="dock-meter" hidden>
               <strong id="payment-total"></strong>
@@ -115,6 +116,18 @@
               <button type="button" id="dock-primary" class="btn btn-primary" disabled>End Turn</button>
             </div>
           </section>
+          <!-- Wider screens: Undo (moved here from the bar) keeps the bottom-left corner, End Turn the bottom-right. -->
+          <div class="turn-corner turn-corner-left" id="undo-corner"></div>
+          <div class="turn-corner" id="turn-corner">
+            <button type="button" id="end-turn" class="btn btn-primary" disabled>End Turn</button>
+          </div>
+          <button
+            type="button"
+            id="rail-toggle"
+            class="btn btn-ghost rail-toggle"
+            aria-controls="rail"
+            aria-expanded="true"
+          ></button>
         </section>
         <aside class="rail" aria-label="Card preview and log" id="rail">
           <div id="reader" class="reader"><img id="preview" alt="" hidden /></div>

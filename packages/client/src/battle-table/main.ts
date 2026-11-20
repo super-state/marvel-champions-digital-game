@@ -1,6 +1,7 @@
 import { statHue } from "../tokens.js";
 import "./design.css";
 import "./battle.css";
+import { dockSpot } from "./dock-spot.js";
 import { arrangeScene } from "./debug-scenes.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
@@ -91,6 +92,18 @@ const dockFeed = element("dock-feed");
 const dockMeter = element("dock-meter");
 const dockPrimary = element<HTMLButtonElement>("dock-primary");
 const dockSecondary = element<HTMLButtonElement>("dock-secondary");
+const dockActions = dock.querySelector<HTMLElement>(".dock-actions")!;
+const arena = document.querySelector<HTMLElement>(".arena")!;
+const playfield = document.querySelector<HTMLElement>(".playfield")!;
+/** Wider screens: Undo and End Turn keep the bottom corners, and the bar floats up only to say something. */
+const turnCorner = element("turn-corner");
+const undoCorner = element("undo-corner");
+const endTurnButton = element<HTMLButtonElement>("end-turn");
+const railToggle = element<HTMLButtonElement>("rail-toggle");
+/** Wider than a phone: the hand sinks, the turn corner shows and the card panel can fold away. */
+const roomy = matchMedia("(min-width: 741px)");
+/** Width the turn corner takes at the bottom right of the table: a bar along the bottom keeps clear of it. */
+let cornerReserve = 0;
 const roundLabel = element("round-label");
 const undoButton = element<HTMLButtonElement>("undo");
 const turnStatus = element("turn-status");
@@ -190,6 +203,8 @@ interface DockButton {
   disabled?: boolean;
   /** Pulse: the game is waiting on exactly this. */
   attention?: boolean;
+  /** The End Turn button: on a wider screen it lives in the turn corner, so the bar leaves its own copy out. */
+  endTurn?: boolean;
   onClick(): void;
 }
 interface DockOption {
@@ -213,6 +228,8 @@ interface DockView {
   meter?: { paid: number; required: number; balance: string } | null;
   primary?: DockButton | null;
   secondary?: DockButton | null;
+  /** Nothing to say or answer: on a wider screen the bar folds away and End Turn waits in the turn corner. */
+  idle?: boolean;
 }
 
 /** When the bar's current question appeared: its buttons wait out a double-click on the button that brought it. */
@@ -230,6 +247,7 @@ function paintButton(button: HTMLButtonElement, spec: DockButton | null | undefi
   }
   button.disabled = !!spec.disabled;
   button.toggleAttribute("data-attention", !!spec.attention);
+  button.toggleAttribute("data-end-turn", !!spec.endTurn);
   button.onclick = (event) => {
     if (!button.disabled && (event.detail === 0 || settled())) spec.onClick();
   };
@@ -245,6 +263,13 @@ function paintDock(view: DockView): boolean {
     turnMark.replaceChildren(icon(side));
   }
   dock.toggleAttribute("data-asking", view.asking);
+  dock.toggleAttribute("data-idle", !!view.idle);
+  // The turn corner's End Turn answers only while nothing else is asked; the bar's own copy is the phone's.
+  const ending = view.idle && view.primary?.endTurn ? view.primary : null;
+  endTurnButton.disabled = !ending || !!ending.disabled;
+  // Folding away with the keyboard on it (Enter on Keep hand): the keyboard goes on to End Turn, or else Undo.
+  if (view.idle && roomy.matches && dock.contains(document.activeElement))
+    (endTurnButton.disabled ? undoButton : endTurnButton).focus({ preventScroll: true });
   const eyebrow = view.eyebrow;
   dockEyebrow.hidden = !eyebrow;
   if (eyebrow) {
@@ -314,10 +339,12 @@ function paintDock(view: DockView): boolean {
   paintButton(dockSecondary, view.secondary);
   paintFeed();
   // A new question takes the keyboard focus so it is read out and answerable from the keyboard.
-  if (asked && !presenting && !dock.contains(document.activeElement)) {
+  const pressing = [dock, turnCorner, undoCorner].some((home) => home.contains(document.activeElement));
+  if (asked && !presenting && !pressing) {
     const first = view.options?.length ? dockOptions.querySelector<HTMLElement>("button") : null;
     (first ?? dockTitle).focus({ preventScroll: true });
   }
+  placeDock();
   return asked;
 }
 
@@ -618,7 +645,11 @@ function dockView(): DockView {
       primary: { label: "Close", onClick: () => setDiscardOpen(false) },
     };
   }
-  if (state.payment) return { ...paymentView(state.payment), question: `pay:${state.payment.subject.id}` };
+  if (state.payment)
+    return {
+      ...paymentView(state.payment),
+      question: `pay:${state.payment.subject.id}`,
+    };
   if (state.choice) {
     const view = choiceView(state.choice);
     // After choiceView, which moves to the next offer: each offer, and choosing among defenders, is its own question.
@@ -631,10 +662,12 @@ function dockView(): DockView {
       asking: false,
       eyebrow: null,
       title: "Your turn",
+      idle: true,
       primary: {
         label: "End Turn",
         icon: "next",
         disabled: !state.canEndTurn || flying || discarding || discardOpen,
+        endTurn: true,
         onClick: endTurn,
       },
     };
@@ -643,7 +676,7 @@ function dockView(): DockView {
     tone: villain ? "villain" : "hero",
     asking: false,
     title: villain ? "Villain phase" : "End of turn",
-    primary: { label: "End Turn", icon: "next", disabled: true, onClick: () => undefined },
+    primary: { label: "End Turn", icon: "next", disabled: true, endTurn: true, onClick: () => undefined },
   };
 }
 
@@ -651,6 +684,7 @@ function dockView(): DockView {
 let hoveredCard: string | null = null;
 function hoverCard(id: string | null) {
   hoveredCard = id;
+  paintReading();
   if (!readingCard) inspect(id);
 }
 
@@ -920,7 +954,7 @@ function animateDiscards(ids: readonly string[], message: string, onComplete: ()
   discarding = true;
   closeDecision();
   restart.disabled = true;
-  undoButton.disabled = dockPrimary.disabled = dockSecondary.disabled = true;
+  undoButton.disabled = dockPrimary.disabled = dockSecondary.disabled = endTurnButton.disabled = true;
   anchors.inert = true;
   for (const button of dockOptions.querySelectorAll("button")) button.disabled = true;
   for (const id of ids) {
@@ -1774,7 +1808,8 @@ async function present(beats: Snapshot["beats"]) {
       const deckSize = state.deckCount + pendingDraws.size;
       table?.showDraw(displayedHand, beat.draw, deckSize, state.discard);
       deckCount.textContent = String(deckSize);
-      narrate(beat, feedLineOf(beat));
+      // The cards flying in say it already: on a wider screen the bar stays folded (the log still has the line).
+      narrate(beat, feedLineOf(beat), { idle: true });
       await sleep(680 + (beat.draw.length - 1) * 180);
       continue;
     }
@@ -1823,7 +1858,12 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.phase) {
       announcement.hidden = true;
       phaseIndicator(beat.phase, true);
-      narrate(beat, null, { title: beat.phase === "hero" ? "Your turn" : "Villain phase", eyebrow: null });
+      // The phase banner says whose turn it is; on a wider screen the bar stays folded for the hero's.
+      narrate(beat, null, {
+        title: beat.phase === "hero" ? "Your turn" : "Villain phase",
+        eyebrow: null,
+        idle: beat.phase === "hero",
+      });
       await sleep(PHASE_BANNER_MS);
       continue;
     }
@@ -2240,7 +2280,9 @@ function render() {
     state.choice?.options.flatMap((option) => (option.cardId && choicePicks.has(option.id) ? [option.cardId] : [])) ??
     [];
   if (state.payment || state.choice || discardOpen || state.turn !== "player") menuCard = null;
+  paintReading();
   table?.setCards({
+    handPick: !!(state.choice?.discardFromHand || state.choice?.mulligan),
     defending,
     menuCard,
     hero: state.hero,
@@ -2408,7 +2450,10 @@ function deal() {
       onHover: hoverCard,
       onLanded: landed,
       onDismissDiscard: () => setDiscardOpen(false),
-      onDraw: placeLabels,
+      onDraw: () => {
+        placeLabels();
+        placeDock();
+      },
       onDiscardLanded: (count) => {
         pileCount.textContent = String(count);
       },
@@ -2416,7 +2461,11 @@ function deal() {
     // Dev builds expose the scene for checking it from the console and from scripted screenshots.
     if (import.meta.env.DEV) (window as unknown as { battleTable?: BattleTable }).battleTable = table;
   }
-  table?.setBottomReserve(Math.max(0, boardViewport.getBoundingClientRect().bottom - dock.getBoundingClientRect().top));
+  if (!roomy.matches)
+    table?.setBottomReserve(
+      Math.max(0, boardViewport.getBoundingClientRect().bottom - dock.getBoundingClientRect().top),
+    );
+  layoutHand();
   render();
   inspect(state.hand.find((card) => card.playable)?.id ?? state.hero.id);
   restart.disabled = false;
@@ -2487,7 +2536,8 @@ menuButton.onclick = () => {
 element<HTMLButtonElement>("menu-resume").onclick = () => gameMenu.close();
 // Which side the card reader and log sit on, remembered on this device.
 function setSidebarSide(side: "left" | "right") {
-  document.querySelector(".arena")!.setAttribute("data-rail", side);
+  arena.setAttribute("data-rail", side);
+  paintRailToggle();
   for (const button of gameMenu.querySelectorAll<HTMLButtonElement>("[data-side]"))
     button.setAttribute("aria-pressed", String(button.dataset.side === side));
   try {
@@ -2514,7 +2564,9 @@ document.addEventListener(
     if (
       !discardOpen ||
       !(event.target instanceof Element) ||
-      event.target.closest("#space, #discard-label, #encounter-discard, #discard-fan, #dock")
+      event.target.closest(
+        "#space, #discard-label, #encounter-discard, #discard-fan, #dock, #turn-corner, #undo-corner, #rail-toggle",
+      )
     )
       return;
     event.preventDefault();
@@ -2552,11 +2604,119 @@ document.addEventListener("keydown", (event) => {
     gameMenu.showModal();
   }
 });
-// The hand sits just above the turn bar, however tall the bar's current question makes it.
+// ── The turn corner, the card panel and where the bar floats (wider screens) ───────────────────────────────────────
+endTurnButton.replaceChildren(icon("next"), make("span", "", "End Turn"));
+endTurnButton.onclick = (event) => {
+  if (!endTurnButton.disabled && (event.detail === 0 || settled())) endTurn();
+};
+
+/**
+ * The table sizes the hand around the turn corner and the card panel. A narrow table (a tablet held upright beside
+ * the panel) has no width to spare beside the corner, so its hand stands whole above the corner instead of sinking.
+ */
+let handOverCorner = false;
+function layoutHand() {
+  handOverCorner = roomy.matches && boardViewport.clientWidth < 720;
+  const sunk = roomy.matches && !handOverCorner;
+  // The corner's own width, its 16px inset and a 12px gap to the last card.
+  cornerReserve = sunk ? turnCorner.offsetWidth + 28 : 0;
+  if (handOverCorner) table?.setBottomReserve(turnCorner.offsetHeight + 16);
+  table?.setHandLayout({ sunk });
+  placeDock();
+}
+
+/** Undo has the bottom-left corner on a wider screen, opposite End Turn; on a phone it sits in the bar. */
+function placeUndo() {
+  const home = roomy.matches ? undoCorner : dockActions;
+  if (undoButton.parentElement !== home) home.prepend(undoButton);
+}
+
+// The card panel folds away completely; a card being read then floats over the table's edge instead.
+const RAIL_KEY = "battle-sidebar-collapsed";
+function paintRailToggle() {
+  const collapsed = arena.hasAttribute("data-collapsed");
+  const left = arena.dataset.rail === "left";
+  railToggle.textContent = collapsed
+    ? left
+      ? "Card panel \u203a"
+      : "\u2039 Card panel"
+    : left
+      ? "\u2039 Hide panel"
+      : "Hide panel \u203a";
+  railToggle.setAttribute("aria-expanded", String(!collapsed));
+  railToggle.setAttribute("aria-label", collapsed ? "Show card panel" : "Hide card panel");
+}
+function setRailCollapsed(collapsed: boolean, remember = true) {
+  arena.toggleAttribute("data-collapsed", collapsed);
+  paintRailToggle();
+  if (remember)
+    try {
+      localStorage.setItem(RAIL_KEY, collapsed ? "1" : "0");
+    } catch {
+      // Private windows may refuse storage: the choice just lasts this visit.
+    }
+  layoutHand();
+}
+placeUndo();
+railToggle.onclick = () => setRailCollapsed(!arena.hasAttribute("data-collapsed"));
+let railStored: string | null = null;
+try {
+  railStored = localStorage.getItem(RAIL_KEY);
+} catch {
+  railStored = null;
+}
+// Until it is chosen: a mouse on a smaller screen starts with the panel folded, since hovering a card shows it
+// floating; a touch screen keeps it open, with no hover to bring a folded card up.
+setRailCollapsed(railStored ? railStored === "1" : matchMedia("(hover: hover) and (max-width: 1100px)").matches, false);
+
+/** A folded card panel floats the card being read (hovered, or its menu open) over the table's edge. */
+function paintReading() {
+  arena.toggleAttribute("data-reading", !!(hoveredCard || menuCard));
+}
+
+/**
+ * Float the bar where `dockSpot` says, on every frame the table draws (so it follows the hand as it rises to be paid
+ * from) and whenever the bar changes size. Folding away it keeps its spot, so it fades out where it was.
+ */
+function placeDock() {
+  if (!roomy.matches || !table) {
+    for (const property of ["top", "left", "bottom", "translate"]) dock.style.removeProperty(property);
+    dock.removeAttribute("data-ducked");
+    return;
+  }
+  if (dock.hasAttribute("data-idle")) return;
+  const field = playfield.getBoundingClientRect();
+  const view = stage.getBoundingClientRect();
+  const spot = dockSpot({
+    field: { width: field.width, height: field.height },
+    stage: { left: view.left - field.left, top: view.top - field.top, width: view.width },
+    // Layout sizes, not the bounding box: the bar turning over to a new question must not shake it.
+    bar: { width: dock.offsetWidth, height: dock.offsetHeight },
+    hand: table.handTop,
+    asking: dock.hasAttribute("data-asking"),
+    aboutHand: !!(state?.payment || state?.choice?.mulligan || state?.choice?.discardFromHand),
+    handOverCorner,
+    corners: { left: undoCorner.offsetWidth + 28, right: cornerReserve },
+  });
+  dock.style.left = `${Math.round(spot.left)}px`;
+  dock.style.top = `${Math.round(spot.top)}px`;
+  dock.style.bottom = "auto";
+  dock.style.translate = "none";
+  dock.toggleAttribute("data-ducked", spot.ducked);
+}
+
+roomy.addEventListener("change", () => {
+  placeUndo();
+  layoutHand();
+});
+new ResizeObserver(layoutHand).observe(turnCorner);
+new ResizeObserver(layoutHand).observe(boardViewport);
+// On a phone the hand sits just above the turn bar, however tall the bar's current question makes it.
 new ResizeObserver(() => {
   const bar = dock.getBoundingClientRect();
   const view = boardViewport.getBoundingClientRect();
-  table?.setBottomReserve(Math.max(0, view.bottom - bar.top));
+  if (!roomy.matches) table?.setBottomReserve(Math.max(0, view.bottom - bar.top));
+  placeDock();
 }).observe(dock);
 boardViewport.addEventListener("scroll", centerDecisionInViewport, { passive: true });
 new ResizeObserver(centerDecisionInViewport).observe(boardViewport);
