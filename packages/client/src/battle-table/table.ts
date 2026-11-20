@@ -1706,7 +1706,7 @@ export class BattleTable {
         // Waiting to be read it stands full size, its top kept on screen; otherwise it shows briefly at table size.
         const held = this.#revealHeld && w >= 741;
         // Held, it ends a little above the turn bar's room over the hand, so the bar never presses up against it.
-        const floor = this.#handTop.resting - QUESTION_ROOM - 16;
+        const floor = this.#handTop.resting - QUESTION_ROOM - 28;
         let width = held ? Math.min(h * 0.4, w * 0.3) : Math.min(h * 0.245, w * 0.24);
         const half = card.landscape ? 0.5 : 0.7;
         if (held && floor > 0) width = Math.max(h * 0.245, Math.min(width, (floor - 16) / (half * 2)));

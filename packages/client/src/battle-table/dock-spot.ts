@@ -41,7 +41,7 @@ export function besideSpot(
 ): { left: number; top: number } {
   const start = field.left ?? 0;
   const end = start + field.width;
-  const gap = 44;
+  const gap = 64;
   let left = card.right + gap;
   if (left + size.width > end - 8) left = card.left - gap - size.width;
   left = Math.max(start + 8, Math.min(left, end - size.width - 8));

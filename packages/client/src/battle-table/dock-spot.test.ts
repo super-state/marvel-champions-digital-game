@@ -29,14 +29,14 @@ describe("besideSpot", () => {
   const field = { width: 1000, height: 800 };
   const size = { width: 300, height: 420 };
   it("shows the card on the right of the one hovered, level with its middle", () => {
-    expect(besideSpot({ left: 100, right: 200, top: 300, bottom: 440 }, size, field)).toEqual({ left: 244, top: 160 });
+    expect(besideSpot({ left: 100, right: 200, top: 300, bottom: 440 }, size, field)).toEqual({ left: 264, top: 160 });
   });
   it("goes to the left when the right has no room", () => {
-    expect(besideSpot({ left: 750, right: 850, top: 300, bottom: 440 }, size, field).left).toBe(406);
+    expect(besideSpot({ left: 750, right: 850, top: 300, bottom: 440 }, size, field).left).toBe(386);
   });
   it("keeps clear of a card pinned at the side", () => {
     const right = besideSpot({ left: 750, right: 850, top: 300, bottom: 440 }, size, { ...field, width: 700 });
-    expect(right.left).toBe(392);
+    expect(right.left).toBe(386);
     const left = besideSpot({ left: 20, right: 120, top: 300, bottom: 440 }, size, { ...field, left: 340, width: 660 });
     expect(left.left).toBe(348);
   });
