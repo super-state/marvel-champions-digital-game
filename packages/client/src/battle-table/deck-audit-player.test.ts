@@ -1133,7 +1133,7 @@ test("01092 Helicarrier: the discount applies to the next card only", () => {
   const p = scenario(handOf("01092", "01006", "01063", "01090", "01088", "01089"));
   p.play("Helicarrier", { pay: ["Strength", "Energy"] });
   const hc = p.ability("Helicarrier");
-  expect(hc.label).toBe("Exhaust · Next card costs 1 less");
+  expect(hc.label).toBe("Next card costs 1 less");
   p.run(() => p.battle.fieldAction(hc.card.id, hc.kind));
   expect(p.snap.hand.find((c) => c.name === "Aunt May")!.cost).toBe(0);
   expect(p.snap.hand.find((c) => c.name === "Interrogation Room")!.cost).toBe(0); // both show the discount until one is played

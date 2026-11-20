@@ -1117,12 +1117,14 @@ export class BattleModel {
       const ability = CORE_DEPS.abilities[action.abilityId];
       if (ability?.trigger.kind !== "action") return [];
       const short = abilityShortLabelOf(this.#game, action.instanceId, action.abilityId, CORE_DEPS) ?? "Use ability";
+      // The exhaust icon on the button already says "exhaust", so the label is only what the action does.
+      const does = short.replace(/^exhaust\b[^→·:]*[→·:]\s*/i, "");
       const label =
         action.abilityId === "01092.helicarrier-action"
-          ? "Exhaust · Next card costs 1 less"
+          ? "Next card costs 1 less"
           : action.abilityId === "01091.avengers-mansion-action"
-            ? "Exhaust · Draw 1 card"
-            : short.charAt(0).toUpperCase() + short.slice(1);
+            ? "Draw 1 card"
+            : does.charAt(0).toUpperCase() + does.slice(1);
       return [{ kind: String(action.abilityId), label, exhausts: !!ability.cost?.exhaustSelf, entry }];
     });
   }
