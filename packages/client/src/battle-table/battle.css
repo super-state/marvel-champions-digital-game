@@ -242,6 +242,15 @@ button:focus-visible {
     opacity: 1;
   }
 }
+/* A hovered table card, full size beside it while the card panel is folded (main.ts placeHoverCard). */
+.hover-card {
+  position: absolute;
+  z-index: 9;
+  object-fit: contain;
+  border-radius: 5% / 3.6%;
+  filter: drop-shadow(0 14px 18px #05090bb8);
+  pointer-events: none;
+}
 @media (min-width: 741px) and (prefers-reduced-motion: reduce) {
   .arena {
     transition: none;

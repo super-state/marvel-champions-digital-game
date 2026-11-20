@@ -1,7 +1,7 @@
 import { statHue } from "../tokens.js";
 import "./design.css";
 import "./battle.css";
-import { dockSpot } from "./dock-spot.js";
+import { besideSpot, dockSpot } from "./dock-spot.js";
 import { arrangeScene } from "./debug-scenes.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
@@ -100,6 +100,7 @@ const turnCorner = element("turn-corner");
 const undoCorner = element("undo-corner");
 const endTurnButton = element<HTMLButtonElement>("end-turn");
 const railToggle = element<HTMLButtonElement>("rail-toggle");
+const hoverPicture = element<HTMLImageElement>("hover-card");
 /** Wider than a phone: the hand sinks, the turn corner shows and the card panel can fold away. */
 const roomy = matchMedia("(min-width: 741px)");
 /** Width the turn corner takes at the bottom right of the table: a bar along the bottom keeps clear of it. */
@@ -685,6 +686,7 @@ let hoveredCard: string | null = null;
 function hoverCard(id: string | null) {
   hoveredCard = id;
   paintReading();
+  placeHoverCard();
   if (!readingCard) inspect(id);
 }
 
@@ -2453,6 +2455,7 @@ function deal() {
       onDraw: () => {
         placeLabels();
         placeDock();
+        placeHoverCard();
       },
       onDiscardLanded: (count) => {
         pileCount.textContent = String(count);
@@ -2670,12 +2673,50 @@ try {
 setRailCollapsed(railStored ? railStored === "1" : matchMedia("(hover: hover) and (max-width: 1100px)").matches, false);
 
 /**
- * A folded card panel floats the card being read (hovered, or its menu open) over the table's edge; not a hovered
- * hand card, which the table already shows full size where it is.
+ * A folded card panel floats the card whose menu is open over the table's edge (a touch screen has no hover). A
+ * hovered card shows beside itself instead (`placeHoverCard`), or full size in place if it is in the hand.
  */
 function paintReading() {
-  const inHand = !!hoveredCard && !!state?.hand.some((card) => card.id === hoveredCard);
-  arena.toggleAttribute("data-reading", !!((hoveredCard && !inHand) || menuCard));
+  arena.toggleAttribute("data-reading", !!menuCard && !hoveredCard);
+}
+
+/**
+ * With the card panel folded, a hovered table card shows full size right beside it (`besideSpot`), following it on
+ * every frame the table draws. A hand card needs none: the table grows it where it stands.
+ */
+function placeHoverCard() {
+  const id = hoveredCard;
+  const folded = roomy.matches && arena.hasAttribute("data-collapsed");
+  const card =
+    id && folded && !state?.hand.some((item) => item.id === id) ? cards().find((item) => item.id === id) : undefined;
+  const point = card?.art && table ? table.anchors().find((anchor) => anchor.id === id) : undefined;
+  if (!card || !point) {
+    hoverPicture.hidden = true;
+    return;
+  }
+  // A short fade as it appears or moves on to another card, so it never snaps in from nowhere.
+  const fresh = hoverPicture.hidden || hoverPicture.getAttribute("src") !== card.art;
+  if (hoverPicture.getAttribute("src") !== card.art) hoverPicture.src = card.art;
+  hoverPicture.alt = card.name;
+  if (fresh && !reducedMotion())
+    hoverPicture.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
+  const field = playfield.getBoundingClientRect();
+  const view = stage.getBoundingClientRect();
+  const dx = view.left - field.left;
+  const dy = view.top - field.top;
+  // Half the table's height for an upright card; a scheme lies on its side at the same long edge.
+  const long = Math.min(field.height * 0.5, 440);
+  const size = card.landscape ? { width: long, height: long / 1.4 } : { width: long / 1.4, height: long };
+  const spot = besideSpot(
+    { left: dx + point.left, right: dx + point.right, top: dy + point.top, bottom: dy + point.bottom },
+    size,
+    field,
+  );
+  hoverPicture.style.width = `${Math.round(size.width)}px`;
+  hoverPicture.style.height = `${Math.round(size.height)}px`;
+  hoverPicture.style.left = `${Math.round(spot.left)}px`;
+  hoverPicture.style.top = `${Math.round(spot.top)}px`;
+  hoverPicture.hidden = false;
 }
 
 /**

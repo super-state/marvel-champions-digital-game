@@ -41,3 +41,21 @@ export function dockSpot(input: DockSpotInput): { left: number; top: number; duc
   const ducked = hand.hovered !== null && stage.top + hand.hovered < top + bar.height;
   return { left, top, ducked };
 }
+
+/**
+ * Where a hovered table card's full-size picture goes: right beside the card, on its right, or on its left when the
+ * right has no room, level with the card's middle and always on the playfield, so the player can always see what
+ * they are pointing at.
+ */
+export function besideSpot(
+  card: { readonly left: number; readonly right: number; readonly top: number; readonly bottom: number },
+  size: { readonly width: number; readonly height: number },
+  field: { readonly width: number; readonly height: number },
+): { left: number; top: number } {
+  const gap = 28;
+  let left = card.right + gap;
+  if (left + size.width > field.width - 8) left = card.left - gap - size.width;
+  left = Math.max(8, Math.min(left, field.width - size.width - 8));
+  const top = Math.max(8, Math.min((card.top + card.bottom) / 2 - size.height / 2, field.height - size.height - 8));
+  return { left, top };
+}
