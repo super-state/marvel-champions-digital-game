@@ -1772,14 +1772,23 @@ export class BattleTable {
       this.#pose(state.staged.id, w * 0.71, h * 0.5, playWidth * 1.1, 1.18, flat + 0.12);
     } else if (state.staged && this.#power !== state.staged.id && !permanents.includes(state.staged)) {
       onBoard.add(state.staged.id);
-      this.#pose(
-        state.staged.id,
-        first + playWidth * 0.92,
-        rowY - playWidth * 0.48,
-        playWidth * 1.12,
-        1.18,
-        flat + 0.12,
-      );
+      // Held up beside the hero while it is paid for, but never over a card that could pay for it (Web-Shooter):
+      // right of the hero if that is clear, else left of the row, else up in the gap above the row.
+      const sources = new Set(state.paymentSources ?? []);
+      const covers = (x: number, y: number) =>
+        row.some((card, i) => {
+          if (!sources.has(card.id) && !card.resourceAbility) return false;
+          const half = (footprints[i]! * playWidth) / 2;
+          return Math.abs(centers[i]! - x) < half + playWidth * 0.62 && Math.abs(rowY - y) < playWidth * 1.45;
+        });
+      const rowLeft = first - heroHalf - tabs * tabScale * playWidth;
+      const spots: [number, number][] = [
+        [first + playWidth * 0.92, rowY - playWidth * 0.48],
+        [rowLeft - playWidth * 0.75, rowY - playWidth * 0.48],
+        [first, rowY - playWidth * 1.5],
+      ];
+      const [x, y] = spots.find(([sx, sy], i) => (i !== 1 || sx > playWidth * 0.7) && !covers(sx, sy)) ?? spots[2]!;
+      this.#pose(state.staged.id, x, y, playWidth * 1.12, 1.18, flat + 0.12);
     }
     const pileWidth = Math.min(w * 0.125, h * 0.125);
     const discardGoal = { position: base.clone(), scale: this.#point(pileX + pileWidth, pileY, 0.025).x - base.x };

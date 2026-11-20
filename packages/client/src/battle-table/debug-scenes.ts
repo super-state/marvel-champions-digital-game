@@ -98,6 +98,7 @@ const SCENES: Record<string, Scene> = {
   /** Swinging Web Kick in hand and tokens on Spider-Man: the event lands full size, laid over the tokens. */
   kick: {
     hero: { form: "hero", damage: 3, statuses: { tough: 1 } },
+    play: [{ code: "01008", counters: { web: 3 } }, { code: "01002" }],
     hand: ["01005", "01089", "01087", "01090"],
   },
   /** Two Backflips in hand as Rhino attacks: one question covers both copies. */
