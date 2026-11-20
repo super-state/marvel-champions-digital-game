@@ -95,10 +95,12 @@ let table: BattleTable | undefined;
 let state: Snapshot;
 let staged: BattleCard | null = null;
 /**
- * An interrupt taken against threat about to land on a scheme (Great Responsibility): the card goes over to the scheme,
- * and if it turns the threat into damage, the threat is shown turning into a damage token and flying to the hero.
+ * A card played in answer to a moment goes to whatever that moment is happening to: the scheme about to get threat
+ * (Great Responsibility), the hero about to take damage (Backflip), the treachery being revealed, the enemy about to
+ * activate. The rule is the reaction window's own subject, so it holds for every card, not one by one. Threat stopped
+ * at a scheme that the card turns into damage is shown turning into a damage token and flying to the hero.
  */
-let shielding: { card: string; scheme: string; amount: number } | null = null;
+let reacting: { card: string; subject: string; kind: string; amount: number } | null = null;
 /** A targeted attachment (Spider-Tracer) staged while its host is chosen: it waits over the villain's side. */
 let stagedAttachment: string | null = null;
 const readReveal = element<HTMLButtonElement>("read-reveal");
@@ -422,8 +424,13 @@ function answerOffer(yes: boolean) {
   if (!choice?.offers || discarding || presenting) return;
   const offer = choice.offers[offerIndex]!;
   if (yes) acceptedOffers.push(offer.id);
-  if (yes && choice.event?.kind === "placeThreat" && choice.event.before && choice.event.subject)
-    shielding = { card: offer.cardId, scheme: choice.event.subject, amount: choice.event.amount ?? 1 };
+  if (yes && choice.event?.subject)
+    reacting = {
+      card: offer.cardId,
+      subject: choice.event.subject,
+      kind: choice.event.kind,
+      amount: choice.event.amount ?? 1,
+    };
   if (++offerIndex < choice.offers.length && acceptedOffers.length < choice.max) {
     render();
     return;
@@ -822,6 +829,8 @@ function landed(id: string) {
 }
 
 function beginPlay(card: BattleCard) {
+  // A card played from the hand on its own answers no moment.
+  reacting = null;
   act(() => {
     if (!model.pick(card.id)) {
       staged = null;
@@ -1903,9 +1912,9 @@ async function present(beats: Snapshot["beats"]) {
       }
       activationRing(beat.activate.card);
       await sleep(360);
-      if (shielding?.card === beat.activate.card) {
-        // It goes to the scheme it protects, not onto the hero.
-        table?.channelEventTo(beat.activate.card, shielding.scheme);
+      if (reacting?.card === beat.activate.card && reacting.subject !== beat.activate.hero) {
+        // It goes to what the moment is happening to (a scheme, a revealed card, an enemy), not onto the hero.
+        table?.channelEventTo(beat.activate.card, reacting.subject);
         await sleep(560);
       } else {
         table?.channelEvent(beat.activate.card);
@@ -1924,7 +1933,7 @@ async function present(beats: Snapshot["beats"]) {
       floatNumber(beat.deflection.card, "blocked", "Blocked", `${beat.deflection.amount} damage`);
     }
     if (beat.discardEvent) {
-      if (shielding?.card === beat.discardEvent) shielding = null;
+      if (reacting?.card === beat.discardEvent) reacting = null;
       const card = state.discard.find((c) => c.id === beat.discardEvent);
       if (card) {
         table?.discardEvent(card);
@@ -2101,9 +2110,9 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.hit) {
       // The attack has landed: its target goes.
       clearAim();
-      if (shielding && beat.hit.source === shielding.card) {
+      if (reacting?.kind === "placeThreat" && beat.hit.source === reacting.card) {
         // The threat it stopped turns into damage at the scheme and flies to the hero.
-        await convertThreat(shielding.scheme, beat.hit.target, beat.hit.amount);
+        await convertThreat(reacting.subject, beat.hit.target, beat.hit.amount);
       } else {
         table?.strike(beat.hit.source, beat.hit.target);
         await sleep(HIT_CONTACT_MS);
