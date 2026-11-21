@@ -2247,9 +2247,13 @@ export class BattleTable {
         spots.push([revealRect.x + beside, y], [revealRect.x - beside, y]);
       }
       const onScreen = (x: number) => x - stagedHalf > 8 && x + stagedHalf < w - 8;
+      // With no clear spot (a narrow screen) it stands beside the revealed card as far as the screen allows, partly
+      // behind it: the revealed card is drawn on top either way (#render).
+      const fallback: [number, number] = revealRect
+        ? [Math.min(spots[3]![0], w - stagedHalf - 8), spots[3]![1]]
+        : spots[2]!;
       const [x, y] =
-        spots.find(([sx, sy], i) => (i !== 1 || sx > playWidth * 0.7) && onScreen(sx) && !covers(sx, sy)) ??
-        spots[revealRect ? 3 : 2]!;
+        spots.find(([sx, sy], i) => (i !== 1 || sx > playWidth * 0.7) && onScreen(sx) && !covers(sx, sy)) ?? fallback;
       this.#pose(state.staged.id, x, y, playWidth * 1.12, 1.18, flat + 0.12);
     }
     const pileWidth = Math.min(w * 0.125, h * 0.125);
@@ -2906,6 +2910,10 @@ export class BattleTable {
 
   /** Every object put on the front layer last frame, so each frame starts from none (the sheen moves between cards). */
   readonly #onFront = new Set<THREE.Object3D>();
+  /** The cards drawn on top last frame (`#frontCards`): the pointer finds them first, as the player sees them. */
+  #frontIds = new Set<string>();
+  /** The same, less cards only settling back after being let go, which must not catch the pointer again. */
+  #frontPick = new Set<string>();
 
   /**
    * The cards the player must see whole: a revealed card held up to be read (and the card cancelling it, standing over
@@ -2916,16 +2924,30 @@ export class BattleTable {
   #frontCards(): Set<THREE.Object3D> {
     const roots = new Set<THREE.Object3D>();
     const state = this.#state;
-    if (!state) return roots;
+    if (!state) {
+      this.#frontIds.clear();
+      this.#frontPick.clear();
+      return roots;
+    }
+    const ids = new Set<string>();
     const add = (id: string | null | undefined) => {
-      const piece = id ? this.#pieces.get(id) : undefined;
-      if (piece) roots.add(piece.root);
+      if (id && this.#pieces.has(id)) ids.add(id);
     };
     add(this.#revealing);
     for (const card of this.#deckReveal) add(card.id);
     if (this.#power && this.#powerHost && !this.#powerAside && this.#powerHost === this.#revealing) add(this.#power);
+    // A picked hand card keeps its own layer among the picked (see the hand layout), hovered or not.
     const held = this.#press?.dragging ? this.#press.id : this.#hovered;
-    if (held && state.hand.some((card) => card.id === held)) add(held);
+    if (held && state.hand.some((card) => card.id === held) && !state.selected.includes(held)) add(held);
+    this.#frontPick = new Set(ids);
+    // A card let go stays in front until it is back in its place, so it never cuts through a neighbour on the way.
+    for (const id of this.#frontIds) {
+      const piece = this.#pieces.get(id);
+      if (!ids.has(id) && piece && piece.root.position.distanceTo(piece.target.position) > piece.target.scale * 0.01)
+        ids.add(id);
+    }
+    this.#frontIds = ids;
+    for (const id of ids) roots.add(this.#pieces.get(id)!.root);
     return roots;
   }
 
@@ -2963,7 +2985,11 @@ export class BattleTable {
     renderer.shadowMap.autoUpdate = false;
     renderer.clearDepth();
     camera.layers.set(FRONT_LAYER);
+    // A colour background always clears the picture first, whatever autoClear says: leave it out of the front pass.
+    const background = this.#scene.background;
+    this.#scene.background = null;
     renderer.render(this.#scene, camera);
+    this.#scene.background = background;
     renderer.shadowMap.autoUpdate = true;
     renderer.autoClear = true;
     camera.layers.enableAll();
@@ -3002,6 +3028,8 @@ export class BattleTable {
     this.#ray.setFromCamera(this.#ndc, this.#camera);
     let nearest = Infinity;
     let id: string | null = null;
+    // A card drawn on top of the rest (#render) is what the pointer is over, even where another is nearer in depth.
+    let front: { id: string; distance: number } | null = null;
     let underZoom: { id: string; distance: number } | null = null;
     const handIds = new Set(this.#state?.hand.map((card) => card.id));
     for (const piece of this.#pieces.values()) {
@@ -3016,7 +3044,10 @@ export class BattleTable {
         nearest = hit.distance;
         id = piece.card.id;
       }
+      if (hit && this.#frontPick.has(piece.card.id) && (!front || hit.distance < front.distance))
+        front = { id: piece.card.id, distance: hit.distance };
     }
+    if (front) id = front.id;
     // Over the hand, the full-size card gives way to the hand card under the pointer, so the hand can be swept.
     if (id && id === this.#zoom?.id && underZoom && event.clientY - rect.top - this.#extension > this.#zoom.handTop)
       return underZoom.id;
