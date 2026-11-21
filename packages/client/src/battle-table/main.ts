@@ -2912,6 +2912,8 @@ function render() {
       heldEncounter,
     }),
   );
+  // That spotlight shades the table itself, the held card cut out with the cards it asks for (`spotOf`).
+  if (spot && heldEncounter && spot.cutouts.includes(heldEncounter)) choiceShade.hidden = true;
   if (state.choice?.defense) inspect(state.choice.defense.attackerId);
   if (state.choice?.offers?.length) inspect(state.choice.offers[offerIndex]?.cardId ?? null);
   placeLabels();

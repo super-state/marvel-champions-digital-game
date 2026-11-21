@@ -3,6 +3,7 @@ import { CARD_BACKS } from "../art/art-source.js";
 import { cardRadius } from "../art/card-shape.js";
 import rooftop from "../art/tabletop/rooftop.webp?url";
 import { fitBoard, fitToBox, type BoardFit, type TableBox } from "./board-fit.js";
+import { revealAside, type ScreenBox } from "./dock-spot.js";
 import { TokenKit, placeTokens } from "./tokens3d.js";
 
 export interface TableCard {
@@ -1742,6 +1743,25 @@ export class BattleTable {
     this.#matGoal = { x: 0, z: (near.z + far.z) / 2, width: near.x * 2, depth: near.z - far.z };
   }
 
+  /** Where a card will rest on screen once it gets there (its target pose), lying on the table. */
+  #screenBox(id: string): ScreenBox | null {
+    const piece = this.#pieces.get(id);
+    if (!piece) return null;
+    const { position, scale, roll } = piece.target;
+    const sideways = piece.card.landscape !== Math.abs(Math.sin(roll)) > 0.7;
+    const halfX = (scale * (sideways ? HEIGHT : 1)) / 2;
+    const halfZ = (scale * (sideways ? 1 : HEIGHT)) / 2;
+    const corners = [-1, 1].flatMap((sx) =>
+      [-1, 1].map((sz) => this.#project(position.x + sx * halfX, position.y, position.z + sz * halfZ)),
+    );
+    return {
+      left: Math.min(...corners.map((c) => c.x)),
+      right: Math.max(...corners.map((c) => c.x)),
+      top: Math.min(...corners.map((c) => c.y)),
+      bottom: Math.max(...corners.map((c) => c.y)),
+    };
+  }
+
   /** Screen pixels of a world point. */
   readonly #project = (x: number, y: number, z: number): { x: number; y: number } => {
     this.#scratch.set(x, y, z).project(this.#camera);
@@ -1981,6 +2001,7 @@ export class BattleTable {
     let waiting = 0;
     // Where the revealed card stands on screen while it is held up, so a card being paid for keeps clear of it.
     let revealRect: { x: number; y: number; halfWidth: number; halfHeight: number } | null = null;
+    let revealPose: { id: string; y: number; width: number; across: number } | null = null;
     const boosts = new Map<string, number>();
     for (const card of this.#encounters.values()) {
       const host = card.boostFor ? enemyPoses.get(card.boostFor) : undefined;
@@ -1998,6 +2019,7 @@ export class BattleTable {
         let y = Math.max(h * (w < 550 ? 0.3 : 0.38), 16 + width * half);
         if (floor > 0) y = Math.max(16 + width * half, Math.min(y, floor - width * half));
         this.#pose(card.id, w * 0.5, y, width, 1.75, this.#camera.rotation.x);
+        revealPose = { id: card.id, y, width, across: card.landscape ? HEIGHT : 1 };
         revealRect = {
           x: w * 0.5,
           y,
@@ -2277,6 +2299,26 @@ export class BattleTable {
       [this.#encounterSlot, encounterGoal],
       [this.#encounterDiscardSlot, encounterDiscardGoal],
     ]);
+    // A revealed card asking the player to pick cards on the table steps aside, clear of them (`revealAside`).
+    if (revealPose && revealRect && state.targets.length) {
+      const picks = state.targets.flatMap((id) => {
+        const box = id === revealPose!.id ? null : this.#screenBox(id);
+        return box ? [box] : [];
+      });
+      const reveal = revealRect as { x: number; y: number; halfWidth: number; halfHeight: number };
+      const aside = revealAside(
+        {
+          left: reveal.x - reveal.halfWidth,
+          right: reveal.x + reveal.halfWidth,
+          top: reveal.y - reveal.halfHeight,
+          bottom: reveal.y + reveal.halfHeight,
+        },
+        picks,
+        w,
+      );
+      if (aside.x !== reveal.x || aside.scale !== 1)
+        this.#pose(revealPose.id, aside.x, revealPose.y, revealPose.width * aside.scale, 1.75, this.#camera.rotation.x);
+    }
     const base2 = discardGoal.position;
     const scale = discardGoal.scale;
     const encounterScale = encounterDiscardGoal.scale;

@@ -106,6 +106,34 @@ describe("spotOf: the defend question", () => {
   });
 });
 
+describe("spotOf: a revealed card asking for cards on the table", () => {
+  const offGuard = choice({
+    prompt: "Choose a target",
+    sourceTitle: "Caught Off Guard",
+    options: [
+      { id: "a", label: "Mockingbird", cardId: "mockingbird" },
+      { id: "b", label: "Hydra Mercenary", cardId: "hydra-mercenary" },
+    ],
+  });
+
+  test("the cards it can take glow gold and stand out of the shade with it; the card asking glows red", () => {
+    expect(spotOf(offGuard, table, { ...at, heldEncounter: "caught-off-guard" })).toEqual({
+      glow: [
+        { id: "caught-off-guard", tone: "attack" },
+        { id: "mockingbird", tone: "target" },
+        { id: "hydra-mercenary", tone: "target" },
+      ],
+      cutouts: ["caught-off-guard", "mockingbird", "hydra-mercenary"],
+    });
+  });
+
+  test("nothing to spotlight when no card is held up, or its question is answered with buttons only", () => {
+    expect(spotOf(offGuard, table, at)).toBeNull();
+    const buttons = choice({ options: [{ id: "x", label: "Take 2 damage", cardId: null }] });
+    expect(spotOf(buttons, table, { ...at, heldEncounter: "hydra-bomber" })).toBeNull();
+  });
+});
+
 describe("spotOf: reaction windows", () => {
   const offer = (event: NonNullable<BattleChoice["event"]>, cardId = "great-responsibility") =>
     choice({
