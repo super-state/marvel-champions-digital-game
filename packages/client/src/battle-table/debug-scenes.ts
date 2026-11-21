@@ -101,6 +101,14 @@ const SCENES: Record<string, Scene> = {
   shadow: {
     encounterTop: ["01110", "01190"],
   },
+  /**
+   * Caught Off Guard comes up with Web-Shooter and Helicarrier in play: end the turn, and its When Revealed asks which
+   * to discard. The card steps aside so both can be seen and picked.
+   */
+  offguard: {
+    play: [{ code: "01008", counters: { web: 3 } }, { code: "01092" }],
+    encounterTop: ["01110", "01188"],
+  },
   /** One card left in the encounter deck: end the turn and the villain phase runs it out. */
   encounterout: {
     encounterLeft: 1,
