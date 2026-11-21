@@ -204,7 +204,14 @@ export interface BattleBeat {
     quick: boolean;
     /** The card has a When Revealed, which fires with a flash before its effect lands. */
     whenRevealed: boolean;
+    /**
+     * A card with a When Revealed for each form (Assault): the one that applies to the hero's form right now, so the
+     * player is told which half of the card is about to happen.
+     */
+    applies?: { form: "Hero" | "Alter-Ego"; text: string };
   };
+  /** A revealed encounter card that has fully resolved going to the encounter discard pile (Assault, after its attack). */
+  encounterResolved?: string;
   actor?: string | null;
   phase?: "hero" | "villain";
   gameEnded?: true;
@@ -250,6 +257,23 @@ function statModifiers(state: GameState, id: InstanceId) {
     .map((tile) => ({ name: tile.label, count: tile.bonus }));
   if (printed && profile.maxHp !== printed.maxHp) modifiers.push({ name: "HP", count: profile.maxHp - printed.maxHp });
   return modifiers;
+}
+
+/**
+ * Of a card's form-bound When Revealed lines ("When Revealed (Alter-Ego): This card gains surge. / When Revealed
+ * (Hero): The villain attacks you."), the one for `form`. Nothing for a card without them.
+ */
+export function formWhenRevealed(
+  text: string,
+  form: "hero" | "alterEgo",
+): { applies: { form: "Hero" | "Alter-Ego"; text: string } } | Record<string, never> {
+  const label = form === "hero" ? "Hero" : "Alter-Ego";
+  // The searchable text runs the lines together, so a line ends at the next ability's opening words.
+  const line = new RegExp(
+    String.raw`When Revealed \(${label}\)\s*:\s*(.+?)\s*(?=\n|When Revealed\b|(?:Hero |Alter-Ego )?(?:Forced )?(?:Interrupt|Response)\b|Boost\b|$)`,
+    "is",
+  ).exec(text);
+  return line ? { applies: { form: label, text: line[1]!.trim() } } : {};
 }
 
 function apply(state: GameState, command: Command) {
@@ -304,10 +328,21 @@ export class BattleModel {
 
   #beats: BattleBeat[] = [];
   #villainActivity = "";
+  /** Enemies whose activation aimed an attack that hasn't been initiated yet: their attack needs no aim of its own. */
+  #aimed = new Set<string>();
+  /** An attack a card made happen (Assault), and the villain step it interrupts, to go back to once it resolves. */
+  #effectAttack: { enemy: string; activity: string } | null = null;
   #drawn: readonly string[] = [];
   #handOrder: InstanceId[] = [];
 
-  #history: { game: GameState; handOrder: InstanceId[]; activity: string; beats: BattleBeat[] }[] = [];
+  #history: {
+    game: GameState;
+    handOrder: InstanceId[];
+    activity: string;
+    beats: BattleBeat[];
+    aimed: Set<string>;
+    effectAttack: { enemy: string; activity: string } | null;
+  }[] = [];
 
   get canUndo(): boolean {
     return this.#history.length > 0;
@@ -325,6 +360,8 @@ export class BattleModel {
     this.#handOrder = previous.handOrder;
     this.#villainActivity = previous.activity;
     this.#beats = previous.beats;
+    this.#aimed = previous.aimed;
+    this.#effectAttack = previous.effectAttack;
     this.#setGame(previous.game, []);
     return true;
   }
@@ -332,6 +369,8 @@ export class BattleModel {
   reset(options: DealOptions = {}): void {
     this.#history = [];
     this.#villainActivity = "";
+    this.#aimed = new Set();
+    this.#effectAttack = null;
     this.#beats = [];
     const opening = openingTurn(options);
     this.#setGame(opening, opening.players[0]!.hand);
@@ -360,6 +399,8 @@ export class BattleModel {
       handOrder: this.#handOrder,
       activity: this.#villainActivity,
       beats: this.#beats,
+      aimed: new Set(this.#aimed),
+      effectAttack: this.#effectAttack,
     });
     const events = [...result.events];
     for (;;) {
@@ -526,6 +567,9 @@ export class BattleModel {
             landscape: isLandscapeType(card?.type ?? ""),
             quick: card?.type === "minion",
             whenRevealed: !!card && /\bWhen Revealed\b/i.test(plainRulesTextOf(card)),
+            ...(card && e.type === "encounterCardRevealed"
+              ? formWhenRevealed(plainRulesTextOf(card), result.state.players[0]!.identity.form)
+              : {}),
           },
         });
       } else if (
@@ -633,6 +677,41 @@ export class BattleModel {
           text: `${resolving ? name(resolving.card) + ": no" : "No"} ${what} to choose`,
           nothingFound: { slot: e.slot, source: resolving?.card ?? null },
         });
+      } else if (e.type === "cardMoved" && e.from.kind === "dealtEncounter" && e.to.kind === "encounterDiscard") {
+        // A revealed treachery is discarded once its When Revealed has fully resolved (RRG 1.8 "Treachery"): after
+        // the attack Assault makes, after the card its surge deals. It stays on the table until this beat.
+        this.#beats.push({
+          enemy,
+          actor: e.instanceId,
+          text: `${name(e.instanceId)} goes to the encounter discard pile`,
+          encounterResolved: e.instanceId,
+        });
+      } else if (
+        e.type === "triggerEvent" &&
+        e.event.kind === "enemyAttack" &&
+        e.phase !== "resolved" &&
+        !this.#aimed.delete(e.event.enemyInstanceId)
+      ) {
+        // An attack a card makes happen (Assault's "The villain attacks you") has no activation of its own: it is
+        // aimed here, the way an activation's attack is, so the table shows who attacks whom before it resolves.
+        const attacker = e.event.enemyInstanceId;
+        this.#effectAttack = { enemy: attacker, activity: this.#villainActivity };
+        this.#villainActivity = `${name(attacker)} attacks`;
+        this.#beats.push({
+          enemy,
+          actor: attacker,
+          text: `Target: ${name(e.event.targetInstanceId)}`,
+          attackAim: { source: attacker, target: e.event.targetInstanceId },
+          enemyActivation: attacker,
+        });
+      } else if (
+        e.type === "triggerEvent" &&
+        e.event.kind === "enemyAttack" &&
+        e.phase === "resolved" &&
+        this.#effectAttack?.enemy === e.event.enemyInstanceId
+      ) {
+        this.#villainActivity = this.#effectAttack.activity;
+        this.#effectAttack = null;
       } else if (e.type === "cardMoved" && e.from.kind === "resolving" && e.to.kind === "discard") {
         this.#beats.push({
           enemy,
@@ -750,6 +829,7 @@ export class BattleModel {
                   text: `Target: ${name(target)}`,
                   attackAim: { source: actor, target },
                 });
+                this.#aimed.add(actor);
                 text = undefined;
               }
             }

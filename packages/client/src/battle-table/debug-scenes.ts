@@ -109,6 +109,20 @@ const SCENES: Record<string, Scene> = {
   bomber: {
     encounterTop: ["01104", "01110"],
   },
+  /**
+   * Assault comes up with the hero in hero form: its When Revealed (Hero) has Rhino attack. End the turn (Rhino's own
+   * attack comes first, with the first card as its boost card), and the third card is the boost for Assault's attack.
+   */
+  assault: {
+    hero: { form: "hero" },
+    hand: ["01089", "01087", "01090"],
+    encounterTop: ["01104", "01187", "01105"],
+  },
+  /** Assault comes up with the hero in alter-ego form: it gains surge, and another encounter card follows. */
+  assaultsurge: {
+    hero: { form: "alterEgo" },
+    encounterTop: ["01104", "01187", "01105"],
+  },
   /** Hard to Keep Down on an unhurt Rhino surges into "I'm Tough!": end the turn to watch it. */
   surge: {
     encounterTop: ["01110", "01104", "01105"],

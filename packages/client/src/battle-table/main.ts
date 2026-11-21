@@ -145,8 +145,17 @@ let menuCard: string | null = null;
 let actionCard: string | null = null;
 const moveViews = new WeakMap<
   Snapshot["beats"],
-  { staged: BattleCard | null; reveal: Beat["reveal"]; aim: string | null; reacting?: Reaction | null }
+  {
+    staged: BattleCard | null;
+    reveal: Beat["reveal"];
+    aim: string | null;
+    reacting?: Reaction | null;
+    /** Revealed cards standing aside by the villain while they resolve (Assault during its attack). */
+    parked?: { id: string; name: string; art: string; landscape: boolean }[];
+  }
 >();
+/** How each revealed encounter card was shown, so Undo can stand a parked one back up by the villain. */
+const parkedViews = new Map<string, { id: string; name: string; art: string; landscape: boolean }>();
 let presented: Snapshot["beats"] | undefined;
 let presenting = false;
 let flying = false;
@@ -1420,10 +1429,51 @@ async function convertThreat(scheme: string, target: string, amount: number) {
 }
 
 /** A When Revealed firing: the card rises with a flash, and the dock says what is happening. */
-async function whenRevealedFires(beat: Beat, card: { id: string; name: string }) {
+async function whenRevealedFires(beat: Beat, card: { id: string; name: string; applies?: Applies | undefined }) {
   table?.activateWhenRevealed(card.id);
-  narrate(beat, null, { eyebrow: { text: "When Revealed", icon: "forced", tone: "villain" }, title: card.name });
+  narrate(beat, card.applies ? { text: `${card.name}: ${card.applies.text}`, icon: "forced", tone: "villain" } : null, {
+    eyebrow: {
+      text: card.applies ? `When Revealed (${card.applies.form})` : "When Revealed",
+      icon: "forced",
+      tone: "villain",
+    },
+    title: card.applies ? `${card.name}: ${card.applies.text}` : card.name,
+  });
   await sleep(ACTIVATION_MS);
+}
+
+type Applies = NonNullable<NonNullable<Beat["reveal"]>["applies"]>;
+
+/** What the card being read will do, in the turn bar under its name: the half of it that matches the hero's form. */
+function appliesHelp(reveal: Beat["reveal"]): string | null {
+  const applies = reveal?.applies;
+  if (!applies) return null;
+  return `You're in ${applies.form === "Hero" ? "hero" : "alter-ego"} form: ${applies.text}`;
+}
+
+/**
+ * A revealed encounter card that is done being read leaves the middle of the table. One that stays in play lands in
+ * its place. A treachery whose effect still has something to show (the attack Assault calls, a question it asks, the
+ * card its surge deals) stands aside by the villain until its own beat in `upcoming` sends it to the discard pile
+ * (RRG 1.8: a treachery is discarded once its When Revealed has resolved). One with nothing left goes there now.
+ */
+function leaveEncounter(id: string, upcoming: readonly Beat[]): "landed" | "parked" | "retired" {
+  const permanent = state.enemyCards.find((c) => c.id === id);
+  if (permanent) {
+    table?.landEncounter(permanent);
+    return "landed";
+  }
+  const leaves = upcoming.findIndex((beat) => beat.encounterResolved === id);
+  const discarded = state.encounterDiscard.some((c) => c.id === id);
+  if (leaves > 0 || (leaves < 0 && !discarded)) {
+    table?.parkEncounter(id);
+    return "parked";
+  }
+  table?.retireEncounter(
+    id,
+    state.encounterDiscard.find((c) => c.id === id),
+  );
+  return "retired";
 }
 
 /**
@@ -2080,8 +2130,12 @@ async function present(beats: Snapshot["beats"]) {
       // The encounter card nobody interrupted: its When Revealed fires where it stands, then it goes.
       const id = releaseHeld;
       releaseHeld = null;
-      await whenRevealedFires(beat, { id, name: nameOf(id) });
-      letGoOfEncounter(id);
+      await whenRevealedFires(beat, {
+        id,
+        name: nameOf(id),
+        applies: heldReveal?.id === id ? heldReveal.applies : undefined,
+      });
+      letGoOfEncounter(id, beats.slice(index));
       await sleep(reducedMotion() ? 150 : 450);
     }
     if (beat.draw) {
@@ -2378,7 +2432,7 @@ async function present(beats: Snapshot["beats"]) {
         stampCard(cancelled, "Cancelled");
         await sleep(reducedMotion() ? 300 : 760);
         table?.holdEvent(beat.interrupt);
-        letGoOfEncounter(cancelled);
+        letGoOfEncounter(cancelled, []);
         heldEncounter = revealWindowHeld = null;
         await sleep(reducedMotion() ? 200 : 620);
       }
@@ -2486,6 +2540,7 @@ async function present(beats: Snapshot["beats"]) {
         !(state.choice?.sourceTitle && state.choiceSource === beat.reveal.id);
       if (willHold) table?.holdReveal(true);
       table?.revealEncounter(beat.reveal);
+      if (!beat.reveal.boost) parkedViews.set(beat.reveal.id, beat.reveal);
       await sleep(360);
       if (beat.reveal.art) showPreview(beat.reveal, !beat.reveal.boost);
       if (beat.reveal.boost) {
@@ -2532,6 +2587,7 @@ async function present(beats: Snapshot["beats"]) {
         narrate(beat, null, {
           eyebrow: { text: "Revealed", icon: "forced", tone: "villain" },
           title: beat.reveal.name,
+          help: appliesHelp(beat.reveal),
           primary: { label: "Continue", icon: "next", attention: true, onClick: () => readReveal.click() },
         });
         readReveal.focus({ preventScroll: true });
@@ -2560,12 +2616,26 @@ async function present(beats: Snapshot["beats"]) {
           await whenRevealedFires(beat, beat.reveal);
         }
       } else {
-        table?.retireEncounter(
-          beat.reveal.id,
-          state.encounterDiscard.find((c) => c.id === beat.reveal!.id),
-        );
+        const left = leaveEncounter(beat.reveal.id, beats.slice(index + 1));
         await sleep(450);
+        // Standing aside by the villain, it fires there: the attack or effect that follows is plainly its doing.
+        if (left === "parked" && beat.reveal.whenRevealed && !reducedMotion())
+          await whenRevealedFires(beat, beat.reveal);
       }
+    }
+    if (beat.encounterResolved) {
+      // The treachery has done everything it does: it goes to the encounter discard pile, where it can be seen going.
+      const id = beat.encounterResolved;
+      if (
+        table?.retireEncounter(
+          id,
+          state.encounterDiscard.find((c) => c.id === id),
+        )
+      ) {
+        narrate(beat, { text: beat.text, icon: "discard", tone: "villain" });
+        await sleep(reducedMotion() ? 150 : 520);
+      }
+      continue;
     }
     if (beat.threat) {
       if (beat.enemy && beat.threat.delta > 0) {
@@ -2651,14 +2721,8 @@ async function present(beats: Snapshot["beats"]) {
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────────────────────────────────────────────────
-function letGoOfEncounter(id: string) {
-  const permanent = state.enemyCards.find((c) => c.id === id);
-  if (permanent) table?.landEncounter(permanent);
-  else
-    table?.retireEncounter(
-      id,
-      state.encounterDiscard.find((c) => c.id === id),
-    );
+function letGoOfEncounter(id: string, upcoming: readonly Beat[]) {
+  leaveEncounter(id, upcoming);
   table?.holdReveal(false);
 }
 
@@ -2671,7 +2735,7 @@ function render() {
     // Passed on interrupting its reveal: it stays up for its When Revealed to play out first, with the new beats.
     if (revealWindowHeld === heldEncounter && presented !== state.beats && state.beats.length)
       releaseHeld = heldEncounter;
-    else letGoOfEncounter(heldEncounter);
+    else letGoOfEncounter(heldEncounter, presented !== state.beats ? state.beats : []);
     revealWindowHeld = null;
     heldEncounter = null;
     inspect(hoveredCard);
@@ -2698,10 +2762,17 @@ function render() {
       return;
     }
   }
+  for (const id of table?.parkedEncounters() ?? [])
+    if (state.encounterDiscard.some((c) => c.id === id))
+      table?.retireEncounter(
+        id,
+        state.encounterDiscard.find((c) => c.id === id),
+      );
   table?.reconcileEncounters([
     ...state.facedownEncounters,
     ...(state.choiceSource ? [state.choiceSource] : []),
     ...(heldEncounter ? [heldEncounter] : []),
+    ...(table?.parkedEncounters() ?? []),
   ]);
   // Paying for a reaction is a move of its own that Undo can come back to: it keeps its card and reaction too.
   if (!flying && (!state.payment || model.payingForReaction) && !state.choice?.canCancel) {
@@ -2714,6 +2785,10 @@ function render() {
       staged: staged && !state.hand.some((c) => c.id === staged!.id) ? staged : null,
       reveal,
       aim: aimTarget,
+      parked: (table?.parkedEncounters() ?? []).flatMap((id) => {
+        const shown = parkedViews.get(id);
+        return shown ? [shown] : [];
+      }),
       reacting: state.payment ? reacting : null,
     });
   }
@@ -3027,6 +3102,10 @@ undoButton.onclick = () => {
   render();
   for (const id of state.facedownEncounters)
     table?.dealEncounter(id, state.facedownBoosts.find((boost) => boost.id === id)?.enemy ?? null);
+  for (const card of view?.parked ?? []) {
+    table?.revealEncounter(card);
+    table?.parkEncounter(card.id);
+  }
   if (view?.reveal) {
     // Full size only when it waits on a reaction to its reveal; a card's own question shows it at table size.
     if (revealWindowHeld) table?.holdReveal(true);
