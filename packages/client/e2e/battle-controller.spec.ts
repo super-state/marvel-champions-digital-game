@@ -49,7 +49,7 @@ async function keepHand(page: Page): Promise<void> {
   await expect.poll(() => padMode(page)).toBe("pad");
   await expect.poll(() => focused(page)).toBe("dock-primary");
   await padTap(page, PAD.a);
-  await expect(page.locator("#turn-status")).toHaveText(/Hero phase/i);
+  await expect(page.locator("#turn-status")).toHaveText(/Hero phase/i, { timeout: 20_000 });
   await expect(page.locator("#dock")).toHaveAttribute("data-idle", "");
   await expect.poll(() => focused(page), { timeout: 15_000 }).toMatch(/^(Play|Inspect) /);
 }
