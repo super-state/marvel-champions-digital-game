@@ -433,6 +433,8 @@ export class BattleTable {
    * beside the villain, small and out of the way, until its beat sends it to the encounter discard pile.
    */
   readonly #parked = new Set<string>();
+  /** Where a revealed card stands aside for its question's picks (`revealAside`), held for that question. */
+  #aside: { key: string; x: number; scale: number } | null = null;
   #actor: string | null = null;
   #power: string | null = null;
   /** Damage discs, counters, status tiles, stat pills and threat chips. */
@@ -2300,22 +2302,31 @@ export class BattleTable {
       [this.#encounterDiscardSlot, encounterDiscardGoal],
     ]);
     // A revealed card asking the player to pick cards on the table steps aside, clear of them (`revealAside`).
+    // Worked out once per question and screen size, then held: a pick lifted under the pointer grows a little, and
+    // the card must not twitch with it.
     if (revealPose && revealRect && state.targets.length) {
-      const picks = state.targets.flatMap((id) => {
-        const box = id === revealPose!.id ? null : this.#screenBox(id);
-        return box ? [box] : [];
-      });
+      const key = `${revealPose.id}|${state.targets.join(",")}|${w}x${h}|${this.#question}|${this.#hand.sunk}`;
       const reveal = revealRect as { x: number; y: number; halfWidth: number; halfHeight: number };
-      const aside = revealAside(
-        {
-          left: reveal.x - reveal.halfWidth,
-          right: reveal.x + reveal.halfWidth,
-          top: reveal.y - reveal.halfHeight,
-          bottom: reveal.y + reveal.halfHeight,
-        },
-        picks,
-        w,
-      );
+      if (this.#aside?.key !== key) {
+        const picks = state.targets.flatMap((id) => {
+          const box = id === revealPose!.id ? null : this.#screenBox(id);
+          return box ? [box] : [];
+        });
+        this.#aside = {
+          key,
+          ...revealAside(
+            {
+              left: reveal.x - reveal.halfWidth,
+              right: reveal.x + reveal.halfWidth,
+              top: reveal.y - reveal.halfHeight,
+              bottom: reveal.y + reveal.halfHeight,
+            },
+            picks,
+            w,
+          ),
+        };
+      }
+      const aside = this.#aside!;
       if (aside.x !== reveal.x || aside.scale !== 1)
         this.#pose(revealPose.id, aside.x, revealPose.y, revealPose.width * aside.scale, 1.75, this.#camera.rotation.x);
     }
