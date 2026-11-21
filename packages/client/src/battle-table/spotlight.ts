@@ -104,6 +104,29 @@ export function spotOf(
       cutouts: [...new Set([attacker, ...attachments, ...boostsOf(table, attacker), target, ...defenders])],
     };
   }
+  // A revealed card's own question about cards on the table (Caught Off Guard: "Discard an upgrade or support you
+  // control"): the cards it can take glow gold and stand out of the shade with it, like defenders to pick, and the
+  // card asking glows red like an attacker. It steps aside so it covers none of them (`revealAside`).
+  if (at.heldEncounter && !choice.offers?.length) {
+    const held = at.heldEncounter;
+    const onTable = new Set([
+      table.hero.id,
+      ...table.inPlay.map((card) => card.id),
+      ...table.enemyCards.map((card) => card.id),
+    ]);
+    const picks = [
+      ...new Set(
+        choice.options.flatMap((option) =>
+          option.cardId && option.cardId !== held && onTable.has(option.cardId) ? [option.cardId] : [],
+        ),
+      ),
+    ];
+    if (picks.length)
+      return {
+        glow: [{ id: held, tone: "attack" }, ...picks.map((id) => ({ id, tone: "target" as const }))],
+        cutouts: [held, ...picks],
+      };
+  }
   const offer = choice.offers?.[at.offerIndex];
   if (!offer) return null;
   const event = choice.event;
