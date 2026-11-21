@@ -129,9 +129,17 @@ const READY_TURN_END = 0.78;
 const HEIGHT = 1.407;
 const TAB = 0.18;
 
+/** Where the first encounter card dealt and waiting to be revealed lies, across the screen (the rest fan right). */
+const WAITING_X = 0.67;
+
+/** An encounter card dealt and waiting to be revealed, lying facedown in the villain's row. */
+function waitingCardWidth(w: number, h: number) {
+  return Math.min(h * 0.125, w * 0.105);
+}
+
 /** A facedown boost card beside its enemy: smaller than the enemy, never bigger than a waiting encounter card. */
 function boostCardWidth(hostWidth: number, w: number, h: number) {
-  return Math.min(hostWidth * 0.62, h * 0.125, w * 0.105);
+  return Math.min(hostWidth * 0.62, waitingCardWidth(w, h));
 }
 
 // Keep the original scan coordinates so the printed title stays on the exposed edge.
@@ -421,6 +429,8 @@ export class BattleTable {
   readonly #deckBack = new THREE.Mesh(this.#face, new THREE.MeshBasicMaterial({ toneMapped: false }));
   readonly #encounterDiscardSlot = new THREE.Group();
   readonly #encounterSlot = new THREE.Group();
+  /** The minions in the row as encounter cards were dealt, while any still wait to be revealed (null otherwise). */
+  #rowBeforeWaiting: Set<string> | null = null;
   readonly #encounterStock = new THREE.Mesh(this.#stock, this.#stockMaterial);
   readonly #encounterBack = new THREE.Mesh(this.#face, new THREE.MeshBasicMaterial({ toneMapped: false }));
   readonly #encounters = new Map<string, TableCard>();
@@ -1938,7 +1948,23 @@ export class BattleTable {
       const right = (position.project(this.#camera).x + 1) * w * 0.5;
       poseEnemy(card, x, y, right - x);
     });
-    if (otherEnemies.length) {
+    // Encounter cards dealt and still waiting to be revealed lie facedown at the right end of the minions' row (below).
+    // A minion that comes out while some still wait (Sandman off the first of several) would land on top of them, so it
+    // stands aside in the open space below them until they have all been revealed, then slides into the row (Adam,
+    // 2026-11-21). Minions already in the row when the cards were dealt stay where they are.
+    const waitingCards = [...this.#encounters.values()].some(
+      (card) => card.id !== this.#revealing && !this.#parked.has(card.id) && !card.boostFor,
+    );
+    if (!waitingCards) this.#rowBeforeWaiting = null;
+    else this.#rowBeforeWaiting ??= new Set(otherEnemies.map((card) => card.id));
+    const rowBeforeWaiting = this.#rowBeforeWaiting;
+    const asideEnemies = rowBeforeWaiting ? otherEnemies.filter((card) => !rowBeforeWaiting.has(card.id)) : [];
+    const rowEnemies = otherEnemies.filter((card) => !asideEnemies.includes(card));
+    asideEnemies.forEach((card, i) => {
+      const width = enemyCardWidth * 0.85;
+      poseEnemy(card, w * WAITING_X + width * (0.2 + i * 1.2), h * 0.4, width);
+    });
+    if (rowEnemies.length) {
       const bounds = (card: TableCard, x: number, y: number, width: number, tabs: number) => {
         const elevation = 0.05 + tabs * 0.035;
         const root = this.#layoutCard;
@@ -1959,8 +1985,8 @@ export class BattleTable {
         0.025,
         encounterGoal.position.z,
       ).x;
-      const slotWidth = (right - left) / otherEnemies.length;
-      otherEnemies.forEach((card, i) => {
+      const slotWidth = (right - left) / rowEnemies.length;
+      rowEnemies.forEach((card, i) => {
         const tabs = state.enemyCards.filter((c) => c.attachedTo === card.id).length;
         const footprint = (card.landscape ? HEIGHT : 1) + TAB * tabs;
         const width = Math.min(enemyCardWidth, Math.max(1, slotWidth * 0.78) / footprint);
@@ -2018,9 +2044,9 @@ export class BattleTable {
       } else
         this.#pose(
           card.id,
-          w * (0.67 + (waiting++ % 3) * 0.034),
+          w * (WAITING_X + (waiting++ % 3) * 0.034),
           h * 0.26,
-          Math.min(h * 0.125, w * 0.105),
+          waitingCardWidth(w, h),
           0.07 + waiting * 0.045,
           flat,
         );
