@@ -9,7 +9,7 @@ import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js
 import { arrangeScene } from "./debug-scenes.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
-import { eventLook, offerDoes, spotOf, type GlowTone, type Spot } from "./spotlight.js";
+import { eventLook, offerDoes, spotOf, waitsOnDock, type GlowTone, type Spot } from "./spotlight.js";
 import {
   BattleTable,
   ACTIVATION_MS,
@@ -59,6 +59,8 @@ const choiceShade = element("choice-shade");
 const focusBlur = element("focus-blur");
 /** A revealed encounter card waiting on Continue: the table blurs around it. */
 let revealFocus: string | null = null;
+/** A question answered only in the dock ("Choose one"): the table blurs, all but the card asking it, if on the table. */
+let dockFocus: { keep: string | null } | null = null;
 const defenseShade = document.querySelector<SVGSVGElement>("#defense-shade")!;
 const abilityGlow = document.querySelector<SVGSVGElement>("#ability-glow")!;
 const abilityOutlines = document.querySelector<SVGGElement>("#ability-outlines")!;
@@ -1618,9 +1620,10 @@ function placeLabels() {
     if (card)
       tag.style.transform = `translate(${Math.round(card.right - card.width * 0.32)}px,${Math.round(card.y)}px)`;
   }
-  if (!focusBlur.hidden && revealFocus) {
-    // Everything but the revealed card, cut out along its outline.
-    const outline = table.cardOutline(revealFocus);
+  const sharp = revealFocus ?? dockFocus?.keep ?? null;
+  if (!focusBlur.hidden && (revealFocus || dockFocus)) {
+    // Everything but the revealed card (or the card asking the dock's question), cut out along its outline.
+    const outline = sharp ? table.cardOutline(sharp) : [];
     const { width, height } = focusBlur.getBoundingClientRect();
     focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = "";
     focusBlur.style.clipPath = outline.length
@@ -1636,7 +1639,10 @@ function placeLabels() {
     if (table.handSettled) focusBlur.dataset.ready = "";
   }
   // The mulligan question waits for the dealt cards to land too.
-  dock.toggleAttribute("data-waiting", !focusBlur.hidden && !revealFocus && !("ready" in focusBlur.dataset));
+  dock.toggleAttribute(
+    "data-waiting",
+    !focusBlur.hidden && !revealFocus && !dockFocus && !("ready" in focusBlur.dataset),
+  );
   if (heldEncounter && !choiceShade.hidden) {
     const card = projected.find((p) => p.id === heldEncounter);
     if (card)
@@ -2728,8 +2734,14 @@ function render() {
             ? "ending"
             : "hero",
     );
-  focusBlur.hidden = !state.choice?.mulligan && !revealFocus;
+  // A question answered only with the dock's buttons softens the table behind it, so it reads as the game waiting on
+  // that answer; the card asking it (or the encounter card held up with it) stays sharp.
+  const waiting = waitsOnDock(state.choice, (id) => onTable(id) && actionCard !== id);
+  dockFocus = waiting && !revealFocus ? { keep: heldEncounter ?? state.choiceSource ?? null } : null;
+  const blurWasHidden = focusBlur.hidden;
+  focusBlur.hidden = !state.choice?.mulligan && !revealFocus && !dockFocus;
   if (focusBlur.hidden) delete focusBlur.dataset.ready;
+  else if (dockFocus && blurWasHidden) requestAnimationFrame(() => dockFocus && (focusBlur.dataset.ready = ""));
   choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
   const asked = paintDock(dockView());
   // A question about the hand sends a ripple through it, so the eye goes where the answer is.

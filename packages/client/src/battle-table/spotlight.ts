@@ -132,6 +132,17 @@ export function spotOf(
   };
 }
 
+/**
+ * Whether a question is answered only with the dock's own buttons (Nick Fury's "Choose one": Draw 3 cards, or Deal 4
+ * damage to an enemy), so the table softens behind it the way it does for the mulligan: the game is waiting on that
+ * answer, not on anything on the table. Not when something is picked on the table (a target, a defender, cards in
+ * the hand), and not for attacks or reaction windows, which darken the table around the cards they are about instead.
+ */
+export function waitsOnDock(choice: BattleChoice | null, pickedOnTable: (cardId: string | null) => boolean): boolean {
+  if (!choice || choice.mulligan || choice.discardFromHand || choice.defense || choice.offers?.length) return false;
+  return choice.options.length > 0 && !choice.options.some((option) => pickedOnTable(option.cardId));
+}
+
 function boostsOf(table: SpotTable, enemy: string): string[] {
   return table.facedownBoosts.filter((boost) => boost.enemy === enemy).map((boost) => boost.id);
 }
