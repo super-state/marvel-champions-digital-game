@@ -1,6 +1,7 @@
 import { statHue } from "../tokens.js";
 import "./design.css";
 import "./battle.css";
+import { padActive, startController } from "./pad/controller.js";
 import { besideSpot, dockSpot } from "./dock-spot.js";
 import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js";
 import { arrangeScene } from "./debug-scenes.js";
@@ -283,8 +284,9 @@ function paintDock(view: DockView): boolean {
   // The turn corner's End Turn answers only while nothing else is asked; the bar's own copy is the phone's.
   const ending = view.idle && view.primary?.endTurn ? view.primary : null;
   endTurnButton.disabled = !ending || !!ending.disabled;
-  // Folding away with the keyboard on it (Enter on Keep hand): the keyboard goes on to End Turn, or else Undo.
-  if (folded && roomy.matches && dock.contains(document.activeElement))
+  // Folding away with the keyboard on it (Enter on Keep hand): the keyboard goes on to End Turn, or else Undo. A
+  // controller's focus goes back to the hand instead (`controller.ts`): a second A must never end the turn.
+  if (folded && roomy.matches && dock.contains(document.activeElement) && !padActive())
     (endTurnButton.disabled ? undoButton : endTurnButton).focus({ preventScroll: true });
   const eyebrow = view.eyebrow;
   dockEyebrow.hidden = !eyebrow;
@@ -738,6 +740,18 @@ decision.addEventListener("pointerenter", (event) => {
 decision.addEventListener("pointerleave", () => {
   overMenu = false;
   // A frame later, so a pointer going straight back onto the card is seen there first and the picture stays put.
+  requestAnimationFrame(() => {
+    if (!overMenu) showHovered();
+  });
+});
+// The keyboard's or a controller's focus in the menu keeps the card's picture up the same way.
+decision.addEventListener("focusin", () => {
+  overMenu = true;
+  showHovered();
+});
+decision.addEventListener("focusout", (event) => {
+  if (decision.contains(event.relatedTarget as Node | null)) return;
+  overMenu = false;
   requestAnimationFrame(() => {
     if (!overMenu) showHovered();
   });
@@ -2351,6 +2365,10 @@ async function present(beats: Snapshot["beats"]) {
       if (beat.hit.tough) table?.changeStatus(beat.hit.target, "tough", -1);
       if (beat.hit.amount) {
         shakeStage(beat.hit.amount >= 4 ? "heavy" : "light");
+        // A controller feels your side being hit (the hero, or an ally, there or just defeated), as the hit lands.
+        const target = beat.hit.target;
+        if (target === state.hero.id || [...state.inPlay, ...state.discard].some((card) => card.id === target))
+          pad.rumble(0.35 + beat.hit.amount * 0.15);
         table?.changeStatus(beat.hit.target, "damage", beat.hit.amount);
         const label = labels.get(beat.hit.target);
         if (label?.dataset.hp) {
@@ -2608,17 +2626,34 @@ function renderCardMenu() {
     } else {
       button.replaceChildren(icon("action"), make("span", "", action.label));
     }
-    button.onclick = () => {
-      menuCard = null;
-      act(() => {
-        if (id === state.hero.id) model.heroAction(action.kind);
-        else model.fieldAction(id, action.kind);
-      });
-      inspect(id);
-    };
+    button.onclick = () => useCardAction(id, action.kind);
     decision.append(button);
   }
-  // No close button: a click anywhere else, or Escape (a controller's B later), puts the menu away.
+  // No close button: a click anywhere else, Escape or a controller's B puts the menu away.
+}
+
+/** Use one of a card's own actions: a button in its menu, or a controller's LT / RT combo (`controller.ts`). */
+function useCardAction(id: string, kind: string) {
+  menuCard = null;
+  act(() => {
+    if (id === state.hero.id) model.heroAction(kind);
+    else model.fieldAction(id, kind);
+  });
+  inspect(id);
+}
+
+/** A controller's LT and RT combos use powers only when the menus that hold them could open. */
+function powersReady() {
+  return (
+    !presenting &&
+    !flying &&
+    !discarding &&
+    !discardOpen &&
+    !state.outcome &&
+    !state.payment &&
+    !state.choice &&
+    state.turn === "player"
+  );
 }
 
 // ── Starting a game ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -2794,39 +2829,38 @@ document.addEventListener(
   },
   true,
 );
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && (gameMenu.open || gameOver.open)) return;
-  if (event.key === "Escape" && pinnedId) {
-    event.preventDefault();
+/** Escape, or a controller's B: put away the topmost thing. An open dialog handles its own. */
+function back() {
+  if (gameMenu.open || gameOver.open) return;
+  if (pinnedId) {
     pinCard(null);
     return;
   }
-  if (event.key === "Escape" && menuCard) {
+  if (menuCard) {
     menuCard = null;
     render();
     return;
   }
-  if (event.key === "Escape" && state?.payment && !discarding) {
-    event.preventDefault();
+  if (state?.payment && !discarding) {
     cancel();
     return;
   }
-  if (discardOpen && event.key === "Escape") {
-    event.preventDefault();
+  if (discardOpen) {
     setDiscardOpen(false);
     pile.focus({ preventScroll: true });
     return;
   }
-  if (event.key === "Escape" && state?.choice?.canCancel && !discarding && !presenting) {
-    event.preventDefault();
+  if (state?.choice?.canCancel && !discarding && !presenting) {
     cancel();
     return;
   }
-  // Nothing else to put away: Escape opens the menu (the dialog closes itself on a second Escape).
-  if (event.key === "Escape" && !gameMenu.open && !gameOver.open) {
-    event.preventDefault();
-    gameMenu.showModal();
-  }
+  // Nothing else to put away: the menu (the dialog closes itself on a second Escape).
+  gameMenu.showModal();
+}
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || gameMenu.open || gameOver.open) return;
+  event.preventDefault();
+  back();
 });
 // ── The turn corner, the card panel and where the bar floats (wider screens) ───────────────────────────────────────
 endTurnButton.replaceChildren(icon("next"), make("span", "", "End Turn"));
@@ -3039,4 +3073,43 @@ new ResizeObserver(() => {
 }).observe(dock);
 boardViewport.addEventListener("scroll", centerDecisionInViewport, { passive: true });
 new ResizeObserver(centerDecisionInViewport).observe(boardViewport);
+
+// ── Playing with a controller ─────────────────────────────────────────────────────────────────────────────────────
+// The pad presses the same buttons the mouse does; `controller.ts` reads the table through these.
+const pad = startController({
+  table: () => table,
+  back,
+  settled,
+  busy: () => presenting || flying || discarding,
+  zoneOf: (id) =>
+    discardOpen || displayedHand.some((card) => card.id === id)
+      ? "hand"
+      : id === state.hero.id || state.inPlay.some((card) => card.id === id)
+        ? "player"
+        : id === state.villain.id || state.enemyCards.some((card) => card.id === id)
+          ? "villain"
+          : null,
+  // As `pick` decides: the hero, a card with powers or abilities, and an exhausted card (to say so) open a menu.
+  opensMenu: (id) =>
+    state.turn === "player" &&
+    !state.payment &&
+    !state.choice &&
+    (id === state.hero.id ||
+      model.fieldActions(id).length > 0 ||
+      state.inPlay.some((card) => card.id === id && card.exhausted)),
+  pin: pinCard,
+  pinned: () => pinnedId,
+  menuCard: () => menuCard,
+  heroId: () => state.hero.id,
+  heroActions: () => (powersReady() ? state.heroActions : []),
+  fieldActions: () =>
+    powersReady()
+      ? state.inPlay.flatMap((card) =>
+          model
+            .fieldActions(card.id)
+            .map((action) => ({ cardId: card.id, kind: action.kind, label: `${card.name}: ${action.label}` })),
+        )
+      : [],
+  useAction: useCardAction,
+});
 start();
