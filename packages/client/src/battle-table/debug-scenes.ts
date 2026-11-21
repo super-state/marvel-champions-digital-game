@@ -178,6 +178,12 @@ const SCENES: Record<string, Scene> = {
     hand: ["01004", "01089", "01087"],
     encounterTop: ["01110", "01190"],
   },
+  /** Two Enhanced Spider-Senses in hand as Hard to Keep Down is revealed: one question, and none after a yes. */
+  senses: {
+    hero: { form: "hero" },
+    hand: ["01004", "01004", "01089", "01087"],
+    encounterTop: ["01110", "01104", "01105"],
+  },
   /** Two Backflips in hand as Rhino attacks: one question covers both copies. */
   backflips: {
     hero: { form: "hero" },

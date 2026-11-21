@@ -91,7 +91,26 @@ function cancelHasNoTarget(state: GameState, deps: EngineDeps, definition: Abili
     return boostAbilityCancelGone(state, deps, definition, event.boostInstanceId);
   if (event.kind !== "encounterCardRevealing" && event.kind !== "encounterCardBeingRevealed") return false;
   const cancels = definition.effects.some((e) => e.kind === "cancelWhenRevealed" || e.kind === "cancelRevealedCard");
-  return cancels && revealCannotBeCanceled(state, deps, event.instanceId);
+  if (!cancels) return false;
+  return revealCannotBeCanceled(state, deps, event.instanceId) || revealCancelGone(state, definition, event.instanceId);
+}
+
+/**
+ * A reveal cancel whose card is already cancelled as far as this ability could cancel it: a second Enhanced Spider-Sense
+ * after the first cancelled the treachery's "When Revealed" effects, or any reveal cancel once all the card's effects
+ * are cancelled. The effect would resolve as nothing to cancel (`apply-effect.ts` "cancelWhenRevealed") with its cost
+ * still paid, so, as for a boost ability already cancelled (`boostAbilityCancelGone`), the cancel has no valid target
+ * and the ability can't be initiated (RRG 1.8 "Initiating Abilities", p. 24, step 2). It is dropped when its window is
+ * offered again after the first cancel resolved (RRG 1.8 "Interrupt", p. 25). Only for an ability that does nothing
+ * but cancel (post-"Then" text aside, RRG 1.8 "'Then'", p. 44); one with any other effect is still offered.
+ */
+function revealCancelGone(state: GameState, definition: AbilityDefinition, revealedId: InstanceId): boolean {
+  const independent = definition.effects.filter((e) => e.kind !== "then");
+  if (!independent.every((e) => e.kind === "cancelWhenRevealed" || e.kind === "cancelRevealedCard")) return false;
+  const reveal = state.stack.find((f) => f.kind === "reveal" && f.instanceId === revealedId);
+  if (reveal?.kind !== "reveal") return false;
+  if (reveal.effectsCancelled) return true;
+  return reveal.whenRevealedCancelled && independent.every((e) => e.kind === "cancelWhenRevealed");
 }
 
 /**
