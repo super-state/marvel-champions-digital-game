@@ -81,6 +81,8 @@ let revealWindowHeld: string | null = null;
 let releaseHeld: string | null = null;
 /** The reveal of the card held up, kept for moves whose own beats don't carry it (paying for a reaction to it). */
 let heldReveal: Beat["reveal"] = undefined;
+/** How long the table takes to darken where it fades in (`.fade-in` in battle.css). */
+const SPOT_FADE_MS = 700;
 /** What the table is darkened around right now (`spotlight.ts`). */
 let spot: Spot | null = null;
 let markKey = "";
@@ -1611,8 +1613,12 @@ function aimFrom(from: { x: number; y: number } | undefined, to: { x: number; y:
 }
 
 /** Darken the table around the cards that matter now, or (null) lift the shade. */
-function setSpot(next: Spot | null) {
+/** `fade`: the darkening comes in slowly instead of at once, if the table isn't darkened already. */
+function setSpot(next: Spot | null, { fade = false } = {}) {
+  const was = spot;
   spot = next?.cutouts.length ? next : null;
+  // Set before the shade shows, so its fade plays from the start; kept while it stays up, so it never cuts short.
+  if (!was) for (const layer of [defenseShade, abilityGlow]) layer.classList.toggle("fade-in", fade && !!spot);
   defenseShade.toggleAttribute("hidden", !spot);
   abilityGlow.toggleAttribute("hidden", !spot?.glow.length);
   const mark = spot?.mark ?? null;
@@ -2642,18 +2648,24 @@ async function present(beats: Snapshot["beats"]) {
         // The scheme's moment: the table darkens around it and its threat shows coming in before it lands.
         const scheme = beat.threat.scheme;
         spotted = true;
-        setSpot({
-          glow: [{ id: scheme, tone: "threat" }],
-          cutouts: [scheme],
-          mark: { id: scheme, kind: "threat", amount: beat.threat.delta },
-        });
+        // At the start of the villain phase the table darkens slowly onto the scheme, not all at once (Adam,
+        // 2026-11-21: it felt too sudden), and the step waits for the fade.
+        const fading = !spot && !reducedMotion();
+        setSpot(
+          {
+            glow: [{ id: scheme, tone: "threat" }],
+            cutouts: [scheme],
+            mark: { id: scheme, kind: "threat", amount: beat.threat.delta },
+          },
+          { fade: fading },
+        );
         placeLabels();
         // The villain phase's own threat step is stamped like the encounter step, so each step reads as one; once
         // only, so after a question about it (Great Responsibility, passed) the threat just lands.
         const step = beat.activity === "Place threat" && threatStepCalled !== scheme;
         if (step) stampCard(scheme, "Threat");
         threatStepCalled = null;
-        await sleep(reducedMotion() ? 260 : step ? 900 : 620);
+        await sleep((reducedMotion() ? 260 : step ? 900 : 620) + (fading ? SPOT_FADE_MS * 0.6 : 0));
         setSpot({ glow: [{ id: scheme, tone: "threat" }], cutouts: [scheme] });
       }
       activationRing(beat.threat.scheme);

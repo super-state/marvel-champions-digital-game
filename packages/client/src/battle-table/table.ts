@@ -127,6 +127,8 @@ const SPEND_MS = 760;
 const READY_TURN_START = 0.22;
 const READY_TURN_END = 0.78;
 const HEIGHT = 1.407;
+/** The layer of cards drawn over everything else, whatever their depth (see #render). */
+const FRONT_LAYER = 1;
 const TAB = 0.18;
 
 /** A facedown boost card beside its enemy: smaller than the enemy, never bigger than a waiting encounter card. */
@@ -485,6 +487,8 @@ export class BattleTable {
         }),
       );
       sprite.renderOrder = 10;
+      // Sparks fly over everything, the cards drawn on top included (see #render).
+      sprite.layers.set(FRONT_LAYER);
       sprite.position.copy(at);
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
       const v = speed * (0.55 + Math.random() * 0.7);
@@ -564,8 +568,11 @@ export class BattleTable {
     this.#camera.position.set(0, 10.8, 8.3);
     this.#camera.lookAt(0, 0, 0);
     this.#camera.updateMatrixWorld();
-    this.#scene.add(new THREE.HemisphereLight(0xf0f4ff, 0x364351, 1.9));
+    const sky = new THREE.HemisphereLight(0xf0f4ff, 0x364351, 1.9);
+    sky.layers.enable(FRONT_LAYER);
+    this.#scene.add(sky);
     const light = new THREE.DirectionalLight(0xfff2dd, 2.05);
+    light.layers.enable(FRONT_LAYER);
     light.position.set(-4, 10, -3);
     light.castShadow = true;
     light.shadow.mapSize.set(1024, 1024);
@@ -1972,6 +1979,8 @@ export class BattleTable {
       });
     }
     let waiting = 0;
+    // Where the revealed card stands on screen while it is held up, so a card being paid for keeps clear of it.
+    let revealRect: { x: number; y: number; halfWidth: number; halfHeight: number } | null = null;
     const boosts = new Map<string, number>();
     for (const card of this.#encounters.values()) {
       const host = card.boostFor ? enemyPoses.get(card.boostFor) : undefined;
@@ -1989,6 +1998,12 @@ export class BattleTable {
         let y = Math.max(h * (w < 550 ? 0.3 : 0.38), 16 + width * half);
         if (floor > 0) y = Math.max(16 + width * half, Math.min(y, floor - width * half));
         this.#pose(card.id, w * 0.5, y, width, 1.75, this.#camera.rotation.x);
+        revealRect = {
+          x: w * 0.5,
+          y,
+          halfWidth: (width * (card.landscape ? HEIGHT : 1)) / 2,
+          halfHeight: (width * (card.landscape ? 1 : HEIGHT)) / 2,
+        };
       } else if (this.#parked.has(card.id)) {
         // Standing just right of the villain (past any boost card tucked under its edge), turned to the player like
         // a held card but small, raised over anything in that row so the labels it covers hide behind it.
@@ -2205,7 +2220,15 @@ export class BattleTable {
       // right of the hero if that is clear, else left of the row, else up in the gap above the row.
       // Nor over a card the player must pick next (First Aid's target, the hero included).
       const sources = new Set([...(state.paymentSources ?? []), ...state.targets]);
+      const stagedHalf = (playWidth * 1.12) / 2;
+      // Nor under a revealed card held up full size (Enhanced Spider-Sense paid for while Shadow of the Past waits to
+      // be cancelled, Adam 2026-11-21): the card being read stays on top and whole, the paid card waits beside it.
+      const underReveal = (x: number, y: number) =>
+        !!revealRect &&
+        Math.abs(revealRect.x - x) < revealRect.halfWidth + stagedHalf + 10 &&
+        Math.abs(revealRect.y - y) < revealRect.halfHeight + stagedHalf * HEIGHT;
       const covers = (x: number, y: number) =>
+        underReveal(x, y) ||
         row.some((card, i) => {
           if (!sources.has(card.id) && !card.resourceAbility) return false;
           const half = (footprints[i]! * playWidth) / 2;
@@ -2217,7 +2240,20 @@ export class BattleTable {
         [rowLeft - playWidth * 0.75, rowY - playWidth * 0.48],
         [first, rowY - playWidth * 1.5],
       ];
-      const [x, y] = spots.find(([sx, sy], i) => (i !== 1 || sx > playWidth * 0.7) && !covers(sx, sy)) ?? spots[2]!;
+      if (revealRect) {
+        // Beside the revealed card, level with its lower half, on whichever side has room.
+        const beside = revealRect.halfWidth + stagedHalf + 24;
+        const y = revealRect.y + revealRect.halfHeight * 0.25;
+        spots.push([revealRect.x + beside, y], [revealRect.x - beside, y]);
+      }
+      const onScreen = (x: number) => x - stagedHalf > 8 && x + stagedHalf < w - 8;
+      // With no clear spot (a narrow screen) it stands beside the revealed card as far as the screen allows, partly
+      // behind it: the revealed card is drawn on top either way (#render).
+      const fallback: [number, number] = revealRect
+        ? [Math.min(spots[3]![0], w - stagedHalf - 8), spots[3]![1]]
+        : spots[2]!;
+      const [x, y] =
+        spots.find(([sx, sy], i) => (i !== 1 || sx > playWidth * 0.7) && onScreen(sx) && !covers(sx, sy)) ?? fallback;
       this.#pose(state.staged.id, x, y, playWidth * 1.12, 1.18, flat + 0.12);
     }
     const pileWidth = Math.min(w * 0.125, h * 0.125);
@@ -2864,13 +2900,100 @@ export class BattleTable {
       moving = true;
     }
     if (this.#tiltHand(dt)) moving = true;
-    this.#renderer.render(this.#scene, this.#camera);
+    this.#render();
     this.#handlers.onDraw?.();
     if (moving) this.#requestFrame();
     if (landed) this.#handlers.onLanded(landed);
     if (this.#discardDeal && !this.#discardDeal.spent.size && this.#discardDeal.landed === this.#discardDeal.ids.length)
       this.#finishDiscards();
   };
+
+  /** Every object put on the front layer last frame, so each frame starts from none (the sheen moves between cards). */
+  readonly #onFront = new Set<THREE.Object3D>();
+  /** The cards drawn on top last frame (`#frontCards`): the pointer finds them first, as the player sees them. */
+  #frontIds = new Set<string>();
+  /** The same, less cards only settling back after being let go, which must not catch the pointer again. */
+  #frontPick = new Set<string>();
+
+  /**
+   * The cards the player must see whole: a revealed card held up to be read (and the card cancelling it, standing over
+   * its edge), cards turned up off a deck, and the hand card under the pointer. In 3D a card resting or flying nearer
+   * the camera can cut through them (Enhanced Spider-Sense paid for beside the hero went into Shadow of the Past; the
+   * rightmost hand card cut through its hovered neighbour; Adam, 2026-11-21), so they are drawn over everything else.
+   */
+  #frontCards(): Set<THREE.Object3D> {
+    const roots = new Set<THREE.Object3D>();
+    const state = this.#state;
+    if (!state) {
+      this.#frontIds.clear();
+      this.#frontPick.clear();
+      return roots;
+    }
+    const ids = new Set<string>();
+    const add = (id: string | null | undefined) => {
+      if (id && this.#pieces.has(id)) ids.add(id);
+    };
+    add(this.#revealing);
+    for (const card of this.#deckReveal) add(card.id);
+    if (this.#power && this.#powerHost && !this.#powerAside && this.#powerHost === this.#revealing) add(this.#power);
+    // A picked hand card keeps its own layer among the picked (see the hand layout), hovered or not.
+    const held = this.#press?.dragging ? this.#press.id : this.#hovered;
+    if (held && state.hand.some((card) => card.id === held) && !state.selected.includes(held)) add(held);
+    this.#frontPick = new Set(ids);
+    // A card let go stays in front until it is back in its place, so it never cuts through a neighbour on the way.
+    for (const id of this.#frontIds) {
+      const piece = this.#pieces.get(id);
+      if (!ids.has(id) && piece && piece.root.position.distanceTo(piece.target.position) > piece.target.scale * 0.01)
+        ids.add(id);
+    }
+    this.#frontIds = ids;
+    for (const id of ids) roots.add(this.#pieces.get(id)!.root);
+    return roots;
+  }
+
+  /**
+   * Draw the table, then the front cards over it: the table pass leaves out their see-through parts (sheen, glow) so
+   * nothing is drawn twice, the depth is cleared, and the front pass draws them whole, lit the same, with the shadows
+   * the table pass already cast.
+   */
+  #render(): void {
+    for (const object of this.#onFront) object.layers.disable(FRONT_LAYER);
+    this.#onFront.clear();
+    const front = this.#frontCards();
+    const camera = this.#camera;
+    if (!front.size) {
+      camera.layers.enableAll();
+      this.#renderer.render(this.#scene, camera);
+      return;
+    }
+    const hidden: THREE.Object3D[] = [];
+    for (const root of front)
+      root.traverse((object) => {
+        object.layers.enable(FRONT_LAYER);
+        this.#onFront.add(object);
+        const material = (object as THREE.Mesh).material as THREE.Material | undefined;
+        if (object.visible && material && !Array.isArray(material) && material.transparent) {
+          object.visible = false;
+          hidden.push(object);
+        }
+      });
+    camera.layers.set(0);
+    this.#renderer.render(this.#scene, camera);
+    for (const object of hidden) object.visible = true;
+    const renderer = this.#renderer;
+    renderer.autoClear = false;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.clearDepth();
+    camera.layers.set(FRONT_LAYER);
+    // A colour background always clears the picture first, whatever autoClear says: leave it out of the front pass.
+    const background = this.#scene.background;
+    this.#scene.background = null;
+    renderer.render(this.#scene, camera);
+    this.#scene.background = background;
+    renderer.shadowMap.autoUpdate = true;
+    renderer.autoClear = true;
+    camera.layers.enableAll();
+  }
 
   #finishDiscards(): void {
     const deal = this.#discardDeal;
@@ -2905,6 +3028,8 @@ export class BattleTable {
     this.#ray.setFromCamera(this.#ndc, this.#camera);
     let nearest = Infinity;
     let id: string | null = null;
+    // A card drawn on top of the rest (#render) is what the pointer is over, even where another is nearer in depth.
+    let front: { id: string; distance: number } | null = null;
     let underZoom: { id: string; distance: number } | null = null;
     const handIds = new Set(this.#state?.hand.map((card) => card.id));
     for (const piece of this.#pieces.values()) {
@@ -2919,7 +3044,10 @@ export class BattleTable {
         nearest = hit.distance;
         id = piece.card.id;
       }
+      if (hit && this.#frontPick.has(piece.card.id) && (!front || hit.distance < front.distance))
+        front = { id: piece.card.id, distance: hit.distance };
     }
+    if (front) id = front.id;
     // Over the hand, the full-size card gives way to the hand card under the pointer, so the hand can be swept.
     if (id && id === this.#zoom?.id && underZoom && event.clientY - rect.top - this.#extension > this.#zoom.handTop)
       return underZoom.id;
