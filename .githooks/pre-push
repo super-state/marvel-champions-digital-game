@@ -5,15 +5,16 @@
 #
 # Which check, by what the push changes under `packages/` and `pnpm-lock.yaml`:
 #   - nothing there (docs, a script, a changelog fragment): no check; neither for deleting a branch or pushing a tag;
-#   - only the 3D table (`packages/client/src/battle-table/`, `packages/client/battle/`): the type check and the 3D
-#     table's own tests (`.githooks/battle-gate.sh`, about a minute);
+#   - only the 3D table (`packages/client/src/battle-table/`, `packages/client/battle/`) and its browser tests (the
+#     specs in `packages/client/e2e/` with `battle` in their file name): the type check, the 3D table's unit tests
+#     and those browser tests (`.githooks/battle-gate.sh`);
 #   - anything else (rules, cards, the old 2D game): the Playwright suite (`.githooks/e2e-gate.sh`).
 #
 # `PUSH_GATE_DRY_RUN=1 git push …` prints which check each ref would get, runs none, and refuses the push.
 zero="0000000000000000000000000000000000000000"
 hooks="$(dirname "$0")"
 remote="$1"
-battle_only='^packages/client/(src/battle-table|battle)/'
+battle_only='^packages/client/(src/battle-table/|battle/|e2e/[^/]*battle[^/]*\.spec\.ts$)'
 dry="${PUSH_GATE_DRY_RUN:-}"
 
 while read -r local_ref local_sha remote_ref remote_sha; do
