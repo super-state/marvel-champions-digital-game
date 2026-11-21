@@ -1091,6 +1091,18 @@ button:focus-visible {
 #attack-reticle[hidden] {
   display: none;
 }
+/* The villain phase darkening onto its scheme comes in slowly, the glow with it (SPOT_FADE_MS in main.ts). */
+@media (prefers-reduced-motion: no-preference) {
+  #defense-shade.fade-in:not([hidden]),
+  #ability-glow.fade-in:not([hidden]) {
+    animation: spot-fade-in 700ms ease-in-out both;
+  }
+  @keyframes spot-fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+}
 #attack-reticle {
   position: absolute;
   z-index: 3;
