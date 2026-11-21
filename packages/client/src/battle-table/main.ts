@@ -981,9 +981,6 @@ function act(work: () => void) {
   }
 }
 
-/** The deck just ran out in the beats playing: the encounter card dealt next is the price, and says so. */
-let deckRanOut = false;
-
 /** Set by `cancel` for the render it makes: the beats that follow come out of a called-off payment. */
 let paymentCalledOff = false;
 
@@ -2049,6 +2046,7 @@ async function present(beats: Snapshot["beats"]) {
       table?.tuckUnder(ids, host, displayedHand);
       await sleep(reducedMotion() ? 200 : 760);
       table?.settleStash();
+      table?.setUnder(host, beat.tucked.count);
       await sleep(reducedMotion() ? 100 : 300);
       continue;
     }
@@ -2062,7 +2060,6 @@ async function present(beats: Snapshot["beats"]) {
       await sleep(reducedMotion() ? 300 : 1300);
       table?.settleStash({ deckCount: beat.deckReset });
       deckCount.textContent = String(beat.deckReset);
-      deckRanOut = true;
       await sleep(reducedMotion() ? 100 : 350);
       continue;
     }
@@ -2364,8 +2361,7 @@ async function present(beats: Snapshot["beats"]) {
       }
       // The encounter step, called out like the others: the table darkens around the card dealt to the player.
       // The card a run-out deck costs the player says so, not "the encounter step".
-      const penalty = deckRanOut;
-      deckRanOut = false;
+      const penalty = !!beat.penalty;
       narrate(
         beat,
         {

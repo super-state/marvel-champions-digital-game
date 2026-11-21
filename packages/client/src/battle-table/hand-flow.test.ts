@@ -31,6 +31,11 @@ describe("the hand shown between beats", () => {
     expect(ids(handBetweenBeats(["b", "a"].map(card), final, later, null))).toEqual(["b", "a"]);
   });
 
+  test("a card a later beat puts facedown under Highway Robbery stays showing until then", () => {
+    const later = [{ tucked: { ids: ["b"], host: "robbery", count: 1 } } as never];
+    expect(ids(handBetweenBeats(["b", "a"].map(card), ["a"].map(card), later, null))).toEqual(["b", "a"]);
+  });
+
   test("the staged event is not in the hand", () => {
     expect(ids(handBetweenBeats(["a"].map(card), ["a", "event"].map(card), [], "event"))).toEqual(["a"]);
   });

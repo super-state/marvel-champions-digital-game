@@ -15,7 +15,8 @@ export function handBetweenBeats(
   staged: string | null,
 ): BattleCard[] {
   const arriving = new Set(later.flatMap((beat) => [...(beat.draw ?? []), ...(beat.returned ?? [])]));
-  const leaving = new Set(later.flatMap((beat) => beat.handDiscard ?? []));
+  // Cards a later beat takes out of the hand (discarded, or put facedown under Highway Robbery) stay till then.
+  const leaving = new Set(later.flatMap((beat) => [...(beat.handDiscard ?? []), ...(beat.tucked?.ids ?? [])]));
   const held = finalHand.filter((card) => !arriving.has(card.id) && card.id !== staged);
   const heldIds = new Set(held.map((card) => card.id));
   const kept = showing.filter((card) => heldIds.has(card.id) || leaving.has(card.id));

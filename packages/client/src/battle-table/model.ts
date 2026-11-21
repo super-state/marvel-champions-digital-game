@@ -165,7 +165,9 @@ export interface BattleBeat {
   /** Cards discarded from the top of the player's deck (Black Cat). */
   milled?: string[];
   /** Cards from the hand put facedown under a card (Highway Robbery's When Revealed), and that card. */
-  tucked?: { ids: string[]; host: string };
+  tucked?: { ids: string[]; host: string; count: number };
+  /** An encounter card dealt as the price of a player deck that ran out (RRG "Player Deck"). */
+  penalty?: boolean;
   /** Where `returned` cards were lying facedown before (the card they were under: Highway Robbery). */
   returnedFrom?: string;
   /** The player's deck ran out: the discard pile is shuffled into a new deck (a facedown encounter card follows). */
@@ -405,6 +407,20 @@ export class BattleModel {
     let resolving: { card: InstanceId; label: string } | null = null;
     // How many cards the player's deck was just shuffled from (a reset reports it just after).
     let shuffledDeck: number | null = null;
+    // An encounter deck shuffle is a run-out reset when an acceleration token follows it (effects.ts
+    // resetEncounterDeckIfEmpty); other shuffles (a search, a card shuffled in) are not.
+    const resets = new Set(
+      events.filter(
+        (e, i) =>
+          e.type === "deckShuffled" &&
+          e.zone.kind === "encounterDeck" &&
+          events
+            .slice(i + 1, i + 4)
+            .some((later) => later.type === "accelerationTokenAdded" || later.type === "accelerationTokenRedirected"),
+      ),
+    );
+    const heldReset: BattleBeat[] = [];
+    let acceleration = this.#game.mainScheme.accelerationTokens;
     for (const e of events) {
       const before = this.#beats.length;
       if (e.type === "deckShuffled" && e.zone.kind === "deck") shuffledDeck = e.order.length;
@@ -483,7 +499,9 @@ export class BattleModel {
             e.type === "boostCardDealt" ? `Deal a boost card to ${name(e.enemyInstanceId)}` : "Deal an encounter card",
           encounterDeal: e.instanceId,
           ...(e.type === "boostCardDealt" ? { boostFor: e.enemyInstanceId } : {}),
+          ...(e.type === "encounterCardDealt" && e.source === "deckReset" ? { penalty: true } : {}),
         });
+        this.#beats.push(...heldReset.splice(0));
       } else if (e.type === "encounterCardRevealed" || e.type === "boostCardFlipped") {
         const card = cardOf(result.state, e.instanceId) ?? cardOf(this.#game, e.instanceId);
         if (card?.type === "villain" && e.type === "encounterCardRevealed") continue;
@@ -531,13 +549,16 @@ export class BattleModel {
       } else if (e.type === "cardMoved" && e.from.kind === "hand" && e.to.kind === "tucked") {
         const host = e.to.hostInstanceId;
         const last = this.#beats.at(-1);
-        if (last?.tucked?.host === host) last.tucked.ids.push(e.instanceId);
-        else
+        const count = result.state.instances[host]?.tucked.length ?? 0;
+        if (last?.tucked?.host === host) {
+          last.tucked.ids.push(e.instanceId);
+          last.tucked.count = count;
+        } else
           this.#beats.push({
             enemy,
             actor: host,
             text: `A card from your hand goes facedown under ${name(host)}`,
-            tucked: { ids: [e.instanceId], host },
+            tucked: { ids: [e.instanceId], host, count },
           });
       } else if (e.type === "cardMoved" && e.to.kind === "hand" && e.from.kind !== "deck") {
         const from = e.from.kind === "tucked" ? e.from.hostInstanceId : undefined;
@@ -565,22 +586,22 @@ export class BattleModel {
             text: "Shuffle into the encounter deck",
             intoEncounterDeck: [this.#shownCard(e.instanceId)],
           });
-      } else if (
-        e.type === "deckShuffled" &&
-        e.zone.kind === "encounterDeck" &&
-        !this.#beats.at(-1)?.intoEncounterDeck
-      ) {
-        // Not after cards shuffled in on purpose: the deck ran out and its discard pile is the new deck.
-        this.#beats.push({
+      } else if (e.type === "deckShuffled" && resets.has(e)) {
+        // The deck ran out and its discard pile is the new deck. The engine reshuffles inside the deal that took the
+        // last card, before reporting that deal: held back, it plays just after it, as it happened on the table.
+        heldReset.push({
           enemy,
           text: "The encounter deck ran out: shuffle its discard pile back in",
           encounterReset: e.order.length,
         });
       } else if (e.type === "accelerationTokenAdded") {
-        this.#beats.push({
+        // Also reported when a token comes off (a lower total).
+        const added = e.total > acceleration;
+        acceleration = e.total;
+        (heldReset.length ? heldReset : this.#beats).push({
           enemy,
           actor: e.schemeInstanceId ?? result.state.mainScheme.instanceId,
-          text: `+1 acceleration token (${e.total} in all)`,
+          text: `${added ? "+1" : "−1"} acceleration token (${e.total} in all)`,
           acceleration: e.total,
         });
       } else if (e.type === "overkillSpilled") {

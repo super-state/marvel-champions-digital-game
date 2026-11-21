@@ -31,6 +31,7 @@ describe("changes that used to happen with nothing on screen", () => {
     const tuck = beats.find((beat) => beat.tucked);
     expect(tuck?.tucked?.ids).toHaveLength(1);
     expect(tuck?.text).toMatch(/Highway Robbery/);
+    expect(tuck?.tucked?.count).toBe(1);
   });
 
   test("defeating Highway Robbery returns its cards from under it", () => {
@@ -49,6 +50,9 @@ describe("changes that used to happen with nothing on screen", () => {
     const beats = playOn(battle, () => battle.endTurn());
     const reset = beats.find((beat) => beat.deckReset);
     expect(reset?.deckReset).toBeGreaterThan(10);
+    // The encounter card it costs comes after, marked as that price.
+    const after = beats.slice(beats.indexOf(reset!));
+    expect(after.find((beat) => beat.encounterDeal && !beat.boostFor)?.penalty).toBe(true);
   });
 
   test("Shadow of the Past shuffles the rest of the nemesis set into the encounter deck", () => {
@@ -61,7 +65,10 @@ describe("changes that used to happen with nothing on screen", () => {
   test("running the encounter deck out shuffles its discard back in and adds an acceleration token", () => {
     const battle = scene("encounterout");
     const beats = playOn(battle, () => battle.endTurn());
-    expect(beats.find((beat) => beat.encounterReset)?.encounterReset).toBeGreaterThan(5);
+    const reset = beats.findIndex((beat) => beat.encounterReset);
+    expect(beats[reset]!.encounterReset).toBeGreaterThan(5);
+    // It plays just after the deal that took the deck's last card, not before it.
+    expect(beats[reset - 1]?.encounterDeal).toBeTruthy();
     expect(beats.find((beat) => beat.acceleration)?.acceleration).toBe(1);
   });
 

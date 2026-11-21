@@ -1304,7 +1304,9 @@ export class BattleTable {
     cards.forEach((card, index) => {
       const piece = this.#pieces.get(card.id);
       if (!piece) return;
-      piece.back.material = to === "encounterDeck" ? this.#encounterBack.material : this.#deckBack.material;
+      // A card with its own printed back (a villain, a double-sided card) keeps it: that material is its own.
+      if (!piece.card.reverseArt && piece.card.type !== "villain")
+        piece.back.material = to === "encounterDeck" ? this.#encounterBack.material : this.#deckBack.material;
       this.#startFlight(card.id, "stash", start + index * step);
     });
   }
@@ -1336,12 +1338,15 @@ export class BattleTable {
   settleStash(counts: { deckCount?: number; encounterCount?: number } = {}): void {
     const s = this.#state;
     if (!s) return;
-    const under = new Map<string, number>();
-    for (const { to } of this.#stashing.values())
-      if (typeof to === "object") under.set(to.under, (under.get(to.under) ?? 0) + 1);
     this.#stashing.clear();
     this.setCards({ ...s, ...counts });
-    for (const [host, count] of under) this.#addUnder(host, count);
+  }
+
+  /** How many facedown cards lie under `host` now (Highway Robbery's stolen cards). */
+  setUnder(host: string, count: number): void {
+    const piece = this.#pieces.get(host);
+    const current = piece?.card.markers?.find((m) => m.name === "tucked")?.count ?? 0;
+    if (piece) this.#addUnder(host, count - current);
   }
 
   /** The count of facedown cards lying under `host`, up or down by `delta`. */
