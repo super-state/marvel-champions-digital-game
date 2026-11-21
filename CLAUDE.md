@@ -26,13 +26,16 @@ in the engine; the 3D table shows it and sends the player's choices back, it nev
   runs the whole old game.
 - `pnpm battle:check` is the type check plus those tests. It is what a push runs.
 - The push check (`.githooks/pre-push`) picks by what the push changes:
-  - only the 3D table: `pnpm battle:check`;
+  - only the 3D table and its browser tests: `pnpm battle:check`, then those browser tests;
   - rules, cards or the old 2D game: the old game's full browser suite (`pnpm e2e:verify`), because those changes can
     break screens the 3D tests never open;
   - anything else (docs, scripts): nothing.
   - `PUSH_GATE_DRY_RUN=1 git push …` says which check a push would get without running it or pushing.
   - Both checks test the files on disk, so they refuse while `packages/` has uncommitted edits. Don't push past a
     failure with `--no-verify`; fix it.
+- A browser test of the 3D table goes in `packages/client/e2e/` with `battle` in its file name
+  (`battle-controller.spec.ts`): that name is how the push check finds it. The old game's other browser tests never
+  open the 3D table.
 - Look at a visual change in the browser before calling it done, and show a screenshot.
 - Tests run silently.
 
@@ -44,7 +47,8 @@ in the engine; the 3D table shows it and sends the player's choices back, it nev
 - `origin` is the original project and is read-only for us: never push or open a pull request there. Bring in its
   new cards or fixes (`origin/main`) only when Adam asks; it is optional, not a duty.
 - Commit under this PC's own git name. Don't set a name for this repo, and don't sign commits as Quin Carter (Adam,
-  2026-11-21: "we don't need to be Quin Carter, this is our own project").
+  2026-11-21: "we don't need to be Quin Carter, this is our own project"). The `commit-msg` hook removes tool credit
+  lines from commit messages; leave it.
 - Work in your own worktree and check nobody else is mid-edit on the same files: `main.ts` and `table.ts` in the 3D
   table are large and often open in another session.
 
