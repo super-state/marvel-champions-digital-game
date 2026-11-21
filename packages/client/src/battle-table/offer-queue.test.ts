@@ -56,6 +56,8 @@ describe("two Enhanced Spider-Senses as a treachery is revealed", () => {
     const after = battle.snapshot();
     expect(copiesInHand(after)).toBe(2);
     // Hard to Keep Down surges into "I'm Tough!", a treachery of its own: Spider-Sense may be offered for that one.
-    if (spiderSense(after).length) expect(after.choice!.event!.subject).not.toBe(revealed);
+    expect(spiderSense(after)).toHaveLength(2);
+    expect(after.choice!.event!.subject).toEqual(expect.any(String));
+    expect(after.choice!.event!.subject).not.toBe(revealed);
   });
 });

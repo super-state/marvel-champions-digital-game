@@ -53,14 +53,21 @@ const REVEAL_ACTION = stubAbility("reveal.action", {
   effects: [{ kind: "revealEncounterCard", player: { kind: "controller" } }],
 });
 const REVEAL = stubEvent({ id: "reveal", cost: 0, abilities: [REVEAL_ACTION.ref] });
-const deps: EngineDeps = depsOf(PLAIN_REVEALED, ENTITY_REVEALED, SENSE, REVEAL_ACTION);
+/** An interrupt to the same reveal whose effect adds up with a second copy's (1 damage to the villain each). */
+const JAB = stubAbility("jab.interrupt", {
+  trigger: { kind: "interrupt", forced: false, on: { on: "encounterCardRevealing" } },
+  cost: { exhaustSelf: true },
+  effects: [{ kind: "dealDamage", target: { kind: "villain" }, amount: { kind: "const", value: 1 } }],
+});
+const JAB_CARD = stubSupport({ id: "jab", cost: 0, abilities: [JAB.ref] });
+const deps: EngineDeps = depsOf(PLAIN_REVEALED, ENTITY_REVEALED, SENSE, REVEAL_ACTION, JAB);
 
 function start(top: typeof PLAIN | typeof ENTITY): { state: GameState; sense: InstanceId } {
   const base = gameAtFirstTurn({
-    cards: [PLAIN, ENTITY, SENSE_CARD, REVEAL],
+    cards: [PLAIN, ENTITY, SENSE_CARD, REVEAL, JAB_CARD],
     deps,
     encounter: [PLAIN.id, ...copiesOf(PLAIN.id, 5)],
-    deck: [SENSE_CARD.id, ENTITY.id, ...copiesOf(REVEAL.id, 3)],
+    deck: [...copiesOf(SENSE_CARD.id, 2), ...copiesOf(JAB_CARD.id, 2), ENTITY.id, ...copiesOf(REVEAL.id, 3)],
   });
   const placed = playerCardIntoPlay(base, SENSE_CARD.id);
   let state = placed.state;
@@ -117,6 +124,49 @@ describe("§3.27 a cancel with nothing it can cancel is not offered", () => {
     const { offered, after } = reveal(state, sense);
     expect(offered).toBe(false);
     expect(mustInstance(after, sense).exhausted).toBe(false);
+    expect(mustInstance(after, after.activeVillainId).damage).toBe(2);
+  });
+});
+
+/**
+ * Two copies answering one reveal. The window offers both; once the picked one has resolved it is offered again with
+ * what is left (RRG 1.8 "Interrupt", p. 25), and a copy that could still do something comes up then.
+ */
+function revealWithTwo(card: typeof SENSE_CARD): { exhausted: number; offers: number; after: GameState } {
+  // `start` has put one Sense into play already: for Sense it is the first copy.
+  const { state, sense } = start(PLAIN);
+  const first = card === SENSE_CARD ? { state, id: sense } : playerCardIntoPlay(state, card.id);
+  const second = playerCardIntoPlay(first.state, card.id);
+  const copies = new Set([first.id, second.id]);
+  const given = giveCard(second.state, P1, REVEAL.id);
+  let offers = 0;
+  // Takes one copy each time any is offered, as a player saying yes to the question in front of them.
+  const pick = (s: GameState): readonly string[] => {
+    const option = s.pendingChoice?.options.find((o) => o.ref?.kind === "ability" && copies.has(o.ref.instanceId));
+    if (option) offers++;
+    return option ? [option.optionId] : defaultPick(s);
+  };
+  const { session } = driveSession(
+    startSession(given.state),
+    deps,
+    [{ type: "playCard", playerId: P1, cardInstanceId: given.id, payment: [], attachToInstanceId: null }],
+    pick,
+  );
+  const after = session.state;
+  return { exhausted: [...copies].filter((id) => mustInstance(after, id).exhausted).length, offers, after };
+}
+
+describe("a second copy of a reveal cancel once the card is already cancelled", () => {
+  it("two Spider-Sense-like cancels: the second is not offered again after the first cancelled it, and stays ready", () => {
+    const { exhausted, offers } = revealWithTwo(SENSE_CARD);
+    expect(offers).toBe(1);
+    expect(exhausted).toBe(1);
+  });
+
+  it("two interrupts that add up: the second is offered again after the first resolved, and both land", () => {
+    const { exhausted, offers, after } = revealWithTwo(JAB_CARD);
+    expect(offers).toBe(2);
+    expect(exhausted).toBe(2);
     expect(mustInstance(after, after.activeVillainId).damage).toBe(2);
   });
 });
