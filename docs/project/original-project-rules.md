@@ -1,3 +1,7 @@
+> **Archived (2026-11-21).** This is the original project's rule sheet, kept for reference. Where it and
+> [CLAUDE.md](../../CLAUDE.md) disagree, CLAUDE.md wins: in particular, commits are not signed as Quin Carter, and
+> its changelog, review and screenshot routines are not required for 3D table work.
+
 # Marvel Champions: Digital Edition
 
 ## What this project is
