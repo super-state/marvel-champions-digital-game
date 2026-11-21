@@ -29,7 +29,7 @@ in the engine; the 3D table shows it and sends the player's choices back, it nev
   - only the 3D table and its browser tests: `pnpm battle:check`, then those browser tests;
   - rules, cards or the old 2D game: the old game's full browser suite (`pnpm e2e:verify`), because those changes can
     break screens the 3D tests never open;
-  - anything else (docs, scripts): nothing.
+  - anything else (docs, scripts, a new font or picture added under `packages/client/public/`): nothing.
   - `PUSH_GATE_DRY_RUN=1 git push …` says which check a push would get without running it or pushing.
   - Both checks test the files on disk, so they refuse while `packages/` has uncommitted edits. Don't push past a
     failure with `--no-verify`; fix it.

@@ -4,7 +4,8 @@
 # with `git push --no-verify` when you must.
 #
 # Which check, by what the push changes under `packages/` and `pnpm-lock.yaml`:
-#   - nothing there (docs, a script, a changelog fragment): no check; neither for deleting a branch or pushing a tag;
+#   - nothing there (docs, a script, a changelog fragment), or only new static files in `packages/client/public/`:
+#     no check; neither for deleting a branch or pushing a tag;
 #   - only the 3D table (`packages/client/src/battle-table/`, `packages/client/battle/`) and its browser tests (the
 #     specs in `packages/client/e2e/` with `battle` in their file name): the type check, the 3D table's unit tests
 #     and those browser tests (`.githooks/battle-gate.sh`);
@@ -38,7 +39,10 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 
   gate="e2e"
   if [ -n "$base" ]; then
-    changed="$(git diff --name-only "$base" "$local_sha" -- packages pnpm-lock.yaml)"
+    # A file newly added under `packages/client/public/` is left out: a new static file (a font, a picture) cannot
+    # change a screen that does not ask for it. A changed or removed one still counts.
+    changed="$(git diff --name-status --no-renames "$base" "$local_sha" -- packages pnpm-lock.yaml |
+      grep -vE "^A[[:space:]]+packages/client/public/" | cut -f2-)"
     if [ -z "$changed" ]; then
       gate="none"
     elif ! printf '%s\n' "$changed" | grep -qvE "$battle_only"; then
