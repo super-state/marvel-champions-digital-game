@@ -1050,7 +1050,8 @@ button:focus-visible {
   transform-box: fill-box;
   transform-origin: center;
 }
-/* The mulligan: the table softens out of focus around the hand being decided on. */
+/* The mulligan, a revealed card being read, or a question answered only in the dock: the table softens out of focus
+   around what is being decided on. */
 #focus-blur {
   position: absolute;
   inset: 0;
