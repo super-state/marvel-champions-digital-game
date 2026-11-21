@@ -12,6 +12,8 @@ interface Placement {
   statuses?: Record<string, number>;
   counters?: Record<string, number>;
   exhausted?: boolean;
+  /** Player cards lying facedown under it (Highway Robbery's stolen cards). */
+  tuck?: string[];
 }
 
 interface Scene {
@@ -32,6 +34,10 @@ interface Scene {
   deckTop?: string[];
   /** The top of the encounter deck, top first (Rhino's boost card comes off it before the encounter deal). */
   encounterTop?: string[];
+  /** Cards left in the player's deck; the rest go to the discard pile (to run the deck out). */
+  deckLeft?: number;
+  /** Cards left in the encounter deck; the rest go to its discard pile (to run it out). */
+  encounterLeft?: number;
 }
 
 const SCENES: Record<string, Scene> = {
@@ -63,6 +69,36 @@ const SCENES: Record<string, Scene> = {
   blackcat: {
     hand: ["01002", "01090"],
     deckTop: ["01089", "01087"],
+  },
+  /** Avengers Mansion ready on the table: use it to watch a card drawn by an effect come into the hand. */
+  mansion: {
+    play: [{ code: "01091" }],
+    hand: ["01089", "01087"],
+  },
+  /** Helicarrier ready on the table: use it to watch its discount called out on the next card. */
+  helicarrier: {
+    play: [{ code: "01092" }],
+  },
+  /** Highway Robbery comes off the encounter deck: end the turn to watch it take a card from your hand. */
+  robbery: {
+    encounterTop: ["01110", "01166"],
+  },
+  /** Highway Robbery in play with Genius under it: thwart it (1 threat) to get the card back. */
+  robbed: {
+    hero: { form: "hero" },
+    schemes: [{ code: "01166", threat: 1, tuck: ["01089"] }],
+  },
+  /** One card left in your deck: end the turn and the draw runs it out. */
+  deckout: {
+    deckLeft: 1,
+  },
+  /** Shadow of the Past comes off the encounter deck: end the turn to watch the nemesis set come out. */
+  shadow: {
+    encounterTop: ["01110", "01190"],
+  },
+  /** One card left in the encounter deck: end the turn and the villain phase runs it out. */
+  encounterout: {
+    encounterLeft: 1,
   },
   /** Hard to Keep Down on an unhurt Rhino surges into "I'm Tough!": end the turn to watch it. */
   surge: {
@@ -150,6 +186,8 @@ function arrange(state: GameState, scene: Scene): GameState {
   const villain = state.villains[0]!.instanceId;
   const place = (p: Placement, extra: Partial<(typeof instances)[string]> = {}) => {
     const id = take(p.code);
+    const tucked = (p.tuck ?? []).map(take);
+    for (const under of tucked) instances[under] = { ...instances[under]!, faceup: false };
     instances[id] = {
       ...instances[id]!,
       faceup: true,
@@ -158,6 +196,7 @@ function arrange(state: GameState, scene: Scene): GameState {
       threat: p.threat ?? 0,
       statuses: { ...instances[id]!.statuses, ...p.statuses },
       counters: { ...instances[id]!.counters, ...p.counters },
+      ...(tucked.length ? { tucked: [...instances[id]!.tucked, ...tucked] } : {}),
       ...extra,
     };
     return id;
@@ -191,6 +230,14 @@ function arrange(state: GameState, scene: Scene): GameState {
   const deck = [...held.slice(player.hand.length), ...gone(player.deck)];
   while (hand.length < player.hand.length && deck.length) hand.push(deck.shift()!);
   deck.unshift(...topIds);
+  const discard = [...player.discard];
+  if (scene.deckLeft !== undefined) discard.push(...deck.splice(scene.deckLeft));
+  let encounterDeck = [...encounterTopIds, ...gone(piles.deck)];
+  const encounterDiscard = gone(piles.discard);
+  if (scene.encounterLeft !== undefined) {
+    encounterDiscard.push(...encounterDeck.slice(scene.encounterLeft));
+    encounterDeck = encounterDeck.slice(0, scene.encounterLeft);
+  }
   return {
     ...state,
     instances,
@@ -200,6 +247,7 @@ function arrange(state: GameState, scene: Scene): GameState {
         identity: { ...player.identity, form: scene.hero?.form ?? player.identity.form },
         hand,
         deck,
+        discard,
         setAside: gone(player.setAside),
         playArea: [...player.playArea, ...playIds, ...minionIds],
       },
@@ -208,7 +256,7 @@ function arrange(state: GameState, scene: Scene): GameState {
     encounterSetAside: gone(state.encounterSetAside),
     encounterDecks: {
       ...state.encounterDecks,
-      [deckId]: { ...piles, deck: [...encounterTopIds, ...gone(piles.deck)], discard: gone(piles.discard) },
+      [deckId]: { ...piles, deck: encounterDeck, discard: encounterDiscard },
     },
   };
 }

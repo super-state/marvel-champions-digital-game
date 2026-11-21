@@ -85,7 +85,7 @@ interface Flight {
   from: Pose;
   started: number;
   liftOffset: number;
-  kind: "play" | "return" | "discard" | "draw" | "place" | "equip" | "flip" | "turn" | "tuck";
+  kind: "play" | "return" | "discard" | "draw" | "place" | "equip" | "flip" | "turn" | "tuck" | "stash";
   /** Set once the landing puff for this flight has been thrown. */
   puffed?: boolean;
 }
@@ -103,6 +103,8 @@ const SUNK_SHOWS = 1.2;
 /** Room a sunk hand's raised question needs over the hand: the turn bar, its gap and a margin. */
 const QUESTION_ROOM = 64 + 12 + 8;
 const FLICKER_MS = 560;
+/** A card just played shining as it starts its ability (Black Cat's Forced Response). */
+export const SHINE_MS = 760;
 /** How the hand meets the bottom of the table (`BattleTable.setHandLayout`). */
 export interface HandLayout {
   /**
@@ -655,6 +657,8 @@ export class BattleTable {
       ...state.encounterDiscard,
     ];
     for (const card of this.#encounters.values()) if (!cards.some((c) => c.id === card.id)) cards.push(card);
+    for (const card of this.#deckReveal) if (!cards.some((c) => c.id === card.id)) cards.push(card);
+    for (const { card } of this.#stashing.values()) if (!cards.some((c) => c.id === card.id)) cards.push(card);
     if (state.staged) cards.push(state.staged);
     const live = new Set(cards.map((card) => card.id));
     for (const [id, piece] of this.#pieces) {
@@ -752,7 +756,8 @@ export class BattleTable {
         state.enemyCards.some((item) => item.id === card.id);
       this.#setMarkers(piece, onBoard ? (card.markers ?? []) : [], tucked);
       if (card.threat !== null) this.setThreat(card.id, card.threat);
-      piece.rim.visible = state.selected.includes(card.id) || state.targets.includes(card.id);
+      piece.rim.visible =
+        state.selected.includes(card.id) || state.targets.includes(card.id) || this.#deckPicks.has(card.id);
     }
     this.#lightCards(state);
     if (previous !== state.staged?.id) {
@@ -793,8 +798,9 @@ export class BattleTable {
     this.#requestFrame();
   }
 
-  showDraw(hand: readonly TableCard[], drawn: string[], deckCount: number, discard: readonly TableCard[]): void {
-    if (this.#state) this.setCards({ ...this.#state, hand, drawn, deckCount, discard, selected: [] });
+  showDraw(hand: readonly TableCard[], drawn: string[], deckCount: number, discard?: readonly TableCard[]): void {
+    if (this.#state)
+      this.setCards({ ...this.#state, hand, drawn, deckCount, discard: discard ?? this.#state.discard, selected: [] });
   }
 
   #startFlight(id: string, kind: Flight["kind"], started = performance.now(), liftOffset = 0): void {
@@ -890,6 +896,12 @@ export class BattleTable {
     const s = this.#state;
     if (!s?.paymentSources) return;
     this.setCards({ ...s, paymentSources: null, selected: [], hand, staged });
+  }
+
+  /** Paid: the table stops dimming for the payment (a payment with no hand cards to fly off never got there). */
+  clearPaymentDim(): void {
+    const s = this.#state;
+    if (s?.paymentSources) this.setCards({ ...s, paymentSources: null, selected: [] });
   }
 
   stageEvent(card: TableCard): void {
@@ -999,7 +1011,14 @@ export class BattleTable {
         }`,
     }),
   );
-  #interrupt: { piece: Piece; start: number; lift: number; activation?: { flashed: boolean } } | null = null;
+  #interrupt: {
+    piece: Piece;
+    start: number;
+    lift: number;
+    activation?: { flashed: boolean };
+    /** A card just played (`shinePlayed`): no rise and no smoke, a stretch it is put back from each frame. */
+    shine?: { flashed: boolean; stretch: number };
+  } | null = null;
   #wave: { start: number; lifts: Map<Piece, number> } | null = null;
 
   /** A ripple through the hand, each card hopping in turn: a question about the hand points at it. */
@@ -1043,6 +1062,32 @@ export class BattleTable {
   activateWhenRevealed(id: string): void {
     this.pulseInterrupt(id);
     if (this.#interrupt?.piece === this.#pieces.get(id)) this.#interrupt!.activation = { flashed: false };
+  }
+
+  /**
+   * A card just played that starts an ability as it lands (Black Cat's Forced Response): a light sweeps across it as it
+   * stretches a touch and settles, with a small glint. Not the smoke and rise of an ability on a card already in play.
+   */
+  shinePlayed(id: string): void {
+    const piece = this.#pieces.get(id);
+    if (!piece) return;
+    this.pulseInterrupt(id);
+    if (this.#interrupt?.piece !== piece) return;
+    this.#interruptPuff.removeFromParent();
+    this.#interrupt.shine = { flashed: false, stretch: 1 };
+  }
+
+  /**
+   * The staged card `id` goes down in its place on the table now, before the move ends, so an ability it starts on
+   * entering play fires once it is down. False when it isn't a card that stands on the hero's side.
+   */
+  landStaged(id: string): boolean {
+    const s = this.#state;
+    const card = s?.staged;
+    if (!s || card?.id !== id || s.stagedOverEnemies || !["ally", "support", "upgrade"].includes(card.type))
+      return false;
+    this.setCards({ ...s, staged: null, inPlay: [...s.inPlay.filter((c) => c.id !== id), card] });
+    return true;
   }
 
   #deflection: { token: THREE.Group; start: number } | null = null;
@@ -1155,6 +1200,165 @@ export class BattleTable {
 
   #revealHeld = false;
   /** The revealed card waits to be read before Continue: it stands full size in the middle of the table. */
+  /** Cards turned up off the top of the player's deck (Black Cat's discard), standing in a row in the middle. */
+  #deckReveal: TableCard[] = [];
+  /** Of those, the ones the effect keeps for the hand: they rise and glow. */
+  readonly #deckPicks = new Set<string>();
+
+  /** Turn `cards` up off the top of the deck, one after another, into a row in the middle of the table. */
+  revealFromDeck(cards: readonly TableCard[]): void {
+    if (!this.#state || !cards.length) return;
+    this.#deckReveal = [...cards];
+    this.#deckPicks.clear();
+    this.setCards(this.#state);
+    const start = performance.now();
+    cards.forEach((card, index) => {
+      const root = this.#pieces.get(card.id)?.root;
+      if (!root) return;
+      root.position.copy(this.#deckSlot.position);
+      root.position.y += this.#deckBack.position.z * this.#deckSlot.scale.x + 0.03;
+      root.scale.copy(this.#deckSlot.scale);
+      root.rotation.set(-Math.PI / 2, Math.PI, 0);
+      this.#startFlight(card.id, "draw", start + index * 180);
+    });
+  }
+
+  /** The revealed cards the effect keeps rise out of the row and glow. */
+  pickFromReveal(ids: readonly string[]): void {
+    for (const id of ids) if (this.#deckReveal.some((card) => card.id === id)) this.#deckPicks.add(id);
+    if (this.#state) this.setCards(this.#state);
+  }
+
+  /** Revealed cards the effect doesn't keep go to the discard pile, the last one on top (the pile's last entry). */
+  discardFromReveal(ids: readonly string[]): void {
+    const s = this.#state;
+    const going = this.#deckReveal.filter((card) => ids.includes(card.id));
+    if (!s || !going.length) return;
+    this.#deckReveal = this.#deckReveal.filter((card) => !ids.includes(card.id));
+    for (const id of ids) this.#deckPicks.delete(id);
+    const left = s.discard.filter((card) => !ids.includes(card.id));
+    this.setCards({ ...s, discard: [...left, ...going] });
+    for (const card of going) this.#startFlight(card.id, "discard");
+  }
+
+  /**
+   * Cards put back in the hand from where they lie (a revealed card Black Cat keeps, a card returned from the discard
+   * pile) fly there from that spot, not out of the deck like a draw.
+   */
+  returnToHand(hand: readonly TableCard[], ids: readonly string[], from?: string): void {
+    const s = this.#state;
+    if (!s) return;
+    const lying = new Set(ids.filter((id) => this.#pieces.has(id)));
+    this.#deckReveal = this.#deckReveal.filter((card) => !ids.includes(card.id));
+    for (const id of ids) this.#deckPicks.delete(id);
+    this.setCards({ ...s, hand, discard: s.discard.filter((card) => !ids.includes(card.id)), selected: [] });
+    // Cards that lay facedown under a card (Highway Robbery's) slide out from under it and turn up on the way.
+    const host = from ? this.#pieces.get(from) : undefined;
+    const start = performance.now();
+    ids.forEach((id, index) => {
+      if (lying.has(id)) return this.#startFlight(id, "return");
+      const root = this.#pieces.get(id)?.root;
+      if (!root || !host) return;
+      root.position.copy(host.root.position);
+      root.position.y -= 0.01;
+      root.scale.setScalar(host.root.scale.x * 0.92);
+      root.rotation.set(host.root.rotation.x, Math.PI, 0);
+      this.#startFlight(id, "draw", start + index * 160);
+    });
+    if (host) this.#addUnder(from!, -ids.length);
+  }
+
+  /** Drop any cards still standing revealed off the deck, or on their way facedown somewhere (a new game). */
+  endDeckReveal(): void {
+    this.#deckReveal = [];
+    this.#deckPicks.clear();
+    this.#stashing.clear();
+  }
+
+  /** Cards on their way facedown into a deck or under a card: they fly there, turning over, and are then gone. */
+  readonly #stashing = new Map<string, { card: TableCard; to: "deck" | "encounterDeck" | { under: string } }>();
+
+  /** Set-aside cards shown in the middle a moment (Shadow of the Past's nemesis set) before they go somewhere. */
+  showInRow(cards: readonly TableCard[]): void {
+    if (!this.#state || !cards.length) return;
+    this.#deckReveal = [...cards];
+    this.#deckPicks.clear();
+    this.setCards(this.#state);
+    const start = performance.now();
+    cards.forEach((card, index) => {
+      const root = this.#pieces.get(card.id)?.root;
+      if (!root) return;
+      root.scale.multiplyScalar(0.2);
+      this.#startFlight(card.id, "place", start + index * 120);
+    });
+  }
+
+  #stash(cards: readonly TableCard[], to: "deck" | "encounterDeck" | { under: string }, next: TableCards): void {
+    const ids = new Set(cards.map((card) => card.id));
+    for (const card of cards) this.#stashing.set(card.id, { card, to });
+    this.#deckReveal = this.#deckReveal.filter((card) => !ids.has(card.id));
+    for (const id of ids) this.#deckPicks.delete(id);
+    this.setCards(next);
+    const start = performance.now();
+    const step = Math.min(60, 700 / Math.max(1, cards.length));
+    cards.forEach((card, index) => {
+      const piece = this.#pieces.get(card.id);
+      if (!piece) return;
+      // A card with its own printed back (a villain, a double-sided card) keeps it: that material is its own.
+      if (!piece.card.reverseArt && piece.card.type !== "villain")
+        piece.back.material = to === "encounterDeck" ? this.#encounterBack.material : this.#deckBack.material;
+      this.#startFlight(card.id, "stash", start + index * step);
+    });
+  }
+
+  /** A pile shuffled back into its deck (a deck that ran out): every card flies in facedown. */
+  shuffleIntoDeck(pile: "discard" | "encounterDiscard"): void {
+    const s = this.#state;
+    if (!s) return;
+    const cards = [...s[pile]].reverse();
+    this.#stash(cards, pile === "discard" ? "deck" : "encounterDeck", { ...s, [pile]: [] });
+  }
+
+  /** The cards standing in the middle go facedown into the encounter deck (Shadow of the Past). */
+  rowIntoEncounterDeck(): void {
+    const s = this.#state;
+    if (!s) return;
+    this.#stash([...this.#deckReveal], "encounterDeck", s);
+  }
+
+  /** Cards from the hand go facedown under `host` (Highway Robbery's When Revealed). */
+  tuckUnder(ids: readonly string[], host: string, hand: readonly TableCard[]): void {
+    const s = this.#state;
+    if (!s) return;
+    const cards = s.hand.filter((card) => ids.includes(card.id));
+    this.#stash(cards, { under: host }, { ...s, hand, selected: [] });
+  }
+
+  /** The stashed cards are in place: they go, a deck shows its new count, and a card shows what lies under it. */
+  settleStash(counts: { deckCount?: number; encounterCount?: number } = {}): void {
+    const s = this.#state;
+    if (!s) return;
+    this.#stashing.clear();
+    this.setCards({ ...s, ...counts });
+  }
+
+  /** How many facedown cards lie under `host` now (Highway Robbery's stolen cards). */
+  setUnder(host: string, count: number): void {
+    const piece = this.#pieces.get(host);
+    const current = piece?.card.markers?.find((m) => m.name === "tucked")?.count ?? 0;
+    if (piece) this.#addUnder(host, count - current);
+  }
+
+  /** The count of facedown cards lying under `host`, up or down by `delta`. */
+  #addUnder(host: string, delta: number): void {
+    const piece = this.#pieces.get(host);
+    if (!piece) return;
+    const markers = (piece.card.markers ?? []).filter((m) => m.name !== "tucked");
+    const count = Math.max(0, (piece.card.markers?.find((m) => m.name === "tucked")?.count ?? 0) + delta);
+    if (count) markers.push({ name: "tucked", count });
+    this.#updateMarkers(piece, markers);
+  }
+
   holdReveal(held: boolean): void {
     if (this.#revealHeld === held) return;
     this.#revealHeld = held;
@@ -1404,6 +1608,7 @@ export class BattleTable {
     for (const [id, flight] of this.#flights) if (flight.kind !== "tuck") ids.add(id);
     if (this.#power) ids.add(this.#power);
     if (this.#interrupt) ids.add(this.#interrupt.piece.card.id);
+    for (const card of this.#deckReveal) ids.add(card.id);
     if (this.#state.discardOpen) for (const card of this.#viewedPile(this.#state)) ids.add(card.id);
     const clips: string[] = [];
     for (const id of ids) {
@@ -1774,6 +1979,38 @@ export class BattleTable {
           flat,
         );
     }
+    // Cards turned up off the deck stand in a row in the middle, above the hand; the ones being kept rise a little.
+    if (this.#deckReveal.length) {
+      const count = this.#deckReveal.length;
+      const floor = this.#handTop.resting - 24;
+      let width = Math.min(h * 0.3, (w * 0.8) / (count * 1.22));
+      if (floor > 0) width = Math.max(h * 0.12, Math.min(width, (floor - 16) / 1.6));
+      let y = Math.max(16 + width * 0.8, h * 0.42);
+      if (floor > 0) y = Math.min(y, floor - width * 0.7);
+      this.#deckReveal.forEach((card, index) => {
+        const x = w * 0.5 + (index - (count - 1) / 2) * width * 1.22;
+        const rise = this.#deckPicks.has(card.id) ? width * 0.1 : 0;
+        this.#pose(card.id, x, y - rise, width, 1.75 + index * 0.01, this.#camera.rotation.x);
+      });
+    }
+    // Cards on their way facedown into a deck rest on its top; cards going under a card lie just beneath it.
+    for (const [id, { to }] of this.#stashing) {
+      const piece = this.#pieces.get(id);
+      if (!piece) continue;
+      if (typeof to === "object") {
+        const host = this.#pieces.get(to.under)?.target;
+        if (!host) continue;
+        const position = host.position.clone();
+        position.y -= 0.012;
+        piece.target = { position, scale: host.scale * 0.92, pitch: host.pitch, roll: 0 };
+      } else {
+        const slot = to === "deck" ? this.#deckSlot : this.#encounterSlot;
+        const back = to === "deck" ? this.#deckBack : this.#encounterBack;
+        const position = slot.position.clone();
+        position.y += back.position.z * slot.scale.x + 0.03;
+        piece.target = { position, scale: slot.scale.x, pitch: slot.rotation.x, roll: 0 };
+      }
+    }
     const permanents = state.inPlay.filter((c) => c.id !== state.staged?.id);
     if (state.staged && !state.stagedOverEnemies && ["ally", "support", "upgrade"].includes(state.staged.type))
       permanents.push(state.staged);
@@ -2117,6 +2354,10 @@ export class BattleTable {
   readonly #draw = (now: number): void => {
     this.#frame = 0;
     if (this.#interrupt) this.#interrupt.piece.root.position.y -= this.#interrupt.lift;
+    if (this.#interrupt?.shine) {
+      this.#interrupt.piece.root.scale.y /= this.#interrupt.shine.stretch;
+      this.#interrupt.shine.stretch = 1;
+    }
     if (this.#wave) {
       for (const [piece, lift] of this.#wave.lifts) piece.root.position.y -= lift;
       this.#wave.lifts.clear();
@@ -2302,9 +2543,11 @@ export class BattleTable {
                   ? 560
                   : kind === "draw"
                     ? 560
-                    : kind === "discard"
-                      ? 460
-                      : 310;
+                    : kind === "stash"
+                      ? 540
+                      : kind === "discard"
+                        ? 460
+                        : 310;
         const progress = this.#reduced.matches ? 1 : THREE.MathUtils.clamp((now - started) / duration, 0, 1);
         const contact = Math.min(1, progress / 0.54);
         const t = readying
@@ -2332,8 +2575,11 @@ export class BattleTable {
           const descent = THREE.MathUtils.smoothstep(progress, READY_TURN_END, 1);
           piece.root.position.y += (rise - descent) * (Math.max(0.58, piece.target.scale * 0.5) + liftOffset);
         } else piece.root.position.y += Math.sin(Math.PI * progress) * (kind === "discard" ? 0.95 : 0.46);
+        // Turned facedown on the way into a deck or under a card.
+        if (kind === "stash") piece.root.rotation.y = Math.PI * THREE.MathUtils.smoothstep(progress, 0.08, 0.7);
         if (kind === "draw") {
-          const fromDeck = this.#state?.hand.some((card) => card.id === id);
+          const fromDeck =
+            this.#state?.hand.some((card) => card.id === id) || this.#deckReveal.some((card) => card.id === id);
           // Turn face-up over the first 60% of the flight, as before the ease-out curve.
           const turn = fromDeck ? THREE.MathUtils.smoothstep(progress, 0, 0.6) : t;
           piece.root.rotation.y = Math.PI * (1 - turn);
@@ -2498,13 +2744,23 @@ export class BattleTable {
     }
     if (this.#interrupt) {
       const pulse = this.#interrupt;
-      const t = THREE.MathUtils.clamp((now - pulse.start) / (pulse.activation ? ACTIVATION_MS : INTERRUPT_MS), 0, 1);
+      const length = pulse.shine ? SHINE_MS : pulse.activation ? ACTIVATION_MS : INTERRUPT_MS;
+      const t = THREE.MathUtils.clamp((now - pulse.start) / length, 0, 1);
       const rise = pulse.activation
         ? THREE.MathUtils.smoothstep(t, 0, 0.3) - THREE.MathUtils.smoothstep(t, 0.68, 1)
         : Math.sin(Math.PI * t) ** 2;
       // A revealed card already held up full size near the camera rises only a little, or it would leave the screen.
       const rises = pulse.activation ? (pulse.piece.card.id === this.#revealing ? 0.18 : 0.9) : 0.12;
-      pulse.lift = this.#reduced.matches ? 0 : pulse.piece.root.scale.x * rises * rise;
+      pulse.lift = this.#reduced.matches || pulse.shine ? 0 : pulse.piece.root.scale.x * rises * rise;
+      if (pulse.shine && !this.#reduced.matches) {
+        // Up a touch along its length and back, easing out, as the light crosses it.
+        pulse.shine.stretch = 1 + 0.05 * Math.sin(Math.PI * THREE.MathUtils.smoothstep(t, 0, 0.75));
+        pulse.piece.root.scale.y *= pulse.shine.stretch;
+        if (!pulse.shine.flashed && t >= 0.4) {
+          pulse.shine.flashed = true;
+          this.#burst(pulse.piece.root.position.clone(), 0xfff3d0, 10, 0.8, 0.9);
+        }
+      }
       pulse.piece.root.position.y += pulse.lift;
       if (pulse.activation && !pulse.activation.flashed && t >= 0.3) {
         pulse.activation.flashed = true;

@@ -1,12 +1,21 @@
 #!/bin/sh
-# Require the e2e suite to have passed on what is being pushed (`.githooks/e2e-gate.sh`). The suite is not run in CI,
-# so this hook is the gate. Installed by `pnpm install` through the root `prepare` script
-# (`git config core.hooksPath .githooks`). Skip once with `git push --no-verify` when you must.
+# Require the right check to have passed on what is being pushed. Nothing runs in CI for it, so this hook is the gate.
+# Installed by `pnpm install` through the root `prepare` script (`git config core.hooksPath .githooks`). Skip once
+# with `git push --no-verify` when you must.
 #
-# A push that changes nothing the suite exercises (`packages/`, `pnpm-lock.yaml`), such as docs or a changelog
-# fragment, does not run it; neither does deleting a branch or pushing a tag.
+# Which check, by what the push changes under `packages/` and `pnpm-lock.yaml`:
+#   - nothing there (docs, a script, a changelog fragment): no check; neither for deleting a branch or pushing a tag;
+#   - only the 3D table (`packages/client/src/battle-table/`, `packages/client/battle/`) and its browser tests (the
+#     specs in `packages/client/e2e/` with `battle` in their file name): the type check, the 3D table's unit tests
+#     and those browser tests (`.githooks/battle-gate.sh`);
+#   - anything else (rules, cards, the old 2D game): the Playwright suite (`.githooks/e2e-gate.sh`).
+#
+# `PUSH_GATE_DRY_RUN=1 git push …` prints which check each ref would get, runs none, and refuses the push.
 zero="0000000000000000000000000000000000000000"
-gate="$(dirname "$0")/e2e-gate.sh"
+hooks="$(dirname "$0")"
+remote="$1"
+battle_only='^packages/client/(src/battle-table/|battle/|e2e/[^/]*battle[^/]*\.spec\.ts$)'
+dry="${PUSH_GATE_DRY_RUN:-}"
 
 while read -r local_ref local_sha remote_ref remote_sha; do
   case "$local_ref" in refs/tags/*) continue ;; esac
@@ -14,11 +23,42 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   if [ "$remote_sha" != "$zero" ] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
     base="$remote_sha"
   else
-    base="$(git merge-base "$local_sha" origin/main 2>/dev/null || true)"
+    # A new branch: compare with the nearest commit this remote already has, so the commits it carries that were
+    # pushed (and checked) before are not checked again. With none, compare with the original project's main.
+    base=""
+    if [ -n "$remote" ] && [ -n "$(git for-each-ref --count=1 "refs/remotes/$remote")" ]; then
+      if [ -z "$(git rev-list --max-count=1 "$local_sha" --not --remotes="$remote" 2>/dev/null)" ]; then
+        base="$local_sha" # the remote already has this very commit
+      else
+        base="$(git rev-list --boundary "$local_sha" --not --remotes="$remote" 2>/dev/null | sed -n 's/^-//p' | head -n 1)"
+      fi
+    fi
+    [ -n "$base" ] || base="$(git merge-base "$local_sha" origin/main 2>/dev/null || true)"
   fi
-  if [ -n "$base" ] && git diff --quiet "$base" "$local_sha" -- packages pnpm-lock.yaml; then
+
+  gate="e2e"
+  if [ -n "$base" ]; then
+    changed="$(git diff --name-only "$base" "$local_sha" -- packages pnpm-lock.yaml)"
+    if [ -z "$changed" ]; then
+      gate="none"
+    elif ! printf '%s\n' "$changed" | grep -qvE "$battle_only"; then
+      gate="battle"
+    fi
+  fi
+
+  if [ -n "$dry" ]; then
+    echo "push gate (dry run): $local_ref -> $gate"
     continue
   fi
-  sh "$gate" "$local_sha" < /dev/null || exit 1
+  case "$gate" in
+    none) continue ;;
+    battle) sh "$hooks/battle-gate.sh" "$local_sha" < /dev/null || exit 1 ;;
+    *) sh "$hooks/e2e-gate.sh" "$local_sha" < /dev/null || exit 1 ;;
+  esac
 done
+
+if [ -n "$dry" ]; then
+  echo "push gate (dry run): nothing was checked and nothing was pushed." >&2
+  exit 1
+fi
 exit 0

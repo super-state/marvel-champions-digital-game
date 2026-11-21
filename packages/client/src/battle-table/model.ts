@@ -164,6 +164,28 @@ export interface BattleBeat {
   returned?: string[];
   /** Cards discarded from the top of the player's deck (Black Cat). */
   milled?: string[];
+  /** Cards from the hand put facedown under a card (Highway Robbery's When Revealed), and that card. */
+  tucked?: { ids: string[]; host: string; count: number };
+  /** An encounter card dealt as the price of a player deck that ran out (RRG "Player Deck"). */
+  penalty?: boolean;
+  /** Where `returned` cards were lying facedown before (the card they were under: Highway Robbery). */
+  returnedFrom?: string;
+  /** The player's deck ran out: the discard pile is shuffled into a new deck (a facedown encounter card follows). */
+  deckReset?: number;
+  /** Set-aside cards shuffled into the encounter deck (Shadow of the Past: the rest of the nemesis set). */
+  intoEncounterDeck?: BattleCard[];
+  /** The encounter deck ran out: its discard pile shuffled back in, `count` cards. */
+  encounterReset?: number;
+  /** Acceleration tokens on the main scheme after one was added. */
+  acceleration?: number;
+  /** Overkill: damage past a defeated minion spilling onto `to`. */
+  overkill?: { to: string; amount: number };
+  /** A cost discount waiting for the next card played (Helicarrier), from `source` when a card's ability gave it. */
+  discount?: { amount: number; source: string | null };
+  /** An effect that needed something to choose and found nothing (Spider-Tracer with no scheme in play). */
+  nothingFound?: { slot: string; source: string | null };
+  /** The card whose ability discarded `milled` (Black Cat), when one did, and what kind of ability it was. */
+  millSource?: { card: string; label: string };
   /** On a facedown deal: the enemy the card goes to as its boost card. */
   boostFor?: string;
   /** The encounter card whose surge deals the player another encounter card (the deal beat follows). */
@@ -381,8 +403,30 @@ export class BattleModel {
         e.type === "characterDefeated" || e.type === "schemeDefeated" ? [e.instanceId as string] : [],
       ),
     );
+    // The card whose ability is resolving: its effects (Black Cat discarding from the deck) are its doing.
+    let resolving: { card: InstanceId; label: string } | null = null;
+    // How many cards the player's deck was just shuffled from (a reset reports it just after).
+    let shuffledDeck: number | null = null;
+    // An encounter deck shuffle is a run-out reset when an acceleration token follows it (effects.ts
+    // resetEncounterDeckIfEmpty); other shuffles (a search, a card shuffled in) are not.
+    const resets = new Set(
+      events.filter(
+        (e, i) =>
+          e.type === "deckShuffled" &&
+          e.zone.kind === "encounterDeck" &&
+          events
+            .slice(i + 1, i + 4)
+            .some((later) => later.type === "accelerationTokenAdded" || later.type === "accelerationTokenRedirected"),
+      ),
+    );
+    const heldReset: BattleBeat[] = [];
+    let acceleration = this.#game.mainScheme.accelerationTokens;
     for (const e of events) {
       const before = this.#beats.length;
+      if (e.type === "deckShuffled" && e.zone.kind === "deck") shuffledDeck = e.order.length;
+      if (e.type === "abilityResolved") resolving = { card: e.instanceId, label: triggerLabel(e.abilityId) };
+      // Only the ability that resolved last owns what follows; a move into play or a new step ends its say.
+      else if (e.type === "stepChanged" || e.type === "cardPlayed") resolving = null;
       if (
         e.type === "stepChanged" &&
         e.to.phase === "villain" &&
@@ -455,7 +499,9 @@ export class BattleModel {
             e.type === "boostCardDealt" ? `Deal a boost card to ${name(e.enemyInstanceId)}` : "Deal an encounter card",
           encounterDeal: e.instanceId,
           ...(e.type === "boostCardDealt" ? { boostFor: e.enemyInstanceId } : {}),
+          ...(e.type === "encounterCardDealt" && e.source === "deckReset" ? { penalty: true } : {}),
         });
+        this.#beats.push(...heldReset.splice(0));
       } else if (e.type === "encounterCardRevealed" || e.type === "boostCardFlipped") {
         const card = cardOf(result.state, e.instanceId) ?? cardOf(this.#game, e.instanceId);
         if (card?.type === "villain" && e.type === "encounterCardRevealed") continue;
@@ -493,11 +539,91 @@ export class BattleModel {
       } else if (e.type === "cardMoved" && e.from.kind === "deck" && e.to.kind === "discard") {
         const last = this.#beats.at(-1);
         if (last?.milled) last.milled.push(e.instanceId);
-        else this.#beats.push({ enemy, text: "Discard from the top of your deck", milled: [e.instanceId] });
-      } else if (e.type === "cardMoved" && e.to.kind === "hand" && e.from.kind !== "deck") {
+        else
+          this.#beats.push({
+            enemy,
+            text: "Discard from the top of your deck",
+            milled: [e.instanceId],
+            ...(resolving ? { millSource: resolving } : {}),
+          });
+      } else if (e.type === "cardMoved" && e.from.kind === "hand" && e.to.kind === "tucked") {
+        const host = e.to.hostInstanceId;
         const last = this.#beats.at(-1);
-        if (last?.returned) last.returned.push(e.instanceId);
-        else this.#beats.push({ enemy, text: "Return to your hand", returned: [e.instanceId] });
+        const count = result.state.instances[host]?.tucked.length ?? 0;
+        if (last?.tucked?.host === host) {
+          last.tucked.ids.push(e.instanceId);
+          last.tucked.count = count;
+        } else
+          this.#beats.push({
+            enemy,
+            actor: host,
+            text: `A card from your hand goes facedown under ${name(host)}`,
+            tucked: { ids: [e.instanceId], host, count },
+          });
+      } else if (e.type === "cardMoved" && e.to.kind === "hand" && e.from.kind !== "deck") {
+        const from = e.from.kind === "tucked" ? e.from.hostInstanceId : undefined;
+        const last = this.#beats.at(-1);
+        if (last?.returned && last.returnedFrom === from) last.returned.push(e.instanceId);
+        else
+          this.#beats.push({
+            enemy,
+            text: "Return to your hand",
+            returned: [e.instanceId],
+            ...(from ? { returnedFrom: from } : {}),
+          });
+      } else if (e.type === "playerDeckReset") {
+        this.#beats.push({
+          enemy,
+          text: "Your deck ran out: shuffle your discard pile into a new deck",
+          deckReset: shuffledDeck ?? this.#game.players[0]!.discard.length,
+        });
+      } else if (e.type === "cardMoved" && e.from.kind === "setAside" && e.to.kind === "encounterDeck") {
+        const last = this.#beats.at(-1);
+        if (last?.intoEncounterDeck) last.intoEncounterDeck.push(this.#shownCard(e.instanceId));
+        else
+          this.#beats.push({
+            enemy,
+            text: "Shuffle into the encounter deck",
+            intoEncounterDeck: [this.#shownCard(e.instanceId)],
+          });
+      } else if (e.type === "deckShuffled" && resets.has(e)) {
+        // The deck ran out and its discard pile is the new deck. The engine reshuffles inside the deal that took the
+        // last card, before reporting that deal: held back, it plays just after it, as it happened on the table.
+        heldReset.push({
+          enemy,
+          text: "The encounter deck ran out: shuffle its discard pile back in",
+          encounterReset: e.order.length,
+        });
+      } else if (e.type === "accelerationTokenAdded") {
+        // Also reported when a token comes off (a lower total).
+        const added = e.total > acceleration;
+        acceleration = e.total;
+        (heldReset.length ? heldReset : this.#beats).push({
+          enemy,
+          actor: e.schemeInstanceId ?? result.state.mainScheme.instanceId,
+          text: `${added ? "+1" : "−1"} acceleration token (${e.total} in all)`,
+          acceleration: e.total,
+        });
+      } else if (e.type === "overkillSpilled") {
+        this.#beats.push({
+          enemy,
+          actor: e.toInstanceId,
+          text: `Overkill: ${e.amount} damage spills onto ${name(e.toInstanceId)}`,
+          overkill: { to: e.toInstanceId, amount: e.amount },
+        });
+      } else if (e.type === "lastingEffectAdded" && e.effect.kind === "costReduction") {
+        this.#beats.push({
+          enemy,
+          text: `The next card you play costs ${e.effect.amount} less`,
+          discount: { amount: e.effect.amount, source: resolving?.card ?? null },
+        });
+      } else if (e.type === "choiceFoundNothing") {
+        const what = e.slot === "scheme" ? "scheme" : e.slot === "minion" ? "minion" : "target";
+        this.#beats.push({
+          enemy,
+          text: `${resolving ? name(resolving.card) + ": no" : "No"} ${what} to choose`,
+          nothingFound: { slot: e.slot, source: resolving?.card ?? null },
+        });
       } else if (e.type === "cardMoved" && e.from.kind === "resolving" && e.to.kind === "discard") {
         this.#beats.push({
           enemy,
@@ -700,6 +826,16 @@ export class BattleModel {
       }
     }
     this.#setGame(result.state, drawn);
+  }
+
+  /** A card shown faceup a moment as it moves between hidden places (a set-aside card shuffled into a deck). */
+  #shownCard(id: InstanceId): BattleCard {
+    const card = cardOf(this.#game, id);
+    return {
+      ...this.#card(id),
+      name: card?.name ?? faceUpName(this.#game, id),
+      art: artFor(card, { kind: "front" })?.url ?? "",
+    };
   }
 
   #card(id: InstanceId): BattleCard {
@@ -1247,4 +1383,16 @@ export class BattleModel {
     this.#accept(result);
     return true;
   }
+}
+
+/** How a card's ability is printed: "Forced Response", "Interrupt", "Action". */
+function triggerLabel(abilityId: string): string {
+  const trigger = CORE_DEPS.abilities[abilityId]?.trigger;
+  if (!trigger) return "Ability";
+  if (trigger.kind === "response" || trigger.kind === "interrupt") {
+    const kind = trigger.kind === "response" ? "Response" : "Interrupt";
+    return "forced" in trigger && trigger.forced ? `Forced ${kind}` : kind;
+  }
+  if (trigger.kind === "action") return trigger.forced ? "Forced Action" : "Action";
+  return "Ability";
 }
