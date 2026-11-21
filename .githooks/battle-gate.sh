@@ -47,10 +47,15 @@ if [ -n "$specs" ]; then
   report="$(mktemp -t battle-gate.XXXXXX)"
   trap 'rm -f "$report"' EXIT
 
-  echo "3D table gate: the 3D table's browser tests ($(echo $specs)), port $port..."
+  # One at a time unless told otherwise (`BATTLE_E2E_WORKERS`): each spec drives its own WebGL page and times its pad
+  # presses by the clock. On a PC that draws WebGL in software, the suite's eight at once starved each other
+  # (2026-11-21: 5 of 9 failed at eight workers, 1 of 9 at two, none at one, on the same code).
+  workers="${BATTLE_E2E_WORKERS:-1}"
+  echo "3D table gate: the 3D table's browser tests ($(echo $specs)), port $port, $workers at a time..."
   # shellcheck disable=SC2086 # one argument per spec
   (cd "$root/packages/client" &&
-    E2E_PORT="$port" PLAYWRIGHT_JSON_OUTPUT_NAME="$report" pnpm exec playwright test $specs --reporter=list,json) || true
+    E2E_PORT="$port" PLAYWRIGHT_JSON_OUTPUT_NAME="$report" pnpm exec playwright test $specs --workers="$workers" \
+      --reporter=list,json) || true
 
   # The verdict is read from the report, not the exit code: every test that ran passed, and some did run.
   node -e '
