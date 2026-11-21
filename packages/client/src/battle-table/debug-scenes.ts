@@ -70,6 +70,11 @@ const SCENES: Record<string, Scene> = {
     hand: ["01002", "01090"],
     deckTop: ["01089", "01087"],
   },
+  /** Black Cat with no printed [mental] resource on top of the deck: "No mental resources", nothing goes to the hand. */
+  blackcatmiss: {
+    hand: ["01002", "01090"],
+    deckTop: ["01088", "01087"],
+  },
   /** Avengers Mansion ready on the table: use it to watch a card drawn by an effect come into the hand. */
   mansion: {
     play: [{ code: "01091" }],

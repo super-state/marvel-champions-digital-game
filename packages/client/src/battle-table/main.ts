@@ -59,6 +59,8 @@ const choiceShade = element("choice-shade");
 const focusBlur = element("focus-blur");
 /** A revealed encounter card waiting on Continue: the table blurs around it. */
 let revealFocus: string | null = null;
+/** Cards turned up off the top of the deck (Black Cat's discard): the table blurs around them while they are dealt with. */
+let rowFocus: string[] = [];
 /** A question answered only in the dock ("Choose one"): the table blurs, all but the card asking it, if on the table. */
 let dockFocus: { keep: string | null } | null = null;
 const defenseShade = document.querySelector<SVGSVGElement>("#defense-shade")!;
@@ -1459,19 +1461,72 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
     await sleep(700);
     return;
   }
+  // The table goes soft around the cards as they come off the deck, so the eye follows them and nothing else.
+  rowFocus = cards.map((card) => card.id);
+  focusBlur.dataset.row = "";
+  focusBlur.hidden = false;
   table.revealFromDeck(cards);
+  placeLabels();
+  // Laid out once hidden-at-0 first, so the fade-in runs from the same moment the first card lifts.
+  void focusBlur.offsetWidth;
+  focusBlur.dataset.ready = "";
   await sleep(reducedMotion() ? 300 : 560 + (cards.length - 1) * 180 + 650);
   const kept = next?.returned?.filter((id) => milled.includes(id)) ?? [];
   if (kept.length) {
     table.pickFromReveal(kept);
     for (const id of kept) stampCard(id, "To hand", "boost");
     await sleep(reducedMotion() ? 300 : 900);
+  } else if (source?.miss) {
+    // None of them is one the effect keeps: say so over the row, so the hand staying as it is reads as nothing found.
+    narrate(beat, feedLineOf(beat), {
+      eyebrow: { text: nameOf(source.card) || source.label, icon: "response", tone: "hero" },
+      title: source.miss,
+    });
+    stampRow(rowFocus, source.miss);
+    await sleep(reducedMotion() ? 500 : 1200);
   }
   const going = milled.filter((id) => !kept.includes(id));
   if (going.length) {
     table.discardFromReveal(going);
     await sleep(reducedMotion() ? 200 : 520);
   }
+  // The blur fades with the cards still cut out of it, then goes.
+  delete focusBlur.dataset.ready;
+  await sleep(reducedMotion() ? 0 : 320);
+  rowFocus = [];
+  delete focusBlur.dataset.row;
+  focusBlur.hidden = !state.choice?.mulligan && !revealFocus && !dockFocus;
+  focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = "";
+  // A dock question still waiting keeps its own blur.
+  if (dockFocus) focusBlur.dataset.ready = "";
+}
+
+/** A word stamped across the middle of a row of cards ("No mental resources" over Black Cat's discards). */
+function stampRow(ids: readonly string[], text: string) {
+  const row = table?.anchors().filter((point) => ids.includes(point.id)) ?? [];
+  if (!row.length) return;
+  const node = make("div", "card-stamp", text);
+  node.dataset.tone = "status";
+  node.style.left = row.reduce((sum, point) => sum + point.x, 0) / row.length + "px";
+  node.style.top = row.reduce((sum, point) => sum + point.y, 0) / row.length + "px";
+  stage.append(node);
+  floats.add(node);
+  const animation = node.animate(
+    reducedMotion()
+      ? [{ opacity: 1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }]
+      : [
+          { transform: "scale(2.4)", opacity: 0 },
+          { transform: "scale(.92)", opacity: 1, offset: 0.12 },
+          { transform: "scale(1)", opacity: 1, offset: 0.2 },
+          { transform: "scale(1)", opacity: 1, offset: 0.85 },
+          { transform: "scale(1.05)", opacity: 0 },
+        ],
+    { duration: 1500, easing: "cubic-bezier(.2,.8,.3,1)" },
+  );
+  animation.onfinish = () => {
+    node.remove();
+    floats.delete(node);
+  };
 }
 
 /** The attack target fades off once its attack is over. */
@@ -1620,8 +1675,23 @@ function placeLabels() {
     if (card)
       tag.style.transform = `translate(${Math.round(card.right - card.width * 0.32)}px,${Math.round(card.y)}px)`;
   }
-  const sharp = revealFocus ?? dockFocus?.keep ?? null;
-  if (!focusBlur.hidden && (revealFocus || dockFocus)) {
+  if (!focusBlur.hidden && rowFocus.length) {
+    // Everything but the cards in the row, cut out along their outlines. A mask, not a clip path: the cards overlap
+    // as they come off the deck, and an even-odd path would blur where two of them cross.
+    const { width, height } = focusBlur.getBoundingClientRect();
+    const holes = rowFocus
+      .map((id) => table!.cardOutline(id))
+      .filter((outline) => outline.length)
+      .map((outline) => `<polygon points='${outline.join(" ")}'/>`)
+      .join("");
+    const w = Math.round(width);
+    const h = Math.round(height);
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}' viewBox='0 0 ${w} ${h}'><mask id='m'><rect width='${w}' height='${h}' fill='white'/><g fill='black'>${holes}</g></mask><rect width='${w}' height='${h}' mask='url(%23m)'/></svg>`;
+    focusBlur.style.clipPath = "";
+    focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = `url("data:image/svg+xml,${svg}")`;
+    focusBlur.style.maskSize = focusBlur.style.webkitMaskSize = "100% 100%";
+  } else if (!focusBlur.hidden && (revealFocus || dockFocus)) {
+    const sharp = revealFocus ?? dockFocus?.keep ?? null;
     // Everything but the revealed card (or the card asking the dock's question), cut out along its outline.
     const outline = sharp ? table.cardOutline(sharp) : [];
     const { width, height } = focusBlur.getBoundingClientRect();
@@ -1641,7 +1711,7 @@ function placeLabels() {
   // The mulligan question waits for the dealt cards to land too.
   dock.toggleAttribute(
     "data-waiting",
-    !focusBlur.hidden && !revealFocus && !dockFocus && !("ready" in focusBlur.dataset),
+    !focusBlur.hidden && !revealFocus && !dockFocus && !rowFocus.length && !("ready" in focusBlur.dataset),
   );
   if (heldEncounter && !choiceShade.hidden) {
     const card = projected.find((p) => p.id === heldEncounter);
@@ -2737,9 +2807,10 @@ function render() {
   // A question answered only with the dock's buttons softens the table behind it, so it reads as the game waiting on
   // that answer; the card asking it (or the encounter card held up with it) stays sharp.
   const waiting = waitsOnDock(state.choice, (id) => onTable(id) && actionCard !== id);
-  dockFocus = waiting && !revealFocus ? { keep: heldEncounter ?? state.choiceSource ?? null } : null;
+  dockFocus =
+    waiting && !revealFocus && !rowFocus.length ? { keep: heldEncounter ?? state.choiceSource ?? null } : null;
   const blurWasHidden = focusBlur.hidden;
-  focusBlur.hidden = !state.choice?.mulligan && !revealFocus && !dockFocus;
+  focusBlur.hidden = !state.choice?.mulligan && !revealFocus && !dockFocus && !rowFocus.length;
   if (focusBlur.hidden) delete focusBlur.dataset.ready;
   else if (dockFocus && blurWasHidden) requestAnimationFrame(() => dockFocus && (focusBlur.dataset.ready = ""));
   choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;

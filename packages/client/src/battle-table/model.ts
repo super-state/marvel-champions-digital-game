@@ -33,6 +33,7 @@ import {
 } from "../view/board-model.js";
 import { answeredEventsOf, triggerEffectOf, triggerWindowContextOf } from "../view/trigger-window-context.js";
 import { plainRulesTextOf } from "../view/card-search-document.js";
+import { missLineOf } from "./deck-reveal.js";
 import { choiceSourcePanelOf } from "../view/choice-source-panel.js";
 import { choiceSourceOf, promptTitleOf } from "../view/choice-source.js";
 import { faceUpName, optionLabelOf, shortIdentityNameOf } from "../view/names.js";
@@ -184,8 +185,11 @@ export interface BattleBeat {
   discount?: { amount: number; source: string | null };
   /** An effect that needed something to choose and found nothing (Spider-Tracer with no scheme in play). */
   nothingFound?: { slot: string; source: string | null };
-  /** The card whose ability discarded `milled` (Black Cat), when one did, and what kind of ability it was. */
-  millSource?: { card: string; label: string };
+  /**
+   * The card whose ability discarded `milled` (Black Cat), when one did, and what kind of ability it was. `miss`: what
+   * the table says when none of the cards is one the effect keeps for the hand ("No mental resources").
+   */
+  millSource?: { card: string; label: string; miss?: string };
   /** On a facedown deal: the enemy the card goes to as its boost card. */
   boostFor?: string;
   /** The encounter card whose surge deals the player another encounter card (the deal beat follows). */
@@ -405,6 +409,11 @@ export class BattleModel {
     );
     // The card whose ability is resolving: its effects (Black Cat discarding from the deck) are its doing.
     let resolving: { card: InstanceId; label: string } | null = null;
+    const millSourceOf = (source: { card: InstanceId; label: string }) => {
+      const card = cardOf(result.state, source.card) ?? cardOf(this.#game, source.card);
+      const miss = card ? missLineOf(plainRulesTextOf(card)) : null;
+      return { ...source, ...(miss ? { miss } : {}) };
+    };
     // How many cards the player's deck was just shuffled from (a reset reports it just after).
     let shuffledDeck: number | null = null;
     // An encounter deck shuffle is a run-out reset when an acceleration token follows it (effects.ts
@@ -544,7 +553,7 @@ export class BattleModel {
             enemy,
             text: "Discard from the top of your deck",
             milled: [e.instanceId],
-            ...(resolving ? { millSource: resolving } : {}),
+            ...(resolving ? { millSource: millSourceOf(resolving) } : {}),
           });
       } else if (e.type === "cardMoved" && e.from.kind === "hand" && e.to.kind === "tucked") {
         const host = e.to.hostInstanceId;

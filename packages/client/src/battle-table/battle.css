@@ -1050,8 +1050,8 @@ button:focus-visible {
   transform-box: fill-box;
   transform-origin: center;
 }
-/* The mulligan, a revealed card being read, or a question answered only in the dock: the table softens out of focus
-   around what is being decided on. */
+/* The mulligan, a revealed card being read, a question answered only in the dock, or cards turned up off the deck:
+   the table softens out of focus around what is being looked at or decided on. */
 #focus-blur {
   position: absolute;
   inset: 0;
@@ -1064,6 +1064,10 @@ button:focus-visible {
 }
 #focus-blur[data-ready] {
   opacity: 1;
+}
+/* Cards coming off the top of the deck: the table softens as soon as the first one lifts, not after it has gone. */
+#focus-blur[data-row] {
+  transition-duration: 220ms;
 }
 #focus-blur[hidden] {
   display: none;
