@@ -8,6 +8,12 @@
       "port": 5193
     },
     {
+      "name": "battle-table-5190",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@mc/client", "exec", "vite", "--port", "5190", "--strictPort"],
+      "port": 5190
+    },
+    {
       "name": "client",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@mc/client", "dev"],

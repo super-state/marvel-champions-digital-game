@@ -100,6 +100,10 @@ const SCENES: Record<string, Scene> = {
   encounterout: {
     encounterLeft: 1,
   },
+  /** Hydra Bomber comes up: its When Revealed asks a question (take 2 damage or place 1 threat). End the turn. */
+  bomber: {
+    encounterTop: ["01104", "01110"],
+  },
   /** Hard to Keep Down on an unhurt Rhino surges into "I'm Tough!": end the turn to watch it. */
   surge: {
     encounterTop: ["01110", "01104", "01105"],

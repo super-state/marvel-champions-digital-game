@@ -1944,15 +1944,16 @@ export class BattleTable {
       // Facedown cards come and go each villain phase: they lie on the table but never move the fit.
       if (card.id !== this.#revealing) onBoard.add(card.id);
       if (card.id === this.#revealing) {
-        // Waiting to be read it stands full size, its top kept on screen; otherwise it shows briefly at table size.
-        const held = this.#revealHeld && w >= 741;
-        // Held, it ends a little above the turn bar's room over the hand, so the bar never presses up against it.
-        const floor = this.#handTop.resting - QUESTION_ROOM - 28;
-        let width = held ? Math.min(h * 0.4, w * 0.3) : Math.min(h * 0.245, w * 0.24);
+        // One size for every reveal (Adam, 2026-11-21: the held one was too big, the one with a question too small),
+        // whether it waits to be read, asks a question or just plays out: readable, never crowding the table. It ends
+        // a little above the turn bar's room over the hand, so a question never presses up against it.
+        // On a phone the turn bar sits below the table, not over the hand: there the card keeps its usual height.
+        const floor = w >= 741 ? this.#handTop.resting - QUESTION_ROOM - 28 : 0;
+        let width = Math.min(h * 0.32, w * 0.27);
         const half = card.landscape ? 0.5 : 0.7;
-        if (held && floor > 0) width = Math.max(h * 0.245, Math.min(width, (floor - 16) / (half * 2)));
+        if (floor > 0) width = Math.max(h * 0.2, Math.min(width, (floor - 16) / (half * 2)));
         let y = Math.max(h * (w < 550 ? 0.3 : 0.38), 16 + width * half);
-        if (held && floor > 0) y = Math.max(16 + width * half, Math.min(y, floor - width * half));
+        if (floor > 0) y = Math.max(16 + width * half, Math.min(y, floor - width * half));
         this.#pose(card.id, w * 0.5, y, width, 1.75, this.#camera.rotation.x);
       } else if (card.boostFor && host) {
         // A boost card waits facedown beside the enemy it was dealt to, tucked under its right edge, until the
