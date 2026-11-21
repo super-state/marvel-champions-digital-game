@@ -164,6 +164,24 @@ export interface BattleBeat {
   returned?: string[];
   /** Cards discarded from the top of the player's deck (Black Cat). */
   milled?: string[];
+  /** Cards from the hand put facedown under a card (Highway Robbery's When Revealed), and that card. */
+  tucked?: { ids: string[]; host: string };
+  /** Where `returned` cards were lying facedown before (the card they were under: Highway Robbery). */
+  returnedFrom?: string;
+  /** The player's deck ran out: the discard pile is shuffled into a new deck (a facedown encounter card follows). */
+  deckReset?: number;
+  /** Set-aside cards shuffled into the encounter deck (Shadow of the Past: the rest of the nemesis set). */
+  intoEncounterDeck?: BattleCard[];
+  /** The encounter deck ran out: its discard pile shuffled back in, `count` cards. */
+  encounterReset?: number;
+  /** Acceleration tokens on the main scheme after one was added. */
+  acceleration?: number;
+  /** Overkill: damage past a defeated minion spilling onto `to`. */
+  overkill?: { to: string; amount: number };
+  /** A cost discount waiting for the next card played (Helicarrier), from `source` when a card's ability gave it. */
+  discount?: { amount: number; source: string | null };
+  /** An effect that needed something to choose and found nothing (Spider-Tracer with no scheme in play). */
+  nothingFound?: { slot: string; source: string | null };
   /** The card whose ability discarded `milled` (Black Cat), when one did, and what kind of ability it was. */
   millSource?: { card: string; label: string };
   /** On a facedown deal: the enemy the card goes to as its boost card. */
@@ -385,8 +403,11 @@ export class BattleModel {
     );
     // The card whose ability is resolving: its effects (Black Cat discarding from the deck) are its doing.
     let resolving: { card: InstanceId; label: string } | null = null;
+    // How many cards the player's deck was just shuffled from (a reset reports it just after).
+    let shuffledDeck: number | null = null;
     for (const e of events) {
       const before = this.#beats.length;
+      if (e.type === "deckShuffled" && e.zone.kind === "deck") shuffledDeck = e.order.length;
       if (e.type === "abilityResolved") resolving = { card: e.instanceId, label: triggerLabel(e.abilityId) };
       // Only the ability that resolved last owns what follows; a move into play or a new step ends its say.
       else if (e.type === "stepChanged" || e.type === "cardPlayed") resolving = null;
@@ -507,10 +528,81 @@ export class BattleModel {
             milled: [e.instanceId],
             ...(resolving ? { millSource: resolving } : {}),
           });
-      } else if (e.type === "cardMoved" && e.to.kind === "hand" && e.from.kind !== "deck") {
+      } else if (e.type === "cardMoved" && e.from.kind === "hand" && e.to.kind === "tucked") {
+        const host = e.to.hostInstanceId;
         const last = this.#beats.at(-1);
-        if (last?.returned) last.returned.push(e.instanceId);
-        else this.#beats.push({ enemy, text: "Return to your hand", returned: [e.instanceId] });
+        if (last?.tucked?.host === host) last.tucked.ids.push(e.instanceId);
+        else
+          this.#beats.push({
+            enemy,
+            actor: host,
+            text: `A card from your hand goes facedown under ${name(host)}`,
+            tucked: { ids: [e.instanceId], host },
+          });
+      } else if (e.type === "cardMoved" && e.to.kind === "hand" && e.from.kind !== "deck") {
+        const from = e.from.kind === "tucked" ? e.from.hostInstanceId : undefined;
+        const last = this.#beats.at(-1);
+        if (last?.returned && last.returnedFrom === from) last.returned.push(e.instanceId);
+        else
+          this.#beats.push({
+            enemy,
+            text: "Return to your hand",
+            returned: [e.instanceId],
+            ...(from ? { returnedFrom: from } : {}),
+          });
+      } else if (e.type === "playerDeckReset") {
+        this.#beats.push({
+          enemy,
+          text: "Your deck ran out: shuffle your discard pile into a new deck",
+          deckReset: shuffledDeck ?? this.#game.players[0]!.discard.length,
+        });
+      } else if (e.type === "cardMoved" && e.from.kind === "setAside" && e.to.kind === "encounterDeck") {
+        const last = this.#beats.at(-1);
+        if (last?.intoEncounterDeck) last.intoEncounterDeck.push(this.#shownCard(e.instanceId));
+        else
+          this.#beats.push({
+            enemy,
+            text: "Shuffle into the encounter deck",
+            intoEncounterDeck: [this.#shownCard(e.instanceId)],
+          });
+      } else if (
+        e.type === "deckShuffled" &&
+        e.zone.kind === "encounterDeck" &&
+        !this.#beats.at(-1)?.intoEncounterDeck
+      ) {
+        // Not after cards shuffled in on purpose: the deck ran out and its discard pile is the new deck.
+        this.#beats.push({
+          enemy,
+          text: "The encounter deck ran out: shuffle its discard pile back in",
+          encounterReset: e.order.length,
+        });
+      } else if (e.type === "accelerationTokenAdded") {
+        this.#beats.push({
+          enemy,
+          actor: e.schemeInstanceId ?? result.state.mainScheme.instanceId,
+          text: `+1 acceleration token (${e.total} in all)`,
+          acceleration: e.total,
+        });
+      } else if (e.type === "overkillSpilled") {
+        this.#beats.push({
+          enemy,
+          actor: e.toInstanceId,
+          text: `Overkill: ${e.amount} damage spills onto ${name(e.toInstanceId)}`,
+          overkill: { to: e.toInstanceId, amount: e.amount },
+        });
+      } else if (e.type === "lastingEffectAdded" && e.effect.kind === "costReduction") {
+        this.#beats.push({
+          enemy,
+          text: `The next card you play costs ${e.effect.amount} less`,
+          discount: { amount: e.effect.amount, source: resolving?.card ?? null },
+        });
+      } else if (e.type === "choiceFoundNothing") {
+        const what = e.slot === "scheme" ? "scheme" : e.slot === "minion" ? "minion" : "target";
+        this.#beats.push({
+          enemy,
+          text: `${resolving ? name(resolving.card) + ": no" : "No"} ${what} to choose`,
+          nothingFound: { slot: e.slot, source: resolving?.card ?? null },
+        });
       } else if (e.type === "cardMoved" && e.from.kind === "resolving" && e.to.kind === "discard") {
         this.#beats.push({
           enemy,
@@ -713,6 +805,16 @@ export class BattleModel {
       }
     }
     this.#setGame(result.state, drawn);
+  }
+
+  /** A card shown faceup a moment as it moves between hidden places (a set-aside card shuffled into a deck). */
+  #shownCard(id: InstanceId): BattleCard {
+    const card = cardOf(this.#game, id);
+    return {
+      ...this.#card(id),
+      name: card?.name ?? faceUpName(this.#game, id),
+      art: artFor(card, { kind: "front" })?.url ?? "",
+    };
   }
 
   #card(id: InstanceId): BattleCard {

@@ -2,6 +2,7 @@ import { statHue } from "../tokens.js";
 import "./design.css";
 import "./battle.css";
 import { besideSpot, dockSpot } from "./dock-spot.js";
+import { whileStillThere } from "./beat-order.js";
 import { handBetweenBeats } from "./hand-flow.js";
 import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js";
 import { arrangeScene } from "./debug-scenes.js";
@@ -979,6 +980,9 @@ function act(work: () => void) {
     render();
   }
 }
+
+/** The deck just ran out in the beats playing: the encounter card dealt next is the price, and says so. */
+let deckRanOut = false;
 
 /** Set by `cancel` for the render it makes: the beats that follow come out of a called-off payment. */
 let paymentCalledOff = false;
@@ -1977,6 +1981,7 @@ async function present(beats: Snapshot["beats"]) {
   let spotted = false;
   // The payment screen's stand-ins for resource abilities (Peter Parker's Scientist) are spent by now.
   displayedHand = displayedHand.filter((card) => !card.id.startsWith("ability:"));
+  beats = whileStillThere(beats);
   for (let index = 0; index < beats.length; index++) {
     const beat = beats[index]!;
     if (spotted) {
@@ -1995,8 +2000,13 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.draw) {
       for (const id of beat.draw) pendingDraws.delete(id);
       displayedHand = handBetweenBeats(displayedHand, state.hand, beats.slice(index + 1), staged?.id ?? null);
-      const deckSize = state.deckCount + pendingDraws.size;
-      table?.showDraw(displayedHand, beat.draw, deckSize, state.discard);
+      // A later beat still changes the piles (the deck runs out and the discard pile becomes the new deck, Black Cat
+      // discards from it): until then the pile stays as it is and the deck just loses what was drawn.
+      const pilesLater = beats.slice(index + 1).some((later) => later.deckReset !== undefined || later.milled);
+      const deckSize = pilesLater
+        ? Math.max(0, Number(deckCount.textContent) - beat.draw.length)
+        : state.deckCount + pendingDraws.size;
+      table?.showDraw(displayedHand, beat.draw, deckSize, pilesLater ? undefined : state.discard);
       deckCount.textContent = String(deckSize);
       narrate(beat, feedLineOf(beat));
       await sleep(680 + (beat.draw.length - 1) * 180);
@@ -2018,7 +2028,7 @@ async function present(beats: Snapshot["beats"]) {
       narrate(beat, feedLineOf(beat));
       displayedHand = handBetweenBeats(displayedHand, state.hand, beats.slice(index + 1), staged?.id ?? null);
       // From where it lies (the row turned up off the deck, the discard pile), not out of the deck like a draw.
-      table?.returnToHand(displayedHand, beat.returned);
+      table?.returnToHand(displayedHand, beat.returned, beat.returnedFrom);
       await sleep(620);
       continue;
     }
@@ -2026,6 +2036,94 @@ async function present(beats: Snapshot["beats"]) {
       narrate(beat, feedLineOf(beat), { title: "Surge! One more encounter card" });
       stampCard(beat.surge, "Surge!", "surge");
       await surgeBurst();
+      continue;
+    }
+    if (beat.tucked) {
+      // Highway Robbery: the card leaves the hand and goes facedown under it.
+      const { ids, host } = beat.tucked;
+      narrate(beat, feedLineOf(beat), {
+        eyebrow: { text: "When Revealed", icon: "forced", tone: "villain" },
+        title: `${plural(ids.length, "card")} from your hand under ${nameOf(host)}`,
+      });
+      displayedHand = displayedHand.filter((card) => !ids.includes(card.id));
+      table?.tuckUnder(ids, host, displayedHand);
+      await sleep(reducedMotion() ? 200 : 760);
+      table?.settleStash();
+      await sleep(reducedMotion() ? 100 : 300);
+      continue;
+    }
+    if (beat.deckReset !== undefined) {
+      // The deck ran out: the discard pile flies back in facedown as the new deck, and an encounter card follows.
+      narrate(beat, feedLineOf(beat), {
+        eyebrow: { text: "Deck ran out", icon: "deck", tone: "villain" },
+        title: "Shuffle your discard pile into a new deck",
+      });
+      table?.shuffleIntoDeck("discard");
+      await sleep(reducedMotion() ? 300 : 1300);
+      table?.settleStash({ deckCount: beat.deckReset });
+      deckCount.textContent = String(beat.deckReset);
+      deckRanOut = true;
+      await sleep(reducedMotion() ? 100 : 350);
+      continue;
+    }
+    if (beat.intoEncounterDeck) {
+      // Shadow of the Past: the rest of the nemesis set is shown, then shuffled into the encounter deck.
+      narrate(beat, feedLineOf(beat), {
+        eyebrow: { text: "Encounter deck", icon: "deck", tone: "villain" },
+        title: `Shuffle ${beat.intoEncounterDeck.map((card) => card.name).join(", ")} into the encounter deck`,
+      });
+      table?.showInRow(beat.intoEncounterDeck);
+      await sleep(reducedMotion() ? 400 : 1500);
+      table?.rowIntoEncounterDeck();
+      await sleep(reducedMotion() ? 200 : 800);
+      const count = element("encounter-count");
+      const total = Number(count.textContent) + beat.intoEncounterDeck.length;
+      table?.settleStash({ encounterCount: total });
+      count.textContent = String(total);
+      continue;
+    }
+    if (beat.encounterReset !== undefined) {
+      // The encounter deck ran out: its discard pile flies back in facedown (an acceleration token follows).
+      narrate(beat, feedLineOf(beat), {
+        eyebrow: { text: "Encounter deck ran out", icon: "deck", tone: "villain" },
+        title: "Shuffle the encounter discard pile back in",
+      });
+      table?.shuffleIntoDeck("encounterDiscard");
+      await sleep(reducedMotion() ? 300 : 1300);
+      table?.settleStash({ encounterCount: beat.encounterReset });
+      element("encounter-count").textContent = String(beat.encounterReset);
+      continue;
+    }
+    if (beat.acceleration !== undefined) {
+      narrate(beat, feedLineOf(beat), {
+        eyebrow: { text: "Acceleration", icon: "acceleration", tone: "villain" },
+        title: `+1 acceleration token on ${nameOf(beat.actor) || "the main scheme"}`,
+      });
+      const scheme = cards().find((card) => card.id === beat.actor);
+      if (scheme) table?.setModifier(scheme, "acceleration", beat.acceleration);
+      if (beat.actor) stampCard(beat.actor, "+1 Acceleration", "boost");
+      await sleep(reducedMotion() ? 300 : 1000);
+      continue;
+    }
+    if (beat.overkill) {
+      narrate(beat, feedLineOf(beat));
+      stampCard(beat.overkill.to, "Overkill", "status");
+      await sleep(reducedMotion() ? 200 : 650);
+      continue;
+    }
+    if (beat.discount) {
+      narrate(beat, feedLineOf(beat), {
+        eyebrow: { text: nameOf(beat.discount.source) || "Discount", icon: "action", tone: "hero" },
+        title: `Your next card costs ${beat.discount.amount} less`,
+      });
+      stampCard(beat.discount.source ?? state.hero.id, `−${beat.discount.amount} cost`, "boost");
+      await sleep(reducedMotion() ? 300 : 900);
+      continue;
+    }
+    if (beat.nothingFound) {
+      narrate(beat, feedLineOf(beat));
+      if (beat.nothingFound.source) stampCard(beat.nothingFound.source, "No target", "status");
+      await sleep(reducedMotion() ? 300 : 900);
       continue;
     }
     if (beat.milled) {
@@ -2265,10 +2363,20 @@ async function present(beats: Snapshot["beats"]) {
         continue;
       }
       // The encounter step, called out like the others: the table darkens around the card dealt to the player.
+      // The card a run-out deck costs the player says so, not "the encounter step".
+      const penalty = deckRanOut;
+      deckRanOut = false;
       narrate(
         beat,
-        { text: "Deal an encounter card", icon: "forced", tone: "villain" },
-        { eyebrow: { text: "Encounter", icon: "forced", tone: "villain" }, title: "Deal an encounter card" },
+        {
+          text: penalty ? "Deck ran out: take an encounter card facedown" : "Deal an encounter card",
+          icon: "forced",
+          tone: "villain",
+        },
+        {
+          eyebrow: { text: penalty ? "Deck ran out" : "Encounter", icon: "forced", tone: "villain" },
+          title: penalty ? "Take an encounter card facedown" : "Deal an encounter card",
+        },
       );
       setSpot({ glow: [{ id: beat.encounterDeal, tone: "attack" }], cutouts: [beat.encounterDeal] });
       spotted = true;
