@@ -163,6 +163,11 @@ const SCENES: Record<string, Scene> = {
     hero: { form: "hero" },
     hand: ["01003", "01003", "01089"],
   },
+  /** Nick Fury in hand with the resources to pay for him: his "Choose one" waits in the dock, the table blurred behind. */
+  fury: {
+    hero: { form: "hero" },
+    hand: ["01084", "01088", "01089", "01090", "01087"],
+  },
 };
 
 export function sceneNames(): string[] {

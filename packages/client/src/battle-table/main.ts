@@ -9,7 +9,7 @@ import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js
 import { arrangeScene } from "./debug-scenes.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
-import { eventLook, offerDoes, spotOf, type GlowTone, type Spot } from "./spotlight.js";
+import { eventLook, offerDoes, spotOf, waitsOnDock, type GlowTone, type Spot } from "./spotlight.js";
 import {
   BattleTable,
   ACTIVATION_MS,
@@ -61,6 +61,8 @@ const focusBlur = element("focus-blur");
 let revealFocus: string | null = null;
 /** Cards turned up off the top of the deck (Black Cat's discard): the table blurs around them while they are dealt with. */
 let rowFocus: string[] = [];
+/** A question answered only in the dock ("Choose one"): the table blurs, all but the card asking it, if on the table. */
+let dockFocus: { keep: string | null } | null = null;
 const defenseShade = document.querySelector<SVGSVGElement>("#defense-shade")!;
 const abilityGlow = document.querySelector<SVGSVGElement>("#ability-glow")!;
 const abilityOutlines = document.querySelector<SVGGElement>("#ability-outlines")!;
@@ -1493,8 +1495,10 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   await sleep(reducedMotion() ? 0 : 320);
   rowFocus = [];
   delete focusBlur.dataset.row;
-  focusBlur.hidden = !state.choice?.mulligan && !revealFocus;
+  focusBlur.hidden = !state.choice?.mulligan && !revealFocus && !dockFocus;
   focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = "";
+  // A dock question still waiting keeps its own blur.
+  if (dockFocus) focusBlur.dataset.ready = "";
 }
 
 /** A word stamped across the middle of a row of cards ("No mental resources" over Black Cat's discards). */
@@ -1686,9 +1690,10 @@ function placeLabels() {
     focusBlur.style.clipPath = "";
     focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = `url("data:image/svg+xml,${svg}")`;
     focusBlur.style.maskSize = focusBlur.style.webkitMaskSize = "100% 100%";
-  } else if (!focusBlur.hidden && revealFocus) {
-    // Everything but the revealed card, cut out along its outline.
-    const outline = table.cardOutline(revealFocus);
+  } else if (!focusBlur.hidden && (revealFocus || dockFocus)) {
+    const sharp = revealFocus ?? dockFocus?.keep ?? null;
+    // Everything but the revealed card (or the card asking the dock's question), cut out along its outline.
+    const outline = sharp ? table.cardOutline(sharp) : [];
     const { width, height } = focusBlur.getBoundingClientRect();
     focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = "";
     focusBlur.style.clipPath = outline.length
@@ -1706,7 +1711,7 @@ function placeLabels() {
   // The mulligan question waits for the dealt cards to land too.
   dock.toggleAttribute(
     "data-waiting",
-    !focusBlur.hidden && !revealFocus && !rowFocus.length && !("ready" in focusBlur.dataset),
+    !focusBlur.hidden && !revealFocus && !dockFocus && !rowFocus.length && !("ready" in focusBlur.dataset),
   );
   if (heldEncounter && !choiceShade.hidden) {
     const card = projected.find((p) => p.id === heldEncounter);
@@ -2799,8 +2804,15 @@ function render() {
             ? "ending"
             : "hero",
     );
-  focusBlur.hidden = !state.choice?.mulligan && !revealFocus && !rowFocus.length;
+  // A question answered only with the dock's buttons softens the table behind it, so it reads as the game waiting on
+  // that answer; the card asking it (or the encounter card held up with it) stays sharp.
+  const waiting = waitsOnDock(state.choice, (id) => onTable(id) && actionCard !== id);
+  dockFocus =
+    waiting && !revealFocus && !rowFocus.length ? { keep: heldEncounter ?? state.choiceSource ?? null } : null;
+  const blurWasHidden = focusBlur.hidden;
+  focusBlur.hidden = !state.choice?.mulligan && !revealFocus && !dockFocus && !rowFocus.length;
   if (focusBlur.hidden) delete focusBlur.dataset.ready;
+  else if (dockFocus && blurWasHidden) requestAnimationFrame(() => dockFocus && (focusBlur.dataset.ready = ""));
   choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
   const asked = paintDock(dockView());
   // A question about the hand sends a ripple through it, so the eye goes where the answer is.

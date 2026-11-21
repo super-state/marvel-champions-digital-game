@@ -1050,8 +1050,8 @@ button:focus-visible {
   transform-box: fill-box;
   transform-origin: center;
 }
-/* The mulligan, a revealed card being read, or cards turned up off the deck: the table softens out of focus around
-   what is being looked at. */
+/* The mulligan, a revealed card being read, a question answered only in the dock, or cards turned up off the deck:
+   the table softens out of focus around what is being looked at or decided on. */
 #focus-blur {
   position: absolute;
   inset: 0;

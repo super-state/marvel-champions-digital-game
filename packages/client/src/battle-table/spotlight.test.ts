@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { BattleChoice } from "./model.js";
-import { eventLook, offerDoes, spotOf, type SpotTable } from "./spotlight.js";
+import { eventLook, offerDoes, spotOf, waitsOnDock, type SpotTable } from "./spotlight.js";
 
 const table: SpotTable = {
   hero: { id: "spider-man" },
@@ -188,5 +188,33 @@ describe("eventLook", () => {
       glow: "threat",
     });
     expect(eventLook({ kind: "enemyScheme", subject: "rhino", amount: null, before: true }, table).glow).toBe("threat");
+  });
+});
+
+describe("waitsOnDock", () => {
+  const onTable = (id: string | null) => id === "rhino" || id === "haymaker";
+  const options = (...ids: (string | null)[]) =>
+    ids.map((cardId, i) => ({ id: `o${i}`, label: `Option ${i}`, cardId }));
+
+  test("a question answered only with the dock's buttons (Nick Fury's Choose one) waits on the dock", () => {
+    expect(waitsOnDock(choice({ prompt: "Choose one", options: options(null, null, null) }), onTable)).toBe(true);
+  });
+
+  test("not when an answer is picked on the table: a target, or cards in the hand", () => {
+    expect(waitsOnDock(choice({ options: options("rhino", null) }), onTable)).toBe(false);
+    expect(waitsOnDock(choice({ options: options("haymaker"), discardFromHand: true }), () => false)).toBe(false);
+  });
+
+  test("not for the mulligan, attacks or reaction windows, which have their own look", () => {
+    expect(waitsOnDock(choice({ options: options(null), mulligan: true }), onTable)).toBe(false);
+    const defense = { attacker: "Rhino", attackerId: "rhino", target: "Spider-Man" };
+    expect(waitsOnDock(choice({ options: options(null), defense }), onTable)).toBe(false);
+    const offers = [{ id: "x", cardId: "mockingbird", question: "Use Mockingbird?", effect: null }];
+    expect(waitsOnDock(choice({ options: options(null), offers }), onTable)).toBe(false);
+  });
+
+  test("nothing asked, or nothing to answer with, is not waiting", () => {
+    expect(waitsOnDock(null, onTable)).toBe(false);
+    expect(waitsOnDock(choice({ options: [] }), onTable)).toBe(false);
   });
 });
