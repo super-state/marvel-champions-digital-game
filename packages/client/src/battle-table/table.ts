@@ -425,6 +425,11 @@ export class BattleTable {
   readonly #encounterBack = new THREE.Mesh(this.#face, new THREE.MeshBasicMaterial({ toneMapped: false }));
   readonly #encounters = new Map<string, TableCard>();
   #revealing: string | null = null;
+  /**
+   * A revealed card still resolving after it was read (Assault while the attack it calls plays out): it stands
+   * beside the villain, small and out of the way, until its beat sends it to the encounter discard pile.
+   */
+  readonly #parked = new Set<string>();
   #actor: string | null = null;
   #power: string | null = null;
   /** Damage discs, counters, status tiles, stat pills and threat chips. */
@@ -1391,18 +1396,45 @@ export class BattleTable {
     }
   }
 
-  retireEncounter(id: string, discarded?: TableCard): void {
+  /**
+   * The revealed card `id` steps aside while its effect plays out: it goes from the middle of the table to stand beside
+   * the villain, still face up, so the attack or question it causes is seen and the card is still there to see after.
+   */
+  parkEncounter(id: string): void {
+    if (!this.#state || !this.#encounters.has(id)) return;
+    if (this.#revealing === id) this.#revealing = null;
+    this.#parked.add(id);
+    this.markActor(null);
+    this.setCards(this.#state);
+    this.#startFlight(id, "place");
+    this.#requestFrame();
+  }
+
+  /** The cards standing aside while they resolve (`parkEncounter`). */
+  parkedEncounters(): string[] {
+    return [...this.#parked];
+  }
+
+  /** False when `id` was not on the table to retire (already gone). */
+  retireEncounter(id: string, discarded?: TableCard): boolean {
     const piece = this.#pieces.get(id);
-    if (!piece || !this.#encounters.delete(id)) return;
+    this.#parked.delete(id);
+    if (!piece || !this.#encounters.delete(id)) return false;
     if (this.#revealing === id) this.#revealing = null;
     this.markActor(null);
-    if (!discarded || !this.#state) return;
+    if (!this.#state) return true;
+    if (!discarded) {
+      // Nowhere to fly to: it goes from the table now rather than being left where it stood.
+      this.setCards(this.#state);
+      return true;
+    }
     this.setCards({
       ...this.#state,
       encounterDiscard: [...this.#state.encounterDiscard.filter((c) => c.id !== id), discarded],
     });
     this.#startFlight(id, "place");
     this.#requestFrame();
+    return true;
   }
 
   discardDefeatedCard(id: string, discarded: TableCard | undefined, pile: "discard" | "encounterDiscard"): void {
@@ -1421,6 +1453,7 @@ export class BattleTable {
 
   landEncounter(card: TableCard): void {
     if (!this.#state) return;
+    this.#parked.delete(card.id);
     this.#encounters.delete(card.id);
     this.#revealing = null;
     this.setCards({ ...this.#state, enemyCards: [...this.#state.enemyCards.filter((c) => c.id !== card.id), card] });
@@ -1429,6 +1462,7 @@ export class BattleTable {
 
   reconcileEncounters(retain: readonly string[]): void {
     for (const id of this.#encounters.keys()) if (!retain.includes(id)) this.#encounters.delete(id);
+    for (const id of this.#parked) if (!this.#encounters.has(id)) this.#parked.delete(id);
     if (this.#revealing && !this.#encounters.has(this.#revealing)) this.#revealing = null;
   }
 
@@ -1955,6 +1989,17 @@ export class BattleTable {
         let y = Math.max(h * (w < 550 ? 0.3 : 0.38), 16 + width * half);
         if (floor > 0) y = Math.max(16 + width * half, Math.min(y, floor - width * half));
         this.#pose(card.id, w * 0.5, y, width, 1.75, this.#camera.rotation.x);
+      } else if (this.#parked.has(card.id)) {
+        // Standing just right of the villain (past any boost card tucked under its edge), turned to the player like
+        // a held card but small, raised over anything in that row so the labels it covers hide behind it.
+        const villain = enemyPoses.get(state.villain.id)!;
+        const width = Math.min(villain.width * 0.6, h * 0.2);
+        const boostsOut = [...this.#encounters.values()].some((other) => other.boostFor === state.villain.id);
+        const x = Math.min(
+          w - 12 - width * 0.5,
+          villain.x + villain.width * 0.5 + (boostsOut ? boostCardWidth(villain.width, w, h) * 0.55 : 0) + width * 0.62,
+        );
+        this.#pose(card.id, x, villain.y + width * 0.12, width, 1.2, this.#camera.rotation.x, -0.05);
       } else if (card.boostFor && host) {
         // A boost card waits facedown beside the enemy it was dealt to, tucked under its right edge, until the
         // activation turns it up.

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { BattleModel } from "./model.js";
+import { BattleModel, formWhenRevealed, type BattleSnapshot } from "./model.js";
 import { arrangeScene } from "./debug-scenes.js";
 
 describe("Peter Parker and Rhino's practice turn", () => {
@@ -372,5 +372,72 @@ describe("Black Cat's Forced Response", () => {
     const kept = beats[milledAt + 1]!.returned!;
     expect(kept.every((id) => milled.milled!.includes(id))).toBe(true);
     expect(hand.find((card) => kept.includes(card.id))?.name).toBe("Genius");
+  });
+});
+
+describe("a treachery that makes the villain attack (Assault)", () => {
+  /** End the turn on `scene` and answer every question (passing, not defending), collecting every beat shown. */
+  function playOut(scene: string): BattleSnapshot["beats"][number][] {
+    const battle = new BattleModel();
+    battle.reset({ seed: 7, arrange: arrangeScene(scene)! });
+    battle.endTurn();
+    const beats = [...battle.snapshot().beats];
+    for (let i = 0; i < 12; i++) {
+      const s = battle.snapshot();
+      if (!s.choice) break;
+      if (s.choice.offers?.length) battle.chooseMany([]);
+      else battle.choose((s.choice.defense ? s.choice.options[0] : s.choice.options.at(-1))?.id ?? null);
+      beats.push(...battle.snapshot().beats);
+    }
+    return beats;
+  }
+
+  test("each form's When Revealed line is found, in the printed text and in the run-together searchable text", () => {
+    const printed = "When Revealed (Alter-Ego): This card gains surge.\nWhen Revealed (Hero): The villain attacks you.";
+    expect(formWhenRevealed(printed, "hero")).toEqual({ applies: { form: "Hero", text: "The villain attacks you." } });
+    expect(formWhenRevealed(printed.replace("\n", " "), "alterEgo")).toEqual({
+      applies: { form: "Alter-Ego", text: "This card gains surge." },
+    });
+    expect(formWhenRevealed("When Revealed: Give Rhino a tough status card.", "hero")).toEqual({});
+  });
+
+  test("in hero form: Rhino's attack is aimed, lands, and only then does Assault go to the discard pile", () => {
+    const beats = playOut("assault");
+    const reveal = beats.findIndex((beat) => beat.reveal?.name === "Assault");
+    const assault = beats[reveal]!.reveal!;
+    expect(assault.applies).toEqual({ form: "Hero", text: "The villain attacks you." });
+    const after = beats.slice(reveal + 1);
+    const aim = after.findIndex((beat) => beat.attackAim);
+    const hit = after.findIndex((beat) => beat.hit?.source === after[aim]!.attackAim!.source);
+    const gone = after.findIndex((beat) => beat.encounterResolved === assault.id);
+    expect(aim).toBeGreaterThanOrEqual(0);
+    expect(after[aim]!.activity).toBe("Rhino attacks");
+    expect(hit).toBeGreaterThan(aim);
+    expect(gone).toBeGreaterThan(hit);
+    // The attack it called is over: the villain phase goes back to its own step.
+    expect(after[gone]!.activity).toBe("Reveal encounter cards");
+  });
+
+  test("every attack is aimed exactly once, an activation's as well as one a card calls", () => {
+    for (const scene of ["assault", "attack"]) {
+      const beats = playOut(scene);
+      const aims = beats.filter((beat) => beat.attackAim).length;
+      const attacks = beats.filter(
+        (beat) => beat.hit && beat.hit.source === beats.find((b) => b.attackAim)?.attackAim?.source,
+      ).length;
+      expect(aims, scene).toBe(attacks);
+    }
+  });
+
+  test("in alter-ego form: Assault surges, the next card is dealt, then Assault goes to the discard pile", () => {
+    const beats = playOut("assaultsurge");
+    const reveal = beats.findIndex((beat) => beat.reveal?.name === "Assault");
+    const assault = beats[reveal]!.reveal!;
+    expect(assault.applies).toEqual({ form: "Alter-Ego", text: "This card gains surge." });
+    const surge = beats.findIndex((beat) => beat.surge === assault.id);
+    const gone = beats.findIndex((beat) => beat.encounterResolved === assault.id);
+    expect(surge).toBeGreaterThan(reveal);
+    expect(gone).toBeGreaterThan(surge);
+    expect(beats.slice(reveal).some((beat) => beat.attackAim)).toBe(false);
   });
 });
