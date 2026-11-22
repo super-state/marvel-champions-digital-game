@@ -52,7 +52,7 @@ for (const type of ["pointerdown", "keydown"] as const)
 const wave = new WaveEditor($<HTMLCanvasElement>("wave"), (variant) => {
   if (!selected) return;
   draft.sounds[selected.name]![selected.index] = variant;
-  changed(selected.name);
+  changed(selected.name, `wave:${selected.name}:${selected.index}`);
   paintKnobs();
 });
 
@@ -104,12 +104,92 @@ async function playOnTable() {
 }
 
 // ── Saving ──────────────────────────────────────────────────────────────────────────────────────────────────────────
-function changed(name: string) {
+function changed(name: string, run?: string) {
   edited.add(name);
   board.setManifest(draft);
+  remember(run);
   paintSave();
   paintSound(name);
 }
+
+// ── Undo ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Each change keeps the state before it. A run of changes from one drag (a slider, a handle on the waveform) is one
+// step: changes with the same `run` key less than a second apart join the step before.
+type Snapshot = string;
+const past: Snapshot[] = [];
+const future: Snapshot[] = [];
+let last: Snapshot = "";
+let lastRun: string | undefined;
+let lastAt = 0;
+const snapshot = (): Snapshot => JSON.stringify({ draft, selected });
+
+function remember(run?: string) {
+  const now = performance.now();
+  const joins = run !== undefined && run === lastRun && now - lastAt < 1000;
+  if (!joins && last) {
+    past.push(last);
+    if (past.length > 200) past.shift();
+    future.length = 0;
+  }
+  lastRun = run;
+  lastAt = now;
+  last = snapshot();
+  paintUndo();
+}
+
+function restore(state: Snapshot) {
+  const { draft: before, selected: pick } = JSON.parse(state) as { draft: SoundManifest; selected: typeof selected };
+  draft = before;
+  // Unsaved is whatever now differs from what is saved, whichever way the history went.
+  edited.clear();
+  for (const name of new Set([...Object.keys(draft.sounds), ...Object.keys(saved.sounds)]))
+    if (JSON.stringify(draft.sounds[name]) !== JSON.stringify(saved.sounds[name])) edited.add(name);
+  board.setManifest(draft);
+  last = snapshot();
+  lastRun = undefined;
+  paintSounds();
+  paintSave();
+  paintUndo();
+  if (pick) select(pick.name, pick.index);
+}
+
+function undo() {
+  const state = past.pop();
+  if (state === undefined) return;
+  future.push(snapshot());
+  restore(state);
+  status("Undone.");
+}
+
+function redo() {
+  const state = future.pop();
+  if (state === undefined) return;
+  past.push(snapshot());
+  restore(state);
+  status("Redone.");
+}
+
+function paintUndo() {
+  $<HTMLButtonElement>("undo").disabled = !past.length;
+  $<HTMLButtonElement>("redo").disabled = !future.length;
+}
+
+$("undo").onclick = undo;
+$("redo").onclick = redo;
+addEventListener("keydown", (event) => {
+  if (!(event.ctrlKey || event.metaKey)) return;
+  // A text box keeps its own undo for what is typed in it.
+  if ((event.target as HTMLElement).matches?.('input[type="search"], input:not([type]), input[type="text"], textarea'))
+    return;
+  const key = event.key.toLowerCase();
+  if (key === "z" && !event.shiftKey) {
+    event.preventDefault();
+    undo();
+  } else if (key === "y" || (key === "z" && event.shiftKey)) {
+    event.preventDefault();
+    redo();
+  }
+});
 
 function paintSave() {
   const save = $<HTMLButtonElement>("studio-save");
@@ -123,10 +203,11 @@ function status(text: string) {
 
 async function save() {
   if (!edited.size) return;
-  const sounds: Record<string, Variant[]> = {};
+  // null: back to the game's own sound; an empty list: switched off.
+  const sounds: Record<string, Variant[] | null> = {};
   for (const name of edited) {
     const same = JSON.stringify(draft.sounds[name]) === JSON.stringify(BUNDLED_MANIFEST.sounds[name]);
-    sounds[name] = same ? [] : (draft.sounds[name] ?? []);
+    sounds[name] = same ? null : (draft.sounds[name] ?? []);
   }
   status("Saving…");
   const response = await fetch("/__studio/save", {
@@ -140,6 +221,7 @@ async function save() {
   for (const name of edited) draft.sounds[name] = clone(saved.sounds[name] ?? []);
   edited.clear();
   board.setManifest(draft);
+  last = snapshot();
   paintSave();
   paintSounds();
   if (selected) select(selected.name, selected.index);
@@ -190,22 +272,48 @@ function paintSound(name: string) {
   const moment = SOUND_MOMENTS.find((m) => m.name === name);
   if (!row || !moment) return;
   const count = draft.sounds[name]?.length ?? 0;
+  const off = count === 0;
+  row.classList.toggle("off", off);
   const custom = JSON.stringify(draft.sounds[name]) !== JSON.stringify(BUNDLED_MANIFEST.sounds[name]);
   row.classList.toggle("active", selected?.name === name);
   row.innerHTML = "";
   const label = document.createElement("span");
   label.className = "label";
   label.textContent = moment.label;
-  const tag = document.createElement("span");
-  tag.className = "tag";
-  tag.textContent = moment.demo ? "on table" : "sound only";
-  tag.title = moment.demo ? "Play on table shows this moment" : "Plays without a visual";
+  const tag = document.createElement("button");
+  tag.type = "button";
+  tag.className = "switch";
+  tag.setAttribute("role", "switch");
+  tag.setAttribute("aria-checked", String(!off));
+  tag.setAttribute("aria-label", `${moment.label} sound ${off ? "off" : "on"}`);
+  tag.title = off ? "Off: this moment is silent. Click to turn it on." : "On. Click to make this moment silent.";
+  tag.onclick = (event) => {
+    event.stopPropagation();
+    switchSound(name as SoundName, off);
+  };
   const meta = document.createElement("span");
   meta.className = "meta";
-  meta.innerHTML = `${count} sound${count === 1 ? "" : "s"}${custom ? ' · <span class="edited">yours</span>' : ""}${
+  meta.innerHTML = `${off ? "off · silent" : `${count} sound${count === 1 ? "" : "s"}`}${custom && !off ? ' · <span class="edited">yours</span>' : ""}${
     edited.has(name) ? ' · <span class="edited">● unsaved</span>' : ""
   }`;
   row.append(label, tag, meta);
+}
+
+/** What a sound was before it was switched off, to bring back when it goes on again (this visit). */
+const switchedOff = new Map<string, Variant[]>();
+
+function switchSound(name: SoundName, on: boolean) {
+  if (on) {
+    const back = switchedOff.get(name);
+    draft.sounds[name] = clone(back?.length ? back : (BUNDLED_MANIFEST.sounds[name] ?? []));
+    switchedOff.delete(name);
+  } else {
+    switchedOff.set(name, clone(draft.sounds[name] ?? []));
+    draft.sounds[name] = [];
+  }
+  changed(name);
+  if (selected?.name === name) select(name, 0);
+  status(`${SOUND_MOMENTS.find((m) => m.name === name)?.label}: ${on ? "on" : "off"}. Save to keep it.`);
 }
 
 function select(name: SoundName, index: number) {
@@ -319,9 +427,12 @@ interface Knob {
   from?: (slider: number) => number;
   to?: (stored: number) => number;
   fallback: (variant: Variant, duration: number) => number;
+  /** Starts a new group of sliders under this heading. */
+  section?: string;
 }
 
 const ms = (seconds: number) => `${Math.round(seconds * 1000)} ms`;
+const percent = (share: number) => `${Math.round(share * 100)}%`;
 const KNOBS: Knob[] = [
   {
     key: "gainDb",
@@ -357,6 +468,44 @@ const KNOBS: Knob[] = [
   { key: "start", label: "Start", min: 0, max: 1, step: 0.001, show: ms, fallback: () => 0 },
   { key: "end", label: "End", min: 0, max: 1, step: 0.001, show: ms, fallback: (_, d) => d },
   { key: "sync", label: "⚡ Lands here", min: 0, max: 1, step: 0.001, show: ms, fallback: (v) => v.start ?? 0 },
+  {
+    key: "echoMix",
+    label: "Echo level",
+    min: 0,
+    max: 1,
+    step: 0.01,
+    show: (v) => (v ? percent(v) : "Off"),
+    fallback: () => 0,
+    section: "Echo & reverb",
+  },
+  {
+    key: "echoMs",
+    label: "Echo time",
+    min: 20,
+    max: 1000,
+    step: 5,
+    show: (v) => `${Math.round(v)} ms`,
+    fallback: () => 250,
+  },
+  { key: "echoFeedback", label: "Echo repeats", min: 0, max: 0.9, step: 0.01, show: percent, fallback: () => 0.35 },
+  {
+    key: "reverbMix",
+    label: "Reverb level",
+    min: 0,
+    max: 1,
+    step: 0.01,
+    show: (v) => (v ? percent(v) : "Off"),
+    fallback: () => 0,
+  },
+  {
+    key: "reverbSeconds",
+    label: "Reverb size",
+    min: 0.2,
+    max: 6,
+    step: 0.1,
+    show: (v) => `${v.toFixed(1)} s`,
+    fallback: () => 1.5,
+  },
 ];
 
 function paintKnobs() {
@@ -366,6 +515,12 @@ function paintKnobs() {
   if (!variant) return;
   const length = currentDuration();
   for (const knob of KNOBS) {
+    if (knob.section) {
+      const heading = document.createElement("h4");
+      heading.className = "knob-section";
+      heading.textContent = knob.section;
+      host.append(heading);
+    }
     const wrap = document.createElement("label");
     wrap.className = "knob";
     const stored = (variant[knob.key] as number | undefined) ?? knob.fallback(variant, length);
@@ -387,7 +542,7 @@ function paintKnobs() {
       Object.assign(variant, next);
       out.textContent = knob.show(value);
       wave.setVariant(next);
-      changed(selected!.name);
+      changed(selected!.name, `knob:${knob.key}:${selected!.name}:${selected!.index}`);
     };
     wrap.append(knob.label, out, input);
     host.append(wrap);
@@ -750,6 +905,8 @@ async function start() {
   paintSounds();
   paintSave();
   select("hit", 0);
+  last = snapshot();
+  paintUndo();
   await loadPlaces();
 }
 void start();

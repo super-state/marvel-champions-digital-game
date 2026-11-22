@@ -327,7 +327,7 @@ export function studioMiddleware(options: StudioOptions = {}) {
 
   type Variant = { file: string; source?: unknown; [key: string]: unknown };
 
-  async function save(sounds: Record<string, Variant[]>) {
+  async function save(sounds: Record<string, Variant[] | null>) {
     const manifestFile = join(staged, "sounds.json");
     let current: { version: 1; sounds: Record<string, Variant[]> } = { version: 1, sounds: {} };
     try {
@@ -337,8 +337,8 @@ export function studioMiddleware(options: StudioOptions = {}) {
     }
     for (const [name, variants] of Object.entries(sounds)) {
       if (!/^[a-z][a-z-]*$/.test(name)) continue;
-      if (variants === null || (Array.isArray(variants) && !variants.length)) {
-        // Back to the game's own sound.
+      if (variants === null || !Array.isArray(variants)) {
+        // Back to the game's own sound. (An empty list is kept: that moment is switched off.)
         delete current.sounds[name];
         continue;
       }
@@ -406,7 +406,7 @@ export function studioMiddleware(options: StudioOptions = {}) {
           return sendFile(response, path);
         }
         if (request.method === "POST" && route === "save") {
-          const { sounds } = JSON.parse(await body(request)) as { sounds: Record<string, Variant[]> };
+          const { sounds } = JSON.parse(await body(request)) as { sounds: Record<string, Variant[] | null> };
           const saved = await save(sounds ?? {});
           options.onSaved?.();
           return json(response, 200, saved);

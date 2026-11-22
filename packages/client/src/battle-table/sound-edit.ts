@@ -23,6 +23,48 @@ export interface Variant {
   sync?: number;
   /** Milliseconds added after the moment. */
   delay?: number;
+  /** Echo: milliseconds between repeats, how much of each repeat feeds the next (0–0.9), and its level (0–1). */
+  echoMs?: number;
+  echoFeedback?: number;
+  echoMix?: number;
+  /** Reverb: how long the room rings, in seconds, and its level (0–1). */
+  reverbSeconds?: number;
+  reverbMix?: number;
+}
+
+/** How long an effect keeps sounding after the sound itself has stopped, in seconds. */
+export function tailOf(variant: Variant): number {
+  let tail = 0;
+  if ((variant.echoMix ?? 0) > 0) {
+    const feedback = Math.min(0.9, Math.max(0, variant.echoFeedback ?? 0.35));
+    const step = Math.max(0.02, (variant.echoMs ?? 250) / 1000);
+    // Repeats until they are 60 dB down.
+    const repeats = feedback > 0 ? Math.ceil(Math.log(0.001) / Math.log(feedback)) : 1;
+    tail = Math.max(tail, Math.min(8, step * repeats));
+  }
+  if ((variant.reverbMix ?? 0) > 0) tail = Math.max(tail, Math.min(6, variant.reverbSeconds ?? 1.5));
+  return tail;
+}
+
+/**
+ * A room's ring, made rather than recorded: stereo noise that dies away over `seconds`, a little brighter at the
+ * start, the two sides different so it sounds wide.
+ */
+export function impulseResponse(rate: number, seconds: number, random = Math.random): Float32Array[] {
+  const length = Math.max(1, Math.round(rate * Math.min(6, Math.max(0.1, seconds))));
+  return [0, 1].map(() => {
+    const channel = new Float32Array(length);
+    let low = 0;
+    for (let i = 0; i < length; i++) {
+      const t = i / length;
+      const noise = random() * 2 - 1;
+      // Darker as it dies, like a real room: a one-pole low-pass that closes over the tail.
+      const k = 0.15 + 0.8 * (1 - t);
+      low += k * (noise - low);
+      channel[i] = low * (1 - t) ** 2.5;
+    }
+    return channel;
+  });
 }
 
 export interface SoundManifest {

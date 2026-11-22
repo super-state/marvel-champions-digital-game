@@ -16,7 +16,15 @@
  * `globalThis.__battleSounds` instead so the browser tests can check it.
  */
 
-import { decibels, manifestFromFiles, scheduleOf, type SoundManifest, type Variant } from "./sound-edit.js";
+import {
+  decibels,
+  impulseResponse,
+  manifestFromFiles,
+  scheduleOf,
+  tailOf,
+  type SoundManifest,
+  type Variant,
+} from "./sound-edit.js";
 import type { SoundName } from "./sound-moments.js";
 
 export type { SoundName } from "./sound-moments.js";
@@ -75,8 +83,10 @@ const STORAGE_KEY = "battle-sound";
 /** A variant other than the one played last, where there is a choice. */
 export function pickVariant(count: number, last: number | undefined, random: () => number): number {
   if (count <= 1) return 0;
+  // The first time, any of them; after that, any but the last (with two, they take turns).
+  if (last === undefined || last >= count) return Math.min(count - 1, Math.floor(random() * count));
   const pick = Math.floor(random() * (count - 1));
-  return last !== undefined && pick >= last ? pick + 1 : pick;
+  return pick >= last ? pick + 1 : pick;
 }
 
 type SoundLog = { name: string; at: number; delay: number }[];
@@ -129,10 +139,19 @@ export class SoundBoard {
 
   /** Swaps what plays for each moment (the studio's saved or unsaved edits). */
   setManifest(manifest: SoundManifest, resolve: Resolve = this.#resolve): void {
+    // What played last is kept for every sound whose variants are unchanged, so turns carry on across a swap (the
+    // studio swaps its preview in and out on every Play on table).
+    for (const name of [...this.#last.keys()])
+      if (JSON.stringify(manifest.sounds[name]) !== JSON.stringify(this.#manifest.sounds[name]))
+        this.#last.delete(name);
     this.#manifest = manifest;
     this.#resolve = resolve;
-    this.#last.clear();
     if (this.#context) this.#preload();
+  }
+
+  /** Which variant of a sound played last (0 is A). */
+  lastOf(name: string): number | undefined {
+    return this.#last.get(name)?.variant;
   }
 
   /** The names that have files, the sounds that can be played. */
@@ -251,19 +270,72 @@ export class SoundBoard {
       gain.gain.linearRampToValueAtTime(0.0001, stopAt);
     }
     source.connect(gain).connect(master);
+    const nodes: AudioNode[] = [source, gain, ...this.#effects(context, variant, gain, master)];
     source.start(when, plan.offset, plan.length);
     source.stop(stopAt + 0.02);
-    this.#playing.add(source);
-    source.onended = () => this.#playing.delete(source);
+    const voice = { source, nodes };
+    this.#playing.add(voice);
+    // Once the sound and its echo or reverb have died away, its nodes let go (an echo's loop would run forever).
+    const done = (stopAt - context.currentTime + tailOf(variant) + 0.3) * 1000;
+    setTimeout(() => this.#release(voice), Math.max(0, done));
     return { at: when, offset: plan.offset, length: plan.length, rate: plan.rate * wobble };
   }
 
-  readonly #playing = new Set<AudioBufferSourceNode>();
+  readonly #playing = new Set<{ source: AudioBufferSourceNode; nodes: AudioNode[] }>();
+  readonly #rooms = new Map<string, AudioBuffer>();
 
-  /** Stops everything playing (the studio's stop button). */
+  /** The variant's echo and reverb, fed from `input` alongside the dry sound; returns the nodes made. */
+  #effects(context: AudioContext, variant: Variant, input: AudioNode, output: AudioNode): AudioNode[] {
+    const made: AudioNode[] = [];
+    const echoMix = Math.min(1, Math.max(0, variant.echoMix ?? 0));
+    if (echoMix > 0) {
+      const delay = context.createDelay(2);
+      delay.delayTime.value = Math.min(2, Math.max(0.02, (variant.echoMs ?? 250) / 1000));
+      const feedback = context.createGain();
+      feedback.gain.value = Math.min(0.9, Math.max(0, variant.echoFeedback ?? 0.35));
+      const wet = context.createGain();
+      wet.gain.value = echoMix;
+      input.connect(delay);
+      delay.connect(feedback).connect(delay);
+      delay.connect(wet).connect(output);
+      made.push(delay, feedback, wet);
+    }
+    const reverbMix = Math.min(1, Math.max(0, variant.reverbMix ?? 0));
+    if (reverbMix > 0) {
+      const seconds = Math.round(Math.min(6, Math.max(0.1, variant.reverbSeconds ?? 1.5)) * 10) / 10;
+      const key = `${context.sampleRate}:${seconds}`;
+      let room = this.#rooms.get(key);
+      if (!room) {
+        const channels = impulseResponse(context.sampleRate, seconds);
+        room = context.createBuffer(2, channels[0]!.length, context.sampleRate);
+        channels.forEach((data, i) => room!.copyToChannel(data as Float32Array<ArrayBuffer>, i));
+        this.#rooms.set(key, room);
+      }
+      const convolver = context.createConvolver();
+      convolver.buffer = room;
+      const wet = context.createGain();
+      wet.gain.value = reverbMix;
+      input.connect(convolver).connect(wet).connect(output);
+      made.push(convolver, wet);
+    }
+    return made;
+  }
+
+  #release(voice: { source: AudioBufferSourceNode; nodes: AudioNode[] }) {
+    if (!this.#playing.delete(voice)) return;
+    for (const node of voice.nodes) node.disconnect();
+  }
+
+  /** Stops everything playing, echoes and reverb tails too (the studio's stop button). */
   stopAll(): void {
-    for (const source of this.#playing) source.stop();
-    this.#playing.clear();
+    for (const voice of [...this.#playing]) {
+      try {
+        voice.source.stop();
+      } catch {
+        // Not started yet.
+      }
+      this.#release(voice);
+    }
   }
 
   /** The decoded file (the studio draws its waveform). */
