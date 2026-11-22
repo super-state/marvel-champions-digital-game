@@ -193,8 +193,27 @@ const HEIGHT = 1.407;
 /** The layer of cards drawn over everything else, whatever their depth (see #render). */
 const FRONT_LAYER = 1;
 const TAB = 0.18;
-/** How far a hovered attachment slides out to the left from under its host, in card widths. */
-const ATTACHMENT_FAN = 0.32;
+/**
+ * A hovered attachment slides out to the left from under its host a little (in card widths) and turns very slightly
+ * about its bottom-left corner, its top tipping left (Adam, 2026-11-22: move less, pivot from the bottom-left corner).
+ */
+const ATTACHMENT_FAN = 0.07;
+const ATTACHMENT_TURN = 0.07;
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
+
+/**
+ * Where a tucked attachment's centre sits in its host's own frame (card widths), `fan` of the way out: slid left and
+ * turned about its own bottom-left corner, which stays put but for the slide.
+ */
+function attachmentFanOffset(x: number, fan: number): [number, number] {
+  const turn = ATTACHMENT_TURN * fan;
+  const cornerX = x - 0.5 - ATTACHMENT_FAN * fan;
+  const cornerY = -HEIGHT / 2;
+  // The centre is half a card right of and half a card up from the corner; turning carries it round.
+  const cos = Math.cos(turn);
+  const sin = Math.sin(turn);
+  return [cornerX + 0.5 * cos - (HEIGHT / 2) * sin, cornerY + 0.5 * sin + (HEIGHT / 2) * cos];
+}
 
 /** A facedown boost card beside its enemy: smaller than the enemy, never bigger than a waiting encounter card. */
 function boostCardWidth(hostWidth: number, w: number, h: number) {
@@ -407,6 +426,7 @@ export class BattleTable {
   readonly #layoutCard = new THREE.Group();
   readonly #floor = new THREE.Plane(new THREE.Vector3(0, 1, 0));
   readonly #tucked = new Map<string, { host: string; depth: number }>();
+  readonly #turn = new THREE.Quaternion();
   /** How far each attached card has slid out from under its host while hovered (0 to 1). */
   readonly #fan = new Map<string, number>();
   /** The cards lying facedown under another card (`TableCards.under`), as laid out: kept facedown every frame. */
@@ -3123,7 +3143,7 @@ export class BattleTable {
       }
       parent.updateMatrixWorld();
       piece.target.position
-        .set(-TAB * depth - ATTACHMENT_FAN * fan, 0, -0.006 * depth)
+        .set(...attachmentFanOffset(-TAB * depth, fan), -0.006 * depth)
         .applyMatrix4(parent.matrixWorld);
       piece.target.scale = parent.scale.x;
       piece.target.pitch = parent.rotation.x;
@@ -3136,6 +3156,7 @@ export class BattleTable {
       } else {
         piece.root.position.copy(piece.target.position);
         piece.root.quaternion.copy(parent.quaternion);
+        if (fan) piece.root.quaternion.multiply(this.#turn.setFromAxisAngle(Z_AXIS, ATTACHMENT_TURN * fan));
         piece.root.scale.copy(parent.scale);
       }
     }
