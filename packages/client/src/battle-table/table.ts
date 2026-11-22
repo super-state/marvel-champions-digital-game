@@ -1121,13 +1121,25 @@ export class BattleTable {
     this.#interruptSheen.geometry = piece.face.geometry;
     this.#interruptSheen.position.z = 0.028;
     piece.root.add(this.#interruptSheen);
-    if (!this.#reduced.matches) {
+    // Smoke rises off a card lying on the table. A card held up in the air (a revealed encounter card being read or
+    // standing aside, a card being played or still in hand) only shines and grows a little (Adam, 2026-11-22).
+    if (!this.#reduced.matches && !this.#heldUp(id)) {
       this.#interruptPuff.position.z = 0.035;
       this.#interruptPuff.material.uniforms.progress!.value = 0;
       piece.root.add(this.#interruptPuff);
+    } else {
+      this.#interruptPuff.removeFromParent();
     }
     this.#interrupt = { piece, start: performance.now(), lift: 0 };
     this.#requestFrame();
+  }
+
+  /** The card is held up in the air rather than lying on the table. */
+  #heldUp(id: string): boolean {
+    const s = this.#state;
+    return (
+      id === this.#revealing || this.#parked.has(id) || s?.staged?.id === id || !!s?.hand.some((card) => card.id === id)
+    );
   }
 
   /** A card whose effect was cancelled (Enhanced Spider-Sense) flickers out and back, like a signal cut. */
