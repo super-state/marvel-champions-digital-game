@@ -4,7 +4,7 @@ import { eventLook, offerDoes, spotOf, waitsOnDock, type SpotTable } from "./spo
 
 const table: SpotTable = {
   hero: { id: "spider-man" },
-  inPlay: [{ id: "mockingbird" }],
+  inPlay: [{ id: "mockingbird", hp: 3 }, { id: "the-power-of-spider-man" }, { id: "black-cat", hp: 1 }],
   enemyCards: [
     { id: "break-in", attachedTo: null },
     { id: "ivory-horn", attachedTo: "rhino" },
@@ -92,7 +92,13 @@ describe("spotOf: the defend question", () => {
         { id: "spider-man", tone: "target" },
       ],
       cutouts: ["rhino", "ivory-horn", "sandman", "spider-man"],
+      plates: ["spider-man", "mockingbird", "black-cat"],
     });
+  });
+
+  test("keeps the health of the hero and every ally out of the shade, an exhausted ally's too", () => {
+    // Black Cat is exhausted (not a defender option) but her health still counts towards the call.
+    expect(spotOf(defense, table, at)?.plates).toEqual(["spider-man", "mockingbird", "black-cat"]);
   });
 
   test("lets the defenders through once the player is choosing one", () => {
