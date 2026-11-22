@@ -143,6 +143,7 @@ const SCENES: Record<string, Scene> = {
   /**
    * Eviction Notice (Peter Parker's obligation) is the next encounter card: end the turn and its two long answers are
    * asked in the turn bar, for checking that the answer buttons stay at two lines.
+   * Pick "Exhaust Peter Parker" and it is removed from the game: it must leave the table, not stay beside Rhino.
    */
   eviction: {
     hero: { form: "alterEgo" },

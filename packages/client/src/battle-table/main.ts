@@ -2284,7 +2284,10 @@ async function present(beats: Snapshot["beats"]) {
       labels.delete(id);
       const encounter = state.encounterDiscard.find((card) => card.id === id);
       const discarded = encounter ?? state.discard.find((card) => card.id === id);
-      table?.discardDefeatedCard(id, discarded, encounter ? "encounterDiscard" : "discard");
+      // A revealed card still standing aside by the villain (an obligation whose question was just answered) leaves
+      // from there: to the encounter discard pile, or straight off the table when it is removed from the game.
+      if (table?.parkedEncounters().includes(id)) table.retireEncounter(id, encounter);
+      else table?.discardDefeatedCard(id, discarded, encounter ? "encounterDiscard" : "discard");
       await sleep(discarded ? 560 : 240);
       continue;
     }
