@@ -8,7 +8,7 @@ import { handBetweenBeats } from "./hand-flow.js";
 import { nextOfferIndex } from "./offer-queue.js";
 import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js";
 import { arrangeScene } from "./debug-scenes.js";
-import { sfx } from "./sound.js";
+import { sfx, type SoundName } from "./sound.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
@@ -1499,7 +1499,7 @@ async function whenRevealedFires(
   eyebrow = "When Revealed",
 ) {
   table?.activateWhenRevealed(card.id);
-  sfx.play("block", { rate: 1.3, gain: 0.8 });
+  sfx.play("ability");
   if (card.noHeroes) {
     // It fires, but on no one: say so, or the flash looks like something went missing (Adam, 2026-11-22: Shocker).
     // Stamped on the card itself, because on a wide screen the bar stays folded while the villain side plays.
@@ -1616,7 +1616,7 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
     if (table.landStaged(source.card)) {
       await sleep(reducedMotion() ? 150 : 620);
       table.shinePlayed(source.card);
-      sfx.play("block", { rate: 1.3, gain: 0.8 });
+      sfx.play("ability");
       await sleep(reducedMotion() ? 200 : SHINE_MS);
     } else {
       table.activateWhenRevealed(source.card);
@@ -2489,7 +2489,7 @@ async function present(beats: Snapshot["beats"]) {
         // Removed from the game, it has no pile to go to: it evaporates where it stands (beside the villain, or in
         // its place in play), and nothing more happens until it has gone (Adam, 2026-11-22).
         if (!reducedMotion()) await sleep(200);
-        sfx.play("block", { rate: 0.8, gain: 0.7 });
+        sfx.play("vanish");
         await sleep(table?.evaporate(id) || 240);
         continue;
       }
@@ -2649,14 +2649,14 @@ async function present(beats: Snapshot["beats"]) {
     }
     if (beat.interrupt) {
       table?.pulseInterrupt(beat.interrupt);
-      sfx.play("block", { rate: 1.3, gain: 0.8 });
+      sfx.play("ability");
       await sleep(INTERRUPT_MS);
       const cancelled = heldEncounter;
       if (cancelled && reacting?.card === beat.interrupt && reacting.subject === cancelled) {
         // The interrupt cancels the card it is held up over: that card flickers out, then goes to its discard pile,
         // and only after that does the event that cancelled it follow it to the player's.
         table?.flickerCancelled(cancelled);
-        sfx.play("block", { rate: 0.75 });
+        sfx.play("cancel");
         stampCard(cancelled, "Cancelled");
         await sleep(reducedMotion() ? 300 : 760);
         table?.holdEvent(beat.interrupt);
@@ -2921,14 +2921,17 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.hit) {
       // The attack has landed: its target goes.
       clearAim();
+      const hitSound = !beat.hit.amount ? "block" : beat.hit.amount >= 4 ? "hit-heavy" : "hit";
       if (reacting?.kind === "placeThreat" && beat.hit.source === reacting.card) {
         // The threat it stopped turns into damage at the scheme and flies to the hero.
         await convertThreat(reacting.subject, beat.hit.target, beat.hit.amount);
+        sfx.play(hitSound);
       } else {
         table?.strike(beat.hit.source, beat.hit.target);
+        // Asked for as the strike starts: each hit's sync marker (set in the Sound Studio) lands on the contact.
+        sfx.play(hitSound, { contactIn: HIT_CONTACT_MS });
         await sleep(HIT_CONTACT_MS);
       }
-      sfx.play(!beat.hit.amount ? "block" : beat.hit.amount >= 4 ? "hit-heavy" : "hit");
       if (beat.hit.tough) table?.changeStatus(beat.hit.target, "tough", -1);
       if (beat.hit.amount) {
         shakeStage(beat.hit.amount >= 4 ? "heavy" : "light");
@@ -3749,3 +3752,130 @@ const pad = startController({
   useAction: useCardAction,
 });
 start();
+
+// ── Sound Studio (dev server only, `?studio`) ─────────────────────────────────────────────────────────────────────
+// The studio page (`battle/studio.html`) shows this table in a frame and asks it to act out one moment at a time, so a
+// sound can be lined up with what it goes with. Each demo goes through the same code the game does (`present`'s
+// beats where it can), so the sound fires at its real place; the table is put back from the game state afterwards.
+async function studioDemo(name: string): Promise<boolean> {
+  if (!table || presenting) return false;
+  const hero = state.hero.id;
+  const villain = state.villain.id;
+  const scheme = state.enemyCards.find((card) => card.type === "main_scheme")?.id ?? villain;
+  const beat = (part: Partial<Beat>) => ({ text: "", ...part }) as Beat;
+  const attack = (amount: number) => [
+    beat({ attackAim: { source: villain, target: hero } } as Partial<Beat>),
+    beat({ hit: { source: villain, target: hero, amount } } as Partial<Beat>),
+  ];
+  const fake = { id: "studio-card", name: "Studio card", art: state.villain.art, landscape: false };
+  switch (name) {
+    case "whoosh":
+    case "hit":
+      await present(attack(2));
+      break;
+    case "hit-heavy":
+      await present(attack(5));
+      break;
+    case "block":
+      await present(attack(0));
+      break;
+    case "threat":
+      await present([beat({ threat: { scheme, delta: 1 }, enemy: true } as Partial<Beat>)]);
+      break;
+    case "thwart":
+      await present([beat({ threat: { scheme, delta: -1 } } as Partial<Beat>)]);
+      break;
+    case "phase-hero":
+    case "whoosh-big":
+      await present([beat({ phase: "hero" } as Partial<Beat>)]);
+      break;
+    case "phase-villain":
+      await present([beat({ phase: "villain" } as Partial<Beat>)]);
+      break;
+    case "heal":
+      await present([beat({ statusChange: { id: hero, name: "damage", delta: -1 } } as Partial<Beat>)]);
+      break;
+    case "status":
+      await present([beat({ statusChange: { id: villain, name: "stunned", delta: 1 } } as Partial<Beat>)]);
+      break;
+    case "boom":
+      await present([beat({ defeat: `${state.villain.name} defeated` } as Partial<Beat>)]);
+      break;
+    case "defeat":
+      stampCard(villain, "Defeated");
+      await flashDefeatedCard(villain);
+      await sleep(900);
+      break;
+    case "ability":
+      table.activateWhenRevealed(villain);
+      sfx.play("ability");
+      await sleep(ACTIVATION_MS);
+      break;
+    case "surge":
+      stampCard(villain, "Surge!", "surge");
+      await surgeBurst();
+      break;
+    case "boost":
+      await showBoost({ id: villain, name: state.villain.name, boost: { icons: 2 } } as NonNullable<Beat["reveal"]>);
+      dropBoostBurst(villain);
+      break;
+    case "turn": {
+      const exhausted = !!state.hero.exhausted;
+      table.turnCards([{ id: hero, exhausted: !exhausted }]);
+      sfx.play("turn");
+      await sleep(EXHAUST_MS + 500);
+      table.turnCards([{ id: hero, exhausted }]);
+      await sleep(READY_MS);
+      break;
+    }
+    case "draw": {
+      const last = displayedHand[displayedHand.length - 1];
+      if (!last) return false;
+      table.showDraw(displayedHand, [last.id], state.deckCount);
+      sfx.play("draw");
+      await sleep(900);
+      break;
+    }
+    case "flip":
+      table.revealEncounter(fake);
+      sfx.play("flip");
+      await sleep(1500);
+      table.retireEncounter(fake.id);
+      await sleep(700);
+      break;
+    case "shuffle": {
+      const pile = state.discard.length ? "discard" : "encounterDiscard";
+      table.shuffleIntoDeck(pile);
+      sfx.play("shuffle", { maxMs: 1400 });
+      await sleep(1500);
+      break;
+    }
+    case "win":
+    case "lose":
+      showOutcome({ result: name === "win" ? "win" : "loss", reason: "villainDefeated" } as Snapshot["outcome"]);
+      await sleep(2600);
+      gameOver.close();
+      break;
+    case "error": {
+      const card = displayedHand[0];
+      if (card) showPlayHint(card.id, "This card cannot be played now.");
+      sfx.play("error");
+      await sleep(1200);
+      clearFormHint();
+      break;
+    }
+    default:
+      sfx.play(name as SoundName);
+      await sleep(600);
+      return false;
+  }
+  render();
+  return true;
+}
+
+if (import.meta.env.DEV && new URLSearchParams(location.search).has("studio")) {
+  document.documentElement.dataset.studio = "";
+  Object.assign(globalThis, {
+    __battleStudio: { demo: studioDemo, sfx, ready: () => !!table && !presenting && !!state },
+  });
+}

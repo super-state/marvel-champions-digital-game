@@ -1,0 +1,163 @@
+/**
+ * Every moment of the 3D table that makes a sound: its name (what the code plays), how the Sound Studio labels it,
+ * and whether the studio can replay its visual (`demo`) or only play the sound. Kept apart from `sound.ts` so the
+ * studio page can list them without loading the table.
+ */
+
+export const SOUND_MOMENTS = [
+  {
+    name: "draw",
+    label: "Draw a card",
+    group: "Cards",
+    about: "Each card sliding into the hand, 180 ms apart.",
+    demo: true,
+  },
+  {
+    name: "deal",
+    label: "Deal encounter card",
+    group: "Cards",
+    about: "An encounter card dealt facedown, or tucked under another.",
+    demo: false,
+  },
+  {
+    name: "place",
+    label: "Card lands in play",
+    group: "Cards",
+    about: "A revealed encounter card landing on the table.",
+    demo: false,
+  },
+  {
+    name: "play",
+    label: "Play a card",
+    group: "Cards",
+    about: "The player plays a card; an event goes onto the mat.",
+    demo: false,
+  },
+  {
+    name: "flip",
+    label: "Reveal / flip",
+    group: "Cards",
+    about: "An encounter card turned face up; the villain flipping.",
+    demo: true,
+  },
+  { name: "turn", label: "Exhaust / ready", group: "Cards", about: "Cards turning sideways or back.", demo: true },
+  { name: "discard", label: "Discard", group: "Cards", about: "Cards going to a discard pile.", demo: false },
+  {
+    name: "shuffle",
+    label: "Shuffle",
+    group: "Cards",
+    about: "A pile shuffled back into its deck (cut to 1.4 s).",
+    demo: true,
+  },
+  {
+    name: "whoosh",
+    label: "Attack wind-up",
+    group: "Combat",
+    about: "The attacker pulls back; also a card lifting off the hand.",
+    demo: true,
+  },
+  {
+    name: "hit",
+    label: "Hit (1–3 damage)",
+    group: "Combat",
+    about: "An attack landing. Its sync marker lands on the moment of contact.",
+    demo: true,
+  },
+  {
+    name: "hit-heavy",
+    label: "Big hit (4+ damage)",
+    group: "Combat",
+    about: "A heavy attack landing, with a big shake.",
+    demo: true,
+  },
+  {
+    name: "block",
+    label: "Block",
+    group: "Combat",
+    about: "An attack that does no damage, or damage deflected.",
+    demo: true,
+  },
+  {
+    name: "defeat",
+    label: "Defeated",
+    group: "Combat",
+    about: "A character or card defeated (its flash).",
+    demo: true,
+  },
+  {
+    name: "boom",
+    label: "Big defeat",
+    group: "Combat",
+    about: "A villain stage defeated, called out across the table.",
+    demo: true,
+  },
+  {
+    name: "threat",
+    label: "Threat placed",
+    group: "Schemes",
+    about: "Threat or acceleration landing on a scheme.",
+    demo: true,
+  },
+  { name: "thwart", label: "Threat removed", group: "Schemes", about: "Threat taken off a scheme.", demo: true },
+  {
+    name: "ability",
+    label: "Card ability fires",
+    group: "Powers",
+    about: "A When Revealed, an interrupt or a played card's power firing.",
+    demo: true,
+  },
+  {
+    name: "cancel",
+    label: "Card cancelled",
+    group: "Powers",
+    about: "An encounter card cancelled by an interrupt.",
+    demo: false,
+  },
+  {
+    name: "vanish",
+    label: "Removed from game",
+    group: "Powers",
+    about: "A card evaporating, removed from the game.",
+    demo: false,
+  },
+  { name: "heal", label: "Heal", group: "Powers", about: "Damage healed.", demo: true },
+  { name: "status", label: "Stunned / confused / tough", group: "Powers", about: "A status card given.", demo: true },
+  { name: "surge", label: "Surge", group: "Powers", about: "Surge: one more encounter card.", demo: true },
+  { name: "boost", label: "Boost", group: "Powers", about: "A boost card's icons bursting out.", demo: true },
+  {
+    name: "whoosh-big",
+    label: "Banner swoosh",
+    group: "Phases",
+    about: "The phase banner sweeping across the table.",
+    demo: true,
+  },
+  {
+    name: "phase-hero",
+    label: "Hero phase",
+    group: "Phases",
+    about: "The hero phase starting (with the banner).",
+    demo: true,
+  },
+  {
+    name: "phase-villain",
+    label: "Villain phase",
+    group: "Phases",
+    about: "The villain phase starting (with the banner).",
+    demo: true,
+  },
+  { name: "win", label: "Victory", group: "Phases", about: "The victory screen.", demo: true },
+  { name: "lose", label: "Defeat", group: "Phases", about: "The defeat screen.", demo: true },
+  { name: "select", label: "Pick / select", group: "Buttons", about: "A target or resource picked.", demo: false },
+  {
+    name: "confirm",
+    label: "Confirm",
+    group: "Buttons",
+    about: "End Turn, paying, the menu's sound switch.",
+    demo: false,
+  },
+  { name: "error", label: "Can't do that", group: "Buttons", about: "A card that can't be played now.", demo: true },
+] as const;
+
+export type SoundName = (typeof SOUND_MOMENTS)[number]["name"];
+
+export const SOUND_NAMES: readonly SoundName[] = SOUND_MOMENTS.map((moment) => moment.name);

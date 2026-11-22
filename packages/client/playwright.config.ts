@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import { defineConfig, devices } from "@playwright/test";
 
 /**
@@ -191,6 +192,11 @@ export default defineConfig({
   ],
   webServer: {
     command: `pnpm exec vite --port ${PORT} --strictPort`,
+    // The Sound Studio saves into a throwaway folder under test, never this PC's real one.
+    env: {
+      ...(Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== undefined)) as Record<string, string>),
+      MC_SOUND_STUDIO_DIR: process.env.MC_SOUND_STUDIO_DIR ?? `${tmpdir()}/mc-sound-studio-e2e`,
+    },
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
