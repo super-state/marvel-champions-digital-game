@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sound Studio · Marvel Champions</title>
+  </head>
+  <body>
+    <!-- The Sound Studio (dev server only; not in the build): browse sample folders on this PC, give each moment of the
+         3D table its sounds, cut and shape them, and line them up with the table acting the moment out. -->
+    <header class="studio-bar">
+      <h1>Sound Studio</h1>
+      <span class="studio-note" id="studio-note"
+        >Saved sounds play in your game on this PC. Ask Claude to ship them to everyone.</span
+      >
+      <span class="studio-status" id="studio-status"></span>
+      <button type="button" id="undo" class="btn" disabled title="Undo (Ctrl+Z)">↶ Undo</button>
+      <button type="button" id="redo" class="btn" disabled title="Redo (Ctrl+Y)">↷ Redo</button>
+      <button type="button" id="studio-save" class="btn gold" disabled>Save</button>
+    </header>
+    <main class="studio">
+      <section class="browser" aria-label="Sample browser">
+        <div class="places" id="places"></div>
+        <div class="path-row">
+          <button type="button" id="up" class="icon-btn" title="Up a folder (Backspace)">↑</button>
+          <input class="crumbs" id="crumbs" spellcheck="false" title="Type or paste a folder, then Enter" />
+          <button type="button" id="pin" class="icon-btn" title="Pin this folder">📌</button>
+        </div>
+        <div class="filter-row">
+          <input id="filter" type="search" placeholder="Search every folder below…" autocomplete="off" />
+          <label class="toggle"><input type="checkbox" id="autoplay" checked /> Auto-play</label>
+        </div>
+        <p class="search-info" id="search-info" hidden></p>
+        <ul class="files" id="files" tabindex="0" aria-label="Files"></ul>
+        <p class="hint">
+          ↑ ↓ to step through and hear each file · Enter or ＋ adds it to the selected sound · or drag it onto a sound
+        </p>
+      </section>
+
+      <section class="centre">
+        <div class="stage-wrap">
+          <iframe
+            id="preview"
+            title="The table, acting out the moment"
+            src="/battle/?seed=11&scene=defend&studio=1"
+            allow="autoplay"
+          ></iframe>
+          <div class="stage-controls">
+            <button type="button" id="play-moment" class="btn gold" title="Play the moment on the table (T)">
+              ▶ Play on table
+            </button>
+            <label class="toggle" title="Off: every variation takes its turn, as in the game"
+              ><input type="checkbox" id="only-this" /> Only the one I'm editing</label
+            >
+            <button type="button" id="reset-table" class="btn">Reset table</button>
+            <span id="moment-note" class="dim"></span>
+          </div>
+        </div>
+        <div class="editor">
+          <div class="editor-head">
+            <div>
+              <h2 id="editor-title">Pick a sound</h2>
+              <p class="file-row">
+                <span id="editor-file" class="dim"></span>
+                <button
+                  type="button"
+                  id="show-folder"
+                  class="btn small-btn"
+                  hidden
+                  title="Open this sample's folder in the browser (F)"
+                >
+                  📂 Show in folder
+                </button>
+              </p>
+            </div>
+            <div class="variants" id="variants"></div>
+          </div>
+          <canvas id="wave" class="wave"></canvas>
+          <div class="transport">
+            <button type="button" id="play" class="btn" title="Play the cut (Space)">▶ Play</button>
+            <button type="button" id="stop" class="btn" title="Stop (Esc)">■</button>
+            <button type="button" id="zoom-fit" class="btn">Whole file</button>
+            <button type="button" id="zoom-cut" class="btn">Zoom to cut</button>
+            <span class="dim small">Drag Start / End / ⚡ / the gold dots · double-click sets ⚡ · wheel zooms</span>
+          </div>
+          <div class="knobs" id="knobs"></div>
+        </div>
+      </section>
+
+      <section class="sounds" aria-label="The game's sounds">
+        <h2>Game sounds</h2>
+        <div id="sounds"></div>
+      </section>
+    </main>
+    <script type="module" src="../src/battle-table/studio/studio.ts"></script>
+  </body>
+</html>

@@ -5,10 +5,13 @@ import { padActive, startController } from "./pad/controller.js";
 import { besideSpot, dockSpot } from "./dock-spot.js";
 import { whileStillThere } from "./beat-order.js";
 import { handBetweenBeats } from "./hand-flow.js";
+import { nextOfferIndex } from "./offer-queue.js";
 import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js";
 import { arrangeScene } from "./debug-scenes.js";
+import { sfx, type SoundName } from "./sound.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
+import { pictureOf, retryFailedPictures } from "./picture-retry.js";
 import { eventLook, offerDoes, spotOf, waitsOnDock, type GlowTone, type Spot } from "./spotlight.js";
 import {
   BattleTable,
@@ -67,6 +70,7 @@ const defenseShade = document.querySelector<SVGSVGElement>("#defense-shade")!;
 const abilityGlow = document.querySelector<SVGSVGElement>("#ability-glow")!;
 const abilityOutlines = document.querySelector<SVGGElement>("#ability-outlines")!;
 const defenderCutouts = document.querySelector<SVGGElement>("#defender-cutouts")!;
+const plateCutouts = document.querySelector<SVGGElement>("#plate-cutouts")!;
 const reticle = element("attack-reticle");
 // The phase banner runs right across the window, over the sidebar too, so it lives on the page, not in the table.
 document.body.append(element("phase-banner"));
@@ -79,8 +83,12 @@ let heldEncounter: string | null = null;
 let revealWindowHeld: string | null = null;
 /** A held card let go as new beats arrive: it plays out (When Revealed, then away) before them. */
 let releaseHeld: string | null = null;
+/** A revealed card whose own question was just answered, standing aside: it fires before the answer's beats play. */
+let answeredHeld: string | null = null;
 /** The reveal of the card held up, kept for moves whose own beats don't carry it (paying for a reaction to it). */
 let heldReveal: Beat["reveal"] = undefined;
+/** How long the table takes to darken where it fades in (`.fade-in` in battle.css). */
+const SPOT_FADE_MS = 700;
 /** What the table is darkened around right now (`spotlight.ts`). */
 let spot: Spot | null = null;
 let markKey = "";
@@ -118,6 +126,9 @@ const railToggle = element<HTMLButtonElement>("rail-toggle");
 const hoverPicture = element<HTMLImageElement>("hover-card");
 const pinnedCard = element("pinned-card");
 const pinnedPicture = pinnedCard.querySelector("img")!;
+// A card picture that fails to load is asked for again a little later, as the table's own cards are.
+for (const image of [preview, hoverPicture, pinnedPicture, element<HTMLImageElement>("game-over-art")])
+  retryFailedPictures(image);
 /** The card pinned at the table's side with a right-click (`pinCard`). */
 let pinnedId: string | null = null;
 /** Wider than a phone: the hand sinks, the turn corner shows and the card panel can fold away. */
@@ -506,13 +517,11 @@ function answerOffer(yes: boolean) {
       kind: choice.event.kind,
       amount: choice.event.amount ?? 1,
     };
-  // Another copy of the same card is asked about only when it could still add something: never after a no (no to one
-  // Backflip is no to both), and not after a yes whose effect covers everything ("prevent all", "instead"), since the
-  // second copy would then do nothing. A copy that stacks (Emergency's "reduce by 1") is still offered after a yes.
-  const covers = yes && /\b(all|instead)\b/i.test(offer.effect ?? offer.question);
-  const name = nameOf(offer.cardId);
-  do offerIndex++;
-  while (offerIndex < choice.offers.length && (!yes || covers) && nameOf(choice.offers[offerIndex]!.cardId) === name);
+  // One question per card: a later copy comes up again only if the engine offers the window again (`offer-queue.ts`).
+  offerIndex = nextOfferIndex(
+    choice.offers.map((o) => nameOf(o.cardId)),
+    offerIndex,
+  );
   if (offerIndex < choice.offers.length && acceptedOffers.length < choice.max) {
     render();
     return;
@@ -828,7 +837,7 @@ function setWidePreview(wide: boolean) {
 
 function showPreview(card: Pick<BattleCard, "art" | "name" | "landscape">, expand: boolean) {
   setWidePreview(expand && card.landscape);
-  if (preview.getAttribute("src") !== card.art) preview.src = card.art;
+  if (pictureOf(preview.getAttribute("src") ?? "") !== card.art) preview.src = card.art;
   preview.alt = card.name;
   preview.hidden = false;
 }
@@ -926,8 +935,10 @@ function pick(id: string) {
   }
   if (state.choice) {
     const targets = state.choice.options.filter((option) => option.cardId === id);
-    if (targets.length === 1) selectChoice(targets[0]!.id);
-    else if (targets.length > 1) {
+    if (targets.length === 1) {
+      sfx.play("select");
+      selectChoice(targets[0]!.id);
+    } else if (targets.length > 1) {
       actionCard = id;
       render();
     }
@@ -946,10 +957,12 @@ function pick(id: string) {
   if (!card) return;
   element("play-refusal").hidden = true;
   if (card.requiresHeroForm) {
+    sfx.play("error");
     showPlayHint(state.hero.id, "Hero form required", true);
     return;
   }
   if (!card.playable) {
+    sfx.play("error");
     showPlayHint(card.id, card.reason || "This card cannot be played now.");
     return;
   }
@@ -957,6 +970,7 @@ function pick(id: string) {
   stagedAttachment = model.isTargetedAttachment(card.id) ? card.id : null;
   staged = card;
   flying = true;
+  sfx.play("whoosh", { gain: 0.7 });
   render();
 }
 
@@ -972,6 +986,7 @@ function beginPlay(card: BattleCard) {
   act(() => {
     if (!model.pick(card.id)) {
       staged = null;
+      sfx.play("error");
       const refusal = element("play-refusal");
       refusal.getAnimations().forEach((a) => a.cancel());
       refusal.textContent = `${card.name} · ${card.reason || "This card cannot be played now."}`;
@@ -983,6 +998,7 @@ function beginPlay(card: BattleCard) {
       return;
     }
     state = model.snapshot();
+    sfx.play("play");
     if (!state.payment && !state.choice) {
       staged = null;
       say(`${card.name} played`);
@@ -992,6 +1008,7 @@ function beginPlay(card: BattleCard) {
 
 function toggle(id: string) {
   if (!state.payment) return;
+  sfx.play("select");
   model.toggle(id);
   render();
 }
@@ -1030,6 +1047,8 @@ function pay() {
   if (discarding || !payment?.canPay || !table) return;
   const flights = payment.discards;
   if (!model.pay()) return;
+  sfx.play("confirm");
+  if (flights.length) sfx.play("discard", { delay: 120 });
   // Paid: the bar folds away at once, before the hand settles back down under where it was.
   dock.setAttribute("data-idle", "");
   animateDiscards(flights, "", () => {
@@ -1134,6 +1153,7 @@ function confirmChoice() {
 
 function endTurn() {
   if (!state.canEndTurn) return;
+  sfx.play("confirm");
   act(() => {
     model.endTurn();
   });
@@ -1210,7 +1230,7 @@ function showOutcome(outcome: Snapshot["outcome"]) {
   const art = element<HTMLImageElement>("game-over-art");
   const figure = art.closest("figure")!;
   figure.hidden = !featured.art;
-  if (featured.art && art.getAttribute("src") !== featured.art) art.src = featured.art;
+  if (featured.art && pictureOf(art.getAttribute("src") ?? "") !== featured.art) art.src = featured.art;
   figure.toggleAttribute("data-landscape", schemeLoss);
   element("game-over-stamp").textContent = won
     ? "Defeated"
@@ -1228,6 +1248,7 @@ function showOutcome(outcome: Snapshot["outcome"]) {
   if (!gameOver.open) {
     if (gameMenu.open) gameMenu.close();
     if (won) throwConfetti();
+    sfx.play(won ? "win" : "lose");
     gameOver.showModal();
   }
 }
@@ -1340,7 +1361,10 @@ function synchronizeLabels() {
         label.append(chip);
       }
     } else {
-      if ((source || target) && !handPick) label.append(make("span", "plate-name", card.name));
+      // Picking a defender, the plate is just the health: the card shows who it is and the dock asks the question
+      // (Adam, 2026-11-22: "All the player needs is their health").
+      if ((source || target) && !handPick && !state.choice?.defense)
+        label.append(make("span", "plate-name", card.name));
       if (!discardOpen && hp !== undefined) label.append(hpPill(hp));
     }
     if (hp === undefined || discardOpen || inHand) delete label.dataset.hp;
@@ -1351,6 +1375,7 @@ function synchronizeLabels() {
       target &&
       !handPick &&
       !state.choice?.offers?.length &&
+      !state.choice?.defense &&
       target.label !== card.name &&
       !target.label.startsWith(card.name + " (")
     )
@@ -1377,6 +1402,17 @@ function synchronizeLabels() {
   }
 }
 
+/** Plates the last question made pickable (gold "Choose" plates) go back to plain ones while the answer plays out. */
+function unmarkPicks() {
+  for (const label of labels.values()) {
+    if (!label.hasAttribute("data-target")) continue;
+    label.removeAttribute("data-target");
+    label.disabled = false;
+    label.querySelectorAll(".plate-name, .resource-value").forEach((part) => part.remove());
+  }
+  for (const label of labels.values()) label.removeAttribute("data-lit");
+}
+
 function updateOutlines(group: SVGGElement, ids: readonly string[], tones?: readonly GlowTone[]) {
   while (group.childElementCount > ids.length) group.lastElementChild!.remove();
   ids.forEach((id, i) => {
@@ -1386,6 +1422,33 @@ function updateOutlines(group: SVGGElement, ids: readonly string[], tones?: read
     const tone = tones?.[i];
     if (tone && tone !== "ability") polygon.setAttribute("data-tone", tone);
     else polygon.removeAttribute("data-tone");
+  });
+}
+
+/** Holes in the shade over these cards' nameplates, so their health reads at full brightness (`Spot.plates`). */
+/** In the table's own coordinates, like the card outlines: a plate is centred under its card (`placeLabels`). */
+function updatePlateCutouts(ids: readonly string[], projected: ReturnType<BattleTable["anchors"]>) {
+  // A plate that can't be pressed during the question (a hero who isn't a pick yet) fades; these stay at full strength.
+  for (const [id, label] of labels) label.toggleAttribute("data-lit", ids.includes(id));
+  const boxes = ids.flatMap((id) => {
+    const label = labels.get(id);
+    const anchor = projected.find((point) => point.id === id);
+    if (!anchor || !label?.isConnected || label.parentElement !== boardLabels || !label.childElementCount) return [];
+    const width = label.offsetWidth;
+    const height = label.offsetHeight;
+    return width && height ? [{ left: anchor.x - width / 2, top: anchor.bottom + 5, width, height }] : [];
+  });
+  while (plateCutouts.childElementCount > boxes.length) plateCutouts.lastElementChild!.remove();
+  boxes.forEach((box, i) => {
+    const rect =
+      plateCutouts.children[i] ??
+      plateCutouts.appendChild(document.createElementNS("http://www.w3.org/2000/svg", "rect"));
+    const pad = 3;
+    rect.setAttribute("x", String(Math.round(box.left - pad)));
+    rect.setAttribute("y", String(Math.round(box.top - pad)));
+    rect.setAttribute("width", String(Math.round(box.width + pad * 2)));
+    rect.setAttribute("height", String(Math.round(box.height + pad * 2)));
+    rect.setAttribute("rx", String(Math.round(box.height / 2 + pad)));
   });
 }
 
@@ -1416,6 +1479,7 @@ async function convertThreat(scheme: string, target: string, amount: number) {
   token.dataset.kind = "damage";
   token.replaceChildren(icon("damage"), make("b", "", String(amount)));
   await sleep(260);
+  sfx.play("whoosh");
   const fly = token.animate(
     [
       { transform: "translate(0, 0) scale(1)" },
@@ -1429,11 +1493,32 @@ async function convertThreat(scheme: string, target: string, amount: number) {
 }
 
 /** A When Revealed firing: the card rises with a flash, and the dock says what is happening. */
-async function whenRevealedFires(beat: Beat, card: { id: string; name: string; applies?: Applies | undefined }) {
+async function whenRevealedFires(
+  beat: Beat,
+  card: { id: string; name: string; applies?: Applies | undefined; noHeroes?: true | undefined },
+  eyebrow = "When Revealed",
+) {
   table?.activateWhenRevealed(card.id);
+  sfx.play("ability");
+  if (card.noHeroes) {
+    // It fires, but on no one: say so, or the flash looks like something went missing (Adam, 2026-11-22: Shocker).
+    // Stamped on the card itself, because on a wide screen the bar stays folded while the villain side plays.
+    stampCard(card.id, "No heroes to hit", "status");
+    narrate(
+      beat,
+      { text: `${card.name}: no heroes to hit`, icon: "forced", tone: "villain" },
+      {
+        eyebrow: { text: eyebrow, icon: "forced", tone: "villain" },
+        title: `${card.name}: no heroes to hit`,
+        help: "You're in alter-ego form, so nobody takes damage.",
+      },
+    );
+    await sleep(Math.max(ACTIVATION_MS, 1100));
+    return;
+  }
   narrate(beat, card.applies ? { text: `${card.name}: ${card.applies.text}`, icon: "forced", tone: "villain" } : null, {
     eyebrow: {
-      text: card.applies ? `When Revealed (${card.applies.form})` : "When Revealed",
+      text: card.applies ? `${eyebrow} (${card.applies.form})` : eyebrow,
       icon: "forced",
       tone: "villain",
     },
@@ -1452,6 +1537,39 @@ function appliesHelp(reveal: Beat["reveal"]): string | null {
 }
 
 /**
+ * An effect picks cards from the hand at random (Highway Robbery, Eviction Notice): a light hops from card to card,
+ * slowing down, and stops on the ones the game picked, which stay lit while `stamp` says where they go. The game
+ * has already picked them: this only shows the pick being made, it never picks.
+ */
+async function pickFromHandAtRandom(beat: Beat, ids: readonly string[], stamp: string) {
+  if (!table) return;
+  narrate(beat, feedLineOf(beat), {
+    eyebrow: { text: "At random", icon: "forced", tone: "villain" },
+    title: ids.length > 1 ? `Picking ${ids.length} cards from your hand` : "Picking a card from your hand",
+  });
+  const pool = displayedHand.map((card) => card.id);
+  if (!reducedMotion() && pool.length > ids.length) {
+    const hops = 7 + Math.min(4, pool.length);
+    let last = "";
+    for (let hop = 0; hop < hops; hop++) {
+      const choices = pool.filter((id) => id !== last);
+      last = choices[Math.floor(Math.random() * choices.length)]!;
+      table.spotlightHand([last]);
+      await sleep(70 + 230 * (hop / hops) ** 2);
+    }
+  }
+  table.spotlightHand(ids);
+  for (const id of ids) stampCard(id, stamp, "surge");
+  await sleep(reducedMotion() ? 500 : 900);
+}
+
+/** How a revealed card is introduced: dealt and turned over, or brought in by another card (your nemesis, by Shadow). */
+function revealedBy(reveal: NonNullable<Beat["reveal"]>): string {
+  if (!reveal.broughtBy) return "Revealed";
+  return reveal.nemesis ? `${reveal.broughtBy} brings in your nemesis` : `${reveal.broughtBy} brings in`;
+}
+
+/**
  * A revealed encounter card that is done being read leaves the middle of the table. One that stays in play lands in
  * its place. A treachery whose effect still has something to show (the attack Assault calls, a question it asks, the
  * card its surge deals) stands aside by the villain until its own beat in `upcoming` sends it to the discard pile
@@ -1465,7 +1583,10 @@ function leaveEncounter(id: string, upcoming: readonly Beat[]): "landed" | "park
   }
   const leaves = upcoming.findIndex((beat) => beat.encounterResolved === id);
   const discarded = state.encounterDiscard.some((c) => c.id === id);
-  if (leaves > 0 || (leaves < 0 && !discarded)) {
+  // An obligation answered in the turn bar leaves on a beat of its own too, once its answer has played out: to the
+  // encounter discard pile, or off the table when it is removed from the game (Eviction Notice).
+  const leavesPlay = upcoming.some((beat) => beat.leftPlay === id);
+  if (leavesPlay || leaves > 0 || (leaves < 0 && !discarded)) {
     table?.parkEncounter(id);
     return "parked";
   }
@@ -1495,6 +1616,7 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
     if (table.landStaged(source.card)) {
       await sleep(reducedMotion() ? 150 : 620);
       table.shinePlayed(source.card);
+      sfx.play("ability");
       await sleep(reducedMotion() ? 200 : SHINE_MS);
     } else {
       table.activateWhenRevealed(source.card);
@@ -1516,6 +1638,7 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   focusBlur.dataset.row = "";
   focusBlur.hidden = false;
   table.revealFromDeck(cards);
+  cards.forEach((_, i) => sfx.play("flip", { delay: i * 180, gain: 0.8 }));
   placeLabels();
   // Laid out once hidden-at-0 first, so the fade-in runs from the same moment the first card lifts.
   void focusBlur.offsetWidth;
@@ -1524,6 +1647,7 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   const kept = next?.returned?.filter((id) => milled.includes(id)) ?? [];
   if (kept.length) {
     table.pickFromReveal(kept);
+    sfx.play("draw");
     for (const id of kept) stampCard(id, "To hand", "boost");
     await sleep(reducedMotion() ? 300 : 900);
   } else if (source?.miss) {
@@ -1538,6 +1662,7 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   const going = milled.filter((id) => !kept.includes(id));
   if (going.length) {
     table.discardFromReveal(going);
+    sfx.play("discard");
     await sleep(reducedMotion() ? 200 : 520);
   }
   // The blur fades with the cards still cut out of it, then goes.
@@ -1611,9 +1736,17 @@ function aimFrom(from: { x: number; y: number } | undefined, to: { x: number; y:
 }
 
 /** Darken the table around the cards that matter now, or (null) lift the shade. */
-function setSpot(next: Spot | null) {
+/** `fade`: the darkening comes in slowly instead of at once, if the table isn't darkened already. */
+function setSpot(next: Spot | null, { fade = false } = {}) {
+  const was = spot;
   spot = next?.cutouts.length ? next : null;
+  // Set before the shade shows, so its fade plays from the start; kept while it stays up, so it never cuts short.
+  if (!was) for (const layer of [defenseShade, abilityGlow]) layer.classList.toggle("fade-in", fade && !!spot);
   defenseShade.toggleAttribute("hidden", !spot);
+  if (!spot?.plates) {
+    plateCutouts.replaceChildren();
+    for (const label of labels.values()) label.removeAttribute("data-lit");
+  }
   abilityGlow.toggleAttribute("hidden", !spot?.glow.length);
   const mark = spot?.mark ?? null;
   pendingMark.hidden = !mark;
@@ -1718,6 +1851,12 @@ function placeLabels() {
       pendingMark.style.top = marked.top + "px";
     }
   }
+  // A boost label rides along with its card while the card is held up; it goes when the card leaves.
+  for (const [id, burst] of boostBursts) {
+    const card = projected.find((p) => p.id === id);
+    if (card) placeBoostBurst(burst.node, card);
+    else dropBoostBurst(id);
+  }
   for (const [id, tag] of boostTags) {
     const card = projected.find((p) => p.id === id);
     tag.hidden = !card;
@@ -1818,6 +1957,7 @@ function placeLabels() {
     const y = handCard ? anchor.bottom - 44 : anchor.bottom + 5;
     node.style.transform = `translate(${Math.round(anchor.x)}px,${Math.round(y)}px)`;
   }
+  if (spot) updatePlateCutouts(spot.plates ?? [], projected);
 }
 
 // ── Presenting what happened ─────────────────────────────────────────────────────────────────────────────────────
@@ -1836,26 +1976,30 @@ function phaseIndicator(phase: "hero" | "villain" | "ending" | "setup", announce
   turnStatus.dataset.phase = phase === "villain" ? "villain" : phase === "ending" ? "ending" : "hero";
   turnStatus.replaceChildren(...(phase === "setup" ? [] : [icon(phase === "villain" ? "villain" : "hero")]), title);
   roundLabel.textContent = `Round ${state?.round ?? 1}`;
-  if (announce && phase !== "setup") {
-    const banner = element("phase-banner");
-    banner.dataset.phase = phase;
-    const lettering = banner.querySelector("b")!;
-    lettering.textContent = title;
-    banner.getAnimations({ subtree: true }).forEach((a) => a.cancel());
-    banner.animate([{ opacity: 0 }, { opacity: 1, offset: 0.16 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }], {
-      duration: PHASE_BANNER_MS,
-    });
-    if (!reducedMotion()) {
-      lettering.animate(
-        [
-          { transform: "translateX(-100%)", easing: "cubic-bezier(.18,.74,.28,1)" },
-          { transform: "translateX(-0.6%)", offset: 0.24, easing: "linear" },
-          { transform: "translateX(0.6%)", offset: 0.73, easing: "cubic-bezier(.6,.02,.9,.5)" },
-          { transform: "translateX(100%)" },
-        ],
-        { duration: PHASE_BANNER_MS },
-      );
-    }
+  if (announce && phase !== "setup") sweepBanner(title, phase);
+}
+
+/** A title swept across the whole table, the way a new phase is announced ("Nemesis cards added" too). */
+function sweepBanner(title: string, tone: "hero" | "villain" | "ending") {
+  const banner = element("phase-banner");
+  banner.dataset.phase = tone;
+  const lettering = banner.querySelector("b")!;
+  lettering.textContent = title;
+  sfx.play("whoosh-big");
+  banner.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+  banner.animate([{ opacity: 0 }, { opacity: 1, offset: 0.16 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }], {
+    duration: PHASE_BANNER_MS,
+  });
+  if (!reducedMotion()) {
+    lettering.animate(
+      [
+        { transform: "translateX(-100%)", easing: "cubic-bezier(.18,.74,.28,1)" },
+        { transform: "translateX(-0.6%)", offset: 0.24, easing: "linear" },
+        { transform: "translateX(0.6%)", offset: 0.73, easing: "cubic-bezier(.6,.02,.9,.5)" },
+        { transform: "translateX(100%)" },
+      ],
+      { duration: PHASE_BANNER_MS },
+    );
   }
 }
 
@@ -1869,6 +2013,7 @@ function activationRing(id: string) {
 }
 
 async function flashDefeatedCard(id: string) {
+  sfx.play("defeat");
   const outline = table?.cardOutline(id);
   if (!outline?.length) return;
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -1947,45 +2092,65 @@ function stampCard(id: string, text: string, tone?: "status" | "confused" | "tou
   ]);
 }
 
+/**
+ * A turned-up boost card's "+N Boost". It stays on the card, fully shown, the whole time the card is held up, and goes
+ * only as the card moves off to the discard pile, rather than fading out first (Adam, 2026-11-22).
+ */
+const boostBursts = new Map<string, { node: HTMLElement }>();
+
 async function showBoost(reveal: NonNullable<Beat["reveal"]>) {
   const boost = reveal.boost!;
   const projected = table?.anchors();
   const card = projected?.find((p) => p.id === reveal.id);
-  const enemy = projected?.find((p) => p.id === boost.enemy);
   if (!card) return;
+  dropBoostBurst(reveal.id);
   const burst = make("div", "boost-burst");
   burst.setAttribute("role", "status");
   const marks = make("span", "boost-marks");
   for (let i = 0; i < Math.min(boost.icons, 4); i++) marks.append(icon("boost"));
   burst.append(marks, make("b", "", `+${boost.icons}`), make("span", "", "Boost"));
-  const x = card.x + card.width * 0.33;
-  const y = card.bottom - card.width * 0.25;
-  burst.style.left = x + "px";
-  burst.style.top = y + "px";
   stage.append(burst);
-  const animation = burst.animate(
-    reducedMotion()
-      ? [{ opacity: 1 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }]
-      : [
-          { transform: "scale(.55)", opacity: 0 },
-          { transform: "scale(1.18)", opacity: 1, offset: 0.18 },
-          { transform: "scale(1)", opacity: 1, offset: 0.35 },
-          { transform: "scale(1)", opacity: 1, offset: 0.68 },
-          { transform: `translate(${(enemy?.x ?? x) - x}px,${(enemy?.y ?? y) - y}px) scale(.62)`, opacity: 0 },
-        ],
-    { duration: 860, easing: "ease-out" },
-  );
-  await animation.finished;
-  burst.remove();
+  sfx.play("boost");
+  boostBursts.set(reveal.id, { node: burst });
+  placeBoostBurst(burst, card);
+  if (!reducedMotion())
+    burst.animate(
+      [
+        { transform: "scale(.55)", opacity: 0 },
+        { transform: "scale(1.18)", opacity: 1, offset: 0.5 },
+        { transform: "scale(1)", opacity: 1 },
+      ],
+      { duration: 300, easing: "ease-out" },
+    );
+  // Held up as long as before; the label goes with the card (dropBoostBurst as it is retired).
+  await sleep(reducedMotion() ? 300 : 860);
 }
 
-/** "+1 card" bursting off the encounter deck, so the extra deal that follows has a cause. */
+function placeBoostBurst(node: HTMLElement, card: { x: number; width: number; bottom: number }) {
+  node.style.left = card.x + card.width * 0.33 + "px";
+  node.style.top = card.bottom - card.width * 0.25 + "px";
+}
+
+function dropBoostBurst(id: string) {
+  const burst = boostBursts.get(id);
+  if (!burst) return;
+  boostBursts.delete(id);
+  if (reducedMotion()) return burst.node.remove();
+  burst.node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: "forwards" }).onfinish = () =>
+    burst.node.remove();
+}
+
+/**
+ * "+1 card" bursting off the encounter deck, so the extra deal that follows has a cause. The word "Surge" is the
+ * surging card's own stamp: said once, on the card causing it, not again on the deck (Adam, 2026-11-22).
+ */
 async function surgeBurst() {
   const deck = table?.encounterAnchor();
   if (!deck) return;
   const burst = make("div", "surge-burst");
   burst.setAttribute("role", "status");
-  burst.append(icon("surge"), make("b", "", "Surge"), make("span", "", "+1 card"));
+  burst.append(icon("surge"), make("b", "", "+1 card"));
+  sfx.play("surge");
   burst.style.left = deck.x + "px";
   burst.style.top = deck.y + "px";
   stage.append(burst);
@@ -2097,6 +2262,15 @@ function narrate(beat: Beat, line: FeedLine | null, extra: Partial<DockView> = {
 async function present(beats: Snapshot["beats"]) {
   presenting = true;
   closeDecision();
+  if (dockFocus) {
+    // The question that softened the table is answered: the table comes back into focus for the answer to play out,
+    // rather than staying soft with only the card that asked still sharp (Adam, 2026-11-22: Eviction Notice sat above
+    // the blur, then the whole table stayed blurred once it had gone).
+    dockFocus = null;
+    delete focusBlur.dataset.ready;
+    focusBlur.style.clipPath = "";
+    focusBlur.hidden = !rowFocus.length && !revealFocus;
+  }
   const announcement = element("action-beat");
   const impact = element("impact");
   stage.dataset.resolving = "true";
@@ -2126,6 +2300,18 @@ async function present(beats: Snapshot["beats"]) {
       spotted = false;
     }
     if (beat.gameEnded) break;
+    if (answeredHeld) {
+      // The revealed card whose question was just answered: it lands beside the villain first, then fires there,
+      // and only then does the answer play out (Adam, 2026-11-22: Peter exhausted while Eviction Notice was still
+      // in the air).
+      const id = answeredHeld;
+      answeredHeld = null;
+      if (!reducedMotion() && table?.parkedEncounters().includes(id)) {
+        await sleep(450);
+        // Named as it was revealed: once removed from the game it is in none of the piles the final state lists.
+        await whenRevealedFires(beat, { id, name: parkedViews.get(id)?.name ?? nameOf(id) }, "Resolve");
+      }
+    }
     if (releaseHeld) {
       // The encounter card nobody interrupted: its When Revealed fires where it stands, then it goes.
       const id = releaseHeld;
@@ -2148,6 +2334,8 @@ async function present(beats: Snapshot["beats"]) {
         ? Math.max(0, Number(deckCount.textContent) - beat.draw.length)
         : state.deckCount + pendingDraws.size;
       table?.showDraw(displayedHand, beat.draw, deckSize, pilesLater ? undefined : state.discard);
+      // Each card lifts off the deck 120 ms in, then every 180 ms: its draw sound's marker lands on that.
+      beat.draw.forEach((_, i) => sfx.play("draw", { contactIn: 120 + i * 180 }));
       deckCount.textContent = String(deckSize);
       narrate(beat, feedLineOf(beat));
       await sleep(680 + (beat.draw.length - 1) * 180);
@@ -2160,7 +2348,11 @@ async function present(beats: Snapshot["beats"]) {
       displayedHand = displayedHand.filter((card) => fresh.includes(card.id) || !beat.handDiscard!.includes(card.id));
       if (!fresh.length) continue;
       narrate(beat, feedLineOf(beat));
+      // Discarded at random (Eviction Notice, The Vulture's Plans): the pick is seen being made first.
+      if (beat.random) await pickFromHandAtRandom(beat, fresh, "Discarded at random");
+      sfx.play("discard");
       await new Promise<void>((resolve) => (table ? table.animateDiscards(fresh, resolve) : resolve()));
+      if (beat.random) table?.spotlightHand([]);
       displayedHand = displayedHand.filter((card) => !fresh.includes(card.id));
       await sleep(240);
       continue;
@@ -2170,24 +2362,31 @@ async function present(beats: Snapshot["beats"]) {
       displayedHand = handBetweenBeats(displayedHand, state.hand, beats.slice(index + 1), staged?.id ?? null);
       // From where it lies (the row turned up off the deck, the discard pile), not out of the deck like a draw.
       table?.returnToHand(displayedHand, beat.returned, beat.returnedFrom);
+      sfx.play("draw");
       await sleep(620);
       continue;
     }
     if (beat.surge) {
       narrate(beat, feedLineOf(beat), { title: "Surge! One more encounter card" });
       stampCard(beat.surge, "Surge!", "surge");
+      // The card says why first, then the deck answers with the extra card.
+      await sleep(reducedMotion() ? 0 : 450);
       await surgeBurst();
       continue;
     }
     if (beat.tucked) {
-      // Highway Robbery: the card leaves the hand and goes facedown under it.
+      // Highway Robbery: a card is picked from the hand (at random: a light hops across the hand and stops on it),
+      // then slides facedown under it, where its back stays showing until When Defeated gives it back.
       const { ids, host } = beat.tucked;
       narrate(beat, feedLineOf(beat), {
         eyebrow: { text: "When Revealed", icon: "forced", tone: "villain" },
         title: `${plural(ids.length, "card")} from your hand under ${nameOf(host)}`,
       });
+      if (beat.random) await pickFromHandAtRandom(beat, ids, `Under ${nameOf(host)}`);
       displayedHand = displayedHand.filter((card) => !ids.includes(card.id));
       table?.tuckUnder(ids, host, displayedHand);
+      sfx.play("deal");
+      if (beat.random) table?.spotlightHand([]);
       await sleep(reducedMotion() ? 200 : 760);
       table?.settleStash();
       table?.setUnder(host, beat.tucked.count);
@@ -2201,6 +2400,7 @@ async function present(beats: Snapshot["beats"]) {
         title: "Shuffle your discard pile into a new deck",
       });
       table?.shuffleIntoDeck("discard");
+      sfx.play("shuffle", { maxMs: 1400 });
       await sleep(reducedMotion() ? 300 : 1300);
       table?.settleStash({ deckCount: beat.deckReset });
       deckCount.textContent = String(beat.deckReset);
@@ -2208,14 +2408,20 @@ async function present(beats: Snapshot["beats"]) {
       continue;
     }
     if (beat.intoEncounterDeck) {
-      // Shadow of the Past: the rest of the nemesis set is shown, then shuffled into the encounter deck.
+      // Shadow of the Past: the rest of the nemesis set is shown, then shuffled into the encounter deck. That the
+      // encounter deck now holds the nemesis's cards is announced across the whole table first, like a new phase.
+      if (beat.nemesis) {
+        sweepBanner("Nemesis cards added", "villain");
+        await sleep(PHASE_BANNER_MS);
+      }
       narrate(beat, feedLineOf(beat), {
-        eyebrow: { text: "Encounter deck", icon: "deck", tone: "villain" },
+        eyebrow: { text: beat.nemesis ? "Nemesis cards added" : "Encounter deck", icon: "deck", tone: "villain" },
         title: `Shuffle ${beat.intoEncounterDeck.map((card) => card.name).join(", ")} into the encounter deck`,
       });
       table?.showInRow(beat.intoEncounterDeck);
       await sleep(reducedMotion() ? 400 : 1500);
       table?.rowIntoEncounterDeck();
+      sfx.play("shuffle", { maxMs: 900 });
       await sleep(reducedMotion() ? 200 : 800);
       const count = element("encounter-count");
       const total = Number(count.textContent) + beat.intoEncounterDeck.length;
@@ -2230,6 +2436,7 @@ async function present(beats: Snapshot["beats"]) {
         title: "Shuffle the encounter discard pile back in",
       });
       table?.shuffleIntoDeck("encounterDiscard");
+      sfx.play("shuffle", { maxMs: 1400 });
       await sleep(reducedMotion() ? 300 : 1300);
       table?.settleStash({ encounterCount: beat.encounterReset });
       element("encounter-count").textContent = String(beat.encounterReset);
@@ -2242,6 +2449,7 @@ async function present(beats: Snapshot["beats"]) {
       });
       const scheme = cards().find((card) => card.id === beat.actor);
       if (scheme) table?.setModifier(scheme, "acceleration", beat.acceleration);
+      sfx.play("threat");
       if (beat.actor) stampCard(beat.actor, "+1 Acceleration", "boost");
       await sleep(reducedMotion() ? 300 : 1000);
       continue;
@@ -2249,6 +2457,7 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.overkill) {
       narrate(beat, feedLineOf(beat));
       stampCard(beat.overkill.to, "Overkill", "status");
+      sfx.play("hit");
       await sleep(reducedMotion() ? 200 : 650);
       continue;
     }
@@ -2277,15 +2486,29 @@ async function present(beats: Snapshot["beats"]) {
       narrate(beat, feedLineOf(beat));
       labels.get(id)?.remove();
       labels.delete(id);
+      if (beat.removedFromGame) {
+        // Removed from the game, it has no pile to go to: it evaporates where it stands (beside the villain, or in
+        // its place in play), and nothing more happens until it has gone (Adam, 2026-11-22).
+        if (!reducedMotion()) await sleep(200);
+        sfx.play("vanish");
+        await sleep(table?.evaporate(id) || 240);
+        continue;
+      }
       const encounter = state.encounterDiscard.find((card) => card.id === id);
       const discarded = encounter ?? state.discard.find((card) => card.id === id);
-      table?.discardDefeatedCard(id, discarded, encounter ? "encounterDiscard" : "discard");
+      // A revealed card still standing aside by the villain (an obligation whose question was just answered) leaves
+      // from there to the encounter discard pile.
+      if (table?.parkedEncounters().includes(id)) table.retireEncounter(id, encounter);
+      else table?.discardDefeatedCard(id, discarded, encounter ? "encounterDiscard" : "discard");
+      if (discarded) sfx.play("discard");
       await sleep(discarded ? 560 : 240);
       continue;
     }
     if (beat.phase) {
       announcement.hidden = true;
       phaseIndicator(beat.phase, true);
+      if (beat.phase === "hero" || beat.phase === "villain")
+        sfx.play(beat.phase === "hero" ? "phase-hero" : "phase-villain", { delay: 120 });
       narrate(beat, null, { title: beat.phase === "hero" ? "Your turn" : "Villain phase", eyebrow: null });
       await sleep(PHASE_BANNER_MS);
       // The villain phase opens with threat on the main scheme. When a card can interrupt it (Great Responsibility),
@@ -2342,6 +2565,7 @@ async function present(beats: Snapshot["beats"]) {
       announcement.replaceChildren(icon("defeated"), make("span", "", beat.defeat));
       announcement.hidden = false;
       shakeStage("heavy");
+      sfx.play("boom");
       await sleep(1450);
       announcement.removeAttribute("data-defeat");
       announcement.hidden = true;
@@ -2349,6 +2573,7 @@ async function present(beats: Snapshot["beats"]) {
     } else narrate(beat, line);
     if (beat.villainStage || beat.villainFlip) {
       table?.showVillain(state.villain, !!(beat.defeat || beat.villainFlip));
+      sfx.play("flip");
       await sleep(360);
       inspect(state.villain.id);
       const label = labels.get(state.villain.id);
@@ -2386,6 +2611,7 @@ async function present(beats: Snapshot["beats"]) {
       const { source, target } = beat.attackAim;
       attacker = source;
       table?.windUp(source);
+      sfx.play("whoosh");
       await sleep(90);
       const projected = table?.anchors();
       const from = projected?.find((a) => a.id === source);
@@ -2400,6 +2626,7 @@ async function present(beats: Snapshot["beats"]) {
       if (event) {
         staged = event;
         table?.stageEvent(event);
+        sfx.play("play");
         displayedHand = displayedHand.filter((c) => c.id !== event.id);
         labels.get(event.id)?.remove();
         labels.delete(event.id);
@@ -2423,12 +2650,14 @@ async function present(beats: Snapshot["beats"]) {
     }
     if (beat.interrupt) {
       table?.pulseInterrupt(beat.interrupt);
+      sfx.play("ability");
       await sleep(INTERRUPT_MS);
       const cancelled = heldEncounter;
       if (cancelled && reacting?.card === beat.interrupt && reacting.subject === cancelled) {
         // The interrupt cancels the card it is held up over: that card flickers out, then goes to its discard pile,
         // and only after that does the event that cancelled it follow it to the player's.
         table?.flickerCancelled(cancelled);
+        sfx.play("cancel");
         stampCard(cancelled, "Cancelled");
         await sleep(reducedMotion() ? 300 : 760);
         table?.holdEvent(beat.interrupt);
@@ -2447,6 +2676,7 @@ async function present(beats: Snapshot["beats"]) {
         clearAim();
       }
       table?.deflectDamage(beat.deflection.card, beat.deflection.amount);
+      sfx.play("block");
       floatNumber(beat.deflection.card, "blocked", "Blocked", `${beat.deflection.amount} damage`);
     }
     if (beat.discardEvent) {
@@ -2454,6 +2684,7 @@ async function present(beats: Snapshot["beats"]) {
       const card = state.discard.find((c) => c.id === beat.discardEvent);
       if (card) {
         table?.discardEvent(card);
+        sfx.play("discard");
         if (staged?.id === card.id) staged = null;
       }
     }
@@ -2474,12 +2705,14 @@ async function present(beats: Snapshot["beats"]) {
       table?.changeStatus(id, name, delta);
       if (name === "damage" && delta < 0) {
         floatNumber(id, "heal", `+${-delta}`, "healed");
+        sfx.play("heal");
         const label = labels.get(id);
         if (label?.dataset.hp) updateHpLabel(label, Number(label.dataset.hp) - delta);
         table?.healBurst(id);
       } else if (delta > 0 && STATUS_STAMP[name]) {
         const [tone, text] = STATUS_STAMP[name]!;
         stampCard(id, text, tone);
+        sfx.play("status");
       }
     }
     if (beat.turned) {
@@ -2489,11 +2722,13 @@ async function present(beats: Snapshot["beats"]) {
         dockTitle.textContent = turns.length > 1 ? `Ready ${plural(turns.length, "card")}` : beat.text;
       }
       table?.turnCards(turns);
+      sfx.play("turn");
       await sleep(beat.turned.exhausted ? EXHAUST_MS : READY_MS);
       continue;
     }
     if (beat.encounterDeal) {
       table?.dealEncounter(beat.encounterDeal, beat.boostFor ?? null);
+      sfx.play("deal");
       const count = element("encounter-count");
       count.textContent = String(Math.max(0, Number(count.textContent) - 1));
       if (beat.boostFor) {
@@ -2540,11 +2775,13 @@ async function present(beats: Snapshot["beats"]) {
         !(state.choice?.sourceTitle && state.choiceSource === beat.reveal.id);
       if (willHold) table?.holdReveal(true);
       table?.revealEncounter(beat.reveal);
+      sfx.play("flip");
       if (!beat.reveal.boost) parkedViews.set(beat.reveal.id, beat.reveal);
       await sleep(360);
       if (beat.reveal.art) showPreview(beat.reveal, !beat.reveal.boost);
       if (beat.reveal.boost) {
         await showBoost(beat.reveal);
+        dropBoostBurst(beat.reveal.id);
         table?.retireEncounter(
           beat.reveal.id,
           state.encounterDiscard.find((c) => c.id === beat.reveal!.id),
@@ -2575,17 +2812,17 @@ async function present(beats: Snapshot["beats"]) {
         setTimeout(() => (announcer.textContent = said), 60);
         // A minion with no When Revealed shows itself, then goes straight to its place: nothing to read out first.
         narrate(beat, null, {
-          eyebrow: { text: "Revealed", icon: "forced", tone: "villain" },
+          eyebrow: { text: revealedBy(beat.reveal), icon: "forced", tone: "villain" },
           title: beat.reveal.name,
         });
-        await sleep(reducedMotion() ? 700 : 1150);
+        await sleep(reducedMotion() ? 700 : beat.reveal.broughtBy ? 1900 : 1150);
       } else {
         readReveal.setAttribute("aria-label", `Continue after reading ${beat.reveal.name}`);
         readReveal.hidden = false;
         // Known before the bar asks, so its Continue leaves the table where it is.
         revealFocus = beat.reveal.id;
         narrate(beat, null, {
-          eyebrow: { text: "Revealed", icon: "forced", tone: "villain" },
+          eyebrow: { text: revealedBy(beat.reveal), icon: "forced", tone: "villain" },
           title: beat.reveal.name,
           help: appliesHelp(beat.reveal),
           primary: { label: "Continue", icon: "next", attention: true, onClick: () => readReveal.click() },
@@ -2610,6 +2847,7 @@ async function present(beats: Snapshot["beats"]) {
       const permanent = state.enemyCards.find((c) => c.id === beat.reveal!.id);
       if (permanent) {
         table?.landEncounter(permanent);
+        sfx.play("place");
         if (beat.reveal.whenRevealed && !reducedMotion()) {
           // Lands on the mat first, then its When Revealed fires: it rises with a flash before the effect hits.
           await sleep(520);
@@ -2633,6 +2871,7 @@ async function present(beats: Snapshot["beats"]) {
         )
       ) {
         narrate(beat, { text: beat.text, icon: "discard", tone: "villain" });
+        sfx.play("discard");
         await sleep(reducedMotion() ? 150 : 520);
       }
       continue;
@@ -2642,20 +2881,29 @@ async function present(beats: Snapshot["beats"]) {
         // The scheme's moment: the table darkens around it and its threat shows coming in before it lands.
         const scheme = beat.threat.scheme;
         spotted = true;
-        setSpot({
-          glow: [{ id: scheme, tone: "threat" }],
-          cutouts: [scheme],
-          mark: { id: scheme, kind: "threat", amount: beat.threat.delta },
-        });
+        // At the start of the villain phase the table darkens slowly onto the scheme, not all at once (Adam,
+        // 2026-11-21: it felt too sudden), and the step waits for the fade.
+        const fading = !spot && !reducedMotion();
+        setSpot(
+          {
+            glow: [{ id: scheme, tone: "threat" }],
+            cutouts: [scheme],
+            mark: { id: scheme, kind: "threat", amount: beat.threat.delta },
+          },
+          { fade: fading },
+        );
         placeLabels();
         // The villain phase's own threat step is stamped like the encounter step, so each step reads as one; once
         // only, so after a question about it (Great Responsibility, passed) the threat just lands.
         const step = beat.activity === "Place threat" && threatStepCalled !== scheme;
         if (step) stampCard(scheme, "Threat");
         threatStepCalled = null;
-        await sleep(reducedMotion() ? 260 : step ? 900 : 620);
+        await sleep((reducedMotion() ? 260 : step ? 900 : 620) + (fading ? SPOT_FADE_MS * 0.6 : 0));
         setSpot({ glow: [{ id: scheme, tone: "threat" }], cutouts: [scheme] });
       }
+      // A scheme just revealed (Highway Robbery's starting threat) may still be flying to its place: the flash waits
+      // for it there, rather than going off where it was read, over Rhino and the hero, like a targeting ring.
+      for (let waited = 0; table?.flying(beat.threat.scheme) && waited < 1200; waited += 60) await sleep(60);
       activationRing(beat.threat.scheme);
       const counter = labels.get(beat.threat.scheme)?.querySelector<HTMLElement>(".scheme-threat");
       if (counter) {
@@ -2663,6 +2911,7 @@ async function present(beats: Snapshot["beats"]) {
         updateThreatLabel(counter, n);
         table?.setThreat(beat.threat.scheme, n);
       }
+      sfx.play(beat.threat.delta > 0 ? "threat" : "thwart");
       floatNumber(
         beat.threat.scheme,
         beat.threat.delta > 0 ? "threat" : "thwart",
@@ -2673,11 +2922,15 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.hit) {
       // The attack has landed: its target goes.
       clearAim();
+      const hitSound = !beat.hit.amount ? "block" : beat.hit.amount >= 4 ? "hit-heavy" : "hit";
       if (reacting?.kind === "placeThreat" && beat.hit.source === reacting.card) {
         // The threat it stopped turns into damage at the scheme and flies to the hero.
         await convertThreat(reacting.subject, beat.hit.target, beat.hit.amount);
+        sfx.play(hitSound);
       } else {
         table?.strike(beat.hit.source, beat.hit.target);
+        // Asked for as the strike starts: each hit's sync marker (set in the Sound Studio) lands on the contact.
+        sfx.play(hitSound, { contactIn: HIT_CONTACT_MS });
         await sleep(HIT_CONTACT_MS);
       }
       if (beat.hit.tough) table?.changeStatus(beat.hit.target, "tough", -1);
@@ -2722,8 +2975,9 @@ async function present(beats: Snapshot["beats"]) {
 
 // ── Rendering ─────────────────────────────────────────────────────────────────────────────────────────────────────
 function letGoOfEncounter(id: string, upcoming: readonly Beat[]) {
-  leaveEncounter(id, upcoming);
+  const left = leaveEncounter(id, upcoming);
   table?.holdReveal(false);
+  return left;
 }
 
 function render() {
@@ -2735,7 +2989,12 @@ function render() {
     // Passed on interrupting its reveal: it stays up for its When Revealed to play out first, with the new beats.
     if (revealWindowHeld === heldEncounter && presented !== state.beats && state.beats.length)
       releaseHeld = heldEncounter;
-    else letGoOfEncounter(heldEncounter, presented !== state.beats ? state.beats : []);
+    else {
+      const answered = presented !== state.beats && state.beats.length > 0;
+      // Its question answered, it steps aside to stand by the villain while what was chosen plays out.
+      if (letGoOfEncounter(heldEncounter, answered ? state.beats : []) === "parked" && answered)
+        answeredHeld = heldEncounter;
+    }
     revealWindowHeld = null;
     heldEncounter = null;
     inspect(hoveredCard);
@@ -2758,6 +3017,8 @@ function render() {
   if (presented !== state.beats) {
     presented = state.beats;
     if (presented.length) {
+      // The question is answered: its picks stop glowing now, not once everything it set off has played out.
+      unmarkPicks();
       void present(presented);
       return;
     }
@@ -2819,6 +3080,7 @@ function render() {
     villain: state.villain,
     inPlay: state.inPlay,
     enemyCards: state.enemyCards,
+    under: state.under,
     discard: state.discard.filter((c) => c.id !== staged?.id),
     deckCount: state.deckCount,
     encounterCount: state.encounterCount,
@@ -2900,6 +3162,8 @@ function render() {
       heldEncounter,
     }),
   );
+  // That spotlight shades the table itself, the held card cut out with the cards it asks for (`spotOf`).
+  if (spot && heldEncounter && spot.cutouts.includes(heldEncounter)) choiceShade.hidden = true;
   if (state.choice?.defense) inspect(state.choice.defense.attackerId);
   if (state.choice?.offers?.length) inspect(state.choice.offers[offerIndex]?.cardId ?? null);
   placeLabels();
@@ -2992,6 +3256,9 @@ function seedFromUrl(): number | undefined {
   return Number.isInteger(seed) && seed > 0 ? seed : undefined;
 }
 
+/** A game has been dealt in this page, so a `?scene=` set-up has had its turn. */
+let sceneDealt = false;
+
 function deal() {
   if (gameMenu.open) gameMenu.close();
   lastQuestion = "";
@@ -3002,16 +3269,28 @@ function deal() {
   discardOpen = false;
   choicePicks.clear();
   staged = null;
-  heldEncounter = revealWindowHeld = releaseHeld = null;
+  heldEncounter = revealWindowHeld = releaseHeld = answeredHeld = null;
+  heldReveal = undefined;
+  readingCard = null;
+  aimTarget = null;
   reacting = null;
-  table?.endDeckReveal();
+  parkedViews.clear();
+  // Every card from the last game leaves the table, even one left standing aside when it ended.
+  table?.newGame();
   feed = [];
   paintFeed();
   const seed = seedFromUrl() ?? Math.floor(Math.random() * 2 ** 31) + 1;
   // Dev builds only: `?scene=crowded` skips the mulligan and lays out a busy table for checking the presentation.
-  const arrange = import.meta.env.DEV
-    ? arrangeScene(new URLSearchParams(location.search).get("scene") ?? "")
-    : undefined;
+  // A set-up is the first game's only: Try again or New game after it starts a real game from the opening (no threat
+  // already on the scheme), and the address drops it so a reload does too.
+  const params = new URLSearchParams(location.search);
+  if (sceneDealt && params.has("scene")) {
+    params.delete("scene");
+    const query = params.toString();
+    history.replaceState(history.state, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
+  }
+  sceneDealt = true;
+  const arrange = import.meta.env.DEV ? arrangeScene(params.get("scene") ?? "") : undefined;
   model.reset(arrange ? { seed, arrange } : { seed, mulligan: true });
   state = model.snapshot();
   presented = state.beats;
@@ -3092,7 +3371,7 @@ undoButton.onclick = () => {
   heldEncounter = view?.reveal?.id ?? null;
   reacting = view?.reacting ?? null;
   revealWindowHeld = heldEncounter && revealWindowFor(state, reacting, heldEncounter) ? heldEncounter : null;
-  releaseHeld = null;
+  releaseHeld = answeredHeld = null;
   aimTarget = view?.aim ?? null;
   menuCard = actionCard = null;
   discardOpen = false;
@@ -3142,6 +3421,21 @@ try {
 } catch {
   setSidebarSide("right");
 }
+// Sound on or off, remembered on this device. Browsers keep audio locked until the player first clicks, taps or
+// presses a key, so every such input also unlocks it (and wakes it after the tab was hidden).
+function paintSound() {
+  for (const button of gameMenu.querySelectorAll<HTMLButtonElement>("[data-sound]"))
+    button.setAttribute("aria-pressed", String((button.dataset.sound === "on") === sfx.enabled));
+}
+for (const button of gameMenu.querySelectorAll<HTMLButtonElement>("[data-sound]"))
+  button.onclick = () => {
+    sfx.enabled = button.dataset.sound === "on";
+    paintSound();
+    sfx.play("confirm");
+  };
+paintSound();
+for (const type of ["pointerdown", "keydown", "touchend"] as const)
+  addEventListener(type, () => sfx.unlock(), { capture: true, passive: true });
 tryAgain.onclick = start;
 gameOverUndo.onclick = () => undoButton.click();
 gameOver.oncancel = (event) => event.preventDefault();
@@ -3310,8 +3604,9 @@ function placeHoverCard() {
   }
   const { card, size, spot } = preview;
   // A short fade as it appears or moves on to another card, so it never snaps in from nowhere.
-  const fresh = hoverPicture.hidden || hoverPicture.getAttribute("src") !== card.art;
-  if (hoverPicture.getAttribute("src") !== card.art) hoverPicture.src = card.art!;
+  const shown = pictureOf(hoverPicture.getAttribute("src") ?? "");
+  const fresh = hoverPicture.hidden || shown !== card.art;
+  if (shown !== card.art) hoverPicture.src = card.art!;
   hoverPicture.alt = card.name;
   if (fresh && !reducedMotion())
     hoverPicture.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
@@ -3341,12 +3636,22 @@ function previewSpot(id: string) {
   // Clear of a pinned card, so the two can be read side by side.
   const pinned = pinnedCard.hidden ? 0 : pinnedCard.offsetWidth + 28;
   const pinnedLeft = arena.dataset.rail === "left";
-  const around = { left: dx + point.left, right: dx + point.right, top: dy + point.top, bottom: dy + point.bottom };
-  const spot = besideSpot(around, size, {
-    left: pinnedLeft ? pinned : 0,
-    width: field.width - pinned,
-    height: field.height,
-  });
+  // A card attached to an enemy shows on the left, beside its tab, and is placed by its host, which holds still: the
+  // tab itself slides out while hovered and would carry the picture with it (Adam, 2026-11-22).
+  const host = card.attachedTo && state.enemyCards.some((c) => c.id === id) ? card.attachedTo : null;
+  const hostPoint = host ? table!.anchors().find((anchor) => anchor.id === host) : undefined;
+  const box = hostPoint ?? point;
+  const around = { left: dx + box.left, right: dx + box.right, top: dy + box.top, bottom: dy + box.bottom };
+  if (hostPoint) {
+    const tabs = state.enemyCards.filter((c) => c.attachedTo === host).length;
+    around.left -= hostPoint.width * (0.18 * tabs + 0.1);
+  }
+  const spot = besideSpot(
+    around,
+    size,
+    { left: pinnedLeft ? pinned : 0, width: field.width - pinned, height: field.height },
+    hostPoint ? "left" : "right",
+  );
   return { card, size, spot, side: spot.left >= around.right ? ("right" as const) : ("left" as const) };
 }
 
@@ -3448,3 +3753,211 @@ const pad = startController({
   useAction: useCardAction,
 });
 start();
+
+// ── Sound Studio (dev server only, `?studio`) ─────────────────────────────────────────────────────────────────────
+// The studio page (`battle/studio.html`) shows this table in a frame and asks it to act out one moment at a time, so a
+// sound can be lined up with what it goes with. Each demo goes through the same code the game does (`present`'s
+// beats where it can), so the sound fires at its real place; the table is put back from the game state afterwards.
+async function studioDemo(name: string): Promise<boolean> {
+  if (!table || presenting) return false;
+  const hero = state.hero.id;
+  const villain = state.villain.id;
+  const scheme = state.enemyCards.find((card) => card.type === "main_scheme")?.id ?? villain;
+  const beat = (part: Partial<Beat>) => ({ text: "", ...part }) as Beat;
+  const attack = (amount: number) => [
+    beat({ attackAim: { source: villain, target: hero } } as Partial<Beat>),
+    beat({ hit: { source: villain, target: hero, amount } } as Partial<Beat>),
+  ];
+  // A stand-in encounter card for the reveal demos: an encounter card's own picture where one is to hand.
+  const looks = [...state.encounterDiscard, ...state.enemyCards].find(
+    (card) => card.art && card.id !== villain && card.type !== "main_scheme" && !card.landscape,
+  );
+  const fake = { id: "studio-card", name: "Studio card", art: looks?.art ?? state.villain.art, landscape: false };
+  switch (name) {
+    case "whoosh":
+    case "hit":
+      await present(attack(2));
+      break;
+    case "hit-heavy":
+      await present(attack(5));
+      break;
+    case "block":
+      await present(attack(0));
+      break;
+    case "threat":
+      await present([beat({ threat: { scheme, delta: 1 }, enemy: true } as Partial<Beat>)]);
+      break;
+    case "thwart":
+      await present([beat({ threat: { scheme, delta: -1 } } as Partial<Beat>)]);
+      break;
+    case "phase-hero":
+    case "whoosh-big":
+      await present([beat({ phase: "hero" } as Partial<Beat>)]);
+      break;
+    case "phase-villain":
+      await present([beat({ phase: "villain" } as Partial<Beat>)]);
+      break;
+    case "heal":
+      await present([beat({ statusChange: { id: hero, name: "damage", delta: -1 } } as Partial<Beat>)]);
+      break;
+    case "status":
+      await present([beat({ statusChange: { id: villain, name: "stunned", delta: 1 } } as Partial<Beat>)]);
+      break;
+    case "boom":
+      await present([beat({ defeat: `${state.villain.name} defeated` } as Partial<Beat>)]);
+      break;
+    case "defeat":
+      stampCard(villain, "Defeated");
+      await flashDefeatedCard(villain);
+      await sleep(900);
+      break;
+    case "ability":
+      table.activateWhenRevealed(villain);
+      sfx.play("ability");
+      await sleep(ACTIVATION_MS);
+      break;
+    case "surge":
+      stampCard(villain, "Surge!", "surge");
+      await surgeBurst();
+      break;
+    case "boost":
+      await showBoost({ id: villain, name: state.villain.name, boost: { icons: 2 } } as NonNullable<Beat["reveal"]>);
+      dropBoostBurst(villain);
+      break;
+    case "turn": {
+      const exhausted = !!state.hero.exhausted;
+      table.turnCards([{ id: hero, exhausted: !exhausted }]);
+      sfx.play("turn");
+      await sleep(EXHAUST_MS + 500);
+      table.turnCards([{ id: hero, exhausted }]);
+      await sleep(READY_MS);
+      break;
+    }
+    case "draw": {
+      // Five cards drawn, as at the end of a turn: they leave the hand at once, then fly in off the deck.
+      const drawn = displayedHand.slice(-5);
+      if (!drawn.length) return false;
+      const kept = displayedHand.slice(0, displayedHand.length - drawn.length);
+      // Both in one go: anything that redraws the hand in between would put the cards straight back.
+      table.showDraw(kept, [], state.deckCount + drawn.length);
+      table.showDraw(
+        displayedHand,
+        drawn.map((card) => card.id),
+        state.deckCount,
+      );
+      drawn.forEach((_, i) => sfx.play("draw", { contactIn: 120 + i * 180 }));
+      await sleep(900 + drawn.length * 180);
+      break;
+    }
+    case "deal":
+      table.dealEncounter(fake.id);
+      sfx.play("deal");
+      await sleep(1300);
+      table.retireEncounter(fake.id);
+      await sleep(600);
+      break;
+    case "place":
+    case "cancel":
+    case "vanish":
+      // A revealed card, then what happens to it: it lands by the villain, is cancelled, or is removed from the game.
+      table.revealEncounter(fake);
+      await sleep(1000);
+      if (name === "place") {
+        table.parkEncounter(fake.id);
+        sfx.play("place");
+        await sleep(1100);
+        table.retireEncounter(fake.id);
+      } else if (name === "cancel") {
+        table.flickerCancelled(fake.id);
+        stampCard(fake.id, "Cancelled");
+        sfx.play("cancel");
+        await sleep(900);
+        table.retireEncounter(fake.id);
+      } else {
+        sfx.play("vanish");
+        await sleep(table.evaporate(fake.id) || 600);
+      }
+      await sleep(600);
+      break;
+    case "play": {
+      const card = displayedHand[0];
+      if (!card) return false;
+      table.stageEvent(card);
+      sfx.play("play");
+      await sleep(1200);
+      break;
+    }
+    case "discard": {
+      const cards = displayedHand.slice(0, 2).map((card) => card.id);
+      if (!cards.length) return false;
+      sfx.play("discard");
+      await new Promise<void>((resolve) => table!.animateDiscards(cards, resolve));
+      await sleep(500);
+      break;
+    }
+    case "select":
+      activationRing(villain);
+      sfx.play("select");
+      await sleep(700);
+      break;
+    case "confirm":
+      endTurnButton.animate(
+        [
+          { transform: "scale(1)" },
+          { transform: "scale(.92)" },
+          { transform: "scale(1.04)" },
+          { transform: "scale(1)" },
+        ],
+        { duration: 320, easing: "ease-out" },
+      );
+      sfx.play("confirm");
+      await sleep(700);
+      break;
+    case "flip":
+      table.revealEncounter(fake);
+      sfx.play("flip");
+      await sleep(1500);
+      table.retireEncounter(fake.id);
+      await sleep(700);
+      break;
+    case "shuffle": {
+      // An empty discard pile is given a few cards first, so there is something to shuffle back in.
+      if (!state.discard.length) {
+        for (const card of displayedHand.slice(0, 3)) table.discardEvent(card);
+        await sleep(800);
+      }
+      const pile = "discard";
+      table.shuffleIntoDeck(pile);
+      sfx.play("shuffle", { maxMs: 1400 });
+      await sleep(1500);
+      break;
+    }
+    case "win":
+    case "lose":
+      showOutcome({ result: name === "win" ? "win" : "loss", reason: "villainDefeated" } as Snapshot["outcome"]);
+      await sleep(2600);
+      gameOver.close();
+      break;
+    case "error": {
+      const card = displayedHand[0];
+      if (card) showPlayHint(card.id, "This card cannot be played now.");
+      sfx.play("error");
+      await sleep(1200);
+      clearFormHint();
+      break;
+    }
+    default:
+      sfx.play(name as SoundName);
+      await sleep(600);
+      return false;
+  }
+  render();
+  return true;
+}
+
+if (import.meta.env.DEV && new URLSearchParams(location.search).has("studio")) {
+  document.documentElement.dataset.studio = "";
+  Object.assign(globalThis, {
+    __battleStudio: { demo: studioDemo, sfx, ready: () => !!table && !presenting && !!state },
+  });
+}

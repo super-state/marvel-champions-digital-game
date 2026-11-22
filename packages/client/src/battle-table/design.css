@@ -156,9 +156,10 @@
   width: 18px;
   height: 18px;
 }
-/* Every button the pointer is over rises a step, so it is plain what a click will press. */
+/* Every button the pointer is over rises and grows a step and lights up, so it is plain what a click will press
+   (Adam, 2026-11-22: the hover was too faint to tell from the pulse). */
 .btn:enabled:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px) scale(1.04);
 }
 .btn:enabled:active {
   transform: translateY(1px) scale(0.98);
@@ -183,12 +184,14 @@
     0 6px 18px #f5b2402e;
 }
 .btn-primary:enabled:hover {
-  filter: brightness(1.16) saturate(1.1);
+  --btn-border: #fff;
+  filter: brightness(1.22) saturate(1.15);
   box-shadow:
-    inset 0 1px 0 #fff8,
+    inset 0 1px 0 #fff,
     inset 0 -2px 0 #0002,
-    0 0 0 3px #f5c35b66,
-    0 10px 30px #f5b24099;
+    0 0 0 3px #fff6,
+    0 0 0 6px #f5c35b55,
+    0 12px 34px #f5b240b0;
 }
 /* The pulse that asks for a press gives way to the hover glow while the pointer is on it. */
 .btn-primary[data-attention]:enabled:hover {
@@ -221,11 +224,12 @@
   }
 }
 .btn-secondary:enabled:hover {
-  --btn-bg: #2a3b4b;
+  --btn-bg: #3a5268;
   --btn-border: var(--gold);
+  --btn-fg: #fff;
   box-shadow:
-    0 0 0 2px #f5c35b40,
-    0 8px 22px #000a;
+    0 0 0 3px #f5c35b55,
+    0 10px 26px #000b;
 }
 .btn-ghost {
   --btn-bg: transparent;
@@ -277,9 +281,12 @@
   --btn-border: var(--gold);
   --btn-bg: #2a2716;
 }
+/* A wide answer grows less, so it doesn't push into the answers beside it. */
 .btn-option:enabled:hover {
   --btn-border: var(--gold);
-  --btn-bg: #3a3418;
+  --btn-bg: #4a4220;
+  box-shadow: 0 0 0 3px #f5c35b55;
+  transform: translateY(-2px) scale(1.015);
 }
 
 /* ── Chips and labels ───────────────────────────────────────────────────── */
@@ -392,6 +399,8 @@
   gap: 2px;
   min-width: 180px;
   max-width: 440px;
+  /* Extra room between the question and the buttons after it; the badge before it stays close (Adam, 2026-11-22). */
+  margin-right: 14px;
 }
 .dock-title {
   margin: 0;
@@ -415,10 +424,18 @@
   color: var(--text);
   font-weight: 700;
 }
+/* A long answer makes its button wider rather than taller: two lines at most where the screen allows (Adam, 2026-11-22). */
 .dock-options {
   display: grid;
-  grid-template-columns: repeat(var(--columns, 2), minmax(150px, 210px));
+  grid-template-columns: repeat(var(--columns, 2), minmax(150px, 330px));
   gap: 8px;
+}
+/* Answers read as sentences under the question, so they are regular weight: the bold question leads (Adam, 2026-11-22). */
+.dock-options .btn-option > span {
+  font-weight: 400;
+  font-size: 13.5px;
+  line-height: 1.3;
+  text-wrap: balance;
 }
 .dock-options .btn-option {
   width: 100%;
@@ -664,48 +681,41 @@
   font: italic 900 var(--float-size, 54px)/1 var(--font-ui);
   letter-spacing: -0.03em;
   white-space: nowrap;
-  -webkit-text-stroke: 0.09em #3b0806;
+  --shade: #3b0806;
+  -webkit-text-stroke: 0.09em var(--shade);
   paint-order: stroke fill;
   text-shadow:
-    0 4px 0 #3b0806,
+    0 4px 0 var(--shade),
     0 10px 22px #000c;
+}
+/* The coloured numbers paint their gradient through see-through letters (background-clip: text). A text-shadow
+   would be drawn over that gradient and show through the letters, turning them dark, so their shadow comes from a
+   filter instead, which sits behind the whole number. The text stroke is drawn over see-through letters too and ate
+   into them until "+1" was hard to read (Adam, 2026-11-22), so their thin outline also comes from the filter, outside
+   the letters. */
+.float-number:is([data-kind="damage"], [data-kind="heal"], [data-kind="threat"], [data-kind="thwart"]) {
+  text-shadow: none;
+  -webkit-text-stroke: 0;
+  filter: drop-shadow(1.5px 0 0 var(--shade)) drop-shadow(-1.5px 0 0 var(--shade)) drop-shadow(0 1.5px 0 var(--shade))
+    drop-shadow(0 -1.5px 0 var(--shade)) drop-shadow(0 4px 0 var(--shade)) drop-shadow(0 10px 22px #000c);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 .float-number[data-kind="damage"] {
-  color: #ffefe6;
-  background: linear-gradient(180deg, #fff6ef 10%, #ffb39e 55%, #ff5b44 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  background-image: linear-gradient(180deg, #fff6ef 10%, #ffb39e 55%, #ff5b44 100%);
 }
 .float-number[data-kind="heal"] {
-  -webkit-text-stroke-color: #06341b;
-  text-shadow:
-    0 4px 0 #06341b,
-    0 10px 22px #000c;
-  background: linear-gradient(180deg, #effff5 10%, #8ff0b7 55%, #2fc775 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  --shade: #06341b;
+  background-image: linear-gradient(180deg, #effff5 10%, #8ff0b7 55%, #2fc775 100%);
 }
 .float-number[data-kind="threat"] {
-  -webkit-text-stroke-color: #3a2203;
-  text-shadow:
-    0 4px 0 #3a2203,
-    0 10px 22px #000c;
-  background: linear-gradient(180deg, #fff6e4 10%, #ffd08a 55%, #ff9a2a 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  --shade: #3a2203;
+  background-image: linear-gradient(180deg, #fff6e4 10%, #ffd08a 55%, #ff9a2a 100%);
 }
 .float-number[data-kind="thwart"] {
-  -webkit-text-stroke-color: #0b2a45;
-  text-shadow:
-    0 4px 0 #0b2a45,
-    0 10px 22px #000c;
-  background: linear-gradient(180deg, #f2fbff 10%, #9fd6ff 55%, #4fa3ff 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  --shade: #0b2a45;
+  background-image: linear-gradient(180deg, #f2fbff 10%, #9fd6ff 55%, #4fa3ff 100%);
 }
 .float-number[data-kind="blocked"] {
   -webkit-text-stroke-color: #0c2630;

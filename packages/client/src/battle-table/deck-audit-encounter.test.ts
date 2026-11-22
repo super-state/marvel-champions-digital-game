@@ -829,6 +829,17 @@ test("01165 Eviction Notice: Peter can exhaust to remove it from the game", () =
   expect(snap(battle).hand).toHaveLength(6);
 });
 
+test("01165 Eviction Notice: removed from the game, it leaves the table instead of standing by the villain", () => {
+  // Adam, 2026-11-22: after "Exhaust Peter Parker" the card stayed beside Rhino for the rest of the game.
+  const battle = scenario({ top: ["01104", "01165", "01101"] });
+  const run = endTurn(battle, optionNamed(/^Exhaust Peter Parker/));
+  const notice = run.beats.find((b) => b.reveal?.name === "Eviction Notice")!.reveal!.id;
+  const gone = run.beats.find((b) => b.leftPlay === notice);
+  expect(gone?.text).toBe("Eviction Notice is removed from the game");
+  // Flagged, so the table evaporates it rather than sending it to a discard pile.
+  expect(gone?.removedFromGame).toBe(true);
+});
+
 test("01165 Eviction Notice: or he discards a card at random, the card gains surge, and the obligation is discarded", () => {
   const battle = scenario({ top: ["01104", "01165", "01101"] });
   const handBefore = snap(battle).hand.length;
@@ -877,6 +888,33 @@ test("01166 Highway Robbery: When Revealed tucks a random card from hand facedow
     scheme.markers.some((m) => /tuck|facedown|under/i.test(m.name)) ||
       run.beats.some((b) => /facedown|under|tuck/i.test(b.text)),
   ).toBe(true);
+});
+
+test("01166 Highway Robbery: the stolen card is picked at random and stays facedown under it, until it comes back", () => {
+  // Adam, 2026-11-22: the card was placed facedown, then disappeared. It stays under the scheme, its back showing.
+  const battle = scenario({ top: ["01104", "01166"] });
+  const run = endTurn(battle);
+  const scheme = enemyNamed(battle, "Highway Robbery")!;
+  const tuck = run.beats.find((b) => b.tucked)!;
+  expect(tuck.random).toBe(true);
+  expect(snap(battle).under).toEqual([expect.objectContaining({ id: tuck.tucked!.ids[0], under: scheme.id })]);
+  // Its face stays hidden: the table only gets the card back.
+  expect(snap(battle).under[0]!.art).toMatch(/player-back/);
+});
+
+test("01166 Highway Robbery: once defeated, nothing is left lying under it", () => {
+  const battle = scenario({ inPlay: ["01166"], tucked: { "01166": ["01090"] }, threatOf: { "01166": 1 } });
+  expect(snap(battle).under).toHaveLength(1);
+  toHero(battle);
+  expect(battle.heroAction("basicThwart")).toBe(true);
+  expect(snap(battle).under).toHaveLength(0);
+  expect(snap(battle).beats.some((b) => b.returned?.length && b.returnedFrom)).toBe(true);
+});
+
+test("01165 Eviction Notice: its discard at random is shown as picked at random", () => {
+  const battle = scenario({ top: ["01104", "01165", "01101"] });
+  const run = endTurn(battle, optionNamed(/^Discard 1 card at random/));
+  expect(run.beats.find((b) => b.handDiscard)?.random).toBe(true);
 });
 
 test("01166 Highway Robbery: When Defeated returns the facedown card to its owner's hand", () => {
@@ -1012,6 +1050,19 @@ test("01190 Shadow of the Past (hero): brings in Vulture and Highway Robbery and
   expect(shadow).toBeLessThan(vulture);
   expect(vulture).toBeLessThan(robbery);
   expect(hit).toBeGreaterThan(robbery);
+  // Vulture's Quickstrike waits for the rest of Shadow: he is aimed at Spider-Man only once Shadow is done (Adam,
+  // 2026-11-22: the reticle sat on Spider-Man through Highway Robbery with no attack in sight), and it says why.
+  const aim = at(run, "Vulture aims", (b) => b.attackAim?.source === enemyNamed(battle, "Vulture")?.id);
+  const shadowDone = at(run, "Shadow discarded", (b) => b.encounterResolved === run.beats[shadow]!.reveal!.id);
+  expect(aim).toBeGreaterThan(shadowDone);
+  expect(aim).toBeLessThan(hit);
+  expect(run.beats[aim]!.activity).toBe("Quickstrike: Vulture attacks");
+  expect(run.beats.slice(vulture, aim).some((b) => b.activity === "Quickstrike: Vulture attacks")).toBe(false);
+  // Brought in by Shadow, not dealt, and the rest of the set going into the deck is named as the nemesis's cards.
+  expect(run.beats[vulture]!.reveal).toMatchObject({ broughtBy: "Shadow of the Past", nemesis: true });
+  expect(run.beats[robbery]!.reveal).toMatchObject({ broughtBy: "Shadow of the Past", nemesis: true });
+  expect(run.beats[shadow]!.reveal!.broughtBy).toBeUndefined();
+  expect(run.beats.find((b) => b.intoEncounterDeck)?.nemesis).toBe(true);
   expect(enemyNamed(battle, "Vulture")).toBeDefined();
   expect(enemyNamed(battle, "Highway Robbery")!.threat).toBe(3);
   expect(snap(battle).heroHp).toBe(5);

@@ -187,7 +187,13 @@ describe("§3.3 maxSustainedDamage: 'Magneto cannot have more than 6[per_hero] s
       { type: "damageCapped", targetInstanceId: villainId(result.state), amount: 2 },
     ]);
     expect(result.events.filter((e) => e.type === "damagePrevented")).toEqual([
-      { type: "damagePrevented", targetInstanceId: villainId(result.state), amount: 2, reason: "tough" },
+      {
+        type: "damagePrevented",
+        targetInstanceId: villainId(result.state),
+        amount: 2,
+        reason: "tough",
+        attackSourceInstanceId: expect.any(String),
+      },
     ]);
   });
 

@@ -21,7 +21,7 @@ import {
   type ResourceType,
   type TriggerEvent,
 } from "@mc/engine";
-import { artFor } from "../art/art-source.js";
+import { artFor, CARD_BACKS } from "../art/art-source.js";
 import { abilityShortLabelOf } from "../view/ability-label.js";
 import {
   countersOf,
@@ -59,6 +59,8 @@ export interface BattleCard {
   requiresHeroForm: boolean;
   cost: number | null;
   reason: string | null;
+  /** A card lying facedown under another (Highway Robbery's stolen card): that card. */
+  under?: string;
 }
 
 export interface BattlePayment {
@@ -159,6 +161,8 @@ export interface BattleBeat {
   defeatedCard?: string;
   /** A card in play discarded without being defeated: an attachment used up, a support Caught Off Guard took. */
   leftPlay?: string;
+  /** With `leftPlay`: the card is removed from the game, so it evaporates off the table instead of going to a pile. */
+  removedFromGame?: boolean;
   /** Cards an effect discarded from the hand (Eviction Notice's random discard), in the order they went. */
   handDiscard?: string[];
   /** Cards an effect put back in the hand from elsewhere (Highway Robbery returning what it stole). */
@@ -167,6 +171,8 @@ export interface BattleBeat {
   milled?: string[];
   /** Cards from the hand put facedown under a card (Highway Robbery's When Revealed), and that card. */
   tucked?: { ids: string[]; host: string; count: number };
+  /** The cards this beat moves out of the hand (`tucked`, `handDiscard`) were picked at random. */
+  random?: true;
   /** An encounter card dealt as the price of a player deck that ran out (RRG "Player Deck"). */
   penalty?: boolean;
   /** Where `returned` cards were lying facedown before (the card they were under: Highway Robbery). */
@@ -175,6 +181,8 @@ export interface BattleBeat {
   deckReset?: number;
   /** Set-aside cards shuffled into the encounter deck (Shadow of the Past: the rest of the nemesis set). */
   intoEncounterDeck?: BattleCard[];
+  /** Every card in `intoEncounterDeck` belongs to a nemesis set. */
+  nemesis?: true;
   /** The encounter deck ran out: its discard pile shuffled back in, `count` cards. */
   encounterReset?: number;
   /** Acceleration tokens on the main scheme after one was added. */
@@ -209,6 +217,15 @@ export interface BattleBeat {
      * player is told which half of the card is about to happen.
      */
     applies?: { form: "Hero" | "Alter-Ego"; text: string };
+    /**
+     * Its When Revealed hits "each hero" while the player is in alter-ego form, so it fires on no one (Shocker). An
+     * alter-ego is not a hero (Rules Reference v1.8, "Hero"), and the table says so rather than flashing for nothing.
+     */
+    noHeroes?: true;
+    /** The card whose ability revealed it, when it was not dealt (Shadow of the Past bringing in Vulture). */
+    broughtBy?: string;
+    /** It belongs to a nemesis set. */
+    nemesis?: true;
   };
   /** A revealed encounter card that has fully resolved going to the encounter discard pile (Assault, after its attack). */
   encounterResolved?: string;
@@ -223,6 +240,8 @@ export interface BattleBeat {
 export interface BattleSnapshot {
   beats: readonly BattleBeat[];
   enemyCards: BattleCard[];
+  /** Cards lying facedown under an enemy card (Highway Robbery's), shown by their backs: `under` names the card. */
+  under: BattleCard[];
   hand: BattleCard[];
   deckCount: number;
   encounterCount: number;
@@ -274,6 +293,49 @@ export function formWhenRevealed(
     "is",
   ).exec(text);
   return line ? { applies: { form: label, text: line[1]!.trim() } } : {};
+}
+
+/**
+ * A When Revealed that only hits "each hero" ("Deal 1 damage to each hero.") finds no one while the player is in
+ * alter-ego form. Cards with a line per form are told apart by formWhenRevealed instead.
+ */
+export function whenRevealedMissesHeroes(text: string, form: "hero" | "alterEgo"): boolean {
+  if (form !== "alterEgo" || /When Revealed \((?:Hero|Alter-Ego)\)/i.test(text)) return false;
+  // The searchable text runs the lines together, so a line ends at the next ability's opening words.
+  const line =
+    /When Revealed\s*:\s*(.+?)\s*(?=\n|When Revealed\b|(?:Forced )?(?:Interrupt|Response)\b|Boost\b|$)/is.exec(
+      text,
+    )?.[1] ?? "";
+  return /\beach hero\b/i.test(line) && !/\b(?:player|identity|you)\b/i.test(line);
+}
+
+/**
+ * The cards an encounter card's ability is moving out of the hand are picked at random: its text says so ("Discard 1
+ * card at random", Highway Robbery's "a random card"). The engine reports only the move, not how the card was picked.
+ */
+function pickedAtRandom(state: GameState, resolving: { card: InstanceId } | null): boolean {
+  const card = resolving ? cardOf(state, resolving.card) : undefined;
+  if (!card || !ENCOUNTER_TYPES.has(card.type)) return false;
+  return /\bat random\b|\ba random card\b/i.test(plainRulesTextOf(card));
+}
+
+const ENCOUNTER_TYPES = new Set(["minion", "treachery", "attachment", "side_scheme", "environment", "obligation"]);
+
+/** A card of a nemesis encounter set (Vulture and the rest of Spider-Man's). */
+function isNemesisCard(card: object | undefined): boolean {
+  const sets = card && "encounterSetIds" in card ? (card.encounterSetIds as readonly string[] | undefined) : undefined;
+  return !!sets?.some((set) => set.endsWith("_nemesis"));
+}
+
+/** A step of `attacker`'s attack itself: its boost card, the defense, the damage. */
+function partOfAttack(beat: BattleBeat, attacker: string): boolean {
+  return (
+    beat.boostFor === attacker ||
+    beat.reveal?.boost?.enemy === attacker ||
+    beat.hit?.source === attacker ||
+    beat.text === "The attack is undefended" ||
+    beat.text.endsWith(" defends")
+  );
 }
 
 function apply(state: GameState, command: Command) {
@@ -450,6 +512,10 @@ export class BattleModel {
     );
     // The card whose ability is resolving: its effects (Black Cat discarding from the deck) are its doing.
     let resolving: { card: InstanceId; label: string } | null = null;
+    // The card whose question this move answers (Eviction Notice's "Choose one"): what follows is still its doing.
+    const answered = this.#game.pendingChoice;
+    const askedBy = answered ? (choiceSourceOf(this.#game, answered)?.instanceId ?? null) : null;
+    const asking = askedBy ? { card: askedBy } : null;
     const millSourceOf = (source: { card: InstanceId; label: string }) => {
       const card = cardOf(result.state, source.card) ?? cardOf(this.#game, source.card);
       const miss = card ? missLineOf(plainRulesTextOf(card)) : null;
@@ -470,6 +536,8 @@ export class BattleModel {
       ),
     );
     const heldReset: BattleBeat[] = [];
+    // An attack a card makes happen, aimed only once the attack goes ahead (see where it is set).
+    let heldAim: { attacker: string; activity: string; beat: BattleBeat } | null = null;
     let acceleration = this.#game.mainScheme.accelerationTokens;
     for (const e of events) {
       const before = this.#beats.length;
@@ -556,12 +624,20 @@ export class BattleModel {
         const card = cardOf(result.state, e.instanceId) ?? cardOf(this.#game, e.instanceId);
         if (card?.type === "villain" && e.type === "encounterCardRevealed") continue;
         const title = card?.name ?? name(e.instanceId);
+        // Revealed by another card's ability rather than dealt (Shadow of the Past bringing in Vulture): it says so.
+        const broughtBy =
+          e.type === "encounterCardRevealed" && resolving && resolving.card !== e.instanceId
+            ? name(resolving.card)
+            : "";
+        const nemesis = isNemesisCard(card);
         this.#beats.push({
           enemy,
           text: e.type === "boostCardFlipped" ? `Boost card · ${title}` : `Reveal ${title}`,
           reveal: {
             id: e.instanceId,
             name: title,
+            ...(broughtBy ? { broughtBy } : {}),
+            ...(nemesis ? { nemesis: true as const } : {}),
             boost: e.type === "boostCardFlipped" ? { icons: e.boostIcons, enemy: e.enemyInstanceId } : null,
             art: artFor(card, { kind: "front" })?.url ?? "",
             landscape: isLandscapeType(card?.type ?? ""),
@@ -570,25 +646,41 @@ export class BattleModel {
             ...(card && e.type === "encounterCardRevealed"
               ? formWhenRevealed(plainRulesTextOf(card), result.state.players[0]!.identity.form)
               : {}),
+            ...(card &&
+            e.type === "encounterCardRevealed" &&
+            whenRevealedMissesHeroes(plainRulesTextOf(card), result.state.players[0]!.identity.form)
+              ? { noHeroes: true as const }
+              : {}),
           },
         });
       } else if (
         e.type === "cardMoved" &&
         ["playArea", "villainArea", "attachment", "scenarioPlayArea"].includes(e.from.kind) &&
-        (e.to.kind === "discard" || e.to.kind === "encounterDiscard")
+        (e.to.kind === "discard" ||
+          e.to.kind === "encounterDiscard" ||
+          (e.to.kind === "removedFromGame" && e.from.kind === "playArea"))
       ) {
-        // A defeat already sends the card to its pile; anything else that leaves play goes there on its own beat.
+        // A defeat already sends the card to its pile; anything else that leaves play goes there on its own beat. One
+        // removed from the game out of a player's area leaves the table the same way (Eviction Notice, when Peter
+        // Parker exhausts for it). A main scheme stage or the villain's card swapped out is shown by its own beat.
         if (!defeated.has(e.instanceId))
           this.#beats.push({
             enemy,
             actor: e.instanceId,
-            text: `${faceUpName(this.#game, e.instanceId)} is discarded`,
+            text: `${faceUpName(this.#game, e.instanceId)} ${e.to.kind === "removedFromGame" ? "is removed from the game" : "is discarded"}`,
             leftPlay: e.instanceId,
+            ...(e.to.kind === "removedFromGame" ? { removedFromGame: true } : {}),
           });
       } else if (e.type === "cardMoved" && e.from.kind === "hand" && e.to.kind === "discard") {
         const last = this.#beats.at(-1);
         if (last?.handDiscard) last.handDiscard.push(e.instanceId);
-        else this.#beats.push({ enemy, text: "Discard from your hand", handDiscard: [e.instanceId] });
+        else
+          this.#beats.push({
+            enemy,
+            text: "Discard from your hand",
+            handDiscard: [e.instanceId],
+            ...(pickedAtRandom(result.state, resolving ?? asking) ? { random: true as const } : {}),
+          });
       } else if (e.type === "cardMoved" && e.from.kind === "deck" && e.to.kind === "discard") {
         const last = this.#beats.at(-1);
         if (last?.milled) last.milled.push(e.instanceId);
@@ -612,6 +704,7 @@ export class BattleModel {
             actor: host,
             text: `A card from your hand goes facedown under ${name(host)}`,
             tucked: { ids: [e.instanceId], host, count },
+            ...(pickedAtRandom(result.state, resolving ?? asking) ? { random: true as const } : {}),
           });
       } else if (e.type === "cardMoved" && e.to.kind === "hand" && e.from.kind !== "deck") {
         const from = e.from.kind === "tucked" ? e.from.hostInstanceId : undefined;
@@ -632,12 +725,18 @@ export class BattleModel {
         });
       } else if (e.type === "cardMoved" && e.from.kind === "setAside" && e.to.kind === "encounterDeck") {
         const last = this.#beats.at(-1);
-        if (last?.intoEncounterDeck) last.intoEncounterDeck.push(this.#shownCard(e.instanceId));
-        else
+        // Cards of a nemesis set (Shadow of the Past bringing in the rest of Vulture's) are named as such.
+        const card = cardOf(result.state, e.instanceId);
+        const nemesis = isNemesisCard(card);
+        if (last?.intoEncounterDeck) {
+          last.intoEncounterDeck.push(this.#shownCard(e.instanceId));
+          if (!nemesis) delete last.nemesis;
+        } else
           this.#beats.push({
             enemy,
             text: "Shuffle into the encounter deck",
             intoEncounterDeck: [this.#shownCard(e.instanceId)],
+            ...(nemesis ? { nemesis: true as const } : {}),
           });
       } else if (e.type === "deckShuffled" && resets.has(e)) {
         // The deck ran out and its discard pile is the new deck. The engine reshuffles inside the deal that took the
@@ -694,16 +793,24 @@ export class BattleModel {
       ) {
         // An attack a card makes happen (Assault's "The villain attacks you") has no activation of its own: it is
         // aimed here, the way an activation's attack is, so the table shows who attacks whom before it resolves.
+        // It is held until the attack itself goes ahead: Vulture's Quickstrike is triggered as Shadow of the Past puts
+        // him into play, but waits for the rest of Shadow (Highway Robbery, the shuffle) to resolve first. Aimed at
+        // once, Spider-Man would sit under the reticle through all of that with no attack in sight.
         const attacker = e.event.enemyInstanceId;
+        const card = cardOf(result.state, attacker);
+        const quickstrike = !!card && /\bQuickstrike\b/i.test(plainRulesTextOf(card));
         this.#effectAttack = { enemy: attacker, activity: this.#villainActivity };
-        this.#villainActivity = `${name(attacker)} attacks`;
-        this.#beats.push({
-          enemy,
-          actor: attacker,
-          text: `Target: ${name(e.event.targetInstanceId)}`,
-          attackAim: { source: attacker, target: e.event.targetInstanceId },
-          enemyActivation: attacker,
-        });
+        heldAim = {
+          attacker,
+          activity: `${quickstrike ? "Quickstrike: " : ""}${name(attacker)} attacks`,
+          beat: {
+            enemy,
+            actor: attacker,
+            text: `Target: ${name(e.event.targetInstanceId)}`,
+            attackAim: { source: attacker, target: e.event.targetInstanceId },
+            enemyActivation: attacker,
+          },
+        };
       } else if (
         e.type === "triggerEvent" &&
         e.event.kind === "enemyAttack" &&
@@ -870,7 +977,17 @@ export class BattleModel {
         });
       if (e.type === "enemyActivated" && this.#beats.length > before)
         this.#beats.at(-1)!.enemyActivation = e.enemyInstanceId;
+      if (heldAim && this.#beats.slice(before).some((beat) => partOfAttack(beat, heldAim!.attacker))) {
+        this.#villainActivity = heldAim.activity;
+        this.#beats.splice(before, 0, { ...heldAim.beat, activity: heldAim.activity });
+        heldAim = null;
+      }
       if (enemy && this.#beats.length > before) this.#beats[this.#beats.length - 1]!.activity = this.#villainActivity;
+    }
+    // The attack waits on a question (whether to defend): it is aimed now, as the question asks.
+    if (heldAim) {
+      this.#villainActivity = heldAim.activity;
+      this.#beats.push({ ...heldAim.beat, activity: heldAim.activity });
     }
     // The engine pays exhaustion first. Show the attacking card upright through contact and recoil.
     for (const beat of [...this.#beats]) {
@@ -1214,6 +1331,14 @@ export class BattleModel {
         (getInstance(state, enemy)?.boostCards ?? []).map((id) => ({ id, enemy })),
       ),
       enemyCards: [...enemyIds].map((id) => this.#card(id)),
+      under: [...enemyIds].flatMap((host) =>
+        (getInstance(state, host)?.tucked ?? []).map((id) => ({
+          ...this.#card(id),
+          name: "Facedown card",
+          art: (ENCOUNTER_TYPES.has(cardOf(state, id)?.type ?? "") ? CARD_BACKS.encounter : CARD_BACKS.player).url,
+          under: host,
+        })),
+      ),
       hero: this.#card(player.identity.instanceId),
       villain: this.#card(villain.instanceId),
       heroActions: this.#heroEntries().map(({ action }) => ({

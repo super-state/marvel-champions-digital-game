@@ -25,14 +25,29 @@ in the engine; the 3D table shows it and sends the player's choices back, it nev
 - `pnpm battle:test` runs the 3D table's own tests (under a minute). Run this after a 3D change, not `pnpm test`, which
   runs the whole old game.
 - `pnpm battle:check` is the type check plus those tests. It is what a push runs.
-- The push check (`.githooks/pre-push`) picks by what the push changes:
-  - only the 3D table and its browser tests: `pnpm battle:check`, then those browser tests;
-  - rules, cards or the old 2D game: the old game's full browser suite (`pnpm e2e:verify`), because those changes can
-    break screens the 3D tests never open;
-  - anything else (docs, scripts, a new font or picture added under `packages/client/public/`): nothing.
+- The push check (`.githooks/pre-push`) tests only what the change can reach in the game we play (Adam, 2026-11-22:
+  the old 2D game isn't played, only its rules and cards are used, and the table plays the core set, Spider-Man
+  against Rhino):
+  - any change under `packages/`: the type check, the 3D table's unit tests and its browser tests, three at a time
+    (`.githooks/battle-gate.sh`, about 2½ minutes);
+  - the rules or cards changed (`packages/engine`, `content`, `cards`, or `pnpm-lock.yaml`), first: their type
+    check, the core set's card tests, the test beside any other card file changed, and every engine test if the
+    engine changed (`.githooks/rules-gate.sh`; about 1 minute more, or 4 with the engine);
+  - nothing else (docs, scripts, a new font or picture added under `packages/client/public/`): nothing.
+  - Never part of a push: the old 2D game's browser suite and the other boxes' card tests. Run `pnpm test` by hand
+    when a change is meant for another box's cards.
   - `PUSH_GATE_DRY_RUN=1 git push …` says which check a push would get without running it or pushing.
-  - Both checks test the files on disk, so they refuse while `packages/` has uncommitted edits. Don't push past a
+  - The checks test the files on disk, so they refuse while `packages/` has uncommitted edits. Don't push past a
     failure with `--no-verify`; fix it.
+- **How Adam works: he plays, spots, asks; each fix goes live on its own (Adam, 2026-11-22).** Adam keeps the 3D table
+  open in Surf (desktop shortcut "Marvel Champions 3D": the dev server on port 5173, run from the main folder) and
+  opens a task per thing he spots, often several at once. Each task: its own worktree and branch, the fix, a look in
+  the browser, push (the push check), PR, merge right away, then `git -C D:/AdamsWorkspace/mc pull --ff-only` at once:
+  the dev server sees the files change and Adam's open table reloads by itself within seconds (checked 2026-11-22;
+  a full reload, so the game in progress restarts). Don't batch fixes or hold one back
+  for another. End with one line: "Live in your game now" (or why not). If main moved while you worked, merge it into
+  your branch and let the push check re-test; if another task is mid-edit on the same lines of `main.ts` or
+  `table.ts`, finish after it rather than both editing at once. Bigger or riskier work still asks Adam first.
 - A browser test of the 3D table goes in `packages/client/e2e/` with `battle` in its file name
   (`battle-controller.spec.ts`): that name is how the push check finds it. The old game's other browser tests never
   open the 3D table.

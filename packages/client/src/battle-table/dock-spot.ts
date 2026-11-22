@@ -38,13 +38,64 @@ export function besideSpot(
   card: { readonly left: number; readonly right: number; readonly top: number; readonly bottom: number },
   size: { readonly width: number; readonly height: number },
   field: { readonly left?: number; readonly width: number; readonly height: number },
+  prefer: "right" | "left" = "right",
 ): { left: number; top: number } {
   const start = field.left ?? 0;
   const end = start + field.width;
   const gap = 64;
+  const onLeft = card.left - gap - size.width;
   let left = card.right + gap;
-  if (left + size.width > end - 8) left = card.left - gap - size.width;
+  if (prefer === "left" && onLeft >= start + 8) left = onLeft;
+  else if (left + size.width > end - 8) left = onLeft;
   left = Math.max(start + 8, Math.min(left, end - size.width - 8));
   const top = Math.max(8, Math.min((card.top + card.bottom) / 2 - size.height / 2, field.height - size.height - 8));
   return { left, top };
+}
+
+/** A card's box on screen, in the table's pixels. */
+export interface ScreenBox {
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+  readonly bottom: number;
+}
+
+/**
+ * Where a revealed card held up in the middle stands while its own question asks the player to pick cards on the
+ * table (Caught Off Guard: "Discard an upgrade or support you control"). Adam, 2026-11-21: the card stood over the very
+ * supports it asked for, so nothing could be seen or picked. Covering none of them, it stays put. Otherwise it slides
+ * sideways, level with where it was, just far enough to clear them, into the gap between them (or beside them) nearest
+ * to it; with no gap wide enough (a phone) it takes the widest one and shrinks to fit, never below half its size.
+ * `x` is its new centre, `scale` its size against the old.
+ */
+export function revealAside(
+  card: ScreenBox,
+  picks: readonly ScreenBox[],
+  width: number,
+  margin = 16,
+): { x: number; scale: number } {
+  const x = (card.left + card.right) / 2;
+  const size = card.right - card.left;
+  // Only the picks level with the card can be covered by it, wherever it slides.
+  const level = picks
+    .filter((pick) => pick.bottom > card.top - margin && pick.top < card.bottom + margin)
+    .map((pick) => [pick.left - margin, pick.right + margin] as const)
+    .sort((a, b) => a[0] - b[0]);
+  if (!level.some(([left, right]) => right > card.left && left < card.right)) return { x, scale: 1 };
+  // The open stretches of the screen between and beside the picks.
+  const gaps: [number, number][] = [];
+  let from = margin;
+  for (const [left, right] of level) {
+    if (left > from) gaps.push([from, left]);
+    from = Math.max(from, right);
+  }
+  if (width - margin > from) gaps.push([from, width - margin]);
+  const fitting = gaps
+    .filter(([start, end]) => end - start >= size)
+    .map(([start, end]) => Math.min(Math.max(x, start + size / 2), end - size / 2))
+    .sort((a, b) => Math.abs(a - x) - Math.abs(b - x));
+  if (fitting.length) return { x: fitting[0]!, scale: 1 };
+  const widest = gaps.sort((a, b) => b[1] - b[0] - (a[1] - a[0]))[0];
+  if (!widest) return { x, scale: 0.5 };
+  return { x: (widest[0] + widest[1]) / 2, scale: Math.max(0.5, (widest[1] - widest[0]) / size) };
 }

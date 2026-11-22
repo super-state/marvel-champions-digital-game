@@ -3,6 +3,7 @@ import { defineConfig } from "vite";
 import { bundleMode, cardArtPlugin, cardLanguageOf, carriedLanguagesOf, servedLanguages } from "./vite-card-art.js";
 import { marvelcdbImportPlugin } from "./vite-marvelcdb-import.js";
 import { releaseHistoryPlugin } from "./vite-release-history.js";
+import { soundStudioPlugin } from "./vite-sound-studio.js";
 
 /**
  * The engine runs in a module worker (PLAN.md Phase 4), so the worker format is
@@ -48,7 +49,7 @@ export default defineConfig(({ command }) => ({
       ).join(","),
     ),
   },
-  plugins: [cardArtPlugin(), marvelcdbImportPlugin(), releaseHistoryPlugin()],
+  plugins: [cardArtPlugin(), marvelcdbImportPlugin(), releaseHistoryPlugin(), soundStudioPlugin()],
   worker: { format: "es" },
   build: {
     target: "es2022",

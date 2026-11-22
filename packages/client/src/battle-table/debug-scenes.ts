@@ -17,7 +17,7 @@ interface Placement {
 }
 
 interface Scene {
-  hero?: { form?: "hero" | "alterEgo"; damage?: number; statuses?: Record<string, number> };
+  hero?: { form?: "hero" | "alterEgo"; damage?: number; statuses?: Record<string, number>; exhausted?: boolean };
   villain?: { damage?: number; statuses?: Record<string, number> };
   mainThreat?: number;
   /** Player cards in play (allies, supports, upgrades). */
@@ -103,6 +103,22 @@ const SCENES: Record<string, Scene> = {
   shadow: {
     encounterTop: ["01110", "01190"],
   },
+  /**
+   * Shadow of the Past in hero form: Vulture's Quickstrike attacks Spider-Man, but only once Highway Robbery and the
+   * shuffle are done. End the turn to watch the reticle wait for it.
+   */
+  shadowhero: {
+    hero: { form: "hero" },
+    encounterTop: ["01110", "01190"],
+  },
+  /**
+   * Caught Off Guard comes up with Web-Shooter and Helicarrier in play: end the turn, and its When Revealed asks which
+   * to discard. The card steps aside so both can be seen and picked.
+   */
+  offguard: {
+    play: [{ code: "01008", counters: { web: 3 } }, { code: "01092" }],
+    encounterTop: ["01110", "01188"],
+  },
   /** One card left in the encounter deck: end the turn and the villain phase runs it out. */
   encounterout: {
     encounterLeft: 1,
@@ -125,6 +141,36 @@ const SCENES: Record<string, Scene> = {
     hero: { form: "alterEgo" },
     encounterTop: ["01104", "01187", "01105"],
   },
+  /**
+   * The main scheme two threat short with Advance next: end the turn and Advance (the villain schemes) loses the game
+   * while it stands aside beside Rhino. A new game must not keep it on the table.
+   */
+  advanceloss: {
+    hero: { form: "alterEgo" },
+    mainThreat: 4,
+    encounterTop: ["01186", "01186"],
+  },
+  /**
+   * Eviction Notice (Peter Parker's obligation) is the next encounter card: end the turn and its two long answers are
+   * asked in the turn bar, for checking that the answer buttons stay at two lines.
+   * Pick "Exhaust Peter Parker" and it is removed from the game: it lands beside Rhino and fires, Peter exhausts, it
+   * evaporates, and only then does the Hero Phase banner come up. Pick the discard and it lands and fires the same way,
+   * then goes to the encounter discard pile.
+   */
+  eviction: {
+    hero: { form: "alterEgo" },
+    encounterTop: ["01186", "01165"],
+  },
+  /** Peter Parker in alter-ego form when Shocker is dealt: end the turn (Rhino's boost card comes first) and its "each hero" damage finds no one. */
+  shocker: {
+    hero: { form: "alterEgo" },
+    encounterTop: ["01165", "01103"],
+  },
+  /** Spider-Man exhausted with Heroic Intuition tucked under him: hovering him lifts him and leaves the upgrade as it lies. */
+  exhausted: {
+    hero: { form: "hero", exhausted: true },
+    play: [{ code: "01065" }],
+  },
   /** Hard to Keep Down on an unhurt Rhino surges into "I'm Tough!": end the turn to watch it. */
   surge: {
     encounterTop: ["01110", "01104", "01105"],
@@ -140,6 +186,11 @@ const SCENES: Record<string, Scene> = {
     villainAttachments: [{ code: "01100" }],
     hand: ["01003", "01093", "01083", "01007", "01005"],
     encounterTop: ["01102", "01108"],
+  },
+  /** Hurt Spider-Man and allies as Rhino attacks: "Defend?" keeps every friendly health badge out of the shade. */
+  defend: {
+    hero: { form: "hero", damage: 2 },
+    play: [{ code: "01059", damage: 2 }, { code: "01002", damage: 1, exhausted: true }, { code: "01064" }],
   },
   /** A quiet mid-game board: one minion, one side scheme, a couple of supports. */
   midgame: {
@@ -172,6 +223,18 @@ const SCENES: Record<string, Scene> = {
   sense: {
     hero: { form: "hero" },
     hand: ["01004", "01089", "01087"],
+    encounterTop: ["01110", "01104", "01105"],
+  },
+  /** Enhanced Spider-Sense in hand as Shadow of the Past is revealed: paid for while the treachery is held up. */
+  shadowsense: {
+    hero: { form: "hero" },
+    hand: ["01004", "01089", "01087"],
+    encounterTop: ["01110", "01190"],
+  },
+  /** Two Enhanced Spider-Senses in hand as Hard to Keep Down is revealed: one question, and none after a yes. */
+  senses: {
+    hero: { form: "hero" },
+    hand: ["01004", "01004", "01089", "01087"],
     encounterTop: ["01110", "01104", "01105"],
   },
   /** Two Backflips in hand as Rhino attacks: one question covers both copies. */
@@ -254,6 +317,7 @@ function arrange(state: GameState, scene: Scene): GameState {
     ...instances[hero]!,
     damage: scene.hero?.damage ?? 0,
     statuses: { ...instances[hero]!.statuses, ...scene.hero?.statuses },
+    ...(scene.hero?.exhausted ? { exhausted: true } : {}),
   };
   const main = state.mainScheme.instanceId;
   if (scene.mainThreat !== undefined) instances[main] = { ...instances[main]!, threat: scene.mainThreat };

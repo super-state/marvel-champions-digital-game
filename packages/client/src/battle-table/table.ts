@@ -3,7 +3,10 @@ import { CARD_BACKS } from "../art/art-source.js";
 import { cardRadius } from "../art/card-shape.js";
 import rooftop from "../art/tabletop/rooftop.webp?url";
 import { fitBoard, fitToBox, type BoardFit, type TableBox } from "./board-fit.js";
+import { loadWithRetry } from "./picture-retry.js";
+import { revealAside, type ScreenBox } from "./dock-spot.js";
 import { TokenKit, placeTokens } from "./tokens3d.js";
+import { tuckPath } from "./tuck-path.js";
 
 export interface TableCard {
   readonly attachedTo?: string | null;
@@ -21,6 +24,8 @@ export interface TableCard {
   readonly reverseArt: string | null;
   readonly threat: number | null;
   readonly type: string;
+  /** Lying facedown under this card (Highway Robbery's stolen card): only its back shows, peeking out. */
+  readonly under?: string;
 }
 
 export function isTuckedUpgrade(card: Pick<TableCard, "type" | "showAsFullCard">): boolean {
@@ -51,6 +56,8 @@ export interface TableCards {
   readonly paymentSources: readonly string[] | null;
   /** Cards are being picked from the hand (a mulligan, the hand limit): a sunk hand rises so every card shows. */
   readonly handPick?: boolean;
+  /** Cards lying facedown under an enemy card, each naming it in `under`. */
+  readonly under?: readonly TableCard[];
 }
 
 interface Handlers {
@@ -96,6 +103,62 @@ interface Spark {
   born: number;
   life: number;
   size: number;
+  /** A mote of vapour: it floats up and slows, instead of falling back like a spark. */
+  drifts?: boolean;
+}
+
+/** A card removed from the game, dissolving where it stood (`evaporate`). */
+interface Vapour {
+  piece: Piece;
+  start: number;
+  rise: number;
+  scale: number;
+  dissolve: { value: number };
+  /** Its own copies of materials it shared with other cards, disposed with it. */
+  owned: THREE.Material[];
+  motes: number;
+}
+
+const EVAPORATE_MS = 1250;
+const VAPOUR_COLOR = 0xbfe4ff;
+const VAPOUR_MOTES = 30;
+
+/**
+ * The card's picture breaks up from its edges inward in soft noisy patches, each patch glowing pale blue just before
+ * it goes, while `dissolve` runs from 0 to 1. What is gone is cut away, not faded, so the card stays opaque.
+ */
+function dissolving(material: THREE.MeshBasicMaterial, dissolve: { value: number }): void {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.dissolve = dissolve;
+    shader.uniforms.vapourColor = { value: new THREE.Color(VAPOUR_COLOR) };
+    shader.fragmentShader =
+      `uniform float dissolve;
+      uniform vec3 vapourColor;
+      float vapourHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float vapourNoise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(vapourHash(i), vapourHash(i + vec2(1.0, 0.0)), f.x),
+          mix(vapourHash(i + vec2(0.0, 1.0)), vapourHash(i + vec2(1.0, 1.0)), f.x), f.y);
+      }
+` +
+      shader.fragmentShader.replace(
+        "#include <map_fragment>",
+        `#include <map_fragment>
+        #ifdef USE_MAP
+          float vapourEdge = min(min(vMapUv.x, 1.0 - vMapUv.x), min(vMapUv.y, 1.0 - vMapUv.y));
+          float vapourField = (vapourNoise(vMapUv * vec2(7.0, 10.0)) * 0.6 + vapourNoise(vMapUv * vec2(21.0, 29.0)) * 0.4)
+            * 0.72 + smoothstep(0.0, 0.5, vapourEdge) * 0.28;
+          float vapourCut = dissolve * 1.16 - 0.08;
+          if (vapourField < vapourCut) discard;
+          float vapourGlow = (1.0 - smoothstep(0.0, 0.08, vapourField - vapourCut)) * step(0.001, dissolve);
+          diffuseColor.rgb += vapourColor * 0.22 * sin(3.14159 * min(1.0, dissolve * 1.6));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vapourColor * 1.35, vapourGlow);
+        #endif`,
+      );
+  };
+  material.needsUpdate = true;
 }
 
 /** How much of a sunk hand's cards shows above the bottom edge, in card widths: all but the bottom seventh. */
@@ -127,7 +190,34 @@ const SPEND_MS = 760;
 const READY_TURN_START = 0.22;
 const READY_TURN_END = 0.78;
 const HEIGHT = 1.407;
+/** The layer of cards drawn over everything else, whatever their depth (see #render). */
+const FRONT_LAYER = 1;
 const TAB = 0.18;
+/**
+ * A hovered attachment slides out to the left from under its host a little (in card widths) and turns very slightly
+ * about its bottom-left corner, its top tipping left (Adam, 2026-11-22: move less, pivot from the bottom-left corner).
+ */
+const ATTACHMENT_FAN = 0.07;
+const ATTACHMENT_TURN = 0.07;
+/** How long a threat chip taken off a card takes to sizzle out. */
+const SIZZLE_MS = 620;
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
+/** Each card tucked under another sits a little higher than the one above it, so the stack steps up (card widths). */
+const STAGGER = 0.035;
+
+/**
+ * Where a tucked attachment's centre sits in its host's own frame (card widths), `fan` of the way out: slid left and
+ * turned about its own bottom-left corner, which stays put but for the slide.
+ */
+function attachmentFanOffset(x: number, y: number, fan: number): [number, number] {
+  const turn = ATTACHMENT_TURN * fan;
+  const cornerX = x - 0.5 - ATTACHMENT_FAN * fan;
+  const cornerY = y - HEIGHT / 2;
+  // The centre is half a card right of and half a card up from the corner; turning carries it round.
+  const cos = Math.cos(turn);
+  const sin = Math.sin(turn);
+  return [cornerX + 0.5 * cos - (HEIGHT / 2) * sin, cornerY + 0.5 * sin + (HEIGHT / 2) * cos];
+}
 
 /** Where the first encounter card dealt and waiting to be revealed lies, across the screen (the rest fan right). */
 const WAITING_X = 0.67;
@@ -140,19 +230,6 @@ function waitingCardWidth(w: number, h: number) {
 /** A facedown boost card beside its enemy: smaller than the enemy, never bigger than a waiting encounter card. */
 function boostCardWidth(hostWidth: number, w: number, h: number) {
   return Math.min(hostWidth * 0.62, waitingCardWidth(w, h));
-}
-
-// Keep the original scan coordinates so the printed title stays on the exposed edge.
-function upgradeTab() {
-  const geo = new THREE.ShapeGeometry(roundedRect(TAB, HEIGHT, 0.025), 8);
-  geo.translate((TAB - 1) / 2, 0, 0);
-  const { position, uv } = geo.attributes;
-  for (let i = 0; i < position!.count; i++) {
-    const x = position!.getX(i) + 0.5;
-    const y = position!.getY(i) / HEIGHT + 0.5;
-    uv!.setXY(i, x, y);
-  }
-  return geo;
 }
 
 // Draw the halo in card space so it follows the hand fan and its rounded corners.
@@ -348,9 +425,19 @@ export class BattleTable {
   readonly #layoutCard = new THREE.Group();
   readonly #floor = new THREE.Plane(new THREE.Vector3(0, 1, 0));
   readonly #tucked = new Map<string, { host: string; depth: number }>();
+  readonly #turn = new THREE.Quaternion();
+  /** Where each host last lay before being hovered and lifted: its tucked cards stay in that frame meanwhile. */
+  readonly #hostRest = new Map<string, THREE.Matrix4>();
+  readonly #framePosition = new THREE.Vector3();
+  readonly #frameQuaternion = new THREE.Quaternion();
+  readonly #frameScale = new THREE.Vector3();
+  /** How far each attached card has slid out from under its host while hovered (0 to 1). */
+  readonly #fan = new Map<string, number>();
+  /** The cards lying facedown under another card (`TableCards.under`), as laid out: kept facedown every frame. */
+  readonly #underIds = new Set<string>();
   readonly #pieces = new Map<string, Piece>();
   readonly #textures = new Map<string, THREE.Texture>();
-  readonly #loader = new THREE.TextureLoader();
+  readonly #images = new THREE.ImageLoader();
   readonly #cardShape = roundedRect(1, HEIGHT, cardRadius(1, HEIGHT));
   readonly #outline = this.#cardShape.getPoints(5);
   readonly #face = faceGeometry(this.#cardShape, 1, HEIGHT);
@@ -363,7 +450,6 @@ export class BattleTable {
     bevelEnabled: false,
     curveSegments: 8,
   });
-  readonly #tab = upgradeTab();
   readonly #heroShadow = contactShadow();
   readonly #villainShadow = this.#heroShadow.clone();
   readonly #actionShadow = new THREE.Mesh(
@@ -440,11 +526,15 @@ export class BattleTable {
    * beside the villain, small and out of the way, until its beat sends it to the encounter discard pile.
    */
   readonly #parked = new Set<string>();
+  /** Where a revealed card stands aside for its question's picks (`revealAside`), held for that question. */
+  #aside: { key: string; x: number; scale: number } | null = null;
   #actor: string | null = null;
   #power: string | null = null;
   /** Damage discs, counters, status tiles, stat pills and threat chips. */
   readonly #kit = new TokenKit(Math.min(8, this.#renderer.capabilities.getMaxAnisotropy()), () => this.#requestFrame());
   readonly #liftedTokens = new Map<THREE.Group, number>();
+  /** Threat chips taken off a card, sizzling out where they lay: when each started and whether it has sparked yet. */
+  readonly #sizzling = new Map<THREE.Group, { start: number; x: number; y: number; sparked: boolean }>();
   readonly #drops = new Map<THREE.Group, number>();
   readonly #observer: ResizeObserver;
   readonly #reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -495,6 +585,8 @@ export class BattleTable {
         }),
       );
       sprite.renderOrder = 10;
+      // Sparks fly over everything, the cards drawn on top included (see #render).
+      sprite.layers.set(FRONT_LAYER);
       sprite.position.copy(at);
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
       const v = speed * (0.55 + Math.random() * 0.7);
@@ -574,8 +666,11 @@ export class BattleTable {
     this.#camera.position.set(0, 10.8, 8.3);
     this.#camera.lookAt(0, 0, 0);
     this.#camera.updateMatrixWorld();
-    this.#scene.add(new THREE.HemisphereLight(0xf0f4ff, 0x364351, 1.9));
+    const sky = new THREE.HemisphereLight(0xf0f4ff, 0x364351, 1.9);
+    sky.layers.enable(FRONT_LAYER);
+    this.#scene.add(sky);
     const light = new THREE.DirectionalLight(0xfff2dd, 2.05);
+    light.layers.enable(FRONT_LAYER);
     light.position.set(-4, 10, -3);
     light.castShadow = true;
     light.shadow.mapSize.set(1024, 1024);
@@ -649,6 +744,18 @@ export class BattleTable {
     canvas.addEventListener("webglcontextrestored", this.#restoreContext);
   }
 
+  #dropPiece(id: string): void {
+    const piece = this.#pieces.get(id);
+    if (!piece) return;
+    this.#scene.remove(piece.root);
+    for (const token of piece.tokens.children) this.#drops.delete(token as THREE.Group);
+    if (piece.card.reverseArt || piece.card.type === "villain") piece.back.material.dispose();
+    piece.aura?.material.dispose();
+    piece.face.material.dispose();
+    this.#pieces.delete(id);
+    this.#flights.delete(id);
+  }
+
   setCards(state: TableCards): void {
     const previous = this.#state?.staged?.id;
     if (this.#state?.discardOpen !== state.discardOpen) this.#hovered = null;
@@ -670,22 +777,14 @@ export class BattleTable {
       ...state.hand,
       ...state.discard,
       ...state.encounterDiscard,
+      ...(state.under ?? []),
     ];
     for (const card of this.#encounters.values()) if (!cards.some((c) => c.id === card.id)) cards.push(card);
     for (const card of this.#deckReveal) if (!cards.some((c) => c.id === card.id)) cards.push(card);
     for (const { card } of this.#stashing.values()) if (!cards.some((c) => c.id === card.id)) cards.push(card);
     if (state.staged) cards.push(state.staged);
     const live = new Set(cards.map((card) => card.id));
-    for (const [id, piece] of this.#pieces) {
-      if (live.has(id)) continue;
-      this.#scene.remove(piece.root);
-      for (const token of piece.tokens.children) this.#drops.delete(token as THREE.Group);
-      if (piece.card.reverseArt || piece.card.type === "villain") piece.back.material.dispose();
-      piece.aura?.material.dispose();
-      piece.face.material.dispose();
-      this.#pieces.delete(id);
-      this.#flights.delete(id);
-    }
+    for (const id of [...this.#pieces.keys()]) if (!live.has(id)) this.#dropPiece(id);
     const fresh = new Set<string>();
     const turnStart = performance.now();
     let readyIndex = 0;
@@ -796,7 +895,10 @@ export class BattleTable {
       this.#startFlight(card.id, tucked ? "equip" : "place");
     }
     this.#layout();
-    for (const id of fresh) this.#apply(this.#pieces.get(id)!, 1);
+    for (const id of fresh) {
+      this.#apply(this.#pieces.get(id)!, 1);
+      if (this.#underIds.has(id)) this.#pieces.get(id)!.root.rotation.y = Math.PI;
+    }
     if (newDraw) {
       const start = performance.now();
       state.drawn
@@ -1051,13 +1153,25 @@ export class BattleTable {
     this.#interruptSheen.geometry = piece.face.geometry;
     this.#interruptSheen.position.z = 0.028;
     piece.root.add(this.#interruptSheen);
-    if (!this.#reduced.matches) {
+    // Smoke rises off a card lying on the table. A card held up in the air (a revealed encounter card being read or
+    // standing aside, a card being played or still in hand) only shines and grows a little (Adam, 2026-11-22).
+    if (!this.#reduced.matches && !this.#heldUp(id)) {
       this.#interruptPuff.position.z = 0.035;
       this.#interruptPuff.material.uniforms.progress!.value = 0;
       piece.root.add(this.#interruptPuff);
+    } else {
+      this.#interruptPuff.removeFromParent();
     }
     this.#interrupt = { piece, start: performance.now(), lift: 0 };
     this.#requestFrame();
+  }
+
+  /** The card is held up in the air rather than lying on the table. */
+  #heldUp(id: string): boolean {
+    const s = this.#state;
+    return (
+      id === this.#revealing || this.#parked.has(id) || s?.staged?.id === id || !!s?.hand.some((card) => card.id === id)
+    );
   }
 
   /** A card whose effect was cancelled (Enhanced Spider-Sense) flickers out and back, like a signal cut. */
@@ -1264,13 +1378,22 @@ export class BattleTable {
     const s = this.#state;
     if (!s) return;
     const lying = new Set(ids.filter((id) => this.#pieces.has(id)));
+    const fromUnder = new Set(ids.filter((id) => this.#underIds.has(id)));
     this.#deckReveal = this.#deckReveal.filter((card) => !ids.includes(card.id));
     for (const id of ids) this.#deckPicks.delete(id);
-    this.setCards({ ...s, hand, discard: s.discard.filter((card) => !ids.includes(card.id)), selected: [] });
+    this.setCards({
+      ...s,
+      hand,
+      discard: s.discard.filter((card) => !ids.includes(card.id)),
+      under: (s.under ?? []).filter((card) => !ids.includes(card.id)),
+      selected: [],
+    });
     // Cards that lay facedown under a card (Highway Robbery's) slide out from under it and turn up on the way.
     const host = from ? this.#pieces.get(from) : undefined;
     const start = performance.now();
     ids.forEach((id, index) => {
+      // A card lying facedown under another slides out from there and turns up as it flies, like a draw.
+      if (fromUnder.has(id)) return this.#startFlight(id, "draw", start + index * 160);
       if (lying.has(id)) return this.#startFlight(id, "return");
       const root = this.#pieces.get(id)?.root;
       if (!root || !host) return;
@@ -1283,11 +1406,32 @@ export class BattleTable {
     if (host) this.#addUnder(from!, -ids.length);
   }
 
-  /** Drop any cards still standing revealed off the deck, or on their way facedown somewhere (a new game). */
-  endDeckReveal(): void {
+  /**
+   * A new game: every card from the last one leaves the table, including any still standing aside (an Advance that lost
+   * the game while the villain schemed), standing revealed off a deck, or on its way somewhere. Card ids repeat from
+   * game to game, so nothing is kept to be reused: the next `setCards` deals the table afresh.
+   */
+  newGame(): void {
     this.#deckReveal = [];
     this.#deckPicks.clear();
     this.#stashing.clear();
+    this.#encounters.clear();
+    this.#parked.clear();
+    this.#tucked.clear();
+    this.#underIds.clear();
+    this.#revealing = this.#aside = this.#actor = this.#power = this.#powerHost = null;
+    this.#powerWaiting = this.#revealHeld = false;
+    this.#actionShadow.removeFromParent();
+    this.#hovered = this.#zoom = this.#press = this.#discardDeal = null;
+    this.#windup = this.#strike = this.#interrupt = this.#wave = this.#flicker = this.#deflection = null;
+    for (const id of [...this.#pieces.keys()]) this.#dropPiece(id);
+    for (const vapour of this.#vapours.splice(0)) this.#releaseVapour(vapour);
+    this.#liftedTokens.clear();
+    this.#sizzling.clear();
+    this.#hostRest.clear();
+    this.#drops.clear();
+    this.#state = null;
+    this.#requestFrame();
   }
 
   /** Cards on their way facedown into a deck or under a card: they fly there, turning over, and are then gone. */
@@ -1353,8 +1497,28 @@ export class BattleTable {
   settleStash(counts: { deckCount?: number; encounterCount?: number } = {}): void {
     const s = this.#state;
     if (!s) return;
+    // A card that went under another stays there, its back peeking out, until an effect takes it back.
+    const under = [...(s.under ?? [])];
+    for (const { card, to } of this.#stashing.values())
+      if (typeof to === "object" && !under.some((other) => other.id === card.id))
+        under.push({ ...card, under: to.under });
     this.#stashing.clear();
-    this.setCards({ ...s, ...counts });
+    this.setCards({ ...s, ...counts, under });
+  }
+
+  /** True while `id` is still on its way somewhere (landing in its place after being read). */
+  flying(id: string): boolean {
+    return this.#flights.has(id);
+  }
+
+  /**
+   * Hand cards an effect is picking from light up (`ids`), the hand raised so every card shows; none to put it back.
+   * The random pick (Highway Robbery, Eviction Notice) hops this light across the hand before it stops.
+   */
+  spotlightHand(ids: readonly string[]): void {
+    const s = this.#state;
+    if (!s) return;
+    this.setCards({ ...s, selected: [...ids], handPick: ids.length > 0 });
   }
 
   /** How many facedown cards lie under `host` now (Highway Robbery's stolen cards). */
@@ -1433,18 +1597,147 @@ export class BattleTable {
     if (this.#revealing === id) this.#revealing = null;
     this.markActor(null);
     if (!this.#state) return true;
+    // An obligation was given to the player while it asked its question, so the last cards the table was shown may
+    // still list it in their play area: it leaves that too, or it would stay drawn there until the next redraw.
+    const state = this.#withoutInPlay(this.#state, id);
     if (!discarded) {
       // Nowhere to fly to: it goes from the table now rather than being left where it stood.
-      this.setCards(this.#state);
+      this.setCards(state);
       return true;
     }
     this.setCards({
-      ...this.#state,
-      encounterDiscard: [...this.#state.encounterDiscard.filter((c) => c.id !== id), discarded],
+      ...state,
+      encounterDiscard: [...state.encounterDiscard.filter((c) => c.id !== id), discarded],
     });
     this.#startFlight(id, "place");
     this.#requestFrame();
     return true;
+  }
+
+  #withoutInPlay(state: TableCards, id: string): TableCards {
+    const stays = (card: TableCard) => card.id !== id;
+    return { ...state, enemyCards: state.enemyCards.filter(stays), inPlay: state.inPlay.filter(stays) };
+  }
+
+  /**
+   * A card removed from the game has no pile to go to: it evaporates where it stands, rising a little as its picture
+   * breaks up into pale motes that float away (Eviction Notice, when Peter Parker exhausts for it). It leaves the
+   * table's lists at once; the piece stays only until it has gone. Returns how long that takes, 0 when it went at once.
+   */
+  evaporate(id: string): number {
+    const piece = this.#pieces.get(id);
+    this.#parked.delete(id);
+    this.#encounters.delete(id);
+    if (this.#revealing === id) this.#revealing = null;
+    if (this.#actor === id) this.markActor(null);
+    if (this.#interrupt?.piece === piece) this.#interrupt = null;
+    if (this.#flicker?.piece === piece) this.#flicker = null;
+    // Out of the pieces first, so laying the table out again neither moves it nor drops it.
+    this.#pieces.delete(id);
+    this.#flights.delete(id);
+    if (this.#state) this.setCards(this.#withoutInPlay(this.#state, id));
+    if (!piece) return 0;
+    if (this.#reduced.matches || this.#contextLost || this.#disposed) {
+      this.#releaseVapour({ piece, start: 0, rise: 0, scale: 1, dissolve: { value: 1 }, owned: [], motes: 0 });
+      return 0;
+    }
+    const dissolve = { value: 0 };
+    const owned: THREE.Material[] = [];
+    piece.rim.visible = piece.tokens.visible = piece.markers.visible = false;
+    if (piece.aura) piece.aura.visible = false;
+    // The card's body is a material every card shares, and it would show dark through the holes: it goes at once,
+    // leaving the picture on both sides to break up.
+    (piece.root.children[0] as THREE.Mesh).visible = false;
+    dissolving(piece.face.material, dissolve);
+    if (piece.back.material === this.#deckBack.material || piece.back.material === this.#encounterBack.material) {
+      const back = piece.back.material.clone();
+      owned.push(back);
+      piece.back.material = back;
+    }
+    dissolving(piece.back.material, dissolve);
+    this.#vapours.push({
+      piece,
+      start: performance.now(),
+      rise: piece.root.position.y,
+      scale: piece.root.scale.x,
+      dissolve,
+      owned,
+      motes: 0,
+    });
+    this.#requestFrame();
+    return EVAPORATE_MS;
+  }
+
+  readonly #vapours: Vapour[] = [];
+
+  /** Each evaporating card one frame on: false once none is left. */
+  #evaporateStep(now: number): boolean {
+    for (let i = this.#vapours.length - 1; i >= 0; i--) {
+      const vapour = this.#vapours[i]!;
+      const { piece } = vapour;
+      const progress = THREE.MathUtils.clamp((now - vapour.start) / EVAPORATE_MS, 0, 1);
+      if (progress === 1) {
+        this.#vapours.splice(i, 1);
+        this.#releaseVapour(vapour);
+        continue;
+      }
+      vapour.dissolve.value = THREE.MathUtils.smoothstep(progress, 0.06, 0.94);
+      piece.root.position.y = vapour.rise + easeOutCubic(progress) * 0.42 * vapour.scale;
+      piece.root.scale.setScalar(vapour.scale * (1 + 0.05 * progress));
+      // Motes come off the card as its picture goes, most in the middle of it.
+      const due = Math.round(VAPOUR_MOTES * THREE.MathUtils.smoothstep(progress, 0.04, 0.85));
+      if (due > vapour.motes) piece.root.updateMatrixWorld();
+      const [width, height] = piece.card.landscape ? [HEIGHT, 1] : [1, HEIGHT];
+      for (; vapour.motes < due; vapour.motes++) {
+        const at = new THREE.Vector3((Math.random() - 0.5) * width, (Math.random() - 0.5) * height, 0.03).applyMatrix4(
+          piece.root.matrixWorld,
+        );
+        this.#mote(at, vapour.scale);
+      }
+    }
+    return this.#vapours.length > 0;
+  }
+
+  /** One pale mote of vapour drifting up off an evaporating card. */
+  #mote(at: THREE.Vector3, scale: number): void {
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: this.#sparkMap,
+        color: Math.random() < 0.3 ? 0xffffff : VAPOUR_COLOR,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        depthWrite: false,
+        depthTest: false,
+      }),
+    );
+    sprite.renderOrder = 10;
+    sprite.layers.set(FRONT_LAYER);
+    sprite.position.copy(at);
+    const size = (0.06 + Math.random() * 0.09) * Math.max(0.6, scale);
+    sprite.scale.setScalar(size);
+    this.#scene.add(sprite);
+    this.#sparks.push({
+      sprite,
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.35,
+        0.7 + Math.random() * 0.8,
+        (Math.random() - 0.5) * 0.35,
+      ),
+      born: performance.now(),
+      life: 650 + Math.random() * 500,
+      size,
+      drifts: true,
+    });
+  }
+
+  /** The evaporated card leaves the scene for good. */
+  #releaseVapour({ piece, owned }: Vapour): void {
+    this.#scene.remove(piece.root);
+    for (const token of piece.tokens.children) this.#drops.delete(token as THREE.Group);
+    if (piece.card.reverseArt || piece.card.type === "villain") piece.back.material.dispose();
+    for (const material of owned) material.dispose();
+    piece.aura?.material.dispose();
+    piece.face.material.dispose();
   }
 
   discardDefeatedCard(id: string, discarded: TableCard | undefined, pile: "discard" | "encounterDiscard"): void {
@@ -1583,7 +1876,13 @@ export class BattleTable {
       const token = group.children.at(-1)! as THREE.Group;
       this.#drops.delete(token);
       group.parent?.add(token);
-      this.#liftedTokens.set(token, performance.now());
+      // Threat taken off sizzles out where it lay rather than lifting away (Adam, 2026-11-22).
+      this.#sizzling.set(token, {
+        start: performance.now() + this.#sizzling.size * 70,
+        x: token.position.x,
+        y: token.position.y,
+        sparked: false,
+      });
     }
     while (group.children.length < total) {
       const i = group.children.length;
@@ -1614,10 +1913,27 @@ export class BattleTable {
     if (!url) return null;
     let texture = this.#textures.get(url);
     if (!texture) {
-      texture = this.#loader.load(url, this.#requestFrame);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = Math.min(8, this.#renderer.capabilities.getMaxAnisotropy());
-      this.#textures.set(url, texture);
+      const made = new THREE.Texture();
+      made.colorSpace = THREE.SRGBColorSpace;
+      made.anisotropy = Math.min(8, this.#renderer.capabilities.getMaxAnisotropy());
+      // A picture that fails is asked for again a little later, rather than leaving the card black all game.
+      loadWithRetry(
+        url,
+        (attemptUrl, onError) =>
+          this.#images.load(
+            attemptUrl,
+            (image) => {
+              made.image = image;
+              made.needsUpdate = true;
+              this.#requestFrame();
+            },
+            undefined,
+            onError,
+          ),
+        () => !this.#disposed,
+      );
+      this.#textures.set(url, made);
+      texture = made;
     }
     return texture;
   }
@@ -1745,6 +2061,25 @@ export class BattleTable {
     this.#matGoal = { x: 0, z: (near.z + far.z) / 2, width: near.x * 2, depth: near.z - far.z };
   }
 
+  /** Where a card will rest on screen once it gets there (its target pose), lying on the table. */
+  #screenBox(id: string): ScreenBox | null {
+    const piece = this.#pieces.get(id);
+    if (!piece) return null;
+    const { position, scale, roll } = piece.target;
+    const sideways = piece.card.landscape !== Math.abs(Math.sin(roll)) > 0.7;
+    const halfX = (scale * (sideways ? HEIGHT : 1)) / 2;
+    const halfZ = (scale * (sideways ? 1 : HEIGHT)) / 2;
+    const corners = [-1, 1].flatMap((sx) =>
+      [-1, 1].map((sz) => this.#project(position.x + sx * halfX, position.y, position.z + sz * halfZ)),
+    );
+    return {
+      left: Math.min(...corners.map((c) => c.x)),
+      right: Math.max(...corners.map((c) => c.x)),
+      top: Math.min(...corners.map((c) => c.y)),
+      bottom: Math.max(...corners.map((c) => c.y)),
+    };
+  }
+
   /** Screen pixels of a world point. */
   readonly #project = (x: number, y: number, z: number): { x: number; y: number } => {
     this.#scratch.set(x, y, z).project(this.#camera);
@@ -1800,6 +2135,12 @@ export class BattleTable {
       z0: Math.min(...rests.map((r) => r.z0)),
       z1: Math.max(...rests.map((r) => r.z1)),
     };
+    // The villain always stays in the middle of the screen (Adam, 2026-11-22): the box is widened to the same reach
+    // on both sides of the centre line it stands on, so a long row of schemes on one side never slides it over.
+    const middle = this.#point(w * 0.5, h * 0.237, 0).x;
+    const reach = Math.max(middle - box.x0, box.x1 - middle);
+    box.x0 = middle - reach;
+    box.x1 = middle + reach;
     const handCard = Math.min(h * 0.215, (h * (w < 740 ? 0.4 : 0.36) - 50) / 1.5, w * 0.245);
     // A phone's turn bar spans the screen and wraps its buttons under the question, so it stands taller.
     const bar = w < 740 ? 92 : 50;
@@ -1874,8 +2215,10 @@ export class BattleTable {
       h = this.#height;
     const boardWidth = Math.min(w * 0.2, h * 0.22);
     const flat = -Math.PI / 2;
-    // Piles sit out at the mat's edges, leaving the middle to the cards in play.
-    const pileX = w * 0.885;
+    // Piles sit out at the mat's edges, leaving the middle to the cards in play. On a very wide screen they stop short
+    // of the edges, so the table keeps together rather than spreading out with the room (Adam, 2026-11-22).
+    const pileSpread = Math.min(w * 0.385, h * 0.75);
+    const pileX = w * 0.5 + pileSpread;
     const pileY = h * 0.505;
     const base = this.#point(pileX, pileY, 0.025);
     const encounterWidth = Math.min(w * 0.088, h * 0.088);
@@ -1911,7 +2254,8 @@ export class BattleTable {
       const attachments = state.enemyCards.filter((c) => c.attachedTo === host.id);
       attachments.forEach((card, i) => {
         this.#tucked.set(card.id, { host: host.id, depth: attachments.length - i });
-        this.#pose(card.id, x - width * TAB * (attachments.length - i), y, width, 0.045 + i * 0.035, flat);
+        const depth = attachments.length - i;
+        this.#pose(card.id, x - width * TAB * depth, y - width * STAGGER * depth, width, 0.045 + i * 0.035, flat);
         onBoard.add(card.id);
         const target = this.#pieces.get(card.id)?.target;
         if (target) rest(target.position, target.scale, false);
@@ -1922,6 +2266,9 @@ export class BattleTable {
     };
     const villainTabs = state.enemyCards.filter((c) => c.attachedTo === state.villain.id).length;
     this.#villainShadow.visible = villainTabs > 0;
+    // Under the whole stack, not just the host: drawn above the cards tucked beneath, it darkened their bottom edges
+    // as if they sank into the mat (Adam, 2026-11-22).
+    this.#villainShadow.position.z = -0.006 * villainTabs - 0.004;
     const villainWidth = Math.min(boardWidth, (w * 0.3) / (1 + 2 * TAB * villainTabs));
     poseEnemy(state.villain, w * 0.5, h * 0.237, villainWidth);
     const isScheme = (card: TableCard) => card.type === "main_scheme" || card.type === "side_scheme";
@@ -1929,7 +2276,9 @@ export class BattleTable {
     const otherEnemies = enemies.filter((card) => !isScheme(card));
     const enemyRow = h * 0.242;
     const enemyCardWidth = Math.min(w * 0.117, h * 0.145);
-    const schemeX = w * 0.255;
+    // The schemes stand a set gap left of the villain (and any cards under it), however wide the screen.
+    const villainLeft = w * 0.5 - villainWidth * (0.5 + TAB * villainTabs);
+    const schemeX = Math.max(w * 0.255, villainLeft - enemyCardWidth * (0.45 + HEIGHT / 2));
     const schemeElevation = 0.05;
     const schemeOrigin = this.#point(schemeX, enemyRow, schemeElevation);
     const schemeScale = this.#point(schemeX + enemyCardWidth, enemyRow, schemeElevation).x - schemeOrigin.x;
@@ -1938,9 +2287,19 @@ export class BattleTable {
       schemeScale * 1.75,
       schemeOrigin.z - this.#point(schemeX, h * 0.105, schemeElevation).z,
     );
+    // The main scheme stands nearest the villain; the side schemes fill leftwards across the free mat first, a card's
+    // width and a gap apart, and only stack upwards once a row has no more room (Adam, 2026-11-22: use the space).
+    const schemeColumn = schemeScale * (HEIGHT + 0.3);
+    // No further left than the table reaches on the right (the encounter deck), so the villain stays in the middle
+    // without the whole table shrinking; and in a block of two rows rather than one long line (Adam, 2026-11-22).
+    const leftEdge = Math.max(w * 0.035, w * 0.5 - pileSpread - encounterWidth * 0.75);
+    const leftmost = this.#point(leftEdge, enemyRow, schemeElevation).x + (schemeScale * HEIGHT) / 2;
+    const roomFor = Math.max(1, Math.floor((schemeOrigin.x - leftmost) / schemeColumn) + 1);
+    const schemeColumns = Math.min(roomFor, Math.max(1, Math.ceil(schemes.length / 2)));
     schemes.forEach((card, i) => {
       const position = schemeOrigin.clone();
-      position.z -= i * schemeStep;
+      position.x -= (i % schemeColumns) * schemeColumn;
+      position.z -= Math.floor(i / schemeColumns) * schemeStep;
       const projected = this.#scratch.copy(position).project(this.#camera);
       const x = (projected.x + 1) * w * 0.5;
       const y = (1 - projected.y) * this.#canvasHeight * 0.5 - this.#extension;
@@ -1985,7 +2344,8 @@ export class BattleTable {
         0.025,
         encounterGoal.position.z,
       ).x;
-      const slotWidth = (right - left) / rowEnemies.length;
+      // Each minion takes a card-sized slot from the villain outwards; room to spare is left at the far end.
+      const slotWidth = Math.min((right - left) / rowEnemies.length, enemyCardWidth * 1.5);
       rowEnemies.forEach((card, i) => {
         const tabs = state.enemyCards.filter((c) => c.attachedTo === card.id).length;
         const footprint = (card.landscape ? HEIGHT : 1) + TAB * tabs;
@@ -1998,6 +2358,9 @@ export class BattleTable {
       });
     }
     let waiting = 0;
+    // Where the revealed card stands on screen while it is held up, so a card being paid for keeps clear of it.
+    let revealRect: { x: number; y: number; halfWidth: number; halfHeight: number } | null = null;
+    let revealPose: { id: string; y: number; width: number; across: number } | null = null;
     const boosts = new Map<string, number>();
     for (const card of this.#encounters.values()) {
       const host = card.boostFor ? enemyPoses.get(card.boostFor) : undefined;
@@ -2015,6 +2378,13 @@ export class BattleTable {
         let y = Math.max(h * (w < 550 ? 0.3 : 0.38), 16 + width * half);
         if (floor > 0) y = Math.max(16 + width * half, Math.min(y, floor - width * half));
         this.#pose(card.id, w * 0.5, y, width, 1.75, this.#camera.rotation.x);
+        revealPose = { id: card.id, y, width, across: card.landscape ? HEIGHT : 1 };
+        revealRect = {
+          x: w * 0.5,
+          y,
+          halfWidth: (width * (card.landscape ? HEIGHT : 1)) / 2,
+          halfHeight: (width * (card.landscape ? 1 : HEIGHT)) / 2,
+        };
       } else if (this.#parked.has(card.id)) {
         // Standing just right of the villain (past any boost card tucked under its edge), turned to the player like
         // a held card but small, raised over anything in that row so the labels it covers hide behind it.
@@ -2065,16 +2435,44 @@ export class BattleTable {
         this.#pose(card.id, x, y - rise, width, 1.75 + index * 0.01, this.#camera.rotation.x);
       });
     }
+    // Cards lying facedown under an enemy card (Highway Robbery's) show a strip of their back past its left edge.
+    this.#underIds.clear();
+    const underCount = new Map<string, number>();
+    // The `index`th card under `hostId`: shoved under its left edge so a strip of its back shows, turned to lie the
+    // way the host lies, a little below it.
+    const poseUnder = (id: string, hostId: string, index: number) => {
+      const host = enemyPoses.get(hostId);
+      const landscape = !!state.enemyCards.find((card) => card.id === hostId)?.landscape;
+      if (!host) return;
+      // Fitted to the screen with the rest of the table, so it stays where its host ends up.
+      onBoard.add(id);
+      const across = (landscape ? HEIGHT : 1) * host.width;
+      this.#pose(
+        id,
+        host.x - across * (0.2 + index * 0.08),
+        host.y,
+        host.width * 0.97,
+        0.02 - index * 0.004,
+        flat,
+        (landscape ? Math.PI / 2 : 0) + 0.025 + index * 0.03,
+      );
+    };
+    for (const card of state.under ?? []) {
+      const piece = this.#pieces.get(card.id);
+      if (!card.under || !enemyPoses.has(card.under) || !piece || this.#stashing.has(card.id)) continue;
+      this.#underIds.add(card.id);
+      const index = underCount.get(card.under) ?? 0;
+      underCount.set(card.under, index + 1);
+      if (this.#flights.get(card.id)?.kind !== "draw") poseUnder(card.id, card.under, index);
+    }
     // Cards on their way facedown into a deck rest on its top; cards going under a card lie just beneath it.
     for (const [id, { to }] of this.#stashing) {
       const piece = this.#pieces.get(id);
       if (!piece) continue;
       if (typeof to === "object") {
-        const host = this.#pieces.get(to.under)?.target;
-        if (!host) continue;
-        const position = host.position.clone();
-        position.y -= 0.012;
-        piece.target = { position, scale: host.scale * 0.92, pitch: host.pitch, roll: 0 };
+        if (!enemyPoses.has(to.under)) continue;
+        poseUnder(id, to.under, underCount.get(to.under) ?? 0);
+        underCount.set(to.under, (underCount.get(to.under) ?? 0) + 1);
       } else {
         const slot = to === "deck" ? this.#deckSlot : this.#encounterSlot;
         const back = to === "deck" ? this.#deckBack : this.#encounterBack;
@@ -2091,6 +2489,7 @@ export class BattleTable {
     const row = [state.hero, ...visibleUpgrades, ...permanents.filter((card) => card.type !== "upgrade")];
     const tabs = upgrades.length * TAB;
     this.#heroShadow.visible = upgrades.some((card) => card.id !== state.staged?.id);
+    this.#heroShadow.position.z = -0.006 * upgrades.length - 0.004;
     // Airborne cards can sweep over their neighbours. Space the row for their settled poses.
     const footprints = row.map((card) => (card.exhausted !== card.landscape ? HEIGHT : 1));
     const tabScale = state.hero.exhausted ? 1 / HEIGHT : 1;
@@ -2127,7 +2526,7 @@ export class BattleTable {
       if (card.id === state.staged?.id) posePermanent(card, x, 0.05);
       else {
         this.#tucked.set(card.id, { host: state.hero.id, depth: upgrades.length - i });
-        this.#pose(card.id, x, rowY, width, 0.045 + i * 0.035, flat);
+        this.#pose(card.id, x, rowY - width * STAGGER * (upgrades.length - i), width, 0.045 + i * 0.035, flat);
         onBoard.add(card.id);
         const target = this.#pieces.get(card.id)!.target;
         rest(target.position, target.scale, false);
@@ -2231,7 +2630,15 @@ export class BattleTable {
       // right of the hero if that is clear, else left of the row, else up in the gap above the row.
       // Nor over a card the player must pick next (First Aid's target, the hero included).
       const sources = new Set([...(state.paymentSources ?? []), ...state.targets]);
+      const stagedHalf = (playWidth * 1.12) / 2;
+      // Nor under a revealed card held up full size (Enhanced Spider-Sense paid for while Shadow of the Past waits to
+      // be cancelled, Adam 2026-11-21): the card being read stays on top and whole, the paid card waits beside it.
+      const underReveal = (x: number, y: number) =>
+        !!revealRect &&
+        Math.abs(revealRect.x - x) < revealRect.halfWidth + stagedHalf + 10 &&
+        Math.abs(revealRect.y - y) < revealRect.halfHeight + stagedHalf * HEIGHT;
       const covers = (x: number, y: number) =>
+        underReveal(x, y) ||
         row.some((card, i) => {
           if (!sources.has(card.id) && !card.resourceAbility) return false;
           const half = (footprints[i]! * playWidth) / 2;
@@ -2243,12 +2650,25 @@ export class BattleTable {
         [rowLeft - playWidth * 0.75, rowY - playWidth * 0.48],
         [first, rowY - playWidth * 1.5],
       ];
-      const [x, y] = spots.find(([sx, sy], i) => (i !== 1 || sx > playWidth * 0.7) && !covers(sx, sy)) ?? spots[2]!;
+      if (revealRect) {
+        // Beside the revealed card, level with its lower half, on whichever side has room.
+        const beside = revealRect.halfWidth + stagedHalf + 24;
+        const y = revealRect.y + revealRect.halfHeight * 0.25;
+        spots.push([revealRect.x + beside, y], [revealRect.x - beside, y]);
+      }
+      const onScreen = (x: number) => x - stagedHalf > 8 && x + stagedHalf < w - 8;
+      // With no clear spot (a narrow screen) it stands beside the revealed card as far as the screen allows, partly
+      // behind it: the revealed card is drawn on top either way (#render).
+      const fallback: [number, number] = revealRect
+        ? [Math.min(spots[3]![0], w - stagedHalf - 8), spots[3]![1]]
+        : spots[2]!;
+      const [x, y] =
+        spots.find(([sx, sy], i) => (i !== 1 || sx > playWidth * 0.7) && onScreen(sx) && !covers(sx, sy)) ?? fallback;
       this.#pose(state.staged.id, x, y, playWidth * 1.12, 1.18, flat + 0.12);
     }
     const pileWidth = Math.min(w * 0.125, h * 0.125);
     const discardGoal = { position: base.clone(), scale: this.#point(pileX + pileWidth, pileY, 0.025).x - base.x };
-    const deckX = w * 0.115,
+    const deckX = w * 0.5 - pileSpread,
       deckY = h * 0.505;
     const deckCenter = this.#point(deckX, deckY, 0.025);
     const deckGoal = {
@@ -2267,6 +2687,35 @@ export class BattleTable {
       [this.#encounterSlot, encounterGoal],
       [this.#encounterDiscardSlot, encounterDiscardGoal],
     ]);
+    // A revealed card asking the player to pick cards on the table steps aside, clear of them (`revealAside`).
+    // Worked out once per question and screen size, then held: a pick lifted under the pointer grows a little, and
+    // the card must not twitch with it.
+    if (revealPose && revealRect && state.targets.length) {
+      const key = `${revealPose.id}|${state.targets.join(",")}|${w}x${h}|${this.#question}|${this.#hand.sunk}`;
+      const reveal = revealRect as { x: number; y: number; halfWidth: number; halfHeight: number };
+      if (this.#aside?.key !== key) {
+        const picks = state.targets.flatMap((id) => {
+          const box = id === revealPose!.id ? null : this.#screenBox(id);
+          return box ? [box] : [];
+        });
+        this.#aside = {
+          key,
+          ...revealAside(
+            {
+              left: reveal.x - reveal.halfWidth,
+              right: reveal.x + reveal.halfWidth,
+              top: reveal.y - reveal.halfHeight,
+              bottom: reveal.y + reveal.halfHeight,
+            },
+            picks,
+            w,
+          ),
+        };
+      }
+      const aside = this.#aside!;
+      if (aside.x !== reveal.x || aside.scale !== 1)
+        this.#pose(revealPose.id, aside.x, revealPose.y, revealPose.width * aside.scale, 1.75, this.#camera.rotation.x);
+    }
     const base2 = discardGoal.position;
     const scale = discardGoal.scale;
     const encounterScale = encounterDiscardGoal.scale;
@@ -2612,7 +3061,7 @@ export class BattleTable {
               : kind === "place"
                 ? 440
                 : kind === "tuck"
-                  ? 560
+                  ? 720
                   : kind === "draw"
                     ? 560
                     : kind === "stash"
@@ -2632,12 +3081,10 @@ export class BattleTable {
                 easeOutCubic(progress);
         piece.root.position.lerpVectors(from.position, piece.target.position, t);
         if (kind === "tuck") {
-          // Clear the deck, drop to the table, then slide in flat: it passes under its enemy's edge, never over it.
-          piece.root.position.y = THREE.MathUtils.lerp(
-            from.position.y,
-            piece.target.position.y,
-            THREE.MathUtils.smoothstep(progress, 0.14, 0.4),
-          );
+          // Drop to the table by the deck, then slide in flat: it passes under its enemy's edge, never over it.
+          const { drop, across } = tuckPath(progress);
+          piece.root.position.lerpVectors(from.position, piece.target.position, across);
+          piece.root.position.y = THREE.MathUtils.lerp(from.position.y, piece.target.position.y, drop);
         } else if (kind === "place") {
           const settle = Math.max(0, (progress - 0.54) / 0.46);
           piece.root.position.y += Math.sin(Math.PI * settle) * (1 - settle) * 0.24;
@@ -2722,7 +3169,22 @@ export class BattleTable {
         if (delta > 0.00025 && smooth < 1) moving = true;
         const shifting = inHand && Math.abs(piece.target.position.x - piece.root.position.x) > 0.0005;
         this.#apply(piece, delta > 0.00025 ? (shifting ? handSlide : smooth) : 1);
+        if (this.#underIds.has(id)) piece.root.rotation.y = Math.PI;
       }
+    }
+    // A hovered card under it slides out to the left a little on the mat, so more of it shows; it is not picked up.
+    for (const id of [...this.#fan.keys()]) if (!this.#tucked.has(id)) this.#fan.delete(id);
+    for (const id of this.#tucked.keys()) {
+      const fanGoal = this.#hovered === id && !this.#flights.has(id) ? 1 : 0;
+      const fanNow = this.#fan.get(id) ?? 0;
+      const fan = this.#reduced.matches
+        ? fanGoal
+        : Math.abs(fanGoal - fanNow) < 0.004
+          ? fanGoal
+          : fanNow + (fanGoal - fanNow) * Math.min(1, dt * 14);
+      if (fan) this.#fan.set(id, fan);
+      else this.#fan.delete(id);
+      if (fan !== fanGoal) moving = true;
     }
     // Use the host's rendered pose, including the lift and roll between animation frames.
     for (const [id, { host, depth }] of this.#tucked) {
@@ -2731,11 +3193,30 @@ export class BattleTable {
       if (!parent || !piece) continue;
       const flight = this.#flights.get(id);
       if (flight && flight.kind !== "equip") continue;
+      // The cards further out under the same host (lower in the stack) move with a hovered one, so it never covers
+      // their strips: with several attached, every title still shows.
+      let fan = 0;
+      for (const [other, { host: otherHost, depth: otherDepth }] of this.#tucked)
+        if (otherHost === host && otherDepth <= depth) fan = Math.max(fan, this.#fan.get(other) ?? 0);
+      // A hovered host rises on its own: what is tucked under it stays down where the host lay before the pointer
+      // arrived, turned with it if the host is exhausted, and a card slid out from under it slides back into its place
+      // there (Adam, 2026-11-22). Otherwise it follows the host's rendered pose, lift and roll included.
       parent.updateMatrixWorld();
-      piece.target.position.set(-TAB * depth, 0, -0.006 * depth).applyMatrix4(parent.matrixWorld);
-      piece.target.scale = parent.scale.x;
-      piece.target.pitch = parent.rotation.x;
-      piece.target.roll = parent.rotation.z;
+      const hostLifted = this.#hovered === host && !flight;
+      let frame = this.#hostRest.get(host);
+      if (!hostLifted || !frame) {
+        frame = parent.matrixWorld.clone();
+        this.#hostRest.set(host, frame);
+      }
+      frame.decompose(this.#framePosition, this.#frameQuaternion, this.#frameScale);
+      piece.target.position
+        .set(...attachmentFanOffset(-TAB * depth, STAGGER * depth, fan), -0.006 * depth)
+        .applyMatrix4(frame);
+      piece.target.scale = this.#frameScale.x;
+      if (!hostLifted) {
+        piece.target.pitch = parent.rotation.x;
+        piece.target.roll = parent.rotation.z;
+      }
       if (flight) {
         const t = this.#reduced.matches ? 1 : Math.min(1, (now - flight.started) / 670);
         this.#equipPose(piece, flight.from, t);
@@ -2743,8 +3224,9 @@ export class BattleTable {
         else moving = true;
       } else {
         piece.root.position.copy(piece.target.position);
-        piece.root.quaternion.copy(parent.quaternion);
-        piece.root.scale.copy(parent.scale);
+        piece.root.quaternion.copy(this.#frameQuaternion);
+        if (fan) piece.root.quaternion.multiply(this.#turn.setFromAxisAngle(Z_AXIS, ATTACHMENT_TURN * fan));
+        piece.root.scale.copy(this.#frameScale);
       }
     }
     if (this.#strike && now - this.#strike.start >= STRIKE_MS) {
@@ -2755,6 +3237,27 @@ export class BattleTable {
     if (actor) {
       actor.rim.visible = true;
       actor.rim.scale.set(1.022, 1.016, 1);
+    }
+    for (const [chip, sizzle] of this.#sizzling) {
+      const t = this.#reduced.matches ? 1 : THREE.MathUtils.clamp((now - sizzle.start) / SIZZLE_MS, 0, 1);
+      // It fizzes in place, jittering ever faster, throws off embers and a wisp, then shrinks away into the card.
+      const fizz = (1 - t) * Math.min(1, t * 5) * 0.022;
+      chip.position.x = sizzle.x + Math.sin(now * 0.09) * fizz;
+      chip.position.y = sizzle.y + Math.cos(now * 0.113) * fizz;
+      const shrink = THREE.MathUtils.smoothstep(t, 0.3, 1);
+      chip.scale.set(1 - shrink, 1 - shrink, 1 - shrink * 0.6);
+      chip.rotation.z += (this.#reduced.matches ? 0 : 0.02) * (1 + shrink * 6);
+      if (!sizzle.sparked && t >= 0.22) {
+        sizzle.sparked = true;
+        const at = chip.getWorldPosition(this.#scratch).clone();
+        this.#burst(at, 0xff7a1f, 9, 0.45, 1.4);
+        this.#burst(at, 0xffd27a, 5, 0.3, 2.2);
+        this.#burst(at, 0x6a6058, 4, 0.12, 2.8);
+      }
+      if (t === 1) {
+        chip.removeFromParent();
+        this.#sizzling.delete(chip);
+      } else moving = true;
     }
     for (const [chip, start] of this.#liftedTokens) {
       const t = this.#reduced.matches ? 1 : Math.min(1, (now - start) / 280);
@@ -2805,11 +3308,14 @@ export class BattleTable {
       for (const [id, piece] of this.#pieces) {
         const onEnemy = !!piece.card.attachedTo && this.#state.enemyCards.some((c) => c.id === id);
         if (piece.card.type !== "upgrade" && piece.card.type !== "attachment" && !onEnemy) continue;
-        const tucked = this.#tucked.has(id) && !this.#flights.has(id) && this.#state.staged?.id !== id;
-        // Upgrades and attachments both print their title down the left edge: that strip is what shows when tucked.
-        const geometry = tucked ? this.#tab : piece.card.landscape ? this.#landscapeFace : this.#face;
+        // Slid out while hovered, it shows whole: the part still under its host stays hidden behind it.
+        const tucked =
+          this.#tucked.has(id) && !this.#flights.has(id) && this.#state.staged?.id !== id && !this.#fan.has(id);
+        // Tucked, a card is drawn whole, thickness and all: its host covers the rest. Only drawing the strip down its
+        // left edge cut off its top where the stack steps up past the host, and made it look narrow (Adam, 2026-11-22).
+        const geometry = piece.card.landscape ? this.#landscapeFace : this.#face;
         piece.face.geometry = geometry;
-        piece.root.children[0]!.visible = !tucked;
+        (piece.root.children[0] as THREE.Mesh).geometry = piece.card.landscape ? this.#landscapeStock : this.#stock;
         piece.back.visible = !tucked;
         piece.rim.geometry = geometry;
       }
@@ -2848,6 +3354,7 @@ export class BattleTable {
         this.#interrupt = null;
       } else moving = true;
     }
+    if (this.#vapours.length && this.#evaporateStep(now)) moving = true;
     if (this.#flicker) {
       const age = now - this.#flicker.start;
       // Out and back four times, the gaps shortening, then it stays.
@@ -2881,8 +3388,8 @@ export class BattleTable {
         this.#sparks.splice(i, 1);
         continue;
       }
-      spark.velocity.y -= 9 * dt;
-      spark.velocity.multiplyScalar(1 - 2.4 * dt);
+      if (!spark.drifts) spark.velocity.y -= 9 * dt;
+      spark.velocity.multiplyScalar(1 - (spark.drifts ? 1.3 : 2.4) * dt);
       spark.sprite.position.addScaledVector(spark.velocity, dt);
       const fade = 1 - age / spark.life;
       spark.sprite.material.opacity = fade;
@@ -2890,13 +3397,100 @@ export class BattleTable {
       moving = true;
     }
     if (this.#tiltHand(dt)) moving = true;
-    this.#renderer.render(this.#scene, this.#camera);
+    this.#render();
     this.#handlers.onDraw?.();
     if (moving) this.#requestFrame();
     if (landed) this.#handlers.onLanded(landed);
     if (this.#discardDeal && !this.#discardDeal.spent.size && this.#discardDeal.landed === this.#discardDeal.ids.length)
       this.#finishDiscards();
   };
+
+  /** Every object put on the front layer last frame, so each frame starts from none (the sheen moves between cards). */
+  readonly #onFront = new Set<THREE.Object3D>();
+  /** The cards drawn on top last frame (`#frontCards`): the pointer finds them first, as the player sees them. */
+  #frontIds = new Set<string>();
+  /** The same, less cards only settling back after being let go, which must not catch the pointer again. */
+  #frontPick = new Set<string>();
+
+  /**
+   * The cards the player must see whole: a revealed card held up to be read (and the card cancelling it, standing over
+   * its edge), cards turned up off a deck, and the hand card under the pointer. In 3D a card resting or flying nearer
+   * the camera can cut through them (Enhanced Spider-Sense paid for beside the hero went into Shadow of the Past; the
+   * rightmost hand card cut through its hovered neighbour; Adam, 2026-11-21), so they are drawn over everything else.
+   */
+  #frontCards(): Set<THREE.Object3D> {
+    const roots = new Set<THREE.Object3D>();
+    const state = this.#state;
+    if (!state) {
+      this.#frontIds.clear();
+      this.#frontPick.clear();
+      return roots;
+    }
+    const ids = new Set<string>();
+    const add = (id: string | null | undefined) => {
+      if (id && this.#pieces.has(id)) ids.add(id);
+    };
+    add(this.#revealing);
+    for (const card of this.#deckReveal) add(card.id);
+    if (this.#power && this.#powerHost && !this.#powerAside && this.#powerHost === this.#revealing) add(this.#power);
+    // A picked hand card keeps its own layer among the picked (see the hand layout), hovered or not.
+    const held = this.#press?.dragging ? this.#press.id : this.#hovered;
+    if (held && state.hand.some((card) => card.id === held) && !state.selected.includes(held)) add(held);
+    this.#frontPick = new Set(ids);
+    // A card let go stays in front until it is back in its place, so it never cuts through a neighbour on the way.
+    for (const id of this.#frontIds) {
+      const piece = this.#pieces.get(id);
+      if (!ids.has(id) && piece && piece.root.position.distanceTo(piece.target.position) > piece.target.scale * 0.01)
+        ids.add(id);
+    }
+    this.#frontIds = ids;
+    for (const id of ids) roots.add(this.#pieces.get(id)!.root);
+    return roots;
+  }
+
+  /**
+   * Draw the table, then the front cards over it: the table pass leaves out their see-through parts (sheen, glow) so
+   * nothing is drawn twice, the depth is cleared, and the front pass draws them whole, lit the same, with the shadows
+   * the table pass already cast.
+   */
+  #render(): void {
+    for (const object of this.#onFront) object.layers.disable(FRONT_LAYER);
+    this.#onFront.clear();
+    const front = this.#frontCards();
+    const camera = this.#camera;
+    if (!front.size) {
+      camera.layers.enableAll();
+      this.#renderer.render(this.#scene, camera);
+      return;
+    }
+    const hidden: THREE.Object3D[] = [];
+    for (const root of front)
+      root.traverse((object) => {
+        object.layers.enable(FRONT_LAYER);
+        this.#onFront.add(object);
+        const material = (object as THREE.Mesh).material as THREE.Material | undefined;
+        if (object.visible && material && !Array.isArray(material) && material.transparent) {
+          object.visible = false;
+          hidden.push(object);
+        }
+      });
+    camera.layers.set(0);
+    this.#renderer.render(this.#scene, camera);
+    for (const object of hidden) object.visible = true;
+    const renderer = this.#renderer;
+    renderer.autoClear = false;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.clearDepth();
+    camera.layers.set(FRONT_LAYER);
+    // A colour background always clears the picture first, whatever autoClear says: leave it out of the front pass.
+    const background = this.#scene.background;
+    this.#scene.background = null;
+    renderer.render(this.#scene, camera);
+    this.#scene.background = background;
+    renderer.shadowMap.autoUpdate = true;
+    renderer.autoClear = true;
+    camera.layers.enableAll();
+  }
 
   #finishDiscards(): void {
     const deal = this.#discardDeal;
@@ -2931,6 +3525,8 @@ export class BattleTable {
     this.#ray.setFromCamera(this.#ndc, this.#camera);
     let nearest = Infinity;
     let id: string | null = null;
+    // A card drawn on top of the rest (#render) is what the pointer is over, even where another is nearer in depth.
+    let front: { id: string; distance: number } | null = null;
     let underZoom: { id: string; distance: number } | null = null;
     const handIds = new Set(this.#state?.hand.map((card) => card.id));
     for (const piece of this.#pieces.values()) {
@@ -2945,7 +3541,10 @@ export class BattleTable {
         nearest = hit.distance;
         id = piece.card.id;
       }
+      if (hit && this.#frontPick.has(piece.card.id) && (!front || hit.distance < front.distance))
+        front = { id: piece.card.id, distance: hit.distance };
     }
+    if (front) id = front.id;
     // Over the hand, the full-size card gives way to the hand card under the pointer, so the hand can be swept.
     if (id && id === this.#zoom?.id && underZoom && event.clientY - rect.top - this.#extension > this.#zoom.handTop)
       return underZoom.id;
@@ -3052,6 +3651,7 @@ export class BattleTable {
     cancelAnimationFrame(this.#frame);
     this.#frame = 0;
     this.#finishDiscards();
+    for (const vapour of this.#vapours.splice(0)) this.#releaseVapour(vapour);
   };
   readonly #restoreContext = (): void => {
     this.#contextLost = false;
@@ -3060,6 +3660,7 @@ export class BattleTable {
 
   dispose(): void {
     this.#disposed = true;
+    for (const vapour of this.#vapours.splice(0)) this.#releaseVapour(vapour);
     for (const material of this.#dimMaterials.values()) material.dispose();
     for (const spark of this.#sparks) spark.sprite.material.dispose();
     this.#sparks.length = 0;
@@ -3077,7 +3678,6 @@ export class BattleTable {
     const geometries = new Set<THREE.BufferGeometry>([
       this.#auraPlane,
       this.#interruptPuff.geometry,
-      this.#tab,
       this.#face,
       this.#stock,
       this.#landscapeFace,

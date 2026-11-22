@@ -4,7 +4,7 @@ import { eventLook, offerDoes, spotOf, waitsOnDock, type SpotTable } from "./spo
 
 const table: SpotTable = {
   hero: { id: "spider-man" },
-  inPlay: [{ id: "mockingbird" }],
+  inPlay: [{ id: "mockingbird", hp: 3 }, { id: "the-power-of-spider-man" }, { id: "black-cat", hp: 1 }],
   enemyCards: [
     { id: "break-in", attachedTo: null },
     { id: "ivory-horn", attachedTo: "rhino" },
@@ -92,7 +92,13 @@ describe("spotOf: the defend question", () => {
         { id: "spider-man", tone: "target" },
       ],
       cutouts: ["rhino", "ivory-horn", "sandman", "spider-man"],
+      plates: ["spider-man", "mockingbird", "black-cat"],
     });
+  });
+
+  test("keeps the health of the hero and every ally out of the shade, an exhausted ally's too", () => {
+    // Black Cat is exhausted (not a defender option) but her health still counts towards the call.
+    expect(spotOf(defense, table, at)?.plates).toEqual(["spider-man", "mockingbird", "black-cat"]);
   });
 
   test("lets the defenders through once the player is choosing one", () => {
@@ -103,6 +109,34 @@ describe("spotOf: the defend question", () => {
       "spider-man",
       "mockingbird",
     ]);
+  });
+});
+
+describe("spotOf: a revealed card asking for cards on the table", () => {
+  const offGuard = choice({
+    prompt: "Choose a target",
+    sourceTitle: "Caught Off Guard",
+    options: [
+      { id: "a", label: "Mockingbird", cardId: "mockingbird" },
+      { id: "b", label: "Hydra Mercenary", cardId: "hydra-mercenary" },
+    ],
+  });
+
+  test("the cards it can take glow gold and stand out of the shade with it; the card asking glows red", () => {
+    expect(spotOf(offGuard, table, { ...at, heldEncounter: "caught-off-guard" })).toEqual({
+      glow: [
+        { id: "caught-off-guard", tone: "attack" },
+        { id: "mockingbird", tone: "target" },
+        { id: "hydra-mercenary", tone: "target" },
+      ],
+      cutouts: ["caught-off-guard", "mockingbird", "hydra-mercenary"],
+    });
+  });
+
+  test("nothing to spotlight when no card is held up, or its question is answered with buttons only", () => {
+    expect(spotOf(offGuard, table, at)).toBeNull();
+    const buttons = choice({ options: [{ id: "x", label: "Take 2 damage", cardId: null }] });
+    expect(spotOf(buttons, table, { ...at, heldEncounter: "hydra-bomber" })).toBeNull();
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { besideSpot, dockSpot, type DockSpotInput } from "./dock-spot";
+import { besideSpot, dockSpot, revealAside, type DockSpotInput } from "./dock-spot";
 
 const base: DockSpotInput = {
   field: { width: 1086, height: 900 },
@@ -40,8 +40,38 @@ describe("besideSpot", () => {
     const left = besideSpot({ left: 20, right: 120, top: 300, bottom: 440 }, size, { ...field, left: 340, width: 660 });
     expect(left.left).toBe(348);
   });
+  it("can be asked for the left (an attachment, beside its tab), and still takes the right when the left has no room", () => {
+    expect(besideSpot({ left: 450, right: 550, top: 300, bottom: 440 }, size, field, "left").left).toBe(86);
+    expect(besideSpot({ left: 100, right: 200, top: 300, bottom: 440 }, size, field, "left").left).toBe(264);
+  });
   it("stays on the playfield near its edges", () => {
     expect(besideSpot({ left: 100, right: 200, top: 0, bottom: 100 }, size, field).top).toBe(8);
     expect(besideSpot({ left: 100, right: 200, top: 700, bottom: 790 }, size, field).top).toBe(800 - 420 - 8);
+  });
+});
+
+describe("revealAside", () => {
+  // A revealed card 420 wide held up in the middle of a 1900-wide table.
+  const card = { left: 740, right: 1160, top: 180, bottom: 770 };
+  const box = (left: number, right: number, top = 560, bottom = 780) => ({ left, right, top, bottom });
+
+  test("stays put when it covers none of the cards to pick", () => {
+    expect(revealAside(card, [box(1300, 1450)], 1900)).toEqual({ x: 950, scale: 1 });
+    // Picks above or below it can't be covered, wherever it is.
+    expect(revealAside(card, [box(900, 1000, 900, 1100)], 1900)).toEqual({ x: 950, scale: 1 });
+  });
+
+  test("slides just clear of the picks it covers, to the nearer open side (Caught Off Guard's supports)", () => {
+    // Web-Shooter and Helicarrier right of the middle: it slides left until its right edge clears Web-Shooter.
+    expect(revealAside(card, [box(960, 1060), box(1190, 1350)], 1900)).toEqual({ x: 734, scale: 1 });
+    // Picks left of the middle: it slides right.
+    expect(revealAside(card, [box(700, 800)], 1900)).toEqual({ x: 1026, scale: 1 });
+  });
+
+  test("with no gap wide enough it takes the widest and shrinks to fit, never below half size", () => {
+    const aside = revealAside(card, [box(200, 900), box(1200, 1800)], 1900);
+    expect(aside.x).toBe(1050);
+    expect(aside.scale).toBeCloseTo((1184 - 916) / 420);
+    expect(revealAside(card, [box(16, 1884)], 1900).scale).toBe(0.5);
   });
 });
