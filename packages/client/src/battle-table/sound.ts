@@ -191,7 +191,8 @@ export class SoundBoard {
     const variants = this.#manifest.sounds[name];
     if (!variants?.length || !this.#enabled) return;
     const now = performance.now();
-    const delay = Math.max(0, options.delay ?? 0);
+    // Throttled by when it will be heard: five draws asked for at once, each due 180 ms apart, all play.
+    const delay = Math.max(0, options.delay ?? 0) + Math.max(0, options.contactIn ?? 0);
     const last = this.#last.get(name);
     if (last && Math.abs(now + delay - last.at) < REPEAT_GAP_MS) return;
     const index = pickVariant(variants.length, last?.variant, this.#random);
