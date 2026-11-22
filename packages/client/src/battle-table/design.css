@@ -156,9 +156,10 @@
   width: 18px;
   height: 18px;
 }
-/* Every button the pointer is over rises a step, so it is plain what a click will press. */
+/* Every button the pointer is over rises and grows a step and lights up, so it is plain what a click will press
+   (Adam, 2026-11-22: the hover was too faint to tell from the pulse). */
 .btn:enabled:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px) scale(1.04);
 }
 .btn:enabled:active {
   transform: translateY(1px) scale(0.98);
@@ -183,12 +184,14 @@
     0 6px 18px #f5b2402e;
 }
 .btn-primary:enabled:hover {
-  filter: brightness(1.16) saturate(1.1);
+  --btn-border: #fff;
+  filter: brightness(1.22) saturate(1.15);
   box-shadow:
-    inset 0 1px 0 #fff8,
+    inset 0 1px 0 #fff,
     inset 0 -2px 0 #0002,
-    0 0 0 3px #f5c35b66,
-    0 10px 30px #f5b24099;
+    0 0 0 3px #fff6,
+    0 0 0 6px #f5c35b55,
+    0 12px 34px #f5b240b0;
 }
 /* The pulse that asks for a press gives way to the hover glow while the pointer is on it. */
 .btn-primary[data-attention]:enabled:hover {
@@ -221,11 +224,12 @@
   }
 }
 .btn-secondary:enabled:hover {
-  --btn-bg: #2a3b4b;
+  --btn-bg: #3a5268;
   --btn-border: var(--gold);
+  --btn-fg: #fff;
   box-shadow:
-    0 0 0 2px #f5c35b40,
-    0 8px 22px #000a;
+    0 0 0 3px #f5c35b55,
+    0 10px 26px #000b;
 }
 .btn-ghost {
   --btn-bg: transparent;
@@ -277,9 +281,12 @@
   --btn-border: var(--gold);
   --btn-bg: #2a2716;
 }
+/* A wide answer grows less, so it doesn't push into the answers beside it. */
 .btn-option:enabled:hover {
   --btn-border: var(--gold);
-  --btn-bg: #3a3418;
+  --btn-bg: #4a4220;
+  box-shadow: 0 0 0 3px #f5c35b55;
+  transform: translateY(-2px) scale(1.015);
 }
 
 /* ── Chips and labels ───────────────────────────────────────────────────── */
