@@ -215,7 +215,13 @@ describe("§3.4 a per-phase cap: 'Nimrod cannot take more than 3 damage each pha
     });
     expect(capped(under.events)).toEqual([{ type: "damageCapped", targetInstanceId: minionId, amount: 3 }]);
     expect(prevented(under.events)).toEqual([
-      { type: "damagePrevented", targetInstanceId: minionId, amount: 1, reason: "tough" },
+      {
+        type: "damagePrevented",
+        targetInstanceId: minionId,
+        amount: 1,
+        reason: "tough",
+        attackSourceInstanceId: expect.any(String),
+      },
     ]);
   });
 

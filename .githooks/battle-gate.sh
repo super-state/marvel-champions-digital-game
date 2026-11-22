@@ -1,8 +1,7 @@
 #!/bin/sh
 # The 3D table's gate: the type check, the 3D table's own unit tests (`pnpm battle:check`) and its own browser tests
-# must have passed on exactly the code being pushed. The pre-push hook uses it for a push that changes nothing but the
-# 3D table (`packages/client/src/battle-table/`, `packages/client/battle/`) and its browser tests. Nothing in the old
-# 2D game imports from there, so such a push cannot break a screen the rest of the browser suite (`e2e-gate.sh`) opens.
+# must have passed on exactly the code being pushed. The pre-push hook uses it for every push that changes `packages/`
+# (after the rules gate's own tests when the rules or cards changed).
 #
 #   sh .githooks/battle-gate.sh <commit>
 #
@@ -47,10 +46,11 @@ if [ -n "$specs" ]; then
   report="$(mktemp -t battle-gate.XXXXXX)"
   trap 'rm -f "$report"' EXIT
 
-  # One at a time unless told otherwise (`BATTLE_E2E_WORKERS`): each spec drives its own WebGL page and times its pad
-  # presses by the clock. On a PC that draws WebGL in software, the suite's eight at once starved each other
-  # (2026-11-21: 5 of 9 failed at eight workers, 1 of 9 at two, none at one, on the same code).
-  workers="${BATTLE_E2E_WORKERS:-1}"
+  # Three at a time unless told otherwise (`BATTLE_E2E_WORKERS`): each spec drives its own WebGL page and times its pad
+  # presses by the clock, so eight at once starved each other (2026-11-21: 5 of 9 failed). Once PR 9 made the pad
+  # presses retry, three passed 17 of 17 twice in 86 s and four 3 times in 72 s, against 235 s one at a time
+  # (2026-11-22).
+  workers="${BATTLE_E2E_WORKERS:-3}"
   echo "3D table gate: the 3D table's browser tests ($(echo $specs)), port $port, $workers at a time..."
   # shellcheck disable=SC2086 # one argument per spec
   (cd "$root/packages/client" &&

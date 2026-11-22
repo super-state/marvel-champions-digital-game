@@ -6,16 +6,18 @@
 # Which check, by what the push changes under `packages/` and `pnpm-lock.yaml`:
 #   - nothing there (docs, a script, a changelog fragment), or only new static files in `packages/client/public/`:
 #     no check; neither for deleting a branch or pushing a tag;
-#   - only the 3D table (`packages/client/src/battle-table/`, `packages/client/battle/`) and its browser tests (the
-#     specs in `packages/client/e2e/` with `battle` in their file name): the type check, the 3D table's unit tests
-#     and those browser tests (`.githooks/battle-gate.sh`);
-#   - anything else (rules, cards, the old 2D game): the Playwright suite (`.githooks/e2e-gate.sh`).
+#   - the rules or cards (`packages/engine/`, `packages/content/`, `packages/cards/`) or `pnpm-lock.yaml`: the tests
+#     of what changed that the game we play can reach, then the 3D table's gate (`.githooks/rules-gate.sh`);
+#   - anything else under `packages/` (the 3D table, the client code it borrows from the old 2D game, other packages):
+#     the 3D table's gate: the type check, its unit tests and its browser tests (`.githooks/battle-gate.sh`).
+# The old 2D game's own browser suite (`pnpm e2e:verify`) is never part of a push (Adam, 2026-11-22: the old game is
+# not played; only its rules and cards are used).
 #
 # `PUSH_GATE_DRY_RUN=1 git push …` prints which check each ref would get, runs none, and refuses the push.
 zero="0000000000000000000000000000000000000000"
 hooks="$(dirname "$0")"
 remote="$1"
-battle_only='^packages/client/(src/battle-table/|battle/|e2e/[^/]*battle[^/]*\.spec\.ts$)'
+rules='^(packages/(engine|content|cards)/|pnpm-lock\.yaml$)'
 dry="${PUSH_GATE_DRY_RUN:-}"
 
 while read -r local_ref local_sha remote_ref remote_sha; do
@@ -37,7 +39,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     [ -n "$base" ] || base="$(git merge-base "$local_sha" origin/main 2>/dev/null || true)"
   fi
 
-  gate="e2e"
+  gate="rules" # with nothing to compare against, the rules gate tests as if everything changed
   if [ -n "$base" ]; then
     # A file newly added under `packages/client/public/` is left out: a new static file (a font, a picture) cannot
     # change a screen that does not ask for it. A changed or removed one still counts.
@@ -45,7 +47,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       grep -vE "^A[[:space:]]+packages/client/public/" | cut -f2-)"
     if [ -z "$changed" ]; then
       gate="none"
-    elif ! printf '%s\n' "$changed" | grep -qvE "$battle_only"; then
+    elif ! printf '%s\n' "$changed" | grep -qE "$rules"; then
       gate="battle"
     fi
   fi
@@ -57,7 +59,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   case "$gate" in
     none) continue ;;
     battle) sh "$hooks/battle-gate.sh" "$local_sha" < /dev/null || exit 1 ;;
-    *) sh "$hooks/e2e-gate.sh" "$local_sha" < /dev/null || exit 1 ;;
+    *) sh "$hooks/rules-gate.sh" "$local_sha" "$base" < /dev/null || exit 1 ;;
   esac
 done
 
