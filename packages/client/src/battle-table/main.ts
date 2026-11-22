@@ -10,6 +10,7 @@ import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js
 import { arrangeScene } from "./debug-scenes.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
+import { pictureOf, retryFailedPictures } from "./picture-retry.js";
 import { eventLook, offerDoes, spotOf, waitsOnDock, type GlowTone, type Spot } from "./spotlight.js";
 import {
   BattleTable,
@@ -123,6 +124,9 @@ const railToggle = element<HTMLButtonElement>("rail-toggle");
 const hoverPicture = element<HTMLImageElement>("hover-card");
 const pinnedCard = element("pinned-card");
 const pinnedPicture = pinnedCard.querySelector("img")!;
+// A card picture that fails to load is asked for again a little later, as the table's own cards are.
+for (const image of [preview, hoverPicture, pinnedPicture, element<HTMLImageElement>("game-over-art")])
+  retryFailedPictures(image);
 /** The card pinned at the table's side with a right-click (`pinCard`). */
 let pinnedId: string | null = null;
 /** Wider than a phone: the hand sinks, the turn corner shows and the card panel can fold away. */
@@ -831,7 +835,7 @@ function setWidePreview(wide: boolean) {
 
 function showPreview(card: Pick<BattleCard, "art" | "name" | "landscape">, expand: boolean) {
   setWidePreview(expand && card.landscape);
-  if (preview.getAttribute("src") !== card.art) preview.src = card.art;
+  if (pictureOf(preview.getAttribute("src") ?? "") !== card.art) preview.src = card.art;
   preview.alt = card.name;
   preview.hidden = false;
 }
@@ -1213,7 +1217,7 @@ function showOutcome(outcome: Snapshot["outcome"]) {
   const art = element<HTMLImageElement>("game-over-art");
   const figure = art.closest("figure")!;
   figure.hidden = !featured.art;
-  if (featured.art && art.getAttribute("src") !== featured.art) art.src = featured.art;
+  if (featured.art && pictureOf(art.getAttribute("src") ?? "") !== featured.art) art.src = featured.art;
   figure.toggleAttribute("data-landscape", schemeLoss);
   element("game-over-stamp").textContent = won
     ? "Defeated"
@@ -3440,8 +3444,9 @@ function placeHoverCard() {
   }
   const { card, size, spot } = preview;
   // A short fade as it appears or moves on to another card, so it never snaps in from nowhere.
-  const fresh = hoverPicture.hidden || hoverPicture.getAttribute("src") !== card.art;
-  if (hoverPicture.getAttribute("src") !== card.art) hoverPicture.src = card.art!;
+  const shown = pictureOf(hoverPicture.getAttribute("src") ?? "");
+  const fresh = hoverPicture.hidden || shown !== card.art;
+  if (shown !== card.art) hoverPicture.src = card.art!;
   hoverPicture.alt = card.name;
   if (fresh && !reducedMotion())
     hoverPicture.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
