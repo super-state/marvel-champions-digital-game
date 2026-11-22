@@ -1452,6 +1452,33 @@ function appliesHelp(reveal: Beat["reveal"]): string | null {
   return `You're in ${applies.form === "Hero" ? "hero" : "alter-ego"} form: ${applies.text}`;
 }
 
+/**
+ * An effect picks cards from the hand at random (Highway Robbery, Eviction Notice): a light hops from card to card,
+ * slowing down, and stops on the ones the game picked, which stay lit while `stamp` says where they go. The game
+ * has already picked them: this only shows the pick being made, it never picks.
+ */
+async function pickFromHandAtRandom(beat: Beat, ids: readonly string[], stamp: string) {
+  if (!table) return;
+  narrate(beat, feedLineOf(beat), {
+    eyebrow: { text: "At random", icon: "forced", tone: "villain" },
+    title: ids.length > 1 ? `Picking ${ids.length} cards from your hand` : "Picking a card from your hand",
+  });
+  const pool = displayedHand.map((card) => card.id);
+  if (!reducedMotion() && pool.length > ids.length) {
+    const hops = 7 + Math.min(4, pool.length);
+    let last = "";
+    for (let hop = 0; hop < hops; hop++) {
+      const choices = pool.filter((id) => id !== last);
+      last = choices[Math.floor(Math.random() * choices.length)]!;
+      table.spotlightHand([last]);
+      await sleep(70 + 230 * (hop / hops) ** 2);
+    }
+  }
+  table.spotlightHand(ids);
+  for (const id of ids) stampCard(id, stamp, "surge");
+  await sleep(reducedMotion() ? 500 : 900);
+}
+
 /** How a revealed card is introduced: dealt and turned over, or brought in by another card (your nemesis, by Shadow). */
 function revealedBy(reveal: NonNullable<Beat["reveal"]>): string {
   if (!reveal.broughtBy) return "Revealed";
@@ -2174,7 +2201,10 @@ async function present(beats: Snapshot["beats"]) {
       displayedHand = displayedHand.filter((card) => fresh.includes(card.id) || !beat.handDiscard!.includes(card.id));
       if (!fresh.length) continue;
       narrate(beat, feedLineOf(beat));
+      // Discarded at random (Eviction Notice, The Vulture's Plans): the pick is seen being made first.
+      if (beat.random) await pickFromHandAtRandom(beat, fresh, "Discarded at random");
       await new Promise<void>((resolve) => (table ? table.animateDiscards(fresh, resolve) : resolve()));
+      if (beat.random) table?.spotlightHand([]);
       displayedHand = displayedHand.filter((card) => !fresh.includes(card.id));
       await sleep(240);
       continue;
@@ -2194,14 +2224,17 @@ async function present(beats: Snapshot["beats"]) {
       continue;
     }
     if (beat.tucked) {
-      // Highway Robbery: the card leaves the hand and goes facedown under it.
+      // Highway Robbery: a card is picked from the hand (at random: a light hops across the hand and stops on it),
+      // then slides facedown under it, where its back stays showing until When Defeated gives it back.
       const { ids, host } = beat.tucked;
       narrate(beat, feedLineOf(beat), {
         eyebrow: { text: "When Revealed", icon: "forced", tone: "villain" },
         title: `${plural(ids.length, "card")} from your hand under ${nameOf(host)}`,
       });
+      if (beat.random) await pickFromHandAtRandom(beat, ids, `Under ${nameOf(host)}`);
       displayedHand = displayedHand.filter((card) => !ids.includes(card.id));
       table?.tuckUnder(ids, host, displayedHand);
+      if (beat.random) table?.spotlightHand([]);
       await sleep(reducedMotion() ? 200 : 760);
       table?.settleStash();
       table?.setUnder(host, beat.tucked.count);
@@ -2684,6 +2717,9 @@ async function present(beats: Snapshot["beats"]) {
         await sleep((reducedMotion() ? 260 : step ? 900 : 620) + (fading ? SPOT_FADE_MS * 0.6 : 0));
         setSpot({ glow: [{ id: scheme, tone: "threat" }], cutouts: [scheme] });
       }
+      // A scheme just revealed (Highway Robbery's starting threat) may still be flying to its place: the flash waits
+      // for it there, rather than going off where it was read, over Rhino and the hero, like a targeting ring.
+      for (let waited = 0; table?.flying(beat.threat.scheme) && waited < 1200; waited += 60) await sleep(60);
       activationRing(beat.threat.scheme);
       const counter = labels.get(beat.threat.scheme)?.querySelector<HTMLElement>(".scheme-threat");
       if (counter) {
@@ -2847,6 +2883,7 @@ function render() {
     villain: state.villain,
     inPlay: state.inPlay,
     enemyCards: state.enemyCards,
+    under: state.under,
     discard: state.discard.filter((c) => c.id !== staged?.id),
     deckCount: state.deckCount,
     encounterCount: state.encounterCount,
