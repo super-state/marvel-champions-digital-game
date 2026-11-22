@@ -2263,8 +2263,12 @@ export class BattleTable {
     // The main scheme stands nearest the villain; the side schemes fill leftwards across the free mat first, a card's
     // width and a gap apart, and only stack upwards once a row has no more room (Adam, 2026-11-22: use the space).
     const schemeColumn = schemeScale * (HEIGHT + 0.3);
-    const leftmost = this.#point(w * 0.035, enemyRow, schemeElevation).x + (schemeScale * HEIGHT) / 2;
-    const schemeColumns = Math.max(1, Math.floor((schemeOrigin.x - leftmost) / schemeColumn) + 1);
+    // No further left than the table reaches on the right (the encounter deck), so the villain stays in the middle
+    // without the whole table shrinking; and in a block of two rows rather than one long line (Adam, 2026-11-22).
+    const leftEdge = Math.max(w * 0.035, w * 0.5 - pileSpread - encounterWidth * 0.75);
+    const leftmost = this.#point(leftEdge, enemyRow, schemeElevation).x + (schemeScale * HEIGHT) / 2;
+    const roomFor = Math.max(1, Math.floor((schemeOrigin.x - leftmost) / schemeColumn) + 1);
+    const schemeColumns = Math.min(roomFor, Math.max(1, Math.ceil(schemes.length / 2)));
     schemes.forEach((card, i) => {
       const position = schemeOrigin.clone();
       position.x -= (i % schemeColumns) * schemeColumn;
