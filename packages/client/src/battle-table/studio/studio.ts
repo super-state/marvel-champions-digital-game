@@ -245,6 +245,7 @@ async function paintEditor() {
     ? `${moment.label}${variants.length > 1 ? ` · sound ${String.fromCharCode(65 + selected!.index)} of ${variants.length}` : ""}`
     : "Pick a sound";
   $("editor-file").textContent = variant ? fileLabel(variant.file, (variant as { source?: unknown }).source) : "";
+  $("show-folder").hidden = !(variant && sourcePath(variant));
   const chips = $("variants");
   chips.replaceChildren();
   if (selected) {
@@ -435,6 +436,29 @@ $("zoom-cut").onclick = () => wave.zoomToCut();
 $("play-moment").onclick = () => void playOnTable();
 $("reset-table").onclick = () => frame.contentWindow?.location.reload();
 
+/** Where on this PC a sound came from: a library file, or the original of one the studio has saved. */
+function sourcePath(variant: Variant): string | null {
+  if (variant.file.startsWith("lib:")) return variant.file.slice(4);
+  const source = (variant as { source?: unknown }).source;
+  return typeof source === "string" ? source : null;
+}
+
+/** Opens the folder a sample lives in and puts the browser's cursor on it, so its neighbours are a key press away. */
+async function showInFolder() {
+  const variant = selected ? draft.sounds[selected.name]?.[selected.index] : undefined;
+  const path = variant && sourcePath(variant);
+  if (!path) return;
+  const dir = path.replace(/[\\/][^\\/]*$/, "");
+  await open(dir);
+  const name = baseName(path).toLowerCase();
+  cursor = rows().findIndex((row) => row.kind === "file" && row.name.toLowerCase() === name);
+  if (cursor < 0) return status(`${baseName(path)} is no longer in ${dir}.`);
+  paintCursor();
+  $("files").focus({ preventScroll: true });
+}
+
+$("show-folder").onclick = () => void showInFolder();
+
 // ── Browser ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 let pins: string[] = [];
 let drives: string[] = [];
@@ -624,6 +648,7 @@ addEventListener("keydown", (event) => {
     event.preventDefault();
     void playCut();
   } else if (event.key === "t" || event.key === "T") void playOnTable();
+  else if (event.key === "f" || event.key === "F") void showInFolder();
   else if (event.key === "Escape") $("stop").click();
 });
 addEventListener("keydown", (event) => {
