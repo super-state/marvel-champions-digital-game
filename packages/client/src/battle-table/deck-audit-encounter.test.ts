@@ -829,6 +829,15 @@ test("01165 Eviction Notice: Peter can exhaust to remove it from the game", () =
   expect(snap(battle).hand).toHaveLength(6);
 });
 
+test("01165 Eviction Notice: removed from the game, it leaves the table instead of standing by the villain", () => {
+  // Adam, 2026-11-22: after "Exhaust Peter Parker" the card stayed beside Rhino for the rest of the game.
+  const battle = scenario({ top: ["01104", "01165", "01101"] });
+  const run = endTurn(battle, optionNamed(/^Exhaust Peter Parker/));
+  const notice = run.beats.find((b) => b.reveal?.name === "Eviction Notice")!.reveal!.id;
+  const gone = run.beats.find((b) => b.leftPlay === notice);
+  expect(gone?.text).toBe("Eviction Notice is removed from the game");
+});
+
 test("01165 Eviction Notice: or he discards a card at random, the card gains surge, and the obligation is discarded", () => {
   const battle = scenario({ top: ["01104", "01165", "01101"] });
   const handBefore = snap(battle).hand.length;

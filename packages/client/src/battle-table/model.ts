@@ -575,14 +575,15 @@ export class BattleModel {
       } else if (
         e.type === "cardMoved" &&
         ["playArea", "villainArea", "attachment", "scenarioPlayArea"].includes(e.from.kind) &&
-        (e.to.kind === "discard" || e.to.kind === "encounterDiscard")
+        (e.to.kind === "discard" || e.to.kind === "encounterDiscard" || e.to.kind === "removedFromGame")
       ) {
-        // A defeat already sends the card to its pile; anything else that leaves play goes there on its own beat.
+        // A defeat already sends the card to its pile; anything else that leaves play goes there on its own beat. One
+        // removed from the game leaves the table the same way (Eviction Notice, when Peter Parker exhausts for it).
         if (!defeated.has(e.instanceId))
           this.#beats.push({
             enemy,
             actor: e.instanceId,
-            text: `${faceUpName(this.#game, e.instanceId)} is discarded`,
+            text: `${faceUpName(this.#game, e.instanceId)} ${e.to.kind === "removedFromGame" ? "is removed from the game" : "is discarded"}`,
             leftPlay: e.instanceId,
           });
       } else if (e.type === "cardMoved" && e.from.kind === "hand" && e.to.kind === "discard") {
