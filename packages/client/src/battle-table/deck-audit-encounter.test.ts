@@ -1021,6 +1021,19 @@ test("01190 Shadow of the Past (hero): brings in Vulture and Highway Robbery and
   expect(shadow).toBeLessThan(vulture);
   expect(vulture).toBeLessThan(robbery);
   expect(hit).toBeGreaterThan(robbery);
+  // Vulture's Quickstrike waits for the rest of Shadow: he is aimed at Spider-Man only once Shadow is done (Adam,
+  // 2026-11-22: the reticle sat on Spider-Man through Highway Robbery with no attack in sight), and it says why.
+  const aim = at(run, "Vulture aims", (b) => b.attackAim?.source === enemyNamed(battle, "Vulture")?.id);
+  const shadowDone = at(run, "Shadow discarded", (b) => b.encounterResolved === run.beats[shadow]!.reveal!.id);
+  expect(aim).toBeGreaterThan(shadowDone);
+  expect(aim).toBeLessThan(hit);
+  expect(run.beats[aim]!.activity).toBe("Quickstrike: Vulture attacks");
+  expect(run.beats.slice(vulture, aim).some((b) => b.activity === "Quickstrike: Vulture attacks")).toBe(false);
+  // Brought in by Shadow, not dealt, and the rest of the set going into the deck is named as the nemesis's cards.
+  expect(run.beats[vulture]!.reveal).toMatchObject({ broughtBy: "Shadow of the Past", nemesis: true });
+  expect(run.beats[robbery]!.reveal).toMatchObject({ broughtBy: "Shadow of the Past", nemesis: true });
+  expect(run.beats[shadow]!.reveal!.broughtBy).toBeUndefined();
+  expect(run.beats.find((b) => b.intoEncounterDeck)?.nemesis).toBe(true);
   expect(enemyNamed(battle, "Vulture")).toBeDefined();
   expect(enemyNamed(battle, "Highway Robbery")!.threat).toBe(3);
   expect(snap(battle).heroHp).toBe(5);

@@ -175,6 +175,8 @@ export interface BattleBeat {
   deckReset?: number;
   /** Set-aside cards shuffled into the encounter deck (Shadow of the Past: the rest of the nemesis set). */
   intoEncounterDeck?: BattleCard[];
+  /** Every card in `intoEncounterDeck` belongs to a nemesis set. */
+  nemesis?: true;
   /** The encounter deck ran out: its discard pile shuffled back in, `count` cards. */
   encounterReset?: number;
   /** Acceleration tokens on the main scheme after one was added. */
@@ -209,6 +211,10 @@ export interface BattleBeat {
      * player is told which half of the card is about to happen.
      */
     applies?: { form: "Hero" | "Alter-Ego"; text: string };
+    /** The card whose ability revealed it, when it was not dealt (Shadow of the Past bringing in Vulture). */
+    broughtBy?: string;
+    /** It belongs to a nemesis set. */
+    nemesis?: true;
   };
   /** A revealed encounter card that has fully resolved going to the encounter discard pile (Assault, after its attack). */
   encounterResolved?: string;
@@ -274,6 +280,23 @@ export function formWhenRevealed(
     "is",
   ).exec(text);
   return line ? { applies: { form: label, text: line[1]!.trim() } } : {};
+}
+
+/** A card of a nemesis encounter set (Vulture and the rest of Spider-Man's). */
+function isNemesisCard(card: object | undefined): boolean {
+  const sets = card && "encounterSetIds" in card ? (card.encounterSetIds as readonly string[] | undefined) : undefined;
+  return !!sets?.some((set) => set.endsWith("_nemesis"));
+}
+
+/** A step of `attacker`'s attack itself: its boost card, the defense, the damage. */
+function partOfAttack(beat: BattleBeat, attacker: string): boolean {
+  return (
+    beat.boostFor === attacker ||
+    beat.reveal?.boost?.enemy === attacker ||
+    beat.hit?.source === attacker ||
+    beat.text === "The attack is undefended" ||
+    beat.text.endsWith(" defends")
+  );
 }
 
 function apply(state: GameState, command: Command) {
@@ -470,6 +493,8 @@ export class BattleModel {
       ),
     );
     const heldReset: BattleBeat[] = [];
+    // An attack a card makes happen, aimed only once the attack goes ahead (see where it is set).
+    let heldAim: { attacker: string; activity: string; beat: BattleBeat } | null = null;
     let acceleration = this.#game.mainScheme.accelerationTokens;
     for (const e of events) {
       const before = this.#beats.length;
@@ -556,12 +581,20 @@ export class BattleModel {
         const card = cardOf(result.state, e.instanceId) ?? cardOf(this.#game, e.instanceId);
         if (card?.type === "villain" && e.type === "encounterCardRevealed") continue;
         const title = card?.name ?? name(e.instanceId);
+        // Revealed by another card's ability rather than dealt (Shadow of the Past bringing in Vulture): it says so.
+        const broughtBy =
+          e.type === "encounterCardRevealed" && resolving && resolving.card !== e.instanceId
+            ? name(resolving.card)
+            : "";
+        const nemesis = isNemesisCard(card);
         this.#beats.push({
           enemy,
           text: e.type === "boostCardFlipped" ? `Boost card · ${title}` : `Reveal ${title}`,
           reveal: {
             id: e.instanceId,
             name: title,
+            ...(broughtBy ? { broughtBy } : {}),
+            ...(nemesis ? { nemesis: true as const } : {}),
             boost: e.type === "boostCardFlipped" ? { icons: e.boostIcons, enemy: e.enemyInstanceId } : null,
             art: artFor(card, { kind: "front" })?.url ?? "",
             landscape: isLandscapeType(card?.type ?? ""),
@@ -575,10 +608,13 @@ export class BattleModel {
       } else if (
         e.type === "cardMoved" &&
         ["playArea", "villainArea", "attachment", "scenarioPlayArea"].includes(e.from.kind) &&
-        (e.to.kind === "discard" || e.to.kind === "encounterDiscard" || e.to.kind === "removedFromGame")
+        (e.to.kind === "discard" ||
+          e.to.kind === "encounterDiscard" ||
+          (e.to.kind === "removedFromGame" && e.from.kind === "playArea"))
       ) {
         // A defeat already sends the card to its pile; anything else that leaves play goes there on its own beat. One
-        // removed from the game leaves the table the same way (Eviction Notice, when Peter Parker exhausts for it).
+        // removed from the game out of a player's area leaves the table the same way (Eviction Notice, when Peter
+        // Parker exhausts for it). A main scheme stage or the villain's card swapped out is shown by its own beat.
         if (!defeated.has(e.instanceId))
           this.#beats.push({
             enemy,
@@ -633,12 +669,18 @@ export class BattleModel {
         });
       } else if (e.type === "cardMoved" && e.from.kind === "setAside" && e.to.kind === "encounterDeck") {
         const last = this.#beats.at(-1);
-        if (last?.intoEncounterDeck) last.intoEncounterDeck.push(this.#shownCard(e.instanceId));
-        else
+        // Cards of a nemesis set (Shadow of the Past bringing in the rest of Vulture's) are named as such.
+        const card = cardOf(result.state, e.instanceId);
+        const nemesis = isNemesisCard(card);
+        if (last?.intoEncounterDeck) {
+          last.intoEncounterDeck.push(this.#shownCard(e.instanceId));
+          if (!nemesis) delete last.nemesis;
+        } else
           this.#beats.push({
             enemy,
             text: "Shuffle into the encounter deck",
             intoEncounterDeck: [this.#shownCard(e.instanceId)],
+            ...(nemesis ? { nemesis: true as const } : {}),
           });
       } else if (e.type === "deckShuffled" && resets.has(e)) {
         // The deck ran out and its discard pile is the new deck. The engine reshuffles inside the deal that took the
@@ -695,16 +737,24 @@ export class BattleModel {
       ) {
         // An attack a card makes happen (Assault's "The villain attacks you") has no activation of its own: it is
         // aimed here, the way an activation's attack is, so the table shows who attacks whom before it resolves.
+        // It is held until the attack itself goes ahead: Vulture's Quickstrike is triggered as Shadow of the Past puts
+        // him into play, but waits for the rest of Shadow (Highway Robbery, the shuffle) to resolve first. Aimed at
+        // once, Spider-Man would sit under the reticle through all of that with no attack in sight.
         const attacker = e.event.enemyInstanceId;
+        const card = cardOf(result.state, attacker);
+        const quickstrike = !!card && /\bQuickstrike\b/i.test(plainRulesTextOf(card));
         this.#effectAttack = { enemy: attacker, activity: this.#villainActivity };
-        this.#villainActivity = `${name(attacker)} attacks`;
-        this.#beats.push({
-          enemy,
-          actor: attacker,
-          text: `Target: ${name(e.event.targetInstanceId)}`,
-          attackAim: { source: attacker, target: e.event.targetInstanceId },
-          enemyActivation: attacker,
-        });
+        heldAim = {
+          attacker,
+          activity: `${quickstrike ? "Quickstrike: " : ""}${name(attacker)} attacks`,
+          beat: {
+            enemy,
+            actor: attacker,
+            text: `Target: ${name(e.event.targetInstanceId)}`,
+            attackAim: { source: attacker, target: e.event.targetInstanceId },
+            enemyActivation: attacker,
+          },
+        };
       } else if (
         e.type === "triggerEvent" &&
         e.event.kind === "enemyAttack" &&
@@ -871,7 +921,17 @@ export class BattleModel {
         });
       if (e.type === "enemyActivated" && this.#beats.length > before)
         this.#beats.at(-1)!.enemyActivation = e.enemyInstanceId;
+      if (heldAim && this.#beats.slice(before).some((beat) => partOfAttack(beat, heldAim!.attacker))) {
+        this.#villainActivity = heldAim.activity;
+        this.#beats.splice(before, 0, { ...heldAim.beat, activity: heldAim.activity });
+        heldAim = null;
+      }
       if (enemy && this.#beats.length > before) this.#beats[this.#beats.length - 1]!.activity = this.#villainActivity;
+    }
+    // The attack waits on a question (whether to defend): it is aimed now, as the question asks.
+    if (heldAim) {
+      this.#villainActivity = heldAim.activity;
+      this.#beats.push({ ...heldAim.beat, activity: heldAim.activity });
     }
     // The engine pays exhaustion first. Show the attacking card upright through contact and recoil.
     for (const beat of [...this.#beats]) {

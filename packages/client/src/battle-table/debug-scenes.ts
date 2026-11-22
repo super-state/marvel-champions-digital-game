@@ -102,6 +102,14 @@ const SCENES: Record<string, Scene> = {
     encounterTop: ["01110", "01190"],
   },
   /**
+   * Shadow of the Past in hero form: Vulture's Quickstrike attacks Spider-Man, but only once Highway Robbery and the
+   * shuffle are done. End the turn to watch the reticle wait for it.
+   */
+  shadowhero: {
+    hero: { form: "hero" },
+    encounterTop: ["01110", "01190"],
+  },
+  /**
    * Caught Off Guard comes up with Web-Shooter and Helicarrier in play: end the turn, and its When Revealed asks which
    * to discard. The card steps aside so both can be seen and picked.
    */
