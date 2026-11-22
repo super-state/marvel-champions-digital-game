@@ -39,12 +39,15 @@ in the engine; the 3D table shows it and sends the player's choices back, it nev
   - `PUSH_GATE_DRY_RUN=1 git push …` says which check a push would get without running it or pushing.
   - The checks test the files on disk, so they refuse while `packages/` has uncommitted edits. Don't push past a
     failure with `--no-verify`; fix it.
-- **Small fixes go in one batch (Adam, 2026-11-22).** When Adam reels off small fixes (a heading's CSS, an overlay, a
-  rules slip), don't open a branch, PR and push check for each. Keep one fix-up worktree and branch
-  (`../mc-wt-fixups`, branch `fixups/<date>`) for the session, commit each fix there as it's done and checked, and ship
-  them together as one PR when Adam says so or at a natural pause. After the merge, pull the main folder (Adam plays
-  from it, so a fix only reaches his table then), remove the worktree, and start a fresh branch from main for the next
-  batch. Bigger or riskier work still gets its own branch.
+- **How Adam works: he plays, spots, asks; each fix goes live on its own (Adam, 2026-11-22).** Adam keeps the 3D table
+  open in Surf (desktop shortcut "Marvel Champions 3D": the dev server on port 5173, run from the main folder) and
+  opens a task per thing he spots, often several at once. Each task: its own worktree and branch, the fix, a look in
+  the browser, push (the push check), PR, merge right away, then `git -C D:/AdamsWorkspace/mc pull --ff-only` at once:
+  the dev server sees the files change and Adam's open table reloads by itself within seconds (checked 2026-11-22;
+  a full reload, so the game in progress restarts). Don't batch fixes or hold one back
+  for another. End with one line: "Live in your game now" (or why not). If main moved while you worked, merge it into
+  your branch and let the push check re-test; if another task is mid-edit on the same lines of `main.ts` or
+  `table.ts`, finish after it rather than both editing at once. Bigger or riskier work still asks Adam first.
 - A browser test of the 3D table goes in `packages/client/e2e/` with `battle` in its file name
   (`battle-controller.spec.ts`): that name is how the push check finds it. The old game's other browser tests never
   open the 3D table.
