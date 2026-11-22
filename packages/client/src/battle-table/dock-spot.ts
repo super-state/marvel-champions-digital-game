@@ -38,12 +38,15 @@ export function besideSpot(
   card: { readonly left: number; readonly right: number; readonly top: number; readonly bottom: number },
   size: { readonly width: number; readonly height: number },
   field: { readonly left?: number; readonly width: number; readonly height: number },
+  prefer: "right" | "left" = "right",
 ): { left: number; top: number } {
   const start = field.left ?? 0;
   const end = start + field.width;
   const gap = 64;
+  const onLeft = card.left - gap - size.width;
   let left = card.right + gap;
-  if (left + size.width > end - 8) left = card.left - gap - size.width;
+  if (prefer === "left" && onLeft >= start + 8) left = onLeft;
+  else if (left + size.width > end - 8) left = onLeft;
   left = Math.max(start + 8, Math.min(left, end - size.width - 8));
   const top = Math.max(8, Math.min((card.top + card.bottom) / 2 - size.height / 2, field.height - size.height - 8));
   return { left, top };

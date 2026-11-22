@@ -3632,12 +3632,22 @@ function previewSpot(id: string) {
   // Clear of a pinned card, so the two can be read side by side.
   const pinned = pinnedCard.hidden ? 0 : pinnedCard.offsetWidth + 28;
   const pinnedLeft = arena.dataset.rail === "left";
-  const around = { left: dx + point.left, right: dx + point.right, top: dy + point.top, bottom: dy + point.bottom };
-  const spot = besideSpot(around, size, {
-    left: pinnedLeft ? pinned : 0,
-    width: field.width - pinned,
-    height: field.height,
-  });
+  // A card attached to an enemy shows on the left, beside its tab, and is placed by its host, which holds still: the
+  // tab itself slides out while hovered and would carry the picture with it (Adam, 2026-11-22).
+  const host = card.attachedTo && state.enemyCards.some((c) => c.id === id) ? card.attachedTo : null;
+  const hostPoint = host ? table!.anchors().find((anchor) => anchor.id === host) : undefined;
+  const box = hostPoint ?? point;
+  const around = { left: dx + box.left, right: dx + box.right, top: dy + box.top, bottom: dy + box.bottom };
+  if (hostPoint) {
+    const tabs = state.enemyCards.filter((c) => c.attachedTo === host).length;
+    around.left -= hostPoint.width * (0.18 * tabs + 0.1);
+  }
+  const spot = besideSpot(
+    around,
+    size,
+    { left: pinnedLeft ? pinned : 0, width: field.width - pinned, height: field.height },
+    hostPoint ? "left" : "right",
+  );
   return { card, size, spot, side: spot.left >= around.right ? ("right" as const) : ("left" as const) };
 }
 
