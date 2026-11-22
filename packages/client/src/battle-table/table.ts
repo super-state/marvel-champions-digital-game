@@ -2202,8 +2202,10 @@ export class BattleTable {
       h = this.#height;
     const boardWidth = Math.min(w * 0.2, h * 0.22);
     const flat = -Math.PI / 2;
-    // Piles sit out at the mat's edges, leaving the middle to the cards in play.
-    const pileX = w * 0.885;
+    // Piles sit out at the mat's edges, leaving the middle to the cards in play. On a very wide screen they stop short
+    // of the edges, so the table keeps together rather than spreading out with the room (Adam, 2026-11-22).
+    const pileSpread = Math.min(w * 0.385, h * 0.75);
+    const pileX = w * 0.5 + pileSpread;
     const pileY = h * 0.505;
     const base = this.#point(pileX, pileY, 0.025);
     const encounterWidth = Math.min(w * 0.088, h * 0.088);
@@ -2261,7 +2263,9 @@ export class BattleTable {
     const otherEnemies = enemies.filter((card) => !isScheme(card));
     const enemyRow = h * 0.242;
     const enemyCardWidth = Math.min(w * 0.117, h * 0.145);
-    const schemeX = w * 0.255;
+    // The schemes stand a set gap left of the villain (and any cards under it), however wide the screen.
+    const villainLeft = w * 0.5 - villainWidth * (0.5 + TAB * villainTabs);
+    const schemeX = Math.max(w * 0.255, villainLeft - enemyCardWidth * (0.45 + HEIGHT / 2));
     const schemeElevation = 0.05;
     const schemeOrigin = this.#point(schemeX, enemyRow, schemeElevation);
     const schemeScale = this.#point(schemeX + enemyCardWidth, enemyRow, schemeElevation).x - schemeOrigin.x;
@@ -2301,7 +2305,8 @@ export class BattleTable {
         0.025,
         encounterGoal.position.z,
       ).x;
-      const slotWidth = (right - left) / otherEnemies.length;
+      // Each minion takes a card-sized slot from the villain outwards; room to spare is left at the far end.
+      const slotWidth = Math.min((right - left) / otherEnemies.length, enemyCardWidth * 1.5);
       otherEnemies.forEach((card, i) => {
         const tabs = state.enemyCards.filter((c) => c.attachedTo === card.id).length;
         const footprint = (card.landscape ? HEIGHT : 1) + TAB * tabs;
@@ -2624,7 +2629,7 @@ export class BattleTable {
     }
     const pileWidth = Math.min(w * 0.125, h * 0.125);
     const discardGoal = { position: base.clone(), scale: this.#point(pileX + pileWidth, pileY, 0.025).x - base.x };
-    const deckX = w * 0.115,
+    const deckX = w * 0.5 - pileSpread,
       deckY = h * 0.505;
     const deckCenter = this.#point(deckX, deckY, 0.025);
     const deckGoal = {
