@@ -672,48 +672,37 @@
   font: italic 900 var(--float-size, 54px)/1 var(--font-ui);
   letter-spacing: -0.03em;
   white-space: nowrap;
-  -webkit-text-stroke: 0.09em #3b0806;
+  --shade: #3b0806;
+  -webkit-text-stroke: 0.09em var(--shade);
   paint-order: stroke fill;
   text-shadow:
-    0 4px 0 #3b0806,
+    0 4px 0 var(--shade),
     0 10px 22px #000c;
+}
+/* The coloured numbers paint their gradient through see-through letters (background-clip: text). A text-shadow
+   would be drawn over that gradient and show through the letters, turning them dark, so their shadow comes from a
+   filter instead, which sits behind the whole number. */
+.float-number:is([data-kind="damage"], [data-kind="heal"], [data-kind="threat"], [data-kind="thwart"]) {
+  text-shadow: none;
+  filter: drop-shadow(0 4px 0 var(--shade)) drop-shadow(0 10px 22px #000c);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 .float-number[data-kind="damage"] {
-  color: #ffefe6;
-  background: linear-gradient(180deg, #fff6ef 10%, #ffb39e 55%, #ff5b44 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  background-image: linear-gradient(180deg, #fff6ef 10%, #ffb39e 55%, #ff5b44 100%);
 }
 .float-number[data-kind="heal"] {
-  -webkit-text-stroke-color: #06341b;
-  text-shadow:
-    0 4px 0 #06341b,
-    0 10px 22px #000c;
-  background: linear-gradient(180deg, #effff5 10%, #8ff0b7 55%, #2fc775 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  --shade: #06341b;
+  background-image: linear-gradient(180deg, #effff5 10%, #8ff0b7 55%, #2fc775 100%);
 }
 .float-number[data-kind="threat"] {
-  -webkit-text-stroke-color: #3a2203;
-  text-shadow:
-    0 4px 0 #3a2203,
-    0 10px 22px #000c;
-  background: linear-gradient(180deg, #fff6e4 10%, #ffd08a 55%, #ff9a2a 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  --shade: #3a2203;
+  background-image: linear-gradient(180deg, #fff6e4 10%, #ffd08a 55%, #ff9a2a 100%);
 }
 .float-number[data-kind="thwart"] {
-  -webkit-text-stroke-color: #0b2a45;
-  text-shadow:
-    0 4px 0 #0b2a45,
-    0 10px 22px #000c;
-  background: linear-gradient(180deg, #f2fbff 10%, #9fd6ff 55%, #4fa3ff 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  --shade: #0b2a45;
+  background-image: linear-gradient(180deg, #f2fbff 10%, #9fd6ff 55%, #4fa3ff 100%);
 }
 .float-number[data-kind="blocked"] {
   -webkit-text-stroke-color: #0c2630;
