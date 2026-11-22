@@ -416,6 +416,8 @@ export class BattleTable {
   readonly #floor = new THREE.Plane(new THREE.Vector3(0, 1, 0));
   readonly #tucked = new Map<string, { host: string; depth: number }>();
   readonly #turn = new THREE.Quaternion();
+  /** Where each tucked card holds while its host is hovered and lifted off it. */
+  readonly #held = new Map<string, { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 }>();
   /** How far each attached card has slid out from under its host while hovered (0 to 1). */
   readonly #fan = new Map<string, number>();
   /** The cards lying facedown under another card (`TableCards.under`), as laid out: kept facedown every frame. */
@@ -3155,14 +3157,24 @@ export class BattleTable {
       let fan = 0;
       for (const [other, { host: otherHost, depth: otherDepth }] of this.#tucked)
         if (otherHost === host && otherDepth <= depth) fan = Math.max(fan, this.#fan.get(other) ?? 0);
-      // A hovered host rises on its own: what is attached to it stays down on the mat where it was laid out.
+      // A hovered host rises on its own: what is tucked under it holds exactly where it lay when the pointer arrived,
+      // turned with it if the host is exhausted (Adam, 2026-11-22: an exhausted hero's upgrade spun round on hover).
       if (this.#hovered === host && !flight) {
-        if (piece.root.position.distanceToSquared(piece.target.position) > 1e-8) {
-          this.#apply(piece, this.#reduced.matches ? 1 : Math.min(1, dt * 14));
-          moving = true;
+        let held = this.#held.get(id);
+        if (!held) {
+          held = {
+            position: piece.root.position.clone(),
+            quaternion: piece.root.quaternion.clone(),
+            scale: piece.root.scale.clone(),
+          };
+          this.#held.set(id, held);
         }
+        piece.root.position.copy(held.position);
+        piece.root.quaternion.copy(held.quaternion);
+        piece.root.scale.copy(held.scale);
         continue;
       }
+      this.#held.delete(id);
       parent.updateMatrixWorld();
       piece.target.position
         .set(...attachmentFanOffset(-TAB * depth, STAGGER * depth, fan), -0.006 * depth)
