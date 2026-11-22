@@ -200,15 +200,17 @@ const TAB = 0.18;
 const ATTACHMENT_FAN = 0.07;
 const ATTACHMENT_TURN = 0.07;
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
+/** Each card tucked under another sits a little higher than the one above it, so the stack steps up (card widths). */
+const STAGGER = 0.035;
 
 /**
  * Where a tucked attachment's centre sits in its host's own frame (card widths), `fan` of the way out: slid left and
  * turned about its own bottom-left corner, which stays put but for the slide.
  */
-function attachmentFanOffset(x: number, fan: number): [number, number] {
+function attachmentFanOffset(x: number, y: number, fan: number): [number, number] {
   const turn = ATTACHMENT_TURN * fan;
   const cornerX = x - 0.5 - ATTACHMENT_FAN * fan;
-  const cornerY = -HEIGHT / 2;
+  const cornerY = y - HEIGHT / 2;
   // The centre is half a card right of and half a card up from the corner; turning carries it round.
   const cos = Math.cos(turn);
   const sin = Math.sin(turn);
@@ -2237,7 +2239,8 @@ export class BattleTable {
       const attachments = state.enemyCards.filter((c) => c.attachedTo === host.id);
       attachments.forEach((card, i) => {
         this.#tucked.set(card.id, { host: host.id, depth: attachments.length - i });
-        this.#pose(card.id, x - width * TAB * (attachments.length - i), y, width, 0.045 + i * 0.035, flat);
+        const depth = attachments.length - i;
+        this.#pose(card.id, x - width * TAB * depth, y - width * STAGGER * depth, width, 0.045 + i * 0.035, flat);
         onBoard.add(card.id);
         const target = this.#pieces.get(card.id)?.target;
         if (target) rest(target.position, target.scale, false);
@@ -2248,6 +2251,9 @@ export class BattleTable {
     };
     const villainTabs = state.enemyCards.filter((c) => c.attachedTo === state.villain.id).length;
     this.#villainShadow.visible = villainTabs > 0;
+    // Under the whole stack, not just the host: drawn above the cards tucked beneath, it darkened their bottom edges
+    // as if they sank into the mat (Adam, 2026-11-22).
+    this.#villainShadow.position.z = -0.006 * villainTabs - 0.004;
     const villainWidth = Math.min(boardWidth, (w * 0.3) / (1 + 2 * TAB * villainTabs));
     poseEnemy(state.villain, w * 0.5, h * 0.237, villainWidth);
     const isScheme = (card: TableCard) => card.type === "main_scheme" || card.type === "side_scheme";
@@ -2439,6 +2445,7 @@ export class BattleTable {
     const row = [state.hero, ...visibleUpgrades, ...permanents.filter((card) => card.type !== "upgrade")];
     const tabs = upgrades.length * TAB;
     this.#heroShadow.visible = upgrades.some((card) => card.id !== state.staged?.id);
+    this.#heroShadow.position.z = -0.006 * upgrades.length - 0.004;
     // Airborne cards can sweep over their neighbours. Space the row for their settled poses.
     const footprints = row.map((card) => (card.exhausted !== card.landscape ? HEIGHT : 1));
     const tabScale = state.hero.exhausted ? 1 / HEIGHT : 1;
@@ -2475,7 +2482,7 @@ export class BattleTable {
       if (card.id === state.staged?.id) posePermanent(card, x, 0.05);
       else {
         this.#tucked.set(card.id, { host: state.hero.id, depth: upgrades.length - i });
-        this.#pose(card.id, x, rowY, width, 0.045 + i * 0.035, flat);
+        this.#pose(card.id, x, rowY - width * STAGGER * (upgrades.length - i), width, 0.045 + i * 0.035, flat);
         onBoard.add(card.id);
         const target = this.#pieces.get(card.id)!.target;
         rest(target.position, target.scale, false);
@@ -3157,7 +3164,7 @@ export class BattleTable {
       }
       parent.updateMatrixWorld();
       piece.target.position
-        .set(...attachmentFanOffset(-TAB * depth, fan), -0.006 * depth)
+        .set(...attachmentFanOffset(-TAB * depth, STAGGER * depth, fan), -0.006 * depth)
         .applyMatrix4(parent.matrixWorld);
       piece.target.scale = parent.scale.x;
       piece.target.pitch = parent.rotation.x;
