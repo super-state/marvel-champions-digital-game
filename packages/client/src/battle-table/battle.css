@@ -1317,17 +1317,18 @@ button:focus-visible {
   color: var(--text-3);
   font-weight: 700;
 }
+/* Label, then two equal choices; the settings stack with their buttons lined up (Sidebar, Sound). */
 .menu-setting {
-  display: flex;
+  display: grid;
+  grid-template-columns: 4.5em 1fr 1fr;
   align-items: center;
-  justify-content: center;
   gap: 8px;
   margin-top: 16px;
   color: var(--text-2);
   font: 700 13px/1 var(--font-ui);
 }
-.menu-setting span {
-  margin-right: 4px;
+.menu-setting + .menu-setting {
+  margin-top: 10px;
 }
 .menu-setting .btn-option {
   min-height: 36px;

@@ -8,6 +8,7 @@ import { handBetweenBeats } from "./hand-flow.js";
 import { nextOfferIndex } from "./offer-queue.js";
 import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js";
 import { arrangeScene } from "./debug-scenes.js";
+import { sfx } from "./sound.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
@@ -934,8 +935,10 @@ function pick(id: string) {
   }
   if (state.choice) {
     const targets = state.choice.options.filter((option) => option.cardId === id);
-    if (targets.length === 1) selectChoice(targets[0]!.id);
-    else if (targets.length > 1) {
+    if (targets.length === 1) {
+      sfx.play("select");
+      selectChoice(targets[0]!.id);
+    } else if (targets.length > 1) {
       actionCard = id;
       render();
     }
@@ -954,10 +957,12 @@ function pick(id: string) {
   if (!card) return;
   element("play-refusal").hidden = true;
   if (card.requiresHeroForm) {
+    sfx.play("error");
     showPlayHint(state.hero.id, "Hero form required", true);
     return;
   }
   if (!card.playable) {
+    sfx.play("error");
     showPlayHint(card.id, card.reason || "This card cannot be played now.");
     return;
   }
@@ -965,6 +970,7 @@ function pick(id: string) {
   stagedAttachment = model.isTargetedAttachment(card.id) ? card.id : null;
   staged = card;
   flying = true;
+  sfx.play("whoosh", { gain: 0.7 });
   render();
 }
 
@@ -980,6 +986,7 @@ function beginPlay(card: BattleCard) {
   act(() => {
     if (!model.pick(card.id)) {
       staged = null;
+      sfx.play("error");
       const refusal = element("play-refusal");
       refusal.getAnimations().forEach((a) => a.cancel());
       refusal.textContent = `${card.name} · ${card.reason || "This card cannot be played now."}`;
@@ -991,6 +998,7 @@ function beginPlay(card: BattleCard) {
       return;
     }
     state = model.snapshot();
+    sfx.play("play");
     if (!state.payment && !state.choice) {
       staged = null;
       say(`${card.name} played`);
@@ -1000,6 +1008,7 @@ function beginPlay(card: BattleCard) {
 
 function toggle(id: string) {
   if (!state.payment) return;
+  sfx.play("select");
   model.toggle(id);
   render();
 }
@@ -1038,6 +1047,8 @@ function pay() {
   if (discarding || !payment?.canPay || !table) return;
   const flights = payment.discards;
   if (!model.pay()) return;
+  sfx.play("confirm");
+  if (flights.length) sfx.play("discard", { delay: 120 });
   // Paid: the bar folds away at once, before the hand settles back down under where it was.
   dock.setAttribute("data-idle", "");
   animateDiscards(flights, "", () => {
@@ -1142,6 +1153,7 @@ function confirmChoice() {
 
 function endTurn() {
   if (!state.canEndTurn) return;
+  sfx.play("confirm");
   act(() => {
     model.endTurn();
   });
@@ -1236,6 +1248,7 @@ function showOutcome(outcome: Snapshot["outcome"]) {
   if (!gameOver.open) {
     if (gameMenu.open) gameMenu.close();
     if (won) throwConfetti();
+    sfx.play(won ? "win" : "lose");
     gameOver.showModal();
   }
 }
@@ -1466,6 +1479,7 @@ async function convertThreat(scheme: string, target: string, amount: number) {
   token.dataset.kind = "damage";
   token.replaceChildren(icon("damage"), make("b", "", String(amount)));
   await sleep(260);
+  sfx.play("whoosh");
   const fly = token.animate(
     [
       { transform: "translate(0, 0) scale(1)" },
@@ -1485,6 +1499,7 @@ async function whenRevealedFires(
   eyebrow = "When Revealed",
 ) {
   table?.activateWhenRevealed(card.id);
+  sfx.play("block", { rate: 1.3, gain: 0.8 });
   if (card.noHeroes) {
     // It fires, but on no one: say so, or the flash looks like something went missing (Adam, 2026-11-22: Shocker).
     // Stamped on the card itself, because on a wide screen the bar stays folded while the villain side plays.
@@ -1601,6 +1616,7 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
     if (table.landStaged(source.card)) {
       await sleep(reducedMotion() ? 150 : 620);
       table.shinePlayed(source.card);
+      sfx.play("block", { rate: 1.3, gain: 0.8 });
       await sleep(reducedMotion() ? 200 : SHINE_MS);
     } else {
       table.activateWhenRevealed(source.card);
@@ -1622,6 +1638,7 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   focusBlur.dataset.row = "";
   focusBlur.hidden = false;
   table.revealFromDeck(cards);
+  cards.forEach((_, i) => sfx.play("flip", { delay: i * 180, gain: 0.8 }));
   placeLabels();
   // Laid out once hidden-at-0 first, so the fade-in runs from the same moment the first card lifts.
   void focusBlur.offsetWidth;
@@ -1630,6 +1647,7 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   const kept = next?.returned?.filter((id) => milled.includes(id)) ?? [];
   if (kept.length) {
     table.pickFromReveal(kept);
+    sfx.play("draw");
     for (const id of kept) stampCard(id, "To hand", "boost");
     await sleep(reducedMotion() ? 300 : 900);
   } else if (source?.miss) {
@@ -1644,6 +1662,7 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   const going = milled.filter((id) => !kept.includes(id));
   if (going.length) {
     table.discardFromReveal(going);
+    sfx.play("discard");
     await sleep(reducedMotion() ? 200 : 520);
   }
   // The blur fades with the cards still cut out of it, then goes.
@@ -1966,6 +1985,7 @@ function sweepBanner(title: string, tone: "hero" | "villain" | "ending") {
   banner.dataset.phase = tone;
   const lettering = banner.querySelector("b")!;
   lettering.textContent = title;
+  sfx.play("whoosh-big");
   banner.getAnimations({ subtree: true }).forEach((a) => a.cancel());
   banner.animate([{ opacity: 0 }, { opacity: 1, offset: 0.16 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }], {
     duration: PHASE_BANNER_MS,
@@ -1993,6 +2013,7 @@ function activationRing(id: string) {
 }
 
 async function flashDefeatedCard(id: string) {
+  sfx.play("defeat");
   const outline = table?.cardOutline(id);
   if (!outline?.length) return;
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -2089,6 +2110,7 @@ async function showBoost(reveal: NonNullable<Beat["reveal"]>) {
   for (let i = 0; i < Math.min(boost.icons, 4); i++) marks.append(icon("boost"));
   burst.append(marks, make("b", "", `+${boost.icons}`), make("span", "", "Boost"));
   stage.append(burst);
+  sfx.play("boost");
   boostBursts.set(reveal.id, { node: burst });
   placeBoostBurst(burst, card);
   if (!reducedMotion())
@@ -2128,6 +2150,7 @@ async function surgeBurst() {
   const burst = make("div", "surge-burst");
   burst.setAttribute("role", "status");
   burst.append(icon("surge"), make("b", "", "+1 card"));
+  sfx.play("surge");
   burst.style.left = deck.x + "px";
   burst.style.top = deck.y + "px";
   stage.append(burst);
@@ -2311,6 +2334,7 @@ async function present(beats: Snapshot["beats"]) {
         ? Math.max(0, Number(deckCount.textContent) - beat.draw.length)
         : state.deckCount + pendingDraws.size;
       table?.showDraw(displayedHand, beat.draw, deckSize, pilesLater ? undefined : state.discard);
+      beat.draw.forEach((_, i) => sfx.play("draw", { delay: i * 180 }));
       deckCount.textContent = String(deckSize);
       narrate(beat, feedLineOf(beat));
       await sleep(680 + (beat.draw.length - 1) * 180);
@@ -2325,6 +2349,7 @@ async function present(beats: Snapshot["beats"]) {
       narrate(beat, feedLineOf(beat));
       // Discarded at random (Eviction Notice, The Vulture's Plans): the pick is seen being made first.
       if (beat.random) await pickFromHandAtRandom(beat, fresh, "Discarded at random");
+      sfx.play("discard");
       await new Promise<void>((resolve) => (table ? table.animateDiscards(fresh, resolve) : resolve()));
       if (beat.random) table?.spotlightHand([]);
       displayedHand = displayedHand.filter((card) => !fresh.includes(card.id));
@@ -2336,6 +2361,7 @@ async function present(beats: Snapshot["beats"]) {
       displayedHand = handBetweenBeats(displayedHand, state.hand, beats.slice(index + 1), staged?.id ?? null);
       // From where it lies (the row turned up off the deck, the discard pile), not out of the deck like a draw.
       table?.returnToHand(displayedHand, beat.returned, beat.returnedFrom);
+      sfx.play("draw");
       await sleep(620);
       continue;
     }
@@ -2358,6 +2384,7 @@ async function present(beats: Snapshot["beats"]) {
       if (beat.random) await pickFromHandAtRandom(beat, ids, `Under ${nameOf(host)}`);
       displayedHand = displayedHand.filter((card) => !ids.includes(card.id));
       table?.tuckUnder(ids, host, displayedHand);
+      sfx.play("deal");
       if (beat.random) table?.spotlightHand([]);
       await sleep(reducedMotion() ? 200 : 760);
       table?.settleStash();
@@ -2372,6 +2399,7 @@ async function present(beats: Snapshot["beats"]) {
         title: "Shuffle your discard pile into a new deck",
       });
       table?.shuffleIntoDeck("discard");
+      sfx.play("shuffle", { maxMs: 1400 });
       await sleep(reducedMotion() ? 300 : 1300);
       table?.settleStash({ deckCount: beat.deckReset });
       deckCount.textContent = String(beat.deckReset);
@@ -2392,6 +2420,7 @@ async function present(beats: Snapshot["beats"]) {
       table?.showInRow(beat.intoEncounterDeck);
       await sleep(reducedMotion() ? 400 : 1500);
       table?.rowIntoEncounterDeck();
+      sfx.play("shuffle", { maxMs: 900 });
       await sleep(reducedMotion() ? 200 : 800);
       const count = element("encounter-count");
       const total = Number(count.textContent) + beat.intoEncounterDeck.length;
@@ -2406,6 +2435,7 @@ async function present(beats: Snapshot["beats"]) {
         title: "Shuffle the encounter discard pile back in",
       });
       table?.shuffleIntoDeck("encounterDiscard");
+      sfx.play("shuffle", { maxMs: 1400 });
       await sleep(reducedMotion() ? 300 : 1300);
       table?.settleStash({ encounterCount: beat.encounterReset });
       element("encounter-count").textContent = String(beat.encounterReset);
@@ -2418,6 +2448,7 @@ async function present(beats: Snapshot["beats"]) {
       });
       const scheme = cards().find((card) => card.id === beat.actor);
       if (scheme) table?.setModifier(scheme, "acceleration", beat.acceleration);
+      sfx.play("threat");
       if (beat.actor) stampCard(beat.actor, "+1 Acceleration", "boost");
       await sleep(reducedMotion() ? 300 : 1000);
       continue;
@@ -2425,6 +2456,7 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.overkill) {
       narrate(beat, feedLineOf(beat));
       stampCard(beat.overkill.to, "Overkill", "status");
+      sfx.play("hit");
       await sleep(reducedMotion() ? 200 : 650);
       continue;
     }
@@ -2457,6 +2489,7 @@ async function present(beats: Snapshot["beats"]) {
         // Removed from the game, it has no pile to go to: it evaporates where it stands (beside the villain, or in
         // its place in play), and nothing more happens until it has gone (Adam, 2026-11-22).
         if (!reducedMotion()) await sleep(200);
+        sfx.play("block", { rate: 0.8, gain: 0.7 });
         await sleep(table?.evaporate(id) || 240);
         continue;
       }
@@ -2466,12 +2499,15 @@ async function present(beats: Snapshot["beats"]) {
       // from there to the encounter discard pile.
       if (table?.parkedEncounters().includes(id)) table.retireEncounter(id, encounter);
       else table?.discardDefeatedCard(id, discarded, encounter ? "encounterDiscard" : "discard");
+      if (discarded) sfx.play("discard");
       await sleep(discarded ? 560 : 240);
       continue;
     }
     if (beat.phase) {
       announcement.hidden = true;
       phaseIndicator(beat.phase, true);
+      if (beat.phase === "hero" || beat.phase === "villain")
+        sfx.play(beat.phase === "hero" ? "phase-hero" : "phase-villain", { delay: 120 });
       narrate(beat, null, { title: beat.phase === "hero" ? "Your turn" : "Villain phase", eyebrow: null });
       await sleep(PHASE_BANNER_MS);
       // The villain phase opens with threat on the main scheme. When a card can interrupt it (Great Responsibility),
@@ -2528,6 +2564,7 @@ async function present(beats: Snapshot["beats"]) {
       announcement.replaceChildren(icon("defeated"), make("span", "", beat.defeat));
       announcement.hidden = false;
       shakeStage("heavy");
+      sfx.play("boom");
       await sleep(1450);
       announcement.removeAttribute("data-defeat");
       announcement.hidden = true;
@@ -2535,6 +2572,7 @@ async function present(beats: Snapshot["beats"]) {
     } else narrate(beat, line);
     if (beat.villainStage || beat.villainFlip) {
       table?.showVillain(state.villain, !!(beat.defeat || beat.villainFlip));
+      sfx.play("flip");
       await sleep(360);
       inspect(state.villain.id);
       const label = labels.get(state.villain.id);
@@ -2572,6 +2610,7 @@ async function present(beats: Snapshot["beats"]) {
       const { source, target } = beat.attackAim;
       attacker = source;
       table?.windUp(source);
+      sfx.play("whoosh");
       await sleep(90);
       const projected = table?.anchors();
       const from = projected?.find((a) => a.id === source);
@@ -2586,6 +2625,7 @@ async function present(beats: Snapshot["beats"]) {
       if (event) {
         staged = event;
         table?.stageEvent(event);
+        sfx.play("play");
         displayedHand = displayedHand.filter((c) => c.id !== event.id);
         labels.get(event.id)?.remove();
         labels.delete(event.id);
@@ -2609,12 +2649,14 @@ async function present(beats: Snapshot["beats"]) {
     }
     if (beat.interrupt) {
       table?.pulseInterrupt(beat.interrupt);
+      sfx.play("block", { rate: 1.3, gain: 0.8 });
       await sleep(INTERRUPT_MS);
       const cancelled = heldEncounter;
       if (cancelled && reacting?.card === beat.interrupt && reacting.subject === cancelled) {
         // The interrupt cancels the card it is held up over: that card flickers out, then goes to its discard pile,
         // and only after that does the event that cancelled it follow it to the player's.
         table?.flickerCancelled(cancelled);
+        sfx.play("block", { rate: 0.75 });
         stampCard(cancelled, "Cancelled");
         await sleep(reducedMotion() ? 300 : 760);
         table?.holdEvent(beat.interrupt);
@@ -2633,6 +2675,7 @@ async function present(beats: Snapshot["beats"]) {
         clearAim();
       }
       table?.deflectDamage(beat.deflection.card, beat.deflection.amount);
+      sfx.play("block");
       floatNumber(beat.deflection.card, "blocked", "Blocked", `${beat.deflection.amount} damage`);
     }
     if (beat.discardEvent) {
@@ -2640,6 +2683,7 @@ async function present(beats: Snapshot["beats"]) {
       const card = state.discard.find((c) => c.id === beat.discardEvent);
       if (card) {
         table?.discardEvent(card);
+        sfx.play("discard");
         if (staged?.id === card.id) staged = null;
       }
     }
@@ -2660,12 +2704,14 @@ async function present(beats: Snapshot["beats"]) {
       table?.changeStatus(id, name, delta);
       if (name === "damage" && delta < 0) {
         floatNumber(id, "heal", `+${-delta}`, "healed");
+        sfx.play("heal");
         const label = labels.get(id);
         if (label?.dataset.hp) updateHpLabel(label, Number(label.dataset.hp) - delta);
         table?.healBurst(id);
       } else if (delta > 0 && STATUS_STAMP[name]) {
         const [tone, text] = STATUS_STAMP[name]!;
         stampCard(id, text, tone);
+        sfx.play("status");
       }
     }
     if (beat.turned) {
@@ -2675,11 +2721,13 @@ async function present(beats: Snapshot["beats"]) {
         dockTitle.textContent = turns.length > 1 ? `Ready ${plural(turns.length, "card")}` : beat.text;
       }
       table?.turnCards(turns);
+      sfx.play("turn");
       await sleep(beat.turned.exhausted ? EXHAUST_MS : READY_MS);
       continue;
     }
     if (beat.encounterDeal) {
       table?.dealEncounter(beat.encounterDeal, beat.boostFor ?? null);
+      sfx.play("deal");
       const count = element("encounter-count");
       count.textContent = String(Math.max(0, Number(count.textContent) - 1));
       if (beat.boostFor) {
@@ -2726,6 +2774,7 @@ async function present(beats: Snapshot["beats"]) {
         !(state.choice?.sourceTitle && state.choiceSource === beat.reveal.id);
       if (willHold) table?.holdReveal(true);
       table?.revealEncounter(beat.reveal);
+      sfx.play("flip");
       if (!beat.reveal.boost) parkedViews.set(beat.reveal.id, beat.reveal);
       await sleep(360);
       if (beat.reveal.art) showPreview(beat.reveal, !beat.reveal.boost);
@@ -2797,6 +2846,7 @@ async function present(beats: Snapshot["beats"]) {
       const permanent = state.enemyCards.find((c) => c.id === beat.reveal!.id);
       if (permanent) {
         table?.landEncounter(permanent);
+        sfx.play("place");
         if (beat.reveal.whenRevealed && !reducedMotion()) {
           // Lands on the mat first, then its When Revealed fires: it rises with a flash before the effect hits.
           await sleep(520);
@@ -2820,6 +2870,7 @@ async function present(beats: Snapshot["beats"]) {
         )
       ) {
         narrate(beat, { text: beat.text, icon: "discard", tone: "villain" });
+        sfx.play("discard");
         await sleep(reducedMotion() ? 150 : 520);
       }
       continue;
@@ -2859,6 +2910,7 @@ async function present(beats: Snapshot["beats"]) {
         updateThreatLabel(counter, n);
         table?.setThreat(beat.threat.scheme, n);
       }
+      sfx.play(beat.threat.delta > 0 ? "threat" : "thwart");
       floatNumber(
         beat.threat.scheme,
         beat.threat.delta > 0 ? "threat" : "thwart",
@@ -2876,6 +2928,7 @@ async function present(beats: Snapshot["beats"]) {
         table?.strike(beat.hit.source, beat.hit.target);
         await sleep(HIT_CONTACT_MS);
       }
+      sfx.play(!beat.hit.amount ? "block" : beat.hit.amount >= 4 ? "hit-heavy" : "hit");
       if (beat.hit.tough) table?.changeStatus(beat.hit.target, "tough", -1);
       if (beat.hit.amount) {
         shakeStage(beat.hit.amount >= 4 ? "heavy" : "light");
@@ -3364,6 +3417,21 @@ try {
 } catch {
   setSidebarSide("right");
 }
+// Sound on or off, remembered on this device. Browsers keep audio locked until the player first clicks, taps or
+// presses a key, so every such input also unlocks it (and wakes it after the tab was hidden).
+function paintSound() {
+  for (const button of gameMenu.querySelectorAll<HTMLButtonElement>("[data-sound]"))
+    button.setAttribute("aria-pressed", String((button.dataset.sound === "on") === sfx.enabled));
+}
+for (const button of gameMenu.querySelectorAll<HTMLButtonElement>("[data-sound]"))
+  button.onclick = () => {
+    sfx.enabled = button.dataset.sound === "on";
+    paintSound();
+    sfx.play("confirm");
+  };
+paintSound();
+for (const type of ["pointerdown", "keydown", "touchend"] as const)
+  addEventListener(type, () => sfx.unlock(), { capture: true, passive: true });
 tryAgain.onclick = start;
 gameOverUndo.onclick = () => undoButton.click();
 gameOver.oncancel = (event) => event.preventDefault();
