@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { BattleModel, formWhenRevealed, type BattleSnapshot } from "./model.js";
+import { BattleModel, formWhenRevealed, whenRevealedMissesHeroes, type BattleSnapshot } from "./model.js";
 import { arrangeScene } from "./debug-scenes.js";
 
 describe("Peter Parker and Rhino's practice turn", () => {
@@ -399,6 +399,19 @@ describe("a treachery that makes the villain attack (Assault)", () => {
       applies: { form: "Alter-Ego", text: "This card gains surge." },
     });
     expect(formWhenRevealed("When Revealed: Give Rhino a tough status card.", "hero")).toEqual({});
+  });
+
+  test("a When Revealed that hits each hero finds no one in alter-ego form (Shocker)", () => {
+    const shocker = "When Revealed: Deal 1 damage to each hero.";
+    expect(whenRevealedMissesHeroes(shocker, "alterEgo")).toBe(true);
+    expect(whenRevealedMissesHeroes(shocker, "hero")).toBe(false);
+    expect(whenRevealedMissesHeroes("When Revealed: Give Rhino a tough status card.", "alterEgo")).toBe(false);
+    expect(
+      whenRevealedMissesHeroes(
+        "When Revealed (Alter-Ego): This card gains surge. When Revealed (Hero): Deal 1 damage to each hero.",
+        "alterEgo",
+      ),
+    ).toBe(false);
   });
 
   test("in hero form: Rhino's attack is aimed, lands, and only then does Assault go to the discard pile", () => {

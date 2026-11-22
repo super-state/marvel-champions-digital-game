@@ -1481,10 +1481,26 @@ async function convertThreat(scheme: string, target: string, amount: number) {
 /** A When Revealed firing: the card rises with a flash, and the dock says what is happening. */
 async function whenRevealedFires(
   beat: Beat,
-  card: { id: string; name: string; applies?: Applies | undefined },
+  card: { id: string; name: string; applies?: Applies | undefined; noHeroes?: true | undefined },
   eyebrow = "When Revealed",
 ) {
   table?.activateWhenRevealed(card.id);
+  if (card.noHeroes) {
+    // It fires, but on no one: say so, or the flash looks like something went missing (Adam, 2026-11-22: Shocker).
+    // Stamped on the card itself, because on a wide screen the bar stays folded while the villain side plays.
+    stampCard(card.id, "No heroes to hit", "status");
+    narrate(
+      beat,
+      { text: `${card.name}: no heroes to hit`, icon: "forced", tone: "villain" },
+      {
+        eyebrow: { text: eyebrow, icon: "forced", tone: "villain" },
+        title: `${card.name}: no heroes to hit`,
+        help: "You're in alter-ego form, so nobody takes damage.",
+      },
+    );
+    await sleep(Math.max(ACTIVATION_MS, 1100));
+    return;
+  }
   narrate(beat, card.applies ? { text: `${card.name}: ${card.applies.text}`, icon: "forced", tone: "villain" } : null, {
     eyebrow: {
       text: card.applies ? `${eyebrow} (${card.applies.form})` : eyebrow,
