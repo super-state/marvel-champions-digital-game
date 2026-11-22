@@ -148,7 +148,13 @@ describe("modifyAttack preventDamage — 'prevent N damage from this attack' (§
     const hand = mustPlayer(s.state, p1).hand.length;
     const { session, events } = run(s, [use(s.attack)]);
     expect(of(events, "damagePrevented")).toEqual([
-      { type: "damagePrevented", targetInstanceId: s.hero, amount: 5, reason: "tough" },
+      {
+        type: "damagePrevented",
+        targetInstanceId: s.hero,
+        amount: 5,
+        reason: "tough",
+        attackSourceInstanceId: expect.any(String),
+      },
     ]);
     expect(session.state.instances[s.hero]!.statuses.tough).toBe(0);
     expect(session.state.instances[s.hero]!.damage).toBe(damage);

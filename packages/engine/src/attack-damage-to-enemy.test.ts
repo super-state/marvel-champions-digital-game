@@ -153,7 +153,13 @@ describe("modifyAttack damageTo — 'damage from that attack is dealt to the cho
     const s = setup({ goonTough: true });
     const { session, events } = run(s, [use(s.attacker)]);
     expect(of(events, "damagePrevented")).toEqual([
-      { type: "damagePrevented", targetInstanceId: s.goon, amount: 4, reason: "tough" },
+      {
+        type: "damagePrevented",
+        targetInstanceId: s.goon,
+        amount: 4,
+        reason: "tough",
+        attackSourceInstanceId: expect.any(String),
+      },
     ]);
     expect(session.state.instances[s.goon]!.statuses.tough).toBe(0);
     expect(damageOf(session.state, s.goon)).toBe(0);
