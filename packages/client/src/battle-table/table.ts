@@ -199,6 +199,8 @@ const TAB = 0.18;
  */
 const ATTACHMENT_FAN = 0.07;
 const ATTACHMENT_TURN = 0.07;
+/** How long a threat chip taken off a card takes to sizzle out. */
+const SIZZLE_MS = 620;
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 /** Each card tucked under another sits a little higher than the one above it, so the stack steps up (card widths). */
 const STAGGER = 0.035;
@@ -518,6 +520,8 @@ export class BattleTable {
   /** Damage discs, counters, status tiles, stat pills and threat chips. */
   readonly #kit = new TokenKit(Math.min(8, this.#renderer.capabilities.getMaxAnisotropy()), () => this.#requestFrame());
   readonly #liftedTokens = new Map<THREE.Group, number>();
+  /** Threat chips taken off a card, sizzling out where they lay: when each started and whether it has sparked yet. */
+  readonly #sizzling = new Map<THREE.Group, { start: number; x: number; y: number; sparked: boolean }>();
   readonly #drops = new Map<THREE.Group, number>();
   readonly #observer: ResizeObserver;
   readonly #reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -1410,6 +1414,7 @@ export class BattleTable {
     for (const id of [...this.#pieces.keys()]) this.#dropPiece(id);
     for (const vapour of this.#vapours.splice(0)) this.#releaseVapour(vapour);
     this.#liftedTokens.clear();
+    this.#sizzling.clear();
     this.#drops.clear();
     this.#state = null;
     this.#requestFrame();
@@ -1857,7 +1862,13 @@ export class BattleTable {
       const token = group.children.at(-1)! as THREE.Group;
       this.#drops.delete(token);
       group.parent?.add(token);
-      this.#liftedTokens.set(token, performance.now());
+      // Threat taken off sizzles out where it lay rather than lifting away (Adam, 2026-11-22).
+      this.#sizzling.set(token, {
+        start: performance.now() + this.#sizzling.size * 70,
+        x: token.position.x,
+        y: token.position.y,
+        sparked: false,
+      });
     }
     while (group.children.length < total) {
       const i = group.children.length;
@@ -3202,6 +3213,27 @@ export class BattleTable {
     if (actor) {
       actor.rim.visible = true;
       actor.rim.scale.set(1.022, 1.016, 1);
+    }
+    for (const [chip, sizzle] of this.#sizzling) {
+      const t = this.#reduced.matches ? 1 : THREE.MathUtils.clamp((now - sizzle.start) / SIZZLE_MS, 0, 1);
+      // It fizzes in place, jittering ever faster, throws off embers and a wisp, then shrinks away into the card.
+      const fizz = (1 - t) * Math.min(1, t * 5) * 0.022;
+      chip.position.x = sizzle.x + Math.sin(now * 0.09) * fizz;
+      chip.position.y = sizzle.y + Math.cos(now * 0.113) * fizz;
+      const shrink = THREE.MathUtils.smoothstep(t, 0.3, 1);
+      chip.scale.set(1 - shrink, 1 - shrink, 1 - shrink * 0.6);
+      chip.rotation.z += (this.#reduced.matches ? 0 : 0.02) * (1 + shrink * 6);
+      if (!sizzle.sparked && t >= 0.22) {
+        sizzle.sparked = true;
+        const at = chip.getWorldPosition(this.#scratch).clone();
+        this.#burst(at, 0xff7a1f, 9, 0.45, 1.4);
+        this.#burst(at, 0xffd27a, 5, 0.3, 2.2);
+        this.#burst(at, 0x6a6058, 4, 0.12, 2.8);
+      }
+      if (t === 1) {
+        chip.removeFromParent();
+        this.#sizzling.delete(chip);
+      } else moving = true;
     }
     for (const [chip, start] of this.#liftedTokens) {
       const t = this.#reduced.matches ? 1 : Math.min(1, (now - start) / 280);
