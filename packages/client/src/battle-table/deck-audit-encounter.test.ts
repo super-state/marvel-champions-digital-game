@@ -836,6 +836,8 @@ test("01165 Eviction Notice: removed from the game, it leaves the table instead 
   const notice = run.beats.find((b) => b.reveal?.name === "Eviction Notice")!.reveal!.id;
   const gone = run.beats.find((b) => b.leftPlay === notice);
   expect(gone?.text).toBe("Eviction Notice is removed from the game");
+  // Flagged, so the table evaporates it rather than sending it to a discard pile.
+  expect(gone?.removedFromGame).toBe(true);
 });
 
 test("01165 Eviction Notice: or he discards a card at random, the card gains surge, and the obligation is discarded", () => {

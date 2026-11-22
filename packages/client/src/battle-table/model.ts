@@ -161,6 +161,8 @@ export interface BattleBeat {
   defeatedCard?: string;
   /** A card in play discarded without being defeated: an attachment used up, a support Caught Off Guard took. */
   leftPlay?: string;
+  /** With `leftPlay`: the card is removed from the game, so it evaporates off the table instead of going to a pile. */
+  removedFromGame?: boolean;
   /** Cards an effect discarded from the hand (Eviction Notice's random discard), in the order they went. */
   handDiscard?: string[];
   /** Cards an effect put back in the hand from elsewhere (Highway Robbery returning what it stole). */
@@ -643,6 +645,7 @@ export class BattleModel {
             actor: e.instanceId,
             text: `${faceUpName(this.#game, e.instanceId)} ${e.to.kind === "removedFromGame" ? "is removed from the game" : "is discarded"}`,
             leftPlay: e.instanceId,
+            ...(e.to.kind === "removedFromGame" ? { removedFromGame: true } : {}),
           });
       } else if (e.type === "cardMoved" && e.from.kind === "hand" && e.to.kind === "discard") {
         const last = this.#beats.at(-1);

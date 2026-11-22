@@ -80,6 +80,8 @@ let heldEncounter: string | null = null;
 let revealWindowHeld: string | null = null;
 /** A held card let go as new beats arrive: it plays out (When Revealed, then away) before them. */
 let releaseHeld: string | null = null;
+/** A revealed card whose own question was just answered, standing aside: it fires before the answer's beats play. */
+let answeredHeld: string | null = null;
 /** The reveal of the card held up, kept for moves whose own beats don't carry it (paying for a reaction to it). */
 let heldReveal: Beat["reveal"] = undefined;
 /** How long the table takes to darken where it fades in (`.fade-in` in battle.css). */
@@ -1430,11 +1432,15 @@ async function convertThreat(scheme: string, target: string, amount: number) {
 }
 
 /** A When Revealed firing: the card rises with a flash, and the dock says what is happening. */
-async function whenRevealedFires(beat: Beat, card: { id: string; name: string; applies?: Applies | undefined }) {
+async function whenRevealedFires(
+  beat: Beat,
+  card: { id: string; name: string; applies?: Applies | undefined },
+  eyebrow = "When Revealed",
+) {
   table?.activateWhenRevealed(card.id);
   narrate(beat, card.applies ? { text: `${card.name}: ${card.applies.text}`, icon: "forced", tone: "villain" } : null, {
     eyebrow: {
-      text: card.applies ? `When Revealed (${card.applies.form})` : "When Revealed",
+      text: card.applies ? `${eyebrow} (${card.applies.form})` : eyebrow,
       icon: "forced",
       tone: "villain",
     },
@@ -1499,7 +1505,10 @@ function leaveEncounter(id: string, upcoming: readonly Beat[]): "landed" | "park
   }
   const leaves = upcoming.findIndex((beat) => beat.encounterResolved === id);
   const discarded = state.encounterDiscard.some((c) => c.id === id);
-  if (leaves > 0 || (leaves < 0 && !discarded)) {
+  // An obligation answered in the turn bar leaves on a beat of its own too, once its answer has played out: to the
+  // encounter discard pile, or off the table when it is removed from the game (Eviction Notice).
+  const leavesPlay = upcoming.some((beat) => beat.leftPlay === id);
+  if (leavesPlay || leaves > 0 || (leaves < 0 && !discarded)) {
     table?.parkEncounter(id);
     return "parked";
   }
@@ -2141,6 +2150,15 @@ function narrate(beat: Beat, line: FeedLine | null, extra: Partial<DockView> = {
 async function present(beats: Snapshot["beats"]) {
   presenting = true;
   closeDecision();
+  if (dockFocus) {
+    // The question that softened the table is answered: the table comes back into focus for the answer to play out,
+    // rather than staying soft with only the card that asked still sharp (Adam, 2026-11-22: Eviction Notice sat above
+    // the blur, then the whole table stayed blurred once it had gone).
+    dockFocus = null;
+    delete focusBlur.dataset.ready;
+    focusBlur.style.clipPath = "";
+    focusBlur.hidden = !rowFocus.length && !revealFocus;
+  }
   const announcement = element("action-beat");
   const impact = element("impact");
   stage.dataset.resolving = "true";
@@ -2170,6 +2188,18 @@ async function present(beats: Snapshot["beats"]) {
       spotted = false;
     }
     if (beat.gameEnded) break;
+    if (answeredHeld) {
+      // The revealed card whose question was just answered: it lands beside the villain first, then fires there,
+      // and only then does the answer play out (Adam, 2026-11-22: Peter exhausted while Eviction Notice was still
+      // in the air).
+      const id = answeredHeld;
+      answeredHeld = null;
+      if (!reducedMotion() && table?.parkedEncounters().includes(id)) {
+        await sleep(450);
+        // Named as it was revealed: once removed from the game it is in none of the piles the final state lists.
+        await whenRevealedFires(beat, { id, name: parkedViews.get(id)?.name ?? nameOf(id) }, "Resolve");
+      }
+    }
     if (releaseHeld) {
       // The encounter card nobody interrupted: its When Revealed fires where it stands, then it goes.
       const id = releaseHeld;
@@ -2334,10 +2364,17 @@ async function present(beats: Snapshot["beats"]) {
       narrate(beat, feedLineOf(beat));
       labels.get(id)?.remove();
       labels.delete(id);
+      if (beat.removedFromGame) {
+        // Removed from the game, it has no pile to go to: it evaporates where it stands (beside the villain, or in
+        // its place in play), and nothing more happens until it has gone (Adam, 2026-11-22).
+        if (!reducedMotion()) await sleep(200);
+        await sleep(table?.evaporate(id) || 240);
+        continue;
+      }
       const encounter = state.encounterDiscard.find((card) => card.id === id);
       const discarded = encounter ?? state.discard.find((card) => card.id === id);
       // A revealed card still standing aside by the villain (an obligation whose question was just answered) leaves
-      // from there: to the encounter discard pile, or straight off the table when it is removed from the game.
+      // from there to the encounter discard pile.
       if (table?.parkedEncounters().includes(id)) table.retireEncounter(id, encounter);
       else table?.discardDefeatedCard(id, discarded, encounter ? "encounterDiscard" : "discard");
       await sleep(discarded ? 560 : 240);
@@ -2791,8 +2828,9 @@ async function present(beats: Snapshot["beats"]) {
 
 // ── Rendering ─────────────────────────────────────────────────────────────────────────────────────────────────────
 function letGoOfEncounter(id: string, upcoming: readonly Beat[]) {
-  leaveEncounter(id, upcoming);
+  const left = leaveEncounter(id, upcoming);
   table?.holdReveal(false);
+  return left;
 }
 
 function render() {
@@ -2804,7 +2842,12 @@ function render() {
     // Passed on interrupting its reveal: it stays up for its When Revealed to play out first, with the new beats.
     if (revealWindowHeld === heldEncounter && presented !== state.beats && state.beats.length)
       releaseHeld = heldEncounter;
-    else letGoOfEncounter(heldEncounter, presented !== state.beats ? state.beats : []);
+    else {
+      const answered = presented !== state.beats && state.beats.length > 0;
+      // Its question answered, it steps aside to stand by the villain while what was chosen plays out.
+      if (letGoOfEncounter(heldEncounter, answered ? state.beats : []) === "parked" && answered)
+        answeredHeld = heldEncounter;
+    }
     revealWindowHeld = null;
     heldEncounter = null;
     inspect(hoveredCard);
@@ -3077,7 +3120,7 @@ function deal() {
   discardOpen = false;
   choicePicks.clear();
   staged = null;
-  heldEncounter = revealWindowHeld = releaseHeld = null;
+  heldEncounter = revealWindowHeld = releaseHeld = answeredHeld = null;
   heldReveal = undefined;
   readingCard = null;
   aimTarget = null;
@@ -3179,7 +3222,7 @@ undoButton.onclick = () => {
   heldEncounter = view?.reveal?.id ?? null;
   reacting = view?.reacting ?? null;
   revealWindowHeld = heldEncounter && revealWindowFor(state, reacting, heldEncounter) ? heldEncounter : null;
-  releaseHeld = null;
+  releaseHeld = answeredHeld = null;
   aimTarget = view?.aim ?? null;
   menuCard = actionCard = null;
   discardOpen = false;

@@ -101,6 +101,62 @@ interface Spark {
   born: number;
   life: number;
   size: number;
+  /** A mote of vapour: it floats up and slows, instead of falling back like a spark. */
+  drifts?: boolean;
+}
+
+/** A card removed from the game, dissolving where it stood (`evaporate`). */
+interface Vapour {
+  piece: Piece;
+  start: number;
+  rise: number;
+  scale: number;
+  dissolve: { value: number };
+  /** Its own copies of materials it shared with other cards, disposed with it. */
+  owned: THREE.Material[];
+  motes: number;
+}
+
+const EVAPORATE_MS = 1250;
+const VAPOUR_COLOR = 0xbfe4ff;
+const VAPOUR_MOTES = 30;
+
+/**
+ * The card's picture breaks up from its edges inward in soft noisy patches, each patch glowing pale blue just before
+ * it goes, while `dissolve` runs from 0 to 1. What is gone is cut away, not faded, so the card stays opaque.
+ */
+function dissolving(material: THREE.MeshBasicMaterial, dissolve: { value: number }): void {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.dissolve = dissolve;
+    shader.uniforms.vapourColor = { value: new THREE.Color(VAPOUR_COLOR) };
+    shader.fragmentShader =
+      `uniform float dissolve;
+      uniform vec3 vapourColor;
+      float vapourHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float vapourNoise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(vapourHash(i), vapourHash(i + vec2(1.0, 0.0)), f.x),
+          mix(vapourHash(i + vec2(0.0, 1.0)), vapourHash(i + vec2(1.0, 1.0)), f.x), f.y);
+      }
+` +
+      shader.fragmentShader.replace(
+        "#include <map_fragment>",
+        `#include <map_fragment>
+        #ifdef USE_MAP
+          float vapourEdge = min(min(vMapUv.x, 1.0 - vMapUv.x), min(vMapUv.y, 1.0 - vMapUv.y));
+          float vapourField = (vapourNoise(vMapUv * vec2(7.0, 10.0)) * 0.6 + vapourNoise(vMapUv * vec2(21.0, 29.0)) * 0.4)
+            * 0.72 + smoothstep(0.0, 0.5, vapourEdge) * 0.28;
+          float vapourCut = dissolve * 1.16 - 0.08;
+          if (vapourField < vapourCut) discard;
+          float vapourGlow = (1.0 - smoothstep(0.0, 0.08, vapourField - vapourCut)) * step(0.001, dissolve);
+          diffuseColor.rgb += vapourColor * 0.22 * sin(3.14159 * min(1.0, dissolve * 1.6));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vapourColor * 1.35, vapourGlow);
+        #endif`,
+      );
+  };
+  material.needsUpdate = true;
 }
 
 /** How much of a sunk hand's cards shows above the bottom edge, in card widths: all but the bottom seventh. */
@@ -1324,6 +1380,7 @@ export class BattleTable {
     this.#hovered = this.#zoom = this.#press = this.#discardDeal = null;
     this.#windup = this.#strike = this.#interrupt = this.#wave = this.#flicker = this.#deflection = null;
     for (const id of [...this.#pieces.keys()]) this.#dropPiece(id);
+    for (const vapour of this.#vapours.splice(0)) this.#releaseVapour(vapour);
     this.#liftedTokens.clear();
     this.#drops.clear();
     this.#state = null;
@@ -1493,18 +1550,147 @@ export class BattleTable {
     if (this.#revealing === id) this.#revealing = null;
     this.markActor(null);
     if (!this.#state) return true;
+    // An obligation was given to the player while it asked its question, so the last cards the table was shown may
+    // still list it in their play area: it leaves that too, or it would stay drawn there until the next redraw.
+    const state = this.#withoutInPlay(this.#state, id);
     if (!discarded) {
       // Nowhere to fly to: it goes from the table now rather than being left where it stood.
-      this.setCards(this.#state);
+      this.setCards(state);
       return true;
     }
     this.setCards({
-      ...this.#state,
-      encounterDiscard: [...this.#state.encounterDiscard.filter((c) => c.id !== id), discarded],
+      ...state,
+      encounterDiscard: [...state.encounterDiscard.filter((c) => c.id !== id), discarded],
     });
     this.#startFlight(id, "place");
     this.#requestFrame();
     return true;
+  }
+
+  #withoutInPlay(state: TableCards, id: string): TableCards {
+    const stays = (card: TableCard) => card.id !== id;
+    return { ...state, enemyCards: state.enemyCards.filter(stays), inPlay: state.inPlay.filter(stays) };
+  }
+
+  /**
+   * A card removed from the game has no pile to go to: it evaporates where it stands, rising a little as its picture
+   * breaks up into pale motes that float away (Eviction Notice, when Peter Parker exhausts for it). It leaves the
+   * table's lists at once; the piece stays only until it has gone. Returns how long that takes, 0 when it went at once.
+   */
+  evaporate(id: string): number {
+    const piece = this.#pieces.get(id);
+    this.#parked.delete(id);
+    this.#encounters.delete(id);
+    if (this.#revealing === id) this.#revealing = null;
+    if (this.#actor === id) this.markActor(null);
+    if (this.#interrupt?.piece === piece) this.#interrupt = null;
+    if (this.#flicker?.piece === piece) this.#flicker = null;
+    // Out of the pieces first, so laying the table out again neither moves it nor drops it.
+    this.#pieces.delete(id);
+    this.#flights.delete(id);
+    if (this.#state) this.setCards(this.#withoutInPlay(this.#state, id));
+    if (!piece) return 0;
+    if (this.#reduced.matches || this.#contextLost || this.#disposed) {
+      this.#releaseVapour({ piece, start: 0, rise: 0, scale: 1, dissolve: { value: 1 }, owned: [], motes: 0 });
+      return 0;
+    }
+    const dissolve = { value: 0 };
+    const owned: THREE.Material[] = [];
+    piece.rim.visible = piece.tokens.visible = piece.markers.visible = false;
+    if (piece.aura) piece.aura.visible = false;
+    // The card's body is a material every card shares, and it would show dark through the holes: it goes at once,
+    // leaving the picture on both sides to break up.
+    (piece.root.children[0] as THREE.Mesh).visible = false;
+    dissolving(piece.face.material, dissolve);
+    if (piece.back.material === this.#deckBack.material || piece.back.material === this.#encounterBack.material) {
+      const back = piece.back.material.clone();
+      owned.push(back);
+      piece.back.material = back;
+    }
+    dissolving(piece.back.material, dissolve);
+    this.#vapours.push({
+      piece,
+      start: performance.now(),
+      rise: piece.root.position.y,
+      scale: piece.root.scale.x,
+      dissolve,
+      owned,
+      motes: 0,
+    });
+    this.#requestFrame();
+    return EVAPORATE_MS;
+  }
+
+  readonly #vapours: Vapour[] = [];
+
+  /** Each evaporating card one frame on: false once none is left. */
+  #evaporateStep(now: number): boolean {
+    for (let i = this.#vapours.length - 1; i >= 0; i--) {
+      const vapour = this.#vapours[i]!;
+      const { piece } = vapour;
+      const progress = THREE.MathUtils.clamp((now - vapour.start) / EVAPORATE_MS, 0, 1);
+      if (progress === 1) {
+        this.#vapours.splice(i, 1);
+        this.#releaseVapour(vapour);
+        continue;
+      }
+      vapour.dissolve.value = THREE.MathUtils.smoothstep(progress, 0.06, 0.94);
+      piece.root.position.y = vapour.rise + easeOutCubic(progress) * 0.42 * vapour.scale;
+      piece.root.scale.setScalar(vapour.scale * (1 + 0.05 * progress));
+      // Motes come off the card as its picture goes, most in the middle of it.
+      const due = Math.round(VAPOUR_MOTES * THREE.MathUtils.smoothstep(progress, 0.04, 0.85));
+      if (due > vapour.motes) piece.root.updateMatrixWorld();
+      const [width, height] = piece.card.landscape ? [HEIGHT, 1] : [1, HEIGHT];
+      for (; vapour.motes < due; vapour.motes++) {
+        const at = new THREE.Vector3((Math.random() - 0.5) * width, (Math.random() - 0.5) * height, 0.03).applyMatrix4(
+          piece.root.matrixWorld,
+        );
+        this.#mote(at, vapour.scale);
+      }
+    }
+    return this.#vapours.length > 0;
+  }
+
+  /** One pale mote of vapour drifting up off an evaporating card. */
+  #mote(at: THREE.Vector3, scale: number): void {
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: this.#sparkMap,
+        color: Math.random() < 0.3 ? 0xffffff : VAPOUR_COLOR,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        depthWrite: false,
+        depthTest: false,
+      }),
+    );
+    sprite.renderOrder = 10;
+    sprite.layers.set(FRONT_LAYER);
+    sprite.position.copy(at);
+    const size = (0.06 + Math.random() * 0.09) * Math.max(0.6, scale);
+    sprite.scale.setScalar(size);
+    this.#scene.add(sprite);
+    this.#sparks.push({
+      sprite,
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.35,
+        0.7 + Math.random() * 0.8,
+        (Math.random() - 0.5) * 0.35,
+      ),
+      born: performance.now(),
+      life: 650 + Math.random() * 500,
+      size,
+      drifts: true,
+    });
+  }
+
+  /** The evaporated card leaves the scene for good. */
+  #releaseVapour({ piece, owned }: Vapour): void {
+    this.#scene.remove(piece.root);
+    for (const token of piece.tokens.children) this.#drops.delete(token as THREE.Group);
+    if (piece.card.reverseArt || piece.card.type === "villain") piece.back.material.dispose();
+    for (const material of owned) material.dispose();
+    piece.aura?.material.dispose();
+    piece.face.material.dispose();
   }
 
   discardDefeatedCard(id: string, discarded: TableCard | undefined, pile: "discard" | "encounterDiscard"): void {
@@ -3000,6 +3186,7 @@ export class BattleTable {
         this.#interrupt = null;
       } else moving = true;
     }
+    if (this.#vapours.length && this.#evaporateStep(now)) moving = true;
     if (this.#flicker) {
       const age = now - this.#flicker.start;
       // Out and back four times, the gaps shortening, then it stays.
@@ -3033,8 +3220,8 @@ export class BattleTable {
         this.#sparks.splice(i, 1);
         continue;
       }
-      spark.velocity.y -= 9 * dt;
-      spark.velocity.multiplyScalar(1 - 2.4 * dt);
+      if (!spark.drifts) spark.velocity.y -= 9 * dt;
+      spark.velocity.multiplyScalar(1 - (spark.drifts ? 1.3 : 2.4) * dt);
       spark.sprite.position.addScaledVector(spark.velocity, dt);
       const fade = 1 - age / spark.life;
       spark.sprite.material.opacity = fade;
@@ -3296,6 +3483,7 @@ export class BattleTable {
     cancelAnimationFrame(this.#frame);
     this.#frame = 0;
     this.#finishDiscards();
+    for (const vapour of this.#vapours.splice(0)) this.#releaseVapour(vapour);
   };
   readonly #restoreContext = (): void => {
     this.#contextLost = false;
@@ -3304,6 +3492,7 @@ export class BattleTable {
 
   dispose(): void {
     this.#disposed = true;
+    for (const vapour of this.#vapours.splice(0)) this.#releaseVapour(vapour);
     for (const material of this.#dimMaterials.values()) material.dispose();
     for (const spark of this.#sparks) spark.sprite.material.dispose();
     this.#sparks.length = 0;
