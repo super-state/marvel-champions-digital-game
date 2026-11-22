@@ -11,6 +11,7 @@ import { arrangeScene } from "./debug-scenes.js";
 import { sfx, type SoundName } from "./sound.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
+import { createPlayer } from "./play.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
 import { eventLook, offerDoes, spotOf, waitsOnDock, type GlowTone, type Spot } from "./spotlight.js";
 import {
@@ -404,6 +405,8 @@ interface FeedLine {
   tone?: "villain" | "hero" | "damage" | "threat" | "heal" | undefined;
 }
 let feed: FeedLine[] = [];
+/** The whole story, oldest first, for the play hook (`play.ts`): the player's moves and every beat the game played. */
+const story: string[] = [];
 function pushFeed(line: FeedLine) {
   if (!line.text || feed[0]?.text === line.text) return;
   feed = [line, ...feed].slice(0, 6);
@@ -423,6 +426,7 @@ function paintFeed() {
 function say(text: string) {
   pushFeed({ text, icon: "action", tone: "hero" });
   paintFeed();
+  story.push(text);
 }
 
 /** A short message over the table, for a move that couldn't be made. */
@@ -3016,6 +3020,7 @@ function render() {
   setSpot(null);
   if (presented !== state.beats) {
     presented = state.beats;
+    for (const beat of presented) if (beat.text) story.push(beat.text);
     if (presented.length) {
       // The question is answered: its picks stop glowing now, not once everything it set off has played out.
       unmarkPicks();
@@ -3978,6 +3983,30 @@ async function studioDemo(name: string): Promise<boolean> {
   render();
   return true;
 }
+
+// ── Playing from a script (dev server only) ─────────────────────────────────────────────────────────────────────────
+// `__battlePlay` lets Claude play through the page (`play.ts`): it reads the table in words and presses the same
+// buttons and cards a click does.
+if (import.meta.env.DEV)
+  Object.assign(globalThis, {
+    __battlePlay: createPlayer({
+      state: () => state,
+      dock: dockView,
+      busy: () => !table || presenting || flying || discarding,
+      settled,
+      pick,
+      toggle,
+      useAction: useCardAction,
+      fieldActions: (id) => model.fieldActions(id),
+      powersReady,
+      defenseAsked: () => !!defenseQuestionDecline(state.choice),
+      picked: () => choicePicks,
+      cardFacts: (id) => model.cardFacts(id),
+      history: () => story,
+      reading: () => (readReveal.hidden ? null : revealFocus),
+      doneReading: () => readReveal.click(),
+    }),
+  });
 
 if (import.meta.env.DEV && new URLSearchParams(location.search).has("studio")) {
   document.documentElement.dataset.studio = "";

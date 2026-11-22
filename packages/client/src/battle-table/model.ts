@@ -1495,6 +1495,39 @@ export class BattleModel {
     );
   }
 
+  /**
+   * What a player reads on a card, in words: its stats as they stand now and its rules text (the face showing, for
+   * the identity). For the play hook (`play.ts`), which describes the table to someone who can't see the pictures.
+   */
+  cardFacts(id: string): string {
+    const state = this.#game;
+    const card = cardOf(state, id as InstanceId);
+    if (!card) return "";
+    const identity = state.players[0]!.identity;
+    const face =
+      card.type === "hero_identity" && id === identity.instanceId
+        ? ((card as unknown as Record<string, unknown>)[identity.form === "hero" ? "hero" : "alterEgo"] as
+            | typeof card
+            | undefined)
+        : card;
+    const profile = characterProfile(state, id as InstanceId, CORE_DEPS);
+    const shown: readonly ("atk" | "thw" | "sch" | "def" | "rec")[] =
+      card.type === "villain" || card.type === "minion"
+        ? ["sch", "atk"]
+        : card.type === "ally"
+          ? ["thw", "atk"]
+          : card.type === "hero_identity"
+            ? identity.form === "hero"
+              ? ["thw", "atk", "def"]
+              : ["rec"]
+            : [];
+    const stats = profile
+      ? shown.flatMap((stat) => (typeof profile[stat] === "number" ? [`${stat.toUpperCase()} ${profile[stat]}`] : []))
+      : [];
+    const text = face ? plainRulesTextOf(face) : "";
+    return [stats.join(" "), text].filter(Boolean).join(" · ");
+  }
+
   basicPower(id: string, stat: "atk" | "thw" | "rec"): number {
     return characterProfile(this.#game, id as InstanceId, CORE_DEPS)?.[stat] ?? 0;
   }
