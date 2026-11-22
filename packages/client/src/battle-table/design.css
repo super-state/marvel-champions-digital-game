@@ -683,10 +683,14 @@
 }
 /* The coloured numbers paint their gradient through see-through letters (background-clip: text). A text-shadow
    would be drawn over that gradient and show through the letters, turning them dark, so their shadow comes from a
-   filter instead, which sits behind the whole number. */
+   filter instead, which sits behind the whole number. The text stroke is drawn over see-through letters too and ate
+   into them until "+1" was hard to read (Adam, 2026-11-22), so their thin outline also comes from the filter, outside
+   the letters. */
 .float-number:is([data-kind="damage"], [data-kind="heal"], [data-kind="threat"], [data-kind="thwart"]) {
   text-shadow: none;
-  filter: drop-shadow(0 4px 0 var(--shade)) drop-shadow(0 10px 22px #000c);
+  -webkit-text-stroke: 0;
+  filter: drop-shadow(1.5px 0 0 var(--shade)) drop-shadow(-1.5px 0 0 var(--shade)) drop-shadow(0 1.5px 0 var(--shade))
+    drop-shadow(0 -1.5px 0 var(--shade)) drop-shadow(0 4px 0 var(--shade)) drop-shadow(0 10px 22px #000c);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
