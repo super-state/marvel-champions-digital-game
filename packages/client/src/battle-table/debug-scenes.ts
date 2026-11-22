@@ -175,6 +175,11 @@ const SCENES: Record<string, Scene> = {
     hand: ["01003", "01093", "01083", "01007", "01005"],
     encounterTop: ["01102", "01108"],
   },
+  /** Hurt Spider-Man and allies as Rhino attacks: "Defend?" keeps every friendly health badge out of the shade. */
+  defend: {
+    hero: { form: "hero", damage: 2 },
+    play: [{ code: "01059", damage: 2 }, { code: "01002", damage: 1, exhausted: true }, { code: "01064" }],
+  },
   /** A quiet mid-game board: one minion, one side scheme, a couple of supports. */
   midgame: {
     hero: { form: "hero", damage: 2 },

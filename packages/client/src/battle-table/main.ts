@@ -69,6 +69,7 @@ const defenseShade = document.querySelector<SVGSVGElement>("#defense-shade")!;
 const abilityGlow = document.querySelector<SVGSVGElement>("#ability-glow")!;
 const abilityOutlines = document.querySelector<SVGGElement>("#ability-outlines")!;
 const defenderCutouts = document.querySelector<SVGGElement>("#defender-cutouts")!;
+const plateCutouts = document.querySelector<SVGGElement>("#plate-cutouts")!;
 const reticle = element("attack-reticle");
 // The phase banner runs right across the window, over the sidebar too, so it lives on the page, not in the table.
 document.body.append(element("phase-banner"));
@@ -1396,6 +1397,33 @@ function updateOutlines(group: SVGGElement, ids: readonly string[], tones?: read
   });
 }
 
+/** Holes in the shade over these cards' nameplates, so their health reads at full brightness (`Spot.plates`). */
+/** In the table's own coordinates, like the card outlines: a plate is centred under its card (`placeLabels`). */
+function updatePlateCutouts(ids: readonly string[], projected: ReturnType<BattleTable["anchors"]>) {
+  // A plate that can't be pressed during the question (a hero who isn't a pick yet) fades; these stay at full strength.
+  for (const [id, label] of labels) label.toggleAttribute("data-lit", ids.includes(id));
+  const boxes = ids.flatMap((id) => {
+    const label = labels.get(id);
+    const anchor = projected.find((point) => point.id === id);
+    if (!anchor || !label?.isConnected || label.parentElement !== boardLabels || !label.childElementCount) return [];
+    const width = label.offsetWidth;
+    const height = label.offsetHeight;
+    return width && height ? [{ left: anchor.x - width / 2, top: anchor.bottom + 5, width, height }] : [];
+  });
+  while (plateCutouts.childElementCount > boxes.length) plateCutouts.lastElementChild!.remove();
+  boxes.forEach((box, i) => {
+    const rect =
+      plateCutouts.children[i] ??
+      plateCutouts.appendChild(document.createElementNS("http://www.w3.org/2000/svg", "rect"));
+    const pad = 3;
+    rect.setAttribute("x", String(Math.round(box.left - pad)));
+    rect.setAttribute("y", String(Math.round(box.top - pad)));
+    rect.setAttribute("width", String(Math.round(box.width + pad * 2)));
+    rect.setAttribute("height", String(Math.round(box.height + pad * 2)));
+    rect.setAttribute("rx", String(Math.round(box.height / 2 + pad)));
+  });
+}
+
 /** Threat stopped at a scheme becomes a damage token there, then flies across to the hero who takes it. */
 async function convertThreat(scheme: string, target: string, amount: number) {
   const projected = table?.anchors();
@@ -1665,6 +1693,10 @@ function setSpot(next: Spot | null, { fade = false } = {}) {
   // Set before the shade shows, so its fade plays from the start; kept while it stays up, so it never cuts short.
   if (!was) for (const layer of [defenseShade, abilityGlow]) layer.classList.toggle("fade-in", fade && !!spot);
   defenseShade.toggleAttribute("hidden", !spot);
+  if (!spot?.plates) {
+    plateCutouts.replaceChildren();
+    for (const label of labels.values()) label.removeAttribute("data-lit");
+  }
   abilityGlow.toggleAttribute("hidden", !spot?.glow.length);
   const mark = spot?.mark ?? null;
   pendingMark.hidden = !mark;
@@ -1869,6 +1901,7 @@ function placeLabels() {
     const y = handCard ? anchor.bottom - 44 : anchor.bottom + 5;
     node.style.transform = `translate(${Math.round(anchor.x)}px,${Math.round(y)}px)`;
   }
+  if (spot) updatePlateCutouts(spot.plates ?? [], projected);
 }
 
 // ── Presenting what happened ─────────────────────────────────────────────────────────────────────────────────────

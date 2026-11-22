@@ -14,12 +14,14 @@ export interface Spot {
   cutouts: string[];
   /** An amount about to land on a card while the game waits on the player: threat on a scheme, damage on a hero. */
   mark?: { id: string; kind: "threat" | "damage" | "thwart"; amount: number } | null;
+  /** Cards whose nameplate (their health) stays out of the shade too: asked to defend, the player weighs every hit point. */
+  plates?: string[];
 }
 
 /** The parts of the snapshot a spotlight reads. */
 export interface SpotTable {
   hero: { id: string };
-  inPlay: readonly { id: string }[];
+  inPlay: readonly { id: string; hp?: number | null }[];
   enemyCards: readonly { id: string; attachedTo?: string | null }[];
   facedownBoosts: readonly { id: string; enemy: string }[];
 }
@@ -102,6 +104,16 @@ export function spotOf(
         { id: target, tone: "target" },
       ],
       cutouts: [...new Set([attacker, ...attachments, ...boostsOf(table, attacker), target, ...defenders])],
+      // Whether to defend, and with whom, turns on how much health the hero and each ally has left: their nameplates
+      // stay bright under the shade even before a defender is being picked.
+      plates: [
+        ...new Set([
+          target,
+          table.hero.id,
+          ...choice.options.flatMap((option) => (option.cardId ? [option.cardId] : [])),
+          ...table.inPlay.filter((card) => card.hp != null).map((card) => card.id),
+        ]),
+      ],
     };
   }
   // A revealed card's own question about cards on the table (Caught Off Guard: "Discard an upgrade or support you
