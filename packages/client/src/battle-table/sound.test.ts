@@ -139,6 +139,12 @@ describe("the sound board", () => {
     expect(globalThis.__battleSounds?.map((s) => s.delay)).toEqual([0, 180, 360]);
   });
 
+  test("five draws asked for at once, each due 180 ms after the last, are all heard", () => {
+    const board = new SoundBoard(manifest, resolve, { automated: true });
+    for (let i = 0; i < 5; i++) board.play("draw", { contactIn: 120 + i * 180 });
+    expect(globalThis.__battleSounds?.map((s) => s.name)).toEqual(["draw", "draw", "draw", "draw", "draw"]);
+  });
+
   test("turned off, it stays silent, and the choice is remembered", () => {
     const board = new SoundBoard(manifest, resolve, { automated: true });
     board.enabled = false;

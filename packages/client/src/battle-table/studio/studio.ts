@@ -91,10 +91,10 @@ async function playOnTable() {
   if (!linked) linkPreview();
   board.stopAll();
   board.unlock();
-  // The chosen variant is the one heard: the board plays only it while the demo runs.
+  // Every variation takes its turn, as in the game, unless only the one being edited is asked for.
   const name = selected.name;
   const only: SoundManifest = clone(draft);
-  only.sounds[name] = [draft.sounds[name]![selected.index]!];
+  if ($<HTMLInputElement>("only-this").checked) only.sounds[name] = [draft.sounds[name]![selected.index]!];
   board.setManifest(only);
   try {
     await studio.demo(name);
@@ -232,11 +232,7 @@ function paintMomentButton() {
   const moment = SOUND_MOMENTS.find((m) => m.name === selected?.name);
   const button = $<HTMLButtonElement>("play-moment");
   button.disabled = !moment || !preview()?.ready();
-  $("moment-note").textContent = !moment
-    ? ""
-    : moment.demo
-      ? moment.about
-      : `${moment.about} (No visual for this one yet: the button plays the sound alone.)`;
+  $("moment-note").textContent = !moment ? "" : moment.demo ? moment.about : moment.about;
 }
 
 // ── Editor ──────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -270,6 +266,20 @@ async function paintEditor() {
       };
       chips.append(chip);
     });
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "chip";
+    copy.textContent = "＋ Copy as variation";
+    copy.title = "A copy of this sound to cut, re-pitch or re-time differently: the game takes turns between them";
+    copy.onclick = () => {
+      const source = variants[selected!.index];
+      if (!source) return;
+      variants.splice(selected!.index + 1, 0, { ...source, rate: Math.round((source.rate ?? 1) * 1.06 * 1000) / 1000 });
+      changed(selected!.name);
+      select(selected!.name, selected!.index + 1);
+      status("Copied, a little higher. Change its pitch or cut so the two differ.");
+    };
+    chips.append(copy);
     const reset = document.createElement("button");
     reset.type = "button";
     reset.className = "chip";

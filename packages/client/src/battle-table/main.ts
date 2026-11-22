@@ -2334,7 +2334,8 @@ async function present(beats: Snapshot["beats"]) {
         ? Math.max(0, Number(deckCount.textContent) - beat.draw.length)
         : state.deckCount + pendingDraws.size;
       table?.showDraw(displayedHand, beat.draw, deckSize, pilesLater ? undefined : state.discard);
-      beat.draw.forEach((_, i) => sfx.play("draw", { delay: i * 180 }));
+      // Each card lifts off the deck 120 ms in, then every 180 ms: its draw sound's marker lands on that.
+      beat.draw.forEach((_, i) => sfx.play("draw", { contactIn: 120 + i * 180 }));
       deckCount.textContent = String(deckSize);
       narrate(beat, feedLineOf(beat));
       await sleep(680 + (beat.draw.length - 1) * 180);
@@ -3767,7 +3768,11 @@ async function studioDemo(name: string): Promise<boolean> {
     beat({ attackAim: { source: villain, target: hero } } as Partial<Beat>),
     beat({ hit: { source: villain, target: hero, amount } } as Partial<Beat>),
   ];
-  const fake = { id: "studio-card", name: "Studio card", art: state.villain.art, landscape: false };
+  // A stand-in encounter card for the reveal demos: an encounter card's own picture where one is to hand.
+  const looks = [...state.encounterDiscard, ...state.enemyCards].find(
+    (card) => card.art && card.id !== villain && card.type !== "main_scheme" && !card.landscape,
+  );
+  const fake = { id: "studio-card", name: "Studio card", art: looks?.art ?? state.villain.art, landscape: false };
   switch (name) {
     case "whoosh":
     case "hit":
@@ -3829,13 +3834,85 @@ async function studioDemo(name: string): Promise<boolean> {
       break;
     }
     case "draw": {
-      const last = displayedHand[displayedHand.length - 1];
-      if (!last) return false;
-      table.showDraw(displayedHand, [last.id], state.deckCount);
-      sfx.play("draw");
-      await sleep(900);
+      // Five cards drawn, as at the end of a turn: they leave the hand at once, then fly in off the deck.
+      const drawn = displayedHand.slice(-5);
+      if (!drawn.length) return false;
+      const kept = displayedHand.slice(0, displayedHand.length - drawn.length);
+      // Both in one go: anything that redraws the hand in between would put the cards straight back.
+      table.showDraw(kept, [], state.deckCount + drawn.length);
+      table.showDraw(
+        displayedHand,
+        drawn.map((card) => card.id),
+        state.deckCount,
+      );
+      drawn.forEach((_, i) => sfx.play("draw", { contactIn: 120 + i * 180 }));
+      await sleep(900 + drawn.length * 180);
       break;
     }
+    case "deal":
+      table.dealEncounter(fake.id);
+      sfx.play("deal");
+      await sleep(1300);
+      table.retireEncounter(fake.id);
+      await sleep(600);
+      break;
+    case "place":
+    case "cancel":
+    case "vanish":
+      // A revealed card, then what happens to it: it lands by the villain, is cancelled, or is removed from the game.
+      table.revealEncounter(fake);
+      await sleep(1000);
+      if (name === "place") {
+        table.parkEncounter(fake.id);
+        sfx.play("place");
+        await sleep(1100);
+        table.retireEncounter(fake.id);
+      } else if (name === "cancel") {
+        table.flickerCancelled(fake.id);
+        stampCard(fake.id, "Cancelled");
+        sfx.play("cancel");
+        await sleep(900);
+        table.retireEncounter(fake.id);
+      } else {
+        sfx.play("vanish");
+        await sleep(table.evaporate(fake.id) || 600);
+      }
+      await sleep(600);
+      break;
+    case "play": {
+      const card = displayedHand[0];
+      if (!card) return false;
+      table.stageEvent(card);
+      sfx.play("play");
+      await sleep(1200);
+      break;
+    }
+    case "discard": {
+      const cards = displayedHand.slice(0, 2).map((card) => card.id);
+      if (!cards.length) return false;
+      sfx.play("discard");
+      await new Promise<void>((resolve) => table!.animateDiscards(cards, resolve));
+      await sleep(500);
+      break;
+    }
+    case "select":
+      activationRing(villain);
+      sfx.play("select");
+      await sleep(700);
+      break;
+    case "confirm":
+      endTurnButton.animate(
+        [
+          { transform: "scale(1)" },
+          { transform: "scale(.92)" },
+          { transform: "scale(1.04)" },
+          { transform: "scale(1)" },
+        ],
+        { duration: 320, easing: "ease-out" },
+      );
+      sfx.play("confirm");
+      await sleep(700);
+      break;
     case "flip":
       table.revealEncounter(fake);
       sfx.play("flip");
@@ -3844,7 +3921,12 @@ async function studioDemo(name: string): Promise<boolean> {
       await sleep(700);
       break;
     case "shuffle": {
-      const pile = state.discard.length ? "discard" : "encounterDiscard";
+      // An empty discard pile is given a few cards first, so there is something to shuffle back in.
+      if (!state.discard.length) {
+        for (const card of displayedHand.slice(0, 3)) table.discardEvent(card);
+        await sleep(800);
+      }
+      const pile = "discard";
       table.shuffleIntoDeck(pile);
       sfx.play("shuffle", { maxMs: 1400 });
       await sleep(1500);
