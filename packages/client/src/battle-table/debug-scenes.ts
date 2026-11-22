@@ -141,12 +141,13 @@ const SCENES: Record<string, Scene> = {
     encounterTop: ["01186", "01186"],
   },
   /**
-   * Eviction Notice (Spider-Man's obligation) comes up in alter-ego form: end the turn and pick "Exhaust Peter Parker".
-   * It is removed from the game, so it must leave the table rather than stay standing beside Rhino.
+   * Eviction Notice (Peter Parker's obligation) is the next encounter card: end the turn and its two long answers are
+   * asked in the turn bar, for checking that the answer buttons stay at two lines.
+   * Pick "Exhaust Peter Parker" and it is removed from the game: it must leave the table, not stay beside Rhino.
    */
   eviction: {
     hero: { form: "alterEgo" },
-    encounterTop: ["01104", "01165", "01101"],
+    encounterTop: ["01186", "01165"],
   },
   /** Hard to Keep Down on an unhurt Rhino surges into "I'm Tough!": end the turn to watch it. */
   surge: {
