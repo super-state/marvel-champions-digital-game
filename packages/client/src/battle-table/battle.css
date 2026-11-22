@@ -521,6 +521,10 @@ button:focus-visible {
   opacity: 0.4;
   pointer-events: none;
 }
+/* Asked to defend, the hero's and allies' health reads at full strength through the shade (Spot.plates). */
+.anchor:disabled[data-lit] {
+  opacity: 1;
+}
 .anchor:empty,
 .anchor.in-hand {
   padding: 0;

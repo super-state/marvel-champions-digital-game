@@ -3,6 +3,7 @@ import { CARD_BACKS } from "../art/art-source.js";
 import { cardRadius } from "../art/card-shape.js";
 import rooftop from "../art/tabletop/rooftop.webp?url";
 import { fitBoard, fitToBox, type BoardFit, type TableBox } from "./board-fit.js";
+import { loadWithRetry } from "./picture-retry.js";
 import { revealAside, type ScreenBox } from "./dock-spot.js";
 import { TokenKit, placeTokens } from "./tokens3d.js";
 
@@ -407,7 +408,7 @@ export class BattleTable {
   readonly #underIds = new Set<string>();
   readonly #pieces = new Map<string, Piece>();
   readonly #textures = new Map<string, THREE.Texture>();
-  readonly #loader = new THREE.TextureLoader();
+  readonly #images = new THREE.ImageLoader();
   readonly #cardShape = roundedRect(1, HEIGHT, cardRadius(1, HEIGHT));
   readonly #outline = this.#cardShape.getPoints(5);
   readonly #face = faceGeometry(this.#cardShape, 1, HEIGHT);
@@ -1860,10 +1861,27 @@ export class BattleTable {
     if (!url) return null;
     let texture = this.#textures.get(url);
     if (!texture) {
-      texture = this.#loader.load(url, this.#requestFrame);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = Math.min(8, this.#renderer.capabilities.getMaxAnisotropy());
-      this.#textures.set(url, texture);
+      const made = new THREE.Texture();
+      made.colorSpace = THREE.SRGBColorSpace;
+      made.anisotropy = Math.min(8, this.#renderer.capabilities.getMaxAnisotropy());
+      // A picture that fails is asked for again a little later, rather than leaving the card black all game.
+      loadWithRetry(
+        url,
+        (attemptUrl, onError) =>
+          this.#images.load(
+            attemptUrl,
+            (image) => {
+              made.image = image;
+              made.needsUpdate = true;
+              this.#requestFrame();
+            },
+            undefined,
+            onError,
+          ),
+        () => !this.#disposed,
+      );
+      this.#textures.set(url, made);
+      texture = made;
     }
     return texture;
   }

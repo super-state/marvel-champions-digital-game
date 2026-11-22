@@ -10,6 +10,7 @@ import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js
 import { arrangeScene } from "./debug-scenes.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
+import { pictureOf, retryFailedPictures } from "./picture-retry.js";
 import { eventLook, offerDoes, spotOf, waitsOnDock, type GlowTone, type Spot } from "./spotlight.js";
 import {
   BattleTable,
@@ -68,6 +69,7 @@ const defenseShade = document.querySelector<SVGSVGElement>("#defense-shade")!;
 const abilityGlow = document.querySelector<SVGSVGElement>("#ability-glow")!;
 const abilityOutlines = document.querySelector<SVGGElement>("#ability-outlines")!;
 const defenderCutouts = document.querySelector<SVGGElement>("#defender-cutouts")!;
+const plateCutouts = document.querySelector<SVGGElement>("#plate-cutouts")!;
 const reticle = element("attack-reticle");
 // The phase banner runs right across the window, over the sidebar too, so it lives on the page, not in the table.
 document.body.append(element("phase-banner"));
@@ -123,6 +125,9 @@ const railToggle = element<HTMLButtonElement>("rail-toggle");
 const hoverPicture = element<HTMLImageElement>("hover-card");
 const pinnedCard = element("pinned-card");
 const pinnedPicture = pinnedCard.querySelector("img")!;
+// A card picture that fails to load is asked for again a little later, as the table's own cards are.
+for (const image of [preview, hoverPicture, pinnedPicture, element<HTMLImageElement>("game-over-art")])
+  retryFailedPictures(image);
 /** The card pinned at the table's side with a right-click (`pinCard`). */
 let pinnedId: string | null = null;
 /** Wider than a phone: the hand sinks, the turn corner shows and the card panel can fold away. */
@@ -831,7 +836,7 @@ function setWidePreview(wide: boolean) {
 
 function showPreview(card: Pick<BattleCard, "art" | "name" | "landscape">, expand: boolean) {
   setWidePreview(expand && card.landscape);
-  if (preview.getAttribute("src") !== card.art) preview.src = card.art;
+  if (pictureOf(preview.getAttribute("src") ?? "") !== card.art) preview.src = card.art;
   preview.alt = card.name;
   preview.hidden = false;
 }
@@ -1213,7 +1218,7 @@ function showOutcome(outcome: Snapshot["outcome"]) {
   const art = element<HTMLImageElement>("game-over-art");
   const figure = art.closest("figure")!;
   figure.hidden = !featured.art;
-  if (featured.art && art.getAttribute("src") !== featured.art) art.src = featured.art;
+  if (featured.art && pictureOf(art.getAttribute("src") ?? "") !== featured.art) art.src = featured.art;
   figure.toggleAttribute("data-landscape", schemeLoss);
   element("game-over-stamp").textContent = won
     ? "Defeated"
@@ -1343,7 +1348,10 @@ function synchronizeLabels() {
         label.append(chip);
       }
     } else {
-      if ((source || target) && !handPick) label.append(make("span", "plate-name", card.name));
+      // Picking a defender, the plate is just the health: the card shows who it is and the dock asks the question
+      // (Adam, 2026-11-22: "All the player needs is their health").
+      if ((source || target) && !handPick && !state.choice?.defense)
+        label.append(make("span", "plate-name", card.name));
       if (!discardOpen && hp !== undefined) label.append(hpPill(hp));
     }
     if (hp === undefined || discardOpen || inHand) delete label.dataset.hp;
@@ -1354,6 +1362,7 @@ function synchronizeLabels() {
       target &&
       !handPick &&
       !state.choice?.offers?.length &&
+      !state.choice?.defense &&
       target.label !== card.name &&
       !target.label.startsWith(card.name + " (")
     )
@@ -1380,6 +1389,17 @@ function synchronizeLabels() {
   }
 }
 
+/** Plates the last question made pickable (gold "Choose" plates) go back to plain ones while the answer plays out. */
+function unmarkPicks() {
+  for (const label of labels.values()) {
+    if (!label.hasAttribute("data-target")) continue;
+    label.removeAttribute("data-target");
+    label.disabled = false;
+    label.querySelectorAll(".plate-name, .resource-value").forEach((part) => part.remove());
+  }
+  for (const label of labels.values()) label.removeAttribute("data-lit");
+}
+
 function updateOutlines(group: SVGGElement, ids: readonly string[], tones?: readonly GlowTone[]) {
   while (group.childElementCount > ids.length) group.lastElementChild!.remove();
   ids.forEach((id, i) => {
@@ -1389,6 +1409,33 @@ function updateOutlines(group: SVGGElement, ids: readonly string[], tones?: read
     const tone = tones?.[i];
     if (tone && tone !== "ability") polygon.setAttribute("data-tone", tone);
     else polygon.removeAttribute("data-tone");
+  });
+}
+
+/** Holes in the shade over these cards' nameplates, so their health reads at full brightness (`Spot.plates`). */
+/** In the table's own coordinates, like the card outlines: a plate is centred under its card (`placeLabels`). */
+function updatePlateCutouts(ids: readonly string[], projected: ReturnType<BattleTable["anchors"]>) {
+  // A plate that can't be pressed during the question (a hero who isn't a pick yet) fades; these stay at full strength.
+  for (const [id, label] of labels) label.toggleAttribute("data-lit", ids.includes(id));
+  const boxes = ids.flatMap((id) => {
+    const label = labels.get(id);
+    const anchor = projected.find((point) => point.id === id);
+    if (!anchor || !label?.isConnected || label.parentElement !== boardLabels || !label.childElementCount) return [];
+    const width = label.offsetWidth;
+    const height = label.offsetHeight;
+    return width && height ? [{ left: anchor.x - width / 2, top: anchor.bottom + 5, width, height }] : [];
+  });
+  while (plateCutouts.childElementCount > boxes.length) plateCutouts.lastElementChild!.remove();
+  boxes.forEach((box, i) => {
+    const rect =
+      plateCutouts.children[i] ??
+      plateCutouts.appendChild(document.createElementNS("http://www.w3.org/2000/svg", "rect"));
+    const pad = 3;
+    rect.setAttribute("x", String(Math.round(box.left - pad)));
+    rect.setAttribute("y", String(Math.round(box.top - pad)));
+    rect.setAttribute("width", String(Math.round(box.width + pad * 2)));
+    rect.setAttribute("height", String(Math.round(box.height + pad * 2)));
+    rect.setAttribute("rx", String(Math.round(box.height / 2 + pad)));
   });
 }
 
@@ -1661,6 +1708,10 @@ function setSpot(next: Spot | null, { fade = false } = {}) {
   // Set before the shade shows, so its fade plays from the start; kept while it stays up, so it never cuts short.
   if (!was) for (const layer of [defenseShade, abilityGlow]) layer.classList.toggle("fade-in", fade && !!spot);
   defenseShade.toggleAttribute("hidden", !spot);
+  if (!spot?.plates) {
+    plateCutouts.replaceChildren();
+    for (const label of labels.values()) label.removeAttribute("data-lit");
+  }
   abilityGlow.toggleAttribute("hidden", !spot?.glow.length);
   const mark = spot?.mark ?? null;
   pendingMark.hidden = !mark;
@@ -1865,6 +1916,7 @@ function placeLabels() {
     const y = handCard ? anchor.bottom - 44 : anchor.bottom + 5;
     node.style.transform = `translate(${Math.round(anchor.x)}px,${Math.round(y)}px)`;
   }
+  if (spot) updatePlateCutouts(spot.plates ?? [], projected);
 }
 
 // ── Presenting what happened ─────────────────────────────────────────────────────────────────────────────────────
@@ -2870,6 +2922,8 @@ function render() {
   if (presented !== state.beats) {
     presented = state.beats;
     if (presented.length) {
+      // The question is answered: its picks stop glowing now, not once everything it set off has played out.
+      unmarkPicks();
       void present(presented);
       return;
     }
@@ -3440,8 +3494,9 @@ function placeHoverCard() {
   }
   const { card, size, spot } = preview;
   // A short fade as it appears or moves on to another card, so it never snaps in from nowhere.
-  const fresh = hoverPicture.hidden || hoverPicture.getAttribute("src") !== card.art;
-  if (hoverPicture.getAttribute("src") !== card.art) hoverPicture.src = card.art!;
+  const shown = pictureOf(hoverPicture.getAttribute("src") ?? "");
+  const fresh = hoverPicture.hidden || shown !== card.art;
+  if (shown !== card.art) hoverPicture.src = card.art!;
   hoverPicture.alt = card.name;
   if (fresh && !reducedMotion())
     hoverPicture.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
