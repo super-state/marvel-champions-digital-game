@@ -103,8 +103,10 @@ describe("the Sound Studio's routes", () => {
     expect((await call(`/__studio/staged/${encodeURIComponent("../studio.json")}`)).status).toBe(404);
   });
 
-  test("an empty list puts a sound back to the game's own", async () => {
+  test("an empty list switches a sound off; null puts it back to the game's own", async () => {
     await call("/__studio/save", { method: "POST", body: { sounds: { hit: [] } } });
+    expect(JSON.parse((await call("/__studio/sounds.json")).text).sounds).toEqual({ hit: [] });
+    await call("/__studio/save", { method: "POST", body: { sounds: { hit: null } } });
     expect(JSON.parse((await call("/__studio/sounds.json")).text).sounds).toEqual({});
   });
 

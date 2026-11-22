@@ -50,6 +50,19 @@ test("browse, assign a sample to Hit, shape it, save it, and play it on the tabl
       started.push(this.buffer?.duration ?? 0);
       return start.apply(this, args);
     };
+    // Effects built, by kind.
+    const made: Record<string, number> = {};
+    (globalThis as unknown as { __made: Record<string, number> }).__made = made;
+    for (const kind of ["createConvolver", "createDelay"] as const) {
+      const create = BaseAudioContext.prototype[kind] as (...args: unknown[]) => AudioNode;
+      (BaseAudioContext.prototype as unknown as Record<string, unknown>)[kind] = function (
+        this: BaseAudioContext,
+        ...args: unknown[]
+      ) {
+        made[kind] = (made[kind] ?? 0) + 1;
+        return create.apply(this, args);
+      };
+    }
   });
   await page.goto("/battle/studio.html");
   await expect(page.locator(".sound")).toHaveCount(31);
@@ -73,7 +86,7 @@ test("browse, assign a sample to Hit, shape it, save it, and play it on the tabl
   // Assign it to Hit (selected at start) with its ＋.
   await expect(page.locator(".sound.active .label")).toHaveText("Hit (1–3 damage)");
   await page.locator("#files li", { hasText: "Big Punch" }).hover();
-  await page.locator("#files li .add").click();
+  await page.locator("#files li .add").click({ force: true });
   await expect(page.locator("#editor-file")).toContainText("Big Punch.wav");
   await expect(page.locator(".sound.active .meta")).toContainText("unsaved");
   await expect(page.locator("#studio-save")).toHaveText("Save 1 change");
@@ -95,6 +108,28 @@ test("browse, assign a sample to Hit, shape it, save it, and play it on the tabl
     .poll(() => page.evaluate(() => (globalThis as unknown as { __started: number[] }).__started.length))
     .toBeGreaterThan(before);
 
+  // Undo takes the volume back, redo puts it again; the slider follows.
+  const volumeOut = page.locator(".knob", { hasText: "Volume" }).locator("output");
+  await page.locator("#undo").click();
+  await expect(volumeOut).toHaveText("0.0 dB");
+  await page.keyboard.press("Control+y");
+  await expect(volumeOut).toHaveText("+6.0 dB");
+
+  // Echo and reverb: played, each builds its effect.
+  await page.locator(".knob", { hasText: "Echo level" }).locator("input").fill("0.4");
+  await page.locator(".knob", { hasText: "Reverb level" }).locator("input").fill("0.3");
+  await expect(page.locator(".knob", { hasText: "Reverb level" }).locator("output")).toHaveText("30%");
+  await page.locator("#play").click();
+  await expect
+    .poll(() => page.evaluate(() => (globalThis as unknown as { __made: Record<string, number> }).__made))
+    .toMatchObject({ createConvolver: 1, createDelay: 1 });
+  // Two undos take both effects off again.
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  await expect(page.locator(".knob", { hasText: "Echo level" }).locator("output")).toHaveText("Off");
+  await page.keyboard.press("Control+y");
+  await page.keyboard.press("Control+y");
+
   // Save: it lands in the studio's folder, copied from the library, with the edit.
   await page.locator("#studio-save").click();
   await expect(page.locator("#studio-status")).toContainText("Saved");
@@ -102,7 +137,7 @@ test("browse, assign a sample to Hit, shape it, save it, and play it on the tabl
   const manifest = await page.evaluate(async () => (await fetch("/__studio/sounds.json")).json());
   expect(manifest.sounds.hit).toHaveLength(1);
   expect(manifest.sounds.hit[0].file).toMatch(/^studio:.+\.wav$/);
-  expect(manifest.sounds.hit[0].gainDb).toBe(6);
+  expect(manifest.sounds.hit[0]).toMatchObject({ gainDb: 6, echoMix: 0.4, reverbMix: 0.3 });
 
   // Play it on the table: the attack plays out there, its sounds coming through the studio.
   await expect(page.locator("#play-moment")).toBeEnabled({ timeout: 90_000 });
@@ -113,6 +148,22 @@ test("browse, assign a sample to Hit, shape it, save it, and play it on the tabl
       timeout: 15_000,
     })
     .toBeGreaterThanOrEqual(counted + 2);
+
+  // A moment switched off is saved as silent; on again, it has its sound back.
+  const pick = page.locator(".sound", { hasText: "Pick / select" });
+  await pick.locator(".switch").click();
+  await expect(pick.locator(".switch")).toHaveAttribute("aria-checked", "false");
+  await expect(pick.locator(".meta")).toContainText("off");
+  await page.locator("#studio-save").click();
+  await expect(page.locator("#studio-status")).toContainText("Saved");
+  expect((await page.evaluate(async () => (await fetch("/__studio/sounds.json")).json())).sounds.select).toEqual([]);
+  await pick.locator(".switch").click();
+  await expect(pick.locator(".switch")).toHaveAttribute("aria-checked", "true");
+  await page.locator("#studio-save").click();
+  await expect(page.locator("#studio-status")).toContainText("Saved");
+  expect(
+    (await page.evaluate(async () => (await fetch("/__studio/sounds.json")).json())).sounds.select,
+  ).toBeUndefined();
 
   // Back to the game's own sound, saved: the studio's file for Hit is gone.
   await page.getByRole("button", { name: "Back to game's sound" }).click();

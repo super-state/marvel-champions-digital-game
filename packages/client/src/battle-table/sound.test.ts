@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { manifestFromFiles, regionOf, scheduleOf, type SoundManifest } from "./sound-edit.js";
+import { impulseResponse, manifestFromFiles, regionOf, scheduleOf, tailOf, type SoundManifest } from "./sound-edit.js";
 import { SOUND_NAMES } from "./sound-moments.js";
 import { BUNDLED_MANIFEST, pickVariant, resolveSound, SoundBoard, sfx } from "./sound.js";
 
@@ -99,6 +99,31 @@ describe("picking a variant", () => {
       }
   });
 
+  test("the first time, any variant can play, not only the first", () => {
+    expect(pickVariant(2, undefined, () => 0.1)).toBe(0);
+    expect(pickVariant(2, undefined, () => 0.9)).toBe(1);
+    expect(pickVariant(4, undefined, () => 0.99)).toBe(3);
+  });
+
+  test("two variants take turns, across a manifest swap that leaves them as they were", () => {
+    const board = new SoundBoard({ version: 1, sounds: { hit: [{ file: "a" }, { file: "b" }] } }, (f) => `/${f}`, {
+      automated: true,
+      random: () => 0,
+    });
+    const picks: number[] = [];
+    let t = 0;
+    // Each play a second apart, so none is dropped as a repeat.
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => (t += 1000));
+    for (let i = 0; i < 4; i++) {
+      board.play("hit");
+      board.setManifest({ version: 1, sounds: { hit: [{ file: "a" }, { file: "b" }] } });
+      picks.push(board.lastOf("hit")!);
+    }
+    clock.mockRestore();
+    globalThis.__battleSounds = undefined;
+    expect(picks).toEqual([0, 1, 0, 1]);
+  });
+
   test("a sound with one file always plays it", () => {
     expect(pickVariant(1, 0, () => 0.7)).toBe(0);
   });
@@ -164,10 +189,35 @@ describe("the sound board", () => {
     expect(globalThis.__battleSounds?.map((s) => s.name)).toEqual(["win"]);
   });
 
+  test("a sound switched off (no variants) plays nothing", () => {
+    const board = new SoundBoard({ version: 1, sounds: { ...manifest.sounds, hit: [] } }, resolve, { automated: true });
+    board.play("hit");
+    expect(globalThis.__battleSounds).toBeUndefined();
+    expect(board.names()).not.toContain("hit");
+  });
+
   test("with no Web Audio (unlock does nothing), playing is a silent no-op", async () => {
     const board = new SoundBoard(manifest, resolve);
     board.unlock();
     expect(() => board.play("hit")).not.toThrow();
     expect(await board.playVariant("hit", { file: "a" })).toBeNull();
+  });
+});
+
+describe("echo and reverb", () => {
+  test("no effects, no tail; an echo rings until its repeats are 60 dB down, capped", () => {
+    expect(tailOf({ file: "x" })).toBe(0);
+    expect(tailOf({ file: "x", echoMix: 0.5, echoMs: 200, echoFeedback: 0.5 })).toBeCloseTo(2);
+    expect(tailOf({ file: "x", echoMix: 0.5, echoMs: 1000, echoFeedback: 0.9 })).toBe(8);
+    expect(tailOf({ file: "x", reverbMix: 0.3, reverbSeconds: 2.5 })).toBe(2.5);
+  });
+
+  test("a made room is two different channels that die away to silence", () => {
+    const [left, right] = impulseResponse(1000, 1.5, () => Math.random());
+    expect(left!.length).toBe(1500);
+    expect(left).not.toEqual(right);
+    const loudness = (part: Float32Array) => part.reduce((sum, v) => sum + Math.abs(v), 0) / part.length;
+    expect(loudness(left!.slice(0, 300))).toBeGreaterThan(loudness(left!.slice(1200)) * 10);
+    expect(Math.abs(left![left!.length - 1]!)).toBeLessThan(1e-4);
   });
 });
