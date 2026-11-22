@@ -37,3 +37,11 @@ To swap a sound, change its line in the script's `RECIPE`, rerun it, and listen 
 | `select`        | a target or resource picked                                                  | Interface Sounds: select 1, 2                                           |
 | `confirm`       | End Turn, paying, the menu's sound switch                                    | Interface Sounds: confirmation 1                                        |
 | `error`         | a card that can't be played now                                              | Interface Sounds: error 6                                               |
+
+## The Sound Studio
+
+`pnpm battle`, then open `/battle/studio.html`: browse this PC's sample folders, give any moment its own files (several
+take turns), cut them, fade them, set volume, pitch and delay, and drag the gold ⚡ marker to the instant that should
+land on the table's moment, with the table acting it out beside the waveform. Saving keeps the edits on this PC
+(`%LOCALAPPDATA%\Marvel3DTable\studio`, `src/battle-table/studio/studio-server.ts`); the dev game plays them at once.
+They reach the repo, and everyone, only when a session ships them. Mind the licence first: this repo is public.
