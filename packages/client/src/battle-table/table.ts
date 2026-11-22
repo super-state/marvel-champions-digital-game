@@ -222,19 +222,6 @@ function boostCardWidth(hostWidth: number, w: number, h: number) {
   return Math.min(hostWidth * 0.62, h * 0.125, w * 0.105);
 }
 
-// Keep the original scan coordinates so the printed title stays on the exposed edge.
-function upgradeTab() {
-  const geo = new THREE.ShapeGeometry(roundedRect(TAB, HEIGHT, 0.025), 8);
-  geo.translate((TAB - 1) / 2, 0, 0);
-  const { position, uv } = geo.attributes;
-  for (let i = 0; i < position!.count; i++) {
-    const x = position!.getX(i) + 0.5;
-    const y = position!.getY(i) / HEIGHT + 0.5;
-    uv!.setXY(i, x, y);
-  }
-  return geo;
-}
-
 // Draw the halo in card space so it follows the hand fan and its rounded corners.
 function resourceAura(geometry: THREE.PlaneGeometry) {
   const material = new THREE.ShaderMaterial({
@@ -448,13 +435,6 @@ export class BattleTable {
     bevelEnabled: false,
     curveSegments: 8,
   });
-  readonly #tab = upgradeTab();
-  /** The thickness under a tucked card's strip, like `#stock` under a whole card. */
-  readonly #tabStock = new THREE.ExtrudeGeometry(roundedRect(TAB, HEIGHT, 0.025), {
-    depth: 0.018,
-    bevelEnabled: false,
-    curveSegments: 8,
-  }).translate((TAB - 1) / 2, 0, 0);
   readonly #heroShadow = contactShadow();
   readonly #villainShadow = this.#heroShadow.clone();
   readonly #actionShadow = new THREE.Mesh(
@@ -2202,8 +2182,10 @@ export class BattleTable {
       h = this.#height;
     const boardWidth = Math.min(w * 0.2, h * 0.22);
     const flat = -Math.PI / 2;
-    // Piles sit out at the mat's edges, leaving the middle to the cards in play.
-    const pileX = w * 0.885;
+    // Piles sit out at the mat's edges, leaving the middle to the cards in play. On a very wide screen they stop short
+    // of the edges, so the table keeps together rather than spreading out with the room (Adam, 2026-11-22).
+    const pileSpread = Math.min(w * 0.385, h * 0.75);
+    const pileX = w * 0.5 + pileSpread;
     const pileY = h * 0.505;
     const base = this.#point(pileX, pileY, 0.025);
     const encounterWidth = Math.min(w * 0.088, h * 0.088);
@@ -2261,7 +2243,9 @@ export class BattleTable {
     const otherEnemies = enemies.filter((card) => !isScheme(card));
     const enemyRow = h * 0.242;
     const enemyCardWidth = Math.min(w * 0.117, h * 0.145);
-    const schemeX = w * 0.255;
+    // The schemes stand a set gap left of the villain (and any cards under it), however wide the screen.
+    const villainLeft = w * 0.5 - villainWidth * (0.5 + TAB * villainTabs);
+    const schemeX = Math.max(w * 0.255, villainLeft - enemyCardWidth * (0.45 + HEIGHT / 2));
     const schemeElevation = 0.05;
     const schemeOrigin = this.#point(schemeX, enemyRow, schemeElevation);
     const schemeScale = this.#point(schemeX + enemyCardWidth, enemyRow, schemeElevation).x - schemeOrigin.x;
@@ -2301,7 +2285,8 @@ export class BattleTable {
         0.025,
         encounterGoal.position.z,
       ).x;
-      const slotWidth = (right - left) / otherEnemies.length;
+      // Each minion takes a card-sized slot from the villain outwards; room to spare is left at the far end.
+      const slotWidth = Math.min((right - left) / otherEnemies.length, enemyCardWidth * 1.5);
       otherEnemies.forEach((card, i) => {
         const tabs = state.enemyCards.filter((c) => c.attachedTo === card.id).length;
         const footprint = (card.landscape ? HEIGHT : 1) + TAB * tabs;
@@ -2624,7 +2609,7 @@ export class BattleTable {
     }
     const pileWidth = Math.min(w * 0.125, h * 0.125);
     const discardGoal = { position: base.clone(), scale: this.#point(pileX + pileWidth, pileY, 0.025).x - base.x };
-    const deckX = w * 0.115,
+    const deckX = w * 0.5 - pileSpread,
       deckY = h * 0.505;
     const deckCenter = this.#point(deckX, deckY, 0.025);
     const deckGoal = {
@@ -3242,16 +3227,11 @@ export class BattleTable {
         // Slid out while hovered, it shows whole: the part still under its host stays hidden behind it.
         const tucked =
           this.#tucked.has(id) && !this.#flights.has(id) && this.#state.staged?.id !== id && !this.#fan.has(id);
-        // Upgrades and attachments both print their title down the left edge: that strip is what shows when tucked.
-        const geometry = tucked ? this.#tab : piece.card.landscape ? this.#landscapeFace : this.#face;
+        // Tucked, a card is drawn whole, thickness and all: its host covers the rest. Only drawing the strip down its
+        // left edge cut off its top where the stack steps up past the host, and made it look narrow (Adam, 2026-11-22).
+        const geometry = piece.card.landscape ? this.#landscapeFace : this.#face;
         piece.face.geometry = geometry;
-        // Tucked, it keeps its thickness along the strip that shows, so sliding it out never makes an edge appear
-        // (Adam, 2026-11-22).
-        (piece.root.children[0] as THREE.Mesh).geometry = tucked
-          ? this.#tabStock
-          : piece.card.landscape
-            ? this.#landscapeStock
-            : this.#stock;
+        (piece.root.children[0] as THREE.Mesh).geometry = piece.card.landscape ? this.#landscapeStock : this.#stock;
         piece.back.visible = !tucked;
         piece.rim.geometry = geometry;
       }
@@ -3614,8 +3594,6 @@ export class BattleTable {
     const geometries = new Set<THREE.BufferGeometry>([
       this.#auraPlane,
       this.#interruptPuff.geometry,
-      this.#tab,
-      this.#tabStock,
       this.#face,
       this.#stock,
       this.#landscapeFace,
