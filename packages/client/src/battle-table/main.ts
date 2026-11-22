@@ -1851,6 +1851,12 @@ function placeLabels() {
       pendingMark.style.top = marked.top + "px";
     }
   }
+  // A boost label rides along with its card while the card is held up; it goes when the card leaves.
+  for (const [id, burst] of boostBursts) {
+    const card = projected.find((p) => p.id === id);
+    if (card) placeBoostBurst(burst.node, card);
+    else dropBoostBurst(id);
+  }
   for (const [id, tag] of boostTags) {
     const card = projected.find((p) => p.id === id);
     tag.hidden = !card;
@@ -2086,37 +2092,52 @@ function stampCard(id: string, text: string, tone?: "status" | "confused" | "tou
   ]);
 }
 
+/**
+ * A turned-up boost card's "+N Boost". It stays on the card, fully shown, the whole time the card is held up, and goes
+ * only as the card moves off to the discard pile, rather than fading out first (Adam, 2026-11-22).
+ */
+const boostBursts = new Map<string, { node: HTMLElement }>();
+
 async function showBoost(reveal: NonNullable<Beat["reveal"]>) {
   const boost = reveal.boost!;
   const projected = table?.anchors();
   const card = projected?.find((p) => p.id === reveal.id);
   if (!card) return;
+  dropBoostBurst(reveal.id);
   const burst = make("div", "boost-burst");
   burst.setAttribute("role", "status");
   const marks = make("span", "boost-marks");
   for (let i = 0; i < Math.min(boost.icons, 4); i++) marks.append(icon("boost"));
   burst.append(marks, make("b", "", `+${boost.icons}`), make("span", "", "Boost"));
-  const x = card.x + card.width * 0.33;
-  const y = card.bottom - card.width * 0.25;
-  burst.style.left = x + "px";
-  burst.style.top = y + "px";
   stage.append(burst);
   sfx.play("boost");
-  const animation = burst.animate(
-    reducedMotion()
-      ? [{ opacity: 1 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }]
-      : [
-          { transform: "scale(.55)", opacity: 0 },
-          { transform: "scale(1.18)", opacity: 1, offset: 0.18 },
-          { transform: "scale(1)", opacity: 1, offset: 0.35 },
-          { transform: "scale(1)", opacity: 1, offset: 0.68 },
-          // It fades where it is rather than flying to the enemy, so the player can read it (Adam, 2026-11-22).
-          { transform: "scale(1)", opacity: 0 },
-        ],
-    { duration: 860, easing: "ease-out" },
-  );
-  await animation.finished;
-  burst.remove();
+  boostBursts.set(reveal.id, { node: burst });
+  placeBoostBurst(burst, card);
+  if (!reducedMotion())
+    burst.animate(
+      [
+        { transform: "scale(.55)", opacity: 0 },
+        { transform: "scale(1.18)", opacity: 1, offset: 0.5 },
+        { transform: "scale(1)", opacity: 1 },
+      ],
+      { duration: 300, easing: "ease-out" },
+    );
+  // Held up as long as before; the label goes with the card (dropBoostBurst as it is retired).
+  await sleep(reducedMotion() ? 300 : 860);
+}
+
+function placeBoostBurst(node: HTMLElement, card: { x: number; width: number; bottom: number }) {
+  node.style.left = card.x + card.width * 0.33 + "px";
+  node.style.top = card.bottom - card.width * 0.25 + "px";
+}
+
+function dropBoostBurst(id: string) {
+  const burst = boostBursts.get(id);
+  if (!burst) return;
+  boostBursts.delete(id);
+  if (reducedMotion()) return burst.node.remove();
+  burst.node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: "forwards" }).onfinish = () =>
+    burst.node.remove();
 }
 
 /**
@@ -2759,6 +2780,7 @@ async function present(beats: Snapshot["beats"]) {
       if (beat.reveal.art) showPreview(beat.reveal, !beat.reveal.boost);
       if (beat.reveal.boost) {
         await showBoost(beat.reveal);
+        dropBoostBurst(beat.reveal.id);
         table?.retireEncounter(
           beat.reveal.id,
           state.encounterDiscard.find((c) => c.id === beat.reveal!.id),
