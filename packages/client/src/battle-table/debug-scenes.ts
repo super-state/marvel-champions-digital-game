@@ -17,7 +17,7 @@ interface Placement {
 }
 
 interface Scene {
-  hero?: { form?: "hero" | "alterEgo"; damage?: number; statuses?: Record<string, number> };
+  hero?: { form?: "hero" | "alterEgo"; damage?: number; statuses?: Record<string, number>; exhausted?: boolean };
   villain?: { damage?: number; statuses?: Record<string, number> };
   mainThreat?: number;
   /** Player cards in play (allies, supports, upgrades). */
@@ -164,6 +164,11 @@ const SCENES: Record<string, Scene> = {
     hero: { form: "alterEgo" },
     encounterTop: ["01165", "01103"],
   },
+  /** Spider-Man exhausted with Heroic Intuition tucked under him: hovering him lifts him and leaves the upgrade as it lies. */
+  exhausted: {
+    hero: { form: "hero", exhausted: true },
+    play: [{ code: "01065" }],
+  },
   /** Hard to Keep Down on an unhurt Rhino surges into "I'm Tough!": end the turn to watch it. */
   surge: {
     encounterTop: ["01110", "01104", "01105"],
@@ -301,6 +306,7 @@ function arrange(state: GameState, scene: Scene): GameState {
     ...instances[hero]!,
     damage: scene.hero?.damage ?? 0,
     statuses: { ...instances[hero]!.statuses, ...scene.hero?.statuses },
+    ...(scene.hero?.exhausted ? { exhausted: true } : {}),
   };
   const main = state.mainScheme.instanceId;
   if (scene.mainThreat !== undefined) instances[main] = { ...instances[main]!, threat: scene.mainThreat };
