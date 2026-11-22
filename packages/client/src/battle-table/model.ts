@@ -147,6 +147,8 @@ export interface BattleBeat {
   activity?: string;
   statusChange?: { id: string; name: string; delta: number };
   enemyActivation?: string;
+  /** The enemy activating is scheming (not attacking): the table stamps "Schemes" on it. */
+  scheming?: string;
   discardEvent?: string;
   interrupt?: string;
   deflection?: { card: string; amount: number };
@@ -975,8 +977,10 @@ export class BattleModel {
           text,
           actor,
         });
-      if (e.type === "enemyActivated" && this.#beats.length > before)
+      if (e.type === "enemyActivated" && this.#beats.length > before) {
         this.#beats.at(-1)!.enemyActivation = e.enemyInstanceId;
+        if (e.activation !== "attack") this.#beats.at(-1)!.scheming = e.enemyInstanceId;
+      }
       if (heldAim && this.#beats.slice(before).some((beat) => partOfAttack(beat, heldAim!.attacker))) {
         this.#villainActivity = heldAim.activity;
         this.#beats.splice(before, 0, { ...heldAim.beat, activity: heldAim.activity });

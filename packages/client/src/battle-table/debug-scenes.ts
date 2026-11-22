@@ -65,6 +65,11 @@ const SCENES: Record<string, Scene> = {
     ],
     villainAttachments: [{ code: "01099" }, { code: "01098", damage: 2 }],
   },
+  /** Peter Parker with Heroic Intuition (+1 THW) tucked under him: change to Spider-Man and watch the turn. */
+  flipupgrade: {
+    hero: { form: "alterEgo" },
+    play: [{ code: "01065" }],
+  },
   /** Black Cat in hand with Genius on top of the deck: her pick-up while paying with Peter Parker's Scientist. */
   blackcat: {
     hand: ["01002", "01090"],

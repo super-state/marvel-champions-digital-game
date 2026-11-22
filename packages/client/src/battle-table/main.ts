@@ -2606,6 +2606,8 @@ async function present(beats: Snapshot["beats"]) {
           { duration: 430, easing: "ease-out" },
         ).onfinish = () => svg.remove();
       }
+      // Scheming is called out on the card like an encounter card dealt or threat placed; an attack has its reticle.
+      if (beat.scheming) stampCard(beat.scheming, "Schemes");
     }
     if (beat.attackAim) {
       const { source, target } = beat.attackAim;
