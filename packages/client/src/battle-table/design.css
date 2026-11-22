@@ -352,7 +352,8 @@
   /* When the question and the buttons don't fit side by side (a tablet held upright), the buttons go underneath. */
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
+  /* Room between the question and its buttons so the words never run into them (Adam, 2026-11-22). */
+  gap: 8px 28px;
   width: max-content;
   min-width: min(440px, calc(100% - 24px));
   max-width: calc(100% - 24px);
