@@ -1452,6 +1452,12 @@ function appliesHelp(reveal: Beat["reveal"]): string | null {
   return `You're in ${applies.form === "Hero" ? "hero" : "alter-ego"} form: ${applies.text}`;
 }
 
+/** How a revealed card is introduced: dealt and turned over, or brought in by another card (your nemesis, by Shadow). */
+function revealedBy(reveal: NonNullable<Beat["reveal"]>): string {
+  if (!reveal.broughtBy) return "Revealed";
+  return reveal.nemesis ? `${reveal.broughtBy} brings in your nemesis` : `${reveal.broughtBy} brings in`;
+}
+
 /**
  * A revealed encounter card that is done being read leaves the middle of the table. One that stays in play lands in
  * its place. A treachery whose effect still has something to show (the attack Assault calls, a question it asks, the
@@ -1841,26 +1847,29 @@ function phaseIndicator(phase: "hero" | "villain" | "ending" | "setup", announce
   turnStatus.dataset.phase = phase === "villain" ? "villain" : phase === "ending" ? "ending" : "hero";
   turnStatus.replaceChildren(...(phase === "setup" ? [] : [icon(phase === "villain" ? "villain" : "hero")]), title);
   roundLabel.textContent = `Round ${state?.round ?? 1}`;
-  if (announce && phase !== "setup") {
-    const banner = element("phase-banner");
-    banner.dataset.phase = phase;
-    const lettering = banner.querySelector("b")!;
-    lettering.textContent = title;
-    banner.getAnimations({ subtree: true }).forEach((a) => a.cancel());
-    banner.animate([{ opacity: 0 }, { opacity: 1, offset: 0.16 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }], {
-      duration: PHASE_BANNER_MS,
-    });
-    if (!reducedMotion()) {
-      lettering.animate(
-        [
-          { transform: "translateX(-100%)", easing: "cubic-bezier(.18,.74,.28,1)" },
-          { transform: "translateX(-0.6%)", offset: 0.24, easing: "linear" },
-          { transform: "translateX(0.6%)", offset: 0.73, easing: "cubic-bezier(.6,.02,.9,.5)" },
-          { transform: "translateX(100%)" },
-        ],
-        { duration: PHASE_BANNER_MS },
-      );
-    }
+  if (announce && phase !== "setup") sweepBanner(title, phase);
+}
+
+/** A title swept across the whole table, the way a new phase is announced ("Nemesis cards added" too). */
+function sweepBanner(title: string, tone: "hero" | "villain" | "ending") {
+  const banner = element("phase-banner");
+  banner.dataset.phase = tone;
+  const lettering = banner.querySelector("b")!;
+  lettering.textContent = title;
+  banner.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+  banner.animate([{ opacity: 0 }, { opacity: 1, offset: 0.16 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }], {
+    duration: PHASE_BANNER_MS,
+  });
+  if (!reducedMotion()) {
+    lettering.animate(
+      [
+        { transform: "translateX(-100%)", easing: "cubic-bezier(.18,.74,.28,1)" },
+        { transform: "translateX(-0.6%)", offset: 0.24, easing: "linear" },
+        { transform: "translateX(0.6%)", offset: 0.73, easing: "cubic-bezier(.6,.02,.9,.5)" },
+        { transform: "translateX(100%)" },
+      ],
+      { duration: PHASE_BANNER_MS },
+    );
   }
 }
 
@@ -2213,9 +2222,14 @@ async function present(beats: Snapshot["beats"]) {
       continue;
     }
     if (beat.intoEncounterDeck) {
-      // Shadow of the Past: the rest of the nemesis set is shown, then shuffled into the encounter deck.
+      // Shadow of the Past: the rest of the nemesis set is shown, then shuffled into the encounter deck. That the
+      // encounter deck now holds the nemesis's cards is announced across the whole table first, like a new phase.
+      if (beat.nemesis) {
+        sweepBanner("Nemesis cards added", "villain");
+        await sleep(PHASE_BANNER_MS);
+      }
       narrate(beat, feedLineOf(beat), {
-        eyebrow: { text: "Encounter deck", icon: "deck", tone: "villain" },
+        eyebrow: { text: beat.nemesis ? "Nemesis cards added" : "Encounter deck", icon: "deck", tone: "villain" },
         title: `Shuffle ${beat.intoEncounterDeck.map((card) => card.name).join(", ")} into the encounter deck`,
       });
       table?.showInRow(beat.intoEncounterDeck);
@@ -2583,17 +2597,17 @@ async function present(beats: Snapshot["beats"]) {
         setTimeout(() => (announcer.textContent = said), 60);
         // A minion with no When Revealed shows itself, then goes straight to its place: nothing to read out first.
         narrate(beat, null, {
-          eyebrow: { text: "Revealed", icon: "forced", tone: "villain" },
+          eyebrow: { text: revealedBy(beat.reveal), icon: "forced", tone: "villain" },
           title: beat.reveal.name,
         });
-        await sleep(reducedMotion() ? 700 : 1150);
+        await sleep(reducedMotion() ? 700 : beat.reveal.broughtBy ? 1900 : 1150);
       } else {
         readReveal.setAttribute("aria-label", `Continue after reading ${beat.reveal.name}`);
         readReveal.hidden = false;
         // Known before the bar asks, so its Continue leaves the table where it is.
         revealFocus = beat.reveal.id;
         narrate(beat, null, {
-          eyebrow: { text: "Revealed", icon: "forced", tone: "villain" },
+          eyebrow: { text: revealedBy(beat.reveal), icon: "forced", tone: "villain" },
           title: beat.reveal.name,
           help: appliesHelp(beat.reveal),
           primary: { label: "Continue", icon: "next", attention: true, onClick: () => readReveal.click() },
