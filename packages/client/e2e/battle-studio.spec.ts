@@ -79,6 +79,10 @@ test("browse, assign a sample to Hit, shape it, save it, and play it on the tabl
   await expect(page.locator("#files li .where")).toHaveText("Impacts");
   await expect(page.locator("#search-info")).toContainText("1 found");
   await page.locator("#filter").fill("");
+  // Wait for the search to clear (it runs a moment after typing stops): until then the one result row, "Big Punch.wav
+  // Impacts", also reads "Impacts", and clicking it would play the file instead of opening the folder; the list then
+  // redraws under the next steps.
+  await expect(page.locator("#search-info")).toBeHidden();
   await expect(page.locator("#files li")).toHaveText([/Impacts/]);
   await page.locator("#files li", { hasText: "Impacts" }).click();
   await expect(page.locator("#files li")).toHaveText([/Big Punch\.wav/]);

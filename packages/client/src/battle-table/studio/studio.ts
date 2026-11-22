@@ -681,9 +681,16 @@ async function savePins(next: string[]) {
   paintPlaces();
 }
 
+/** Counts folder opens, so only the latest one is shown. */
+let opening = 0;
+
 async function open(path: string) {
+  // A slower, older open (the first pinned folder the studio opens as it starts, say) must not land on top of a
+  // folder opened since.
+  const mine = ++opening;
   const response = await fetch(`/__studio/list?path=${encodeURIComponent(path)}`);
   const result = await response.json();
+  if (mine !== opening) return;
   if (!response.ok) return status(`Couldn't open ${path}: ${result.error}`);
   folder = result.path;
   listing = result;
@@ -711,6 +718,8 @@ async function runSearch(rescan = false) {
   const query = $<HTMLInputElement>("filter").value.trim();
   clearTimeout(searchTimer);
   if (!query || !folder) {
+    // Already showing the folder: drawing it again would only drop the row under the pointer (and its ＋).
+    if (!found) return;
     found = null;
     $("search-info").hidden = true;
     cursor = -1;
