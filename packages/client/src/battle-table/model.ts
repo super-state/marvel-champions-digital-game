@@ -21,7 +21,7 @@ import {
   type ResourceType,
   type TriggerEvent,
 } from "@mc/engine";
-import { artFor } from "../art/art-source.js";
+import { artFor, CARD_BACKS } from "../art/art-source.js";
 import { abilityShortLabelOf } from "../view/ability-label.js";
 import {
   countersOf,
@@ -59,6 +59,8 @@ export interface BattleCard {
   requiresHeroForm: boolean;
   cost: number | null;
   reason: string | null;
+  /** A card lying facedown under another (Highway Robbery's stolen card): that card. */
+  under?: string;
 }
 
 export interface BattlePayment {
@@ -169,6 +171,8 @@ export interface BattleBeat {
   milled?: string[];
   /** Cards from the hand put facedown under a card (Highway Robbery's When Revealed), and that card. */
   tucked?: { ids: string[]; host: string; count: number };
+  /** The cards this beat moves out of the hand (`tucked`, `handDiscard`) were picked at random. */
+  random?: true;
   /** An encounter card dealt as the price of a player deck that ran out (RRG "Player Deck"). */
   penalty?: boolean;
   /** Where `returned` cards were lying facedown before (the card they were under: Highway Robbery). */
@@ -231,6 +235,8 @@ export interface BattleBeat {
 export interface BattleSnapshot {
   beats: readonly BattleBeat[];
   enemyCards: BattleCard[];
+  /** Cards lying facedown under an enemy card (Highway Robbery's), shown by their backs: `under` names the card. */
+  under: BattleCard[];
   hand: BattleCard[];
   deckCount: number;
   encounterCount: number;
@@ -283,6 +289,18 @@ export function formWhenRevealed(
   ).exec(text);
   return line ? { applies: { form: label, text: line[1]!.trim() } } : {};
 }
+
+/**
+ * The cards an encounter card's ability is moving out of the hand are picked at random: its text says so ("Discard 1
+ * card at random", Highway Robbery's "a random card"). The engine reports only the move, not how the card was picked.
+ */
+function pickedAtRandom(state: GameState, resolving: { card: InstanceId } | null): boolean {
+  const card = resolving ? cardOf(state, resolving.card) : undefined;
+  if (!card || !ENCOUNTER_TYPES.has(card.type)) return false;
+  return /\bat random\b|\ba random card\b/i.test(plainRulesTextOf(card));
+}
+
+const ENCOUNTER_TYPES = new Set(["minion", "treachery", "attachment", "side_scheme", "environment", "obligation"]);
 
 /** A card of a nemesis encounter set (Vulture and the rest of Spider-Man's). */
 function isNemesisCard(card: object | undefined): boolean {
@@ -475,6 +493,10 @@ export class BattleModel {
     );
     // The card whose ability is resolving: its effects (Black Cat discarding from the deck) are its doing.
     let resolving: { card: InstanceId; label: string } | null = null;
+    // The card whose question this move answers (Eviction Notice's "Choose one"): what follows is still its doing.
+    const answered = this.#game.pendingChoice;
+    const askedBy = answered ? (choiceSourceOf(this.#game, answered)?.instanceId ?? null) : null;
+    const asking = askedBy ? { card: askedBy } : null;
     const millSourceOf = (source: { card: InstanceId; label: string }) => {
       const card = cardOf(result.state, source.card) ?? cardOf(this.#game, source.card);
       const miss = card ? missLineOf(plainRulesTextOf(card)) : null;
@@ -628,7 +650,13 @@ export class BattleModel {
       } else if (e.type === "cardMoved" && e.from.kind === "hand" && e.to.kind === "discard") {
         const last = this.#beats.at(-1);
         if (last?.handDiscard) last.handDiscard.push(e.instanceId);
-        else this.#beats.push({ enemy, text: "Discard from your hand", handDiscard: [e.instanceId] });
+        else
+          this.#beats.push({
+            enemy,
+            text: "Discard from your hand",
+            handDiscard: [e.instanceId],
+            ...(pickedAtRandom(result.state, resolving ?? asking) ? { random: true as const } : {}),
+          });
       } else if (e.type === "cardMoved" && e.from.kind === "deck" && e.to.kind === "discard") {
         const last = this.#beats.at(-1);
         if (last?.milled) last.milled.push(e.instanceId);
@@ -652,6 +680,7 @@ export class BattleModel {
             actor: host,
             text: `A card from your hand goes facedown under ${name(host)}`,
             tucked: { ids: [e.instanceId], host, count },
+            ...(pickedAtRandom(result.state, resolving ?? asking) ? { random: true as const } : {}),
           });
       } else if (e.type === "cardMoved" && e.to.kind === "hand" && e.from.kind !== "deck") {
         const from = e.from.kind === "tucked" ? e.from.hostInstanceId : undefined;
@@ -1278,6 +1307,14 @@ export class BattleModel {
         (getInstance(state, enemy)?.boostCards ?? []).map((id) => ({ id, enemy })),
       ),
       enemyCards: [...enemyIds].map((id) => this.#card(id)),
+      under: [...enemyIds].flatMap((host) =>
+        (getInstance(state, host)?.tucked ?? []).map((id) => ({
+          ...this.#card(id),
+          name: "Facedown card",
+          art: (ENCOUNTER_TYPES.has(cardOf(state, id)?.type ?? "") ? CARD_BACKS.encounter : CARD_BACKS.player).url,
+          under: host,
+        })),
+      ),
       hero: this.#card(player.identity.instanceId),
       villain: this.#card(villain.instanceId),
       heroActions: this.#heroEntries().map(({ action }) => ({

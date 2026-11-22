@@ -890,6 +890,33 @@ test("01166 Highway Robbery: When Revealed tucks a random card from hand facedow
   ).toBe(true);
 });
 
+test("01166 Highway Robbery: the stolen card is picked at random and stays facedown under it, until it comes back", () => {
+  // Adam, 2026-11-22: the card was placed facedown, then disappeared. It stays under the scheme, its back showing.
+  const battle = scenario({ top: ["01104", "01166"] });
+  const run = endTurn(battle);
+  const scheme = enemyNamed(battle, "Highway Robbery")!;
+  const tuck = run.beats.find((b) => b.tucked)!;
+  expect(tuck.random).toBe(true);
+  expect(snap(battle).under).toEqual([expect.objectContaining({ id: tuck.tucked!.ids[0], under: scheme.id })]);
+  // Its face stays hidden: the table only gets the card back.
+  expect(snap(battle).under[0]!.art).toMatch(/player-back/);
+});
+
+test("01166 Highway Robbery: once defeated, nothing is left lying under it", () => {
+  const battle = scenario({ inPlay: ["01166"], tucked: { "01166": ["01090"] }, threatOf: { "01166": 1 } });
+  expect(snap(battle).under).toHaveLength(1);
+  toHero(battle);
+  expect(battle.heroAction("basicThwart")).toBe(true);
+  expect(snap(battle).under).toHaveLength(0);
+  expect(snap(battle).beats.some((b) => b.returned?.length && b.returnedFrom)).toBe(true);
+});
+
+test("01165 Eviction Notice: its discard at random is shown as picked at random", () => {
+  const battle = scenario({ top: ["01104", "01165", "01101"] });
+  const run = endTurn(battle, optionNamed(/^Discard 1 card at random/));
+  expect(run.beats.find((b) => b.handDiscard)?.random).toBe(true);
+});
+
 test("01166 Highway Robbery: When Defeated returns the facedown card to its owner's hand", () => {
   const battle = scenario({ inPlay: ["01166"], tucked: { "01166": ["01090"] }, threatOf: { "01166": 1 } });
   toHero(battle);

@@ -22,6 +22,8 @@ export interface TableCard {
   readonly reverseArt: string | null;
   readonly threat: number | null;
   readonly type: string;
+  /** Lying facedown under this card (Highway Robbery's stolen card): only its back shows, peeking out. */
+  readonly under?: string;
 }
 
 export function isTuckedUpgrade(card: Pick<TableCard, "type" | "showAsFullCard">): boolean {
@@ -52,6 +54,8 @@ export interface TableCards {
   readonly paymentSources: readonly string[] | null;
   /** Cards are being picked from the hand (a mulligan, the hand limit): a sunk hand rises so every card shows. */
   readonly handPick?: boolean;
+  /** Cards lying facedown under an enemy card, each naming it in `under`. */
+  readonly under?: readonly TableCard[];
 }
 
 interface Handlers {
@@ -399,6 +403,8 @@ export class BattleTable {
   readonly #layoutCard = new THREE.Group();
   readonly #floor = new THREE.Plane(new THREE.Vector3(0, 1, 0));
   readonly #tucked = new Map<string, { host: string; depth: number }>();
+  /** The cards lying facedown under another card (`TableCards.under`), as laid out: kept facedown every frame. */
+  readonly #underIds = new Set<string>();
   readonly #pieces = new Map<string, Piece>();
   readonly #textures = new Map<string, THREE.Texture>();
   readonly #loader = new THREE.TextureLoader();
@@ -738,6 +744,7 @@ export class BattleTable {
       ...state.hand,
       ...state.discard,
       ...state.encounterDiscard,
+      ...(state.under ?? []),
     ];
     for (const card of this.#encounters.values()) if (!cards.some((c) => c.id === card.id)) cards.push(card);
     for (const card of this.#deckReveal) if (!cards.some((c) => c.id === card.id)) cards.push(card);
@@ -855,7 +862,10 @@ export class BattleTable {
       this.#startFlight(card.id, tucked ? "equip" : "place");
     }
     this.#layout();
-    for (const id of fresh) this.#apply(this.#pieces.get(id)!, 1);
+    for (const id of fresh) {
+      this.#apply(this.#pieces.get(id)!, 1);
+      if (this.#underIds.has(id)) this.#pieces.get(id)!.root.rotation.y = Math.PI;
+    }
     if (newDraw) {
       const start = performance.now();
       state.drawn
@@ -1323,13 +1333,22 @@ export class BattleTable {
     const s = this.#state;
     if (!s) return;
     const lying = new Set(ids.filter((id) => this.#pieces.has(id)));
+    const fromUnder = new Set(ids.filter((id) => this.#underIds.has(id)));
     this.#deckReveal = this.#deckReveal.filter((card) => !ids.includes(card.id));
     for (const id of ids) this.#deckPicks.delete(id);
-    this.setCards({ ...s, hand, discard: s.discard.filter((card) => !ids.includes(card.id)), selected: [] });
+    this.setCards({
+      ...s,
+      hand,
+      discard: s.discard.filter((card) => !ids.includes(card.id)),
+      under: (s.under ?? []).filter((card) => !ids.includes(card.id)),
+      selected: [],
+    });
     // Cards that lay facedown under a card (Highway Robbery's) slide out from under it and turn up on the way.
     const host = from ? this.#pieces.get(from) : undefined;
     const start = performance.now();
     ids.forEach((id, index) => {
+      // A card lying facedown under another slides out from there and turns up as it flies, like a draw.
+      if (fromUnder.has(id)) return this.#startFlight(id, "draw", start + index * 160);
       if (lying.has(id)) return this.#startFlight(id, "return");
       const root = this.#pieces.get(id)?.root;
       if (!root || !host) return;
@@ -1354,6 +1373,7 @@ export class BattleTable {
     this.#encounters.clear();
     this.#parked.clear();
     this.#tucked.clear();
+    this.#underIds.clear();
     this.#revealing = this.#aside = this.#actor = this.#power = this.#powerHost = null;
     this.#powerWaiting = this.#revealHeld = false;
     this.#actionShadow.removeFromParent();
@@ -1430,8 +1450,28 @@ export class BattleTable {
   settleStash(counts: { deckCount?: number; encounterCount?: number } = {}): void {
     const s = this.#state;
     if (!s) return;
+    // A card that went under another stays there, its back peeking out, until an effect takes it back.
+    const under = [...(s.under ?? [])];
+    for (const { card, to } of this.#stashing.values())
+      if (typeof to === "object" && !under.some((other) => other.id === card.id))
+        under.push({ ...card, under: to.under });
     this.#stashing.clear();
-    this.setCards({ ...s, ...counts });
+    this.setCards({ ...s, ...counts, under });
+  }
+
+  /** True while `id` is still on its way somewhere (landing in its place after being read). */
+  flying(id: string): boolean {
+    return this.#flights.has(id);
+  }
+
+  /**
+   * Hand cards an effect is picking from light up (`ids`), the hand raised so every card shows; none to put it back.
+   * The random pick (Highway Robbery, Eviction Notice) hops this light across the hand before it stops.
+   */
+  spotlightHand(ids: readonly string[]): void {
+    const s = this.#state;
+    if (!s) return;
+    this.setCards({ ...s, selected: [...ids], handPick: ids.length > 0 });
   }
 
   /** How many facedown cards lie under `host` now (Highway Robbery's stolen cards). */
@@ -2284,16 +2324,44 @@ export class BattleTable {
         this.#pose(card.id, x, y - rise, width, 1.75 + index * 0.01, this.#camera.rotation.x);
       });
     }
+    // Cards lying facedown under an enemy card (Highway Robbery's) show a strip of their back past its left edge.
+    this.#underIds.clear();
+    const underCount = new Map<string, number>();
+    // The `index`th card under `hostId`: shoved under its left edge so a strip of its back shows, turned to lie the
+    // way the host lies, a little below it.
+    const poseUnder = (id: string, hostId: string, index: number) => {
+      const host = enemyPoses.get(hostId);
+      const landscape = !!state.enemyCards.find((card) => card.id === hostId)?.landscape;
+      if (!host) return;
+      // Fitted to the screen with the rest of the table, so it stays where its host ends up.
+      onBoard.add(id);
+      const across = (landscape ? HEIGHT : 1) * host.width;
+      this.#pose(
+        id,
+        host.x - across * (0.2 + index * 0.08),
+        host.y,
+        host.width * 0.97,
+        0.02 - index * 0.004,
+        flat,
+        (landscape ? Math.PI / 2 : 0) + 0.025 + index * 0.03,
+      );
+    };
+    for (const card of state.under ?? []) {
+      const piece = this.#pieces.get(card.id);
+      if (!card.under || !enemyPoses.has(card.under) || !piece || this.#stashing.has(card.id)) continue;
+      this.#underIds.add(card.id);
+      const index = underCount.get(card.under) ?? 0;
+      underCount.set(card.under, index + 1);
+      if (this.#flights.get(card.id)?.kind !== "draw") poseUnder(card.id, card.under, index);
+    }
     // Cards on their way facedown into a deck rest on its top; cards going under a card lie just beneath it.
     for (const [id, { to }] of this.#stashing) {
       const piece = this.#pieces.get(id);
       if (!piece) continue;
       if (typeof to === "object") {
-        const host = this.#pieces.get(to.under)?.target;
-        if (!host) continue;
-        const position = host.position.clone();
-        position.y -= 0.012;
-        piece.target = { position, scale: host.scale * 0.92, pitch: host.pitch, roll: 0 };
+        if (!enemyPoses.has(to.under)) continue;
+        poseUnder(id, to.under, underCount.get(to.under) ?? 0);
+        underCount.set(to.under, (underCount.get(to.under) ?? 0) + 1);
       } else {
         const slot = to === "deck" ? this.#deckSlot : this.#encounterSlot;
         const back = to === "deck" ? this.#deckBack : this.#encounterBack;
@@ -2991,6 +3059,7 @@ export class BattleTable {
         if (delta > 0.00025 && smooth < 1) moving = true;
         const shifting = inHand && Math.abs(piece.target.position.x - piece.root.position.x) > 0.0005;
         this.#apply(piece, delta > 0.00025 ? (shifting ? handSlide : smooth) : 1);
+        if (this.#underIds.has(id)) piece.root.rotation.y = Math.PI;
       }
     }
     // Use the host's rendered pose, including the lift and roll between animation frames.
