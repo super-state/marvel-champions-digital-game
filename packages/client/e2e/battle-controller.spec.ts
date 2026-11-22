@@ -48,8 +48,18 @@ async function keepHand(page: Page): Promise<void> {
   await nudge(page, PAD.down);
   await expect.poll(() => padMode(page)).toBe("pad");
   await expect.poll(() => focused(page)).toBe("dock-primary");
-  await padTap(page, PAD.a);
-  await expect(page.locator("#turn-status")).toHaveText(/Hero phase/i);
+  // A again only while the question is still up: on a slow headless page the first press can land inside the bar's
+  // double-press guard and be ignored, as a person's too-quick press would be.
+  for (let i = 0; i < 6; i++) {
+    if ((await page.locator("#dock-title").textContent())?.trim() !== "Keep your hand?") break;
+    await padTap(page, PAD.a);
+    await page
+      .locator("#dock-title")
+      .filter({ hasNotText: "Keep your hand?" })
+      .waitFor({ timeout: 3000 })
+      .catch(() => {});
+  }
+  await expect(page.locator("#turn-status")).toHaveText(/Hero phase/i, { timeout: 15_000 });
   await expect(page.locator("#dock")).toHaveAttribute("data-idle", "");
   await expect.poll(() => focused(page), { timeout: 15_000 }).toMatch(/^(Play|Inspect) /);
 }
