@@ -108,6 +108,36 @@ describe("the Sound Studio's routes", () => {
     expect(JSON.parse((await call("/__studio/sounds.json")).text).sounds).toEqual({});
   });
 
+  test("search finds sounds in every folder below, every word counting, folder names too", async () => {
+    mkdirSync(join(samples, "Impacts", "Heavy"), { recursive: true });
+    writeFileSync(join(samples, "Impacts", "Heavy", "Body Slam 02.wav"), "x");
+    writeFileSync(join(samples, "Impacts", "Heavy", "notes.txt"), "x");
+    const ask = async (path: string, q: string) => {
+      for (let i = 0; i < 50; i++) {
+        const found = JSON.parse(
+          (await call(`/__studio/search?path=${encodeURIComponent(path)}&q=${encodeURIComponent(q)}`)).text,
+        );
+        if (!found.indexing) return found;
+        await new Promise((done) => setTimeout(done, 20));
+      }
+      throw new Error("never finished");
+    };
+    const slam = await ask(samples, "slam");
+    expect(slam.results).toEqual([
+      {
+        path: join(samples, "Impacts", "Heavy", "Body Slam 02.wav"),
+        name: "Body Slam 02.wav",
+        folder: join("Impacts", "Heavy"),
+      },
+    ]);
+    expect((await ask(samples, "heavy body")).total).toBe(1);
+    expect((await ask(samples, "heavy whoosh")).total).toBe(0);
+    expect((await ask(samples, "notes")).total).toBe(0);
+    // A folder inside one already searched uses the same index, its results relative to it.
+    const inner = await ask(join(samples, "Impacts"), "slam");
+    expect(inner.results[0].folder).toBe("Heavy");
+  });
+
   test("pins are remembered", async () => {
     await call("/__studio/pins", { method: "POST", body: { pins: [samples] } });
     expect(JSON.parse((await call("/__studio/places")).text).pins).toEqual([samples]);

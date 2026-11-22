@@ -59,6 +59,14 @@ test("browse, assign a sample to Hit, shape it, save it, and play it on the tabl
   await path.fill(samples);
   await path.press("Enter");
   await expect(page.locator("#files li")).toHaveText([/Impacts/]);
+  // Search reaches into the subfolders, and says where each hit is.
+  await page.locator("#filter").fill("punch");
+  await expect(page.locator("#files li")).toHaveCount(1);
+  await expect(page.locator("#files li .file")).toHaveText("Big Punch.wav");
+  await expect(page.locator("#files li .where")).toHaveText("Impacts");
+  await expect(page.locator("#search-info")).toContainText("1 found");
+  await page.locator("#filter").fill("");
+  await expect(page.locator("#files li")).toHaveText([/Impacts/]);
   await page.locator("#files li", { hasText: "Impacts" }).click();
   await expect(page.locator("#files li")).toHaveText([/Big Punch\.wav/]);
 
