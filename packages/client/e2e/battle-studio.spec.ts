@@ -70,6 +70,13 @@ test("browse, assign a sample to Hit, shape it, save it, and play it on the tabl
   await expect(page.locator(".sound.active .meta")).toContainText("unsaved");
   await expect(page.locator("#studio-save")).toHaveText("Save 1 change");
 
+  // Browse away, then back to the sample's folder with it picked out.
+  await page.locator("#up").click();
+  await expect(page.locator("#files li")).toHaveText([/Impacts/]);
+  await page.locator("#show-folder").click();
+  await expect(page.locator("#crumbs")).toHaveValue(join(samples, "Impacts"));
+  await expect(page.locator("#files li.current")).toContainText("Big Punch.wav");
+
   // Shape it: louder, and play the cut.
   const volume = page.locator(".knob", { hasText: "Volume" }).locator("input");
   await volume.fill("6");
