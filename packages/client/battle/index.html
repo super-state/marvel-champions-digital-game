@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#070c12" />
     <title>Spider-Man vs. Rhino · Marvel Champions</title>
+    <!--
+      The table's styles arrive with its script (Vite imports them from main.ts), so until the script has loaded the
+      browser would paint the bare page: buttons, headings and dialogs as plain HTML. Hold the page on the table's
+      dark colour until then; battle.css shows it again the moment it lands.
+    -->
+    <style>
+      html {
+        background: #070c12;
+      }
+      body {
+        visibility: hidden;
+      }
+    </style>
   </head>
   <body>
     <main class="battle">

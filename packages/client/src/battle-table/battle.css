@@ -31,6 +31,11 @@ body {
   margin: 0;
   background: var(--bg-0);
 }
+/* index.html hides the page until this sheet has loaded, so the bare HTML never shows; this brings it back. The
+   extra `html` outranks the page's own rule whichever order the two load in. */
+html body {
+  visibility: visible;
+}
 button {
   color: inherit;
   font: inherit;
