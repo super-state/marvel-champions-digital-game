@@ -447,6 +447,12 @@ export class BattleTable {
     curveSegments: 8,
   });
   readonly #tab = upgradeTab();
+  /** The thickness under a tucked card's strip, like `#stock` under a whole card. */
+  readonly #tabStock = new THREE.ExtrudeGeometry(roundedRect(TAB, HEIGHT, 0.025), {
+    depth: 0.018,
+    bevelEnabled: false,
+    curveSegments: 8,
+  }).translate((TAB - 1) / 2, 0, 0);
   readonly #heroShadow = contactShadow();
   readonly #villainShadow = this.#heroShadow.clone();
   readonly #actionShadow = new THREE.Mesh(
@@ -3115,15 +3121,10 @@ export class BattleTable {
         if (this.#underIds.has(id)) piece.root.rotation.y = Math.PI;
       }
     }
-    // Use the host's rendered pose, including the lift and roll between animation frames.
-    for (const [id, { host, depth }] of this.#tucked) {
-      const parent = this.#pieces.get(host)?.root;
-      const piece = this.#pieces.get(id);
-      if (!parent || !piece) continue;
-      const flight = this.#flights.get(id);
-      if (flight && flight.kind !== "equip") continue;
-      // A hovered card under it slides out to the left a little on the mat, so more of it shows; it is not picked up.
-      const fanGoal = this.#hovered === id && !flight ? 1 : 0;
+    // A hovered card under it slides out to the left a little on the mat, so more of it shows; it is not picked up.
+    for (const id of [...this.#fan.keys()]) if (!this.#tucked.has(id)) this.#fan.delete(id);
+    for (const id of this.#tucked.keys()) {
+      const fanGoal = this.#hovered === id && !this.#flights.has(id) ? 1 : 0;
       const fanNow = this.#fan.get(id) ?? 0;
       const fan = this.#reduced.matches
         ? fanGoal
@@ -3133,6 +3134,19 @@ export class BattleTable {
       if (fan) this.#fan.set(id, fan);
       else this.#fan.delete(id);
       if (fan !== fanGoal) moving = true;
+    }
+    // Use the host's rendered pose, including the lift and roll between animation frames.
+    for (const [id, { host, depth }] of this.#tucked) {
+      const parent = this.#pieces.get(host)?.root;
+      const piece = this.#pieces.get(id);
+      if (!parent || !piece) continue;
+      const flight = this.#flights.get(id);
+      if (flight && flight.kind !== "equip") continue;
+      // The cards further out under the same host (lower in the stack) move with a hovered one, so it never covers
+      // their strips: with several attached, every title still shows.
+      let fan = 0;
+      for (const [other, { host: otherHost, depth: otherDepth }] of this.#tucked)
+        if (otherHost === host && otherDepth <= depth) fan = Math.max(fan, this.#fan.get(other) ?? 0);
       // A hovered host rises on its own: what is attached to it stays down on the mat where it was laid out.
       if (this.#hovered === host && !flight) {
         if (piece.root.position.distanceToSquared(piece.target.position) > 1e-8) {
@@ -3224,7 +3238,13 @@ export class BattleTable {
         // Upgrades and attachments both print their title down the left edge: that strip is what shows when tucked.
         const geometry = tucked ? this.#tab : piece.card.landscape ? this.#landscapeFace : this.#face;
         piece.face.geometry = geometry;
-        piece.root.children[0]!.visible = !tucked;
+        // Tucked, it keeps its thickness along the strip that shows, so sliding it out never makes an edge appear
+        // (Adam, 2026-11-22).
+        (piece.root.children[0] as THREE.Mesh).geometry = tucked
+          ? this.#tabStock
+          : piece.card.landscape
+            ? this.#landscapeStock
+            : this.#stock;
         piece.back.visible = !tucked;
         piece.rim.geometry = geometry;
       }
@@ -3588,6 +3608,7 @@ export class BattleTable {
       this.#auraPlane,
       this.#interruptPuff.geometry,
       this.#tab,
+      this.#tabStock,
       this.#face,
       this.#stock,
       this.#landscapeFace,
