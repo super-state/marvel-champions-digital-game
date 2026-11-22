@@ -66,4 +66,14 @@ test("the Defend? question keeps every friendly health badge bright", async ({ p
   expect(uncovered.pills).toBe(3);
   expect(uncovered.covered).toBe(0);
   expect(uncovered.faded).toBe(0);
+
+  // Picking a defender, each plate is only the health: no name, no "Defend" (Adam, 2026-11-22).
+  await defend.click();
+  const picks = page.locator("#board-labels .anchor[data-target]");
+  await expect(picks).toHaveCount(3);
+  await expect(picks.locator(".plate-name, .resource-value")).toHaveCount(0);
+  await expect(picks.first()).toHaveText(/^\s*\d+\s*$/);
+  // Once one is picked, the plates stop glowing at once, not at the end of the villain phase.
+  await page.locator('#board-labels [aria-label="Choose Jessica Jones"]').evaluate((el) => (el as HTMLElement).click());
+  await expect(picks).toHaveCount(0, { timeout: 1500 });
 });

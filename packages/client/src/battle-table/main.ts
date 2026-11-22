@@ -1348,7 +1348,10 @@ function synchronizeLabels() {
         label.append(chip);
       }
     } else {
-      if ((source || target) && !handPick) label.append(make("span", "plate-name", card.name));
+      // Picking a defender, the plate is just the health: the card shows who it is and the dock asks the question
+      // (Adam, 2026-11-22: "All the player needs is their health").
+      if ((source || target) && !handPick && !state.choice?.defense)
+        label.append(make("span", "plate-name", card.name));
       if (!discardOpen && hp !== undefined) label.append(hpPill(hp));
     }
     if (hp === undefined || discardOpen || inHand) delete label.dataset.hp;
@@ -1359,6 +1362,7 @@ function synchronizeLabels() {
       target &&
       !handPick &&
       !state.choice?.offers?.length &&
+      !state.choice?.defense &&
       target.label !== card.name &&
       !target.label.startsWith(card.name + " (")
     )
@@ -1383,6 +1387,17 @@ function synchronizeLabels() {
               : `Inspect ${card.name}`,
     );
   }
+}
+
+/** Plates the last question made pickable (gold "Choose" plates) go back to plain ones while the answer plays out. */
+function unmarkPicks() {
+  for (const label of labels.values()) {
+    if (!label.hasAttribute("data-target")) continue;
+    label.removeAttribute("data-target");
+    label.disabled = false;
+    label.querySelectorAll(".plate-name, .resource-value").forEach((part) => part.remove());
+  }
+  for (const label of labels.values()) label.removeAttribute("data-lit");
 }
 
 function updateOutlines(group: SVGGElement, ids: readonly string[], tones?: readonly GlowTone[]) {
@@ -2907,6 +2922,8 @@ function render() {
   if (presented !== state.beats) {
     presented = state.beats;
     if (presented.length) {
+      // The question is answered: its picks stop glowing now, not once everything it set off has played out.
+      unmarkPicks();
       void present(presented);
       return;
     }
