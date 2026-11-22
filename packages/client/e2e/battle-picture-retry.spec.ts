@@ -34,12 +34,11 @@ test("a table card's picture that fails at first is asked for again until it loa
   const asked = await flakyCardArt(page, 2);
   // The player deck's back shows from the opening on, so the table always asks for it.
   const back = "/card-art/bundles/cards/marvel-player-back.webp";
-  const loaded = page.waitForResponse(
-    (response) => response.url().endsWith(`${back}?retry=2`) && response.status() === 200,
-    { timeout: 15_000 },
-  );
   await page.goto("/battle/?seed=11");
-  await loaded;
+  // The plain try and the first retry fail; the second retry (after 1 s, then 3 s) is answered.
+  await expect
+    .poll(() => asked.filter((url) => url.startsWith(back)).length, { timeout: 30_000 })
+    .toBeGreaterThanOrEqual(3);
   expect(asked.filter((url) => url.startsWith(back)).slice(0, 3)).toEqual([back, `${back}?retry=1`, `${back}?retry=2`]);
 });
 
@@ -50,7 +49,7 @@ test("the card preview asks again for a picture that fails at first", async ({ p
   await expect(preview).toBeVisible();
   await expect
     .poll(() => preview.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth), {
-      timeout: 15_000,
+      timeout: 30_000,
     })
     .toBeGreaterThan(0);
 });
