@@ -140,6 +140,14 @@ const SCENES: Record<string, Scene> = {
     mainThreat: 4,
     encounterTop: ["01186", "01186"],
   },
+  /**
+   * Eviction Notice (Peter Parker's obligation) is the next encounter card: end the turn and its two long answers are
+   * asked in the turn bar, for checking that the answer buttons stay at two lines.
+   */
+  eviction: {
+    hero: { form: "alterEgo" },
+    encounterTop: ["01186", "01165"],
+  },
   /** Hard to Keep Down on an unhurt Rhino surges into "I'm Tough!": end the turn to watch it. */
   surge: {
     encounterTop: ["01110", "01104", "01105"],

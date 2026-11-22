@@ -415,10 +415,14 @@
   color: var(--text);
   font-weight: 700;
 }
+/* A long answer makes its button wider rather than taller: two lines at most where the screen allows (Adam, 2026-11-22). */
 .dock-options {
   display: grid;
-  grid-template-columns: repeat(var(--columns, 2), minmax(150px, 210px));
+  grid-template-columns: repeat(var(--columns, 2), minmax(150px, 330px));
   gap: 8px;
+}
+.dock-options .btn-option > span {
+  text-wrap: balance;
 }
 .dock-options .btn-option {
   width: 100%;
