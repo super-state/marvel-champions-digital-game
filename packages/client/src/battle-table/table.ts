@@ -418,8 +418,11 @@ export class BattleTable {
   readonly #floor = new THREE.Plane(new THREE.Vector3(0, 1, 0));
   readonly #tucked = new Map<string, { host: string; depth: number }>();
   readonly #turn = new THREE.Quaternion();
-  /** Where each tucked card holds while its host is hovered and lifted off it. */
-  readonly #held = new Map<string, { position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 }>();
+  /** Where each host last lay before being hovered and lifted: its tucked cards stay in that frame meanwhile. */
+  readonly #hostRest = new Map<string, THREE.Matrix4>();
+  readonly #framePosition = new THREE.Vector3();
+  readonly #frameQuaternion = new THREE.Quaternion();
+  readonly #frameScale = new THREE.Vector3();
   /** How far each attached card has slid out from under its host while hovered (0 to 1). */
   readonly #fan = new Map<string, number>();
   /** The cards lying facedown under another card (`TableCards.under`), as laid out: kept facedown every frame. */
@@ -1415,6 +1418,7 @@ export class BattleTable {
     for (const vapour of this.#vapours.splice(0)) this.#releaseVapour(vapour);
     this.#liftedTokens.clear();
     this.#sizzling.clear();
+    this.#hostRest.clear();
     this.#drops.clear();
     this.#state = null;
     this.#requestFrame();
@@ -3168,31 +3172,25 @@ export class BattleTable {
       let fan = 0;
       for (const [other, { host: otherHost, depth: otherDepth }] of this.#tucked)
         if (otherHost === host && otherDepth <= depth) fan = Math.max(fan, this.#fan.get(other) ?? 0);
-      // A hovered host rises on its own: what is tucked under it holds exactly where it lay when the pointer arrived,
-      // turned with it if the host is exhausted (Adam, 2026-11-22: an exhausted hero's upgrade spun round on hover).
-      if (this.#hovered === host && !flight) {
-        let held = this.#held.get(id);
-        if (!held) {
-          held = {
-            position: piece.root.position.clone(),
-            quaternion: piece.root.quaternion.clone(),
-            scale: piece.root.scale.clone(),
-          };
-          this.#held.set(id, held);
-        }
-        piece.root.position.copy(held.position);
-        piece.root.quaternion.copy(held.quaternion);
-        piece.root.scale.copy(held.scale);
-        continue;
-      }
-      this.#held.delete(id);
+      // A hovered host rises on its own: what is tucked under it stays down where the host lay before the pointer
+      // arrived, turned with it if the host is exhausted, and a card slid out from under it slides back into its place
+      // there (Adam, 2026-11-22). Otherwise it follows the host's rendered pose, lift and roll included.
       parent.updateMatrixWorld();
+      const hostLifted = this.#hovered === host && !flight;
+      let frame = this.#hostRest.get(host);
+      if (!hostLifted || !frame) {
+        frame = parent.matrixWorld.clone();
+        this.#hostRest.set(host, frame);
+      }
+      frame.decompose(this.#framePosition, this.#frameQuaternion, this.#frameScale);
       piece.target.position
         .set(...attachmentFanOffset(-TAB * depth, STAGGER * depth, fan), -0.006 * depth)
-        .applyMatrix4(parent.matrixWorld);
-      piece.target.scale = parent.scale.x;
-      piece.target.pitch = parent.rotation.x;
-      piece.target.roll = parent.rotation.z;
+        .applyMatrix4(frame);
+      piece.target.scale = this.#frameScale.x;
+      if (!hostLifted) {
+        piece.target.pitch = parent.rotation.x;
+        piece.target.roll = parent.rotation.z;
+      }
       if (flight) {
         const t = this.#reduced.matches ? 1 : Math.min(1, (now - flight.started) / 670);
         this.#equipPose(piece, flight.from, t);
@@ -3200,9 +3198,9 @@ export class BattleTable {
         else moving = true;
       } else {
         piece.root.position.copy(piece.target.position);
-        piece.root.quaternion.copy(parent.quaternion);
+        piece.root.quaternion.copy(this.#frameQuaternion);
         if (fan) piece.root.quaternion.multiply(this.#turn.setFromAxisAngle(Z_AXIS, ATTACHMENT_TURN * fan));
-        piece.root.scale.copy(parent.scale);
+        piece.root.scale.copy(this.#frameScale);
       }
     }
     if (this.#strike && now - this.#strike.start >= STRIKE_MS) {
