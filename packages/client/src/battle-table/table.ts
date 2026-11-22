@@ -222,19 +222,6 @@ function boostCardWidth(hostWidth: number, w: number, h: number) {
   return Math.min(hostWidth * 0.62, h * 0.125, w * 0.105);
 }
 
-// Keep the original scan coordinates so the printed title stays on the exposed edge.
-function upgradeTab() {
-  const geo = new THREE.ShapeGeometry(roundedRect(TAB, HEIGHT, 0.025), 8);
-  geo.translate((TAB - 1) / 2, 0, 0);
-  const { position, uv } = geo.attributes;
-  for (let i = 0; i < position!.count; i++) {
-    const x = position!.getX(i) + 0.5;
-    const y = position!.getY(i) / HEIGHT + 0.5;
-    uv!.setXY(i, x, y);
-  }
-  return geo;
-}
-
 // Draw the halo in card space so it follows the hand fan and its rounded corners.
 function resourceAura(geometry: THREE.PlaneGeometry) {
   const material = new THREE.ShaderMaterial({
@@ -448,13 +435,6 @@ export class BattleTable {
     bevelEnabled: false,
     curveSegments: 8,
   });
-  readonly #tab = upgradeTab();
-  /** The thickness under a tucked card's strip, like `#stock` under a whole card. */
-  readonly #tabStock = new THREE.ExtrudeGeometry(roundedRect(TAB, HEIGHT, 0.025), {
-    depth: 0.018,
-    bevelEnabled: false,
-    curveSegments: 8,
-  }).translate((TAB - 1) / 2, 0, 0);
   readonly #heroShadow = contactShadow();
   readonly #villainShadow = this.#heroShadow.clone();
   readonly #actionShadow = new THREE.Mesh(
@@ -3247,16 +3227,11 @@ export class BattleTable {
         // Slid out while hovered, it shows whole: the part still under its host stays hidden behind it.
         const tucked =
           this.#tucked.has(id) && !this.#flights.has(id) && this.#state.staged?.id !== id && !this.#fan.has(id);
-        // Upgrades and attachments both print their title down the left edge: that strip is what shows when tucked.
-        const geometry = tucked ? this.#tab : piece.card.landscape ? this.#landscapeFace : this.#face;
+        // Tucked, a card is drawn whole, thickness and all: its host covers the rest. Only drawing the strip down its
+        // left edge cut off its top where the stack steps up past the host, and made it look narrow (Adam, 2026-11-22).
+        const geometry = piece.card.landscape ? this.#landscapeFace : this.#face;
         piece.face.geometry = geometry;
-        // Tucked, it keeps its thickness along the strip that shows, so sliding it out never makes an edge appear
-        // (Adam, 2026-11-22).
-        (piece.root.children[0] as THREE.Mesh).geometry = tucked
-          ? this.#tabStock
-          : piece.card.landscape
-            ? this.#landscapeStock
-            : this.#stock;
+        (piece.root.children[0] as THREE.Mesh).geometry = piece.card.landscape ? this.#landscapeStock : this.#stock;
         piece.back.visible = !tucked;
         piece.rim.geometry = geometry;
       }
@@ -3619,8 +3594,6 @@ export class BattleTable {
     const geometries = new Set<THREE.BufferGeometry>([
       this.#auraPlane,
       this.#interruptPuff.geometry,
-      this.#tab,
-      this.#tabStock,
       this.#face,
       this.#stock,
       this.#landscapeFace,
