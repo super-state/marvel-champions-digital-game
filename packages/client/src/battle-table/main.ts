@@ -3005,6 +3005,9 @@ function seedFromUrl(): number | undefined {
   return Number.isInteger(seed) && seed > 0 ? seed : undefined;
 }
 
+/** A game has been dealt in this page, so a `?scene=` set-up has had its turn. */
+let sceneDealt = false;
+
 function deal() {
   if (gameMenu.open) gameMenu.close();
   lastQuestion = "";
@@ -3027,9 +3030,16 @@ function deal() {
   paintFeed();
   const seed = seedFromUrl() ?? Math.floor(Math.random() * 2 ** 31) + 1;
   // Dev builds only: `?scene=crowded` skips the mulligan and lays out a busy table for checking the presentation.
-  const arrange = import.meta.env.DEV
-    ? arrangeScene(new URLSearchParams(location.search).get("scene") ?? "")
-    : undefined;
+  // A set-up is the first game's only: Try again or New game after it starts a real game from the opening (no threat
+  // already on the scheme), and the address drops it so a reload does too.
+  const params = new URLSearchParams(location.search);
+  if (sceneDealt && params.has("scene")) {
+    params.delete("scene");
+    const query = params.toString();
+    history.replaceState(history.state, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
+  }
+  sceneDealt = true;
+  const arrange = import.meta.env.DEV ? arrangeScene(params.get("scene") ?? "") : undefined;
   model.reset(arrange ? { seed, arrange } : { seed, mulligan: true });
   state = model.snapshot();
   presented = state.beats;
