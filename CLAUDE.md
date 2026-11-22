@@ -27,12 +27,21 @@ in the engine; the 3D table shows it and sends the player's choices back, it nev
 - `pnpm battle:check` is the type check plus those tests. It is what a push runs.
 - The push check (`.githooks/pre-push`) picks by what the push changes:
   - only the 3D table and its browser tests: `pnpm battle:check`, then those browser tests;
-  - rules, cards or the old 2D game: the old game's full browser suite (`pnpm e2e:verify`), because those changes can
-    break screens the 3D tests never open;
+  - rules and cards (`packages/engine`, `content`, `cards`), with or without 3D table changes: their type checks and
+    unit tests, then the 3D table's check (`.githooks/rules-gate.sh`, about five minutes). It skips the old 2D game's
+    browser suite on purpose (Adam, 2026-11-22: rules fixes were waiting on it), so a rules change could break an old
+    2D screen unnoticed; run `pnpm e2e:verify` by hand if that matters;
+  - the old 2D game, `pnpm-lock.yaml` or other packages: the old game's full browser suite (`pnpm e2e:verify`);
   - anything else (docs, scripts, a new font or picture added under `packages/client/public/`): nothing.
   - `PUSH_GATE_DRY_RUN=1 git push …` says which check a push would get without running it or pushing.
-  - Both checks test the files on disk, so they refuse while `packages/` has uncommitted edits. Don't push past a
+  - The checks test the files on disk, so they refuse while `packages/` has uncommitted edits. Don't push past a
     failure with `--no-verify`; fix it.
+- **Small fixes go in one batch (Adam, 2026-11-22).** When Adam reels off small fixes (a heading's CSS, an overlay, a
+  rules slip), don't open a branch, PR and push check for each. Keep one fix-up worktree and branch
+  (`../mc-wt-fixups`, branch `fixups/<date>`) for the session, commit each fix there as it's done and checked, and ship
+  them together as one PR when Adam says so or at a natural pause. After the merge, pull the main folder (Adam plays
+  from it, so a fix only reaches his table then), remove the worktree, and start a fresh branch from main for the next
+  batch. Bigger or riskier work still gets its own branch.
 - A browser test of the 3D table goes in `packages/client/e2e/` with `battle` in its file name
   (`battle-controller.spec.ts`): that name is how the push check finds it. The old game's other browser tests never
   open the 3D table.
