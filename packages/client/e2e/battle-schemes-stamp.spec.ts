@@ -21,7 +21,13 @@ test("Rhino scheming is stamped Schemes", async ({ page }) => {
   await page.locator("#end-turn").click();
   // Alter ego at the end of the turn: keep the hand when asked to discard.
   await expect(page.locator("#dock-title")).toHaveText(/Discard/, { timeout: 20_000 });
-  await page.locator("#dock-primary").click();
+  // Pressed straight away, the bar's double-press guard would ignore it: wait it out, and press again if need be.
+  await expect(async () => {
+    await page.waitForTimeout(500);
+    if (/Discard/.test((await page.locator("#dock-title").textContent()) ?? ""))
+      await page.locator("#dock-primary").click();
+    await expect(page.locator("#dock-title")).not.toHaveText(/Discard/, { timeout: 1500 });
+  }).toPass({ timeout: 20_000 });
   await expect
     .poll(() => page.evaluate(() => (window as unknown as { __stamps: string[] }).__stamps), { timeout: 30_000 })
     .toEqual(expect.arrayContaining(["Threat", "Schemes", "Encounter"]));
