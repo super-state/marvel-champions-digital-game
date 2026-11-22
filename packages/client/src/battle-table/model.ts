@@ -217,6 +217,11 @@ export interface BattleBeat {
      * player is told which half of the card is about to happen.
      */
     applies?: { form: "Hero" | "Alter-Ego"; text: string };
+    /**
+     * Its When Revealed hits "each hero" while the player is in alter-ego form, so it fires on no one (Shocker). An
+     * alter-ego is not a hero (Rules Reference v1.8, "Hero"), and the table says so rather than flashing for nothing.
+     */
+    noHeroes?: true;
     /** The card whose ability revealed it, when it was not dealt (Shadow of the Past bringing in Vulture). */
     broughtBy?: string;
     /** It belongs to a nemesis set. */
@@ -288,6 +293,20 @@ export function formWhenRevealed(
     "is",
   ).exec(text);
   return line ? { applies: { form: label, text: line[1]!.trim() } } : {};
+}
+
+/**
+ * A When Revealed that only hits "each hero" ("Deal 1 damage to each hero.") finds no one while the player is in
+ * alter-ego form. Cards with a line per form are told apart by formWhenRevealed instead.
+ */
+export function whenRevealedMissesHeroes(text: string, form: "hero" | "alterEgo"): boolean {
+  if (form !== "alterEgo" || /When Revealed \((?:Hero|Alter-Ego)\)/i.test(text)) return false;
+  // The searchable text runs the lines together, so a line ends at the next ability's opening words.
+  const line =
+    /When Revealed\s*:\s*(.+?)\s*(?=\n|When Revealed\b|(?:Forced )?(?:Interrupt|Response)\b|Boost\b|$)/is.exec(
+      text,
+    )?.[1] ?? "";
+  return /\beach hero\b/i.test(line) && !/\b(?:player|identity|you)\b/i.test(line);
 }
 
 /**
@@ -626,6 +645,11 @@ export class BattleModel {
             whenRevealed: !!card && /\bWhen Revealed\b/i.test(plainRulesTextOf(card)),
             ...(card && e.type === "encounterCardRevealed"
               ? formWhenRevealed(plainRulesTextOf(card), result.state.players[0]!.identity.form)
+              : {}),
+            ...(card &&
+            e.type === "encounterCardRevealed" &&
+            whenRevealedMissesHeroes(plainRulesTextOf(card), result.state.players[0]!.identity.form)
+              ? { noHeroes: true as const }
               : {}),
           },
         });

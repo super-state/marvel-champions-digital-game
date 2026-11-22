@@ -159,6 +159,11 @@ const SCENES: Record<string, Scene> = {
     hero: { form: "alterEgo" },
     encounterTop: ["01186", "01165"],
   },
+  /** Peter Parker in alter-ego form when Shocker is dealt: end the turn (Rhino's boost card comes first) and its "each hero" damage finds no one. */
+  shocker: {
+    hero: { form: "alterEgo" },
+    encounterTop: ["01165", "01103"],
+  },
   /** Hard to Keep Down on an unhurt Rhino surges into "I'm Tough!": end the turn to watch it. */
   surge: {
     encounterTop: ["01110", "01104", "01105"],
