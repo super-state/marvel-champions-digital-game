@@ -2053,7 +2053,6 @@ async function showBoost(reveal: NonNullable<Beat["reveal"]>) {
   const boost = reveal.boost!;
   const projected = table?.anchors();
   const card = projected?.find((p) => p.id === reveal.id);
-  const enemy = projected?.find((p) => p.id === boost.enemy);
   if (!card) return;
   const burst = make("div", "boost-burst");
   burst.setAttribute("role", "status");
@@ -2073,7 +2072,8 @@ async function showBoost(reveal: NonNullable<Beat["reveal"]>) {
           { transform: "scale(1.18)", opacity: 1, offset: 0.18 },
           { transform: "scale(1)", opacity: 1, offset: 0.35 },
           { transform: "scale(1)", opacity: 1, offset: 0.68 },
-          { transform: `translate(${(enemy?.x ?? x) - x}px,${(enemy?.y ?? y) - y}px) scale(.62)`, opacity: 0 },
+          // It fades where it is rather than flying to the enemy, so the player can read it (Adam, 2026-11-22).
+          { transform: "scale(1)", opacity: 0 },
         ],
     { duration: 860, easing: "ease-out" },
   );
