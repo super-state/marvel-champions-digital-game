@@ -534,19 +534,79 @@ async function open(path: string) {
   listing = result;
   cursor = -1;
   $<HTMLInputElement>("filter").value = "";
+  found = null;
+  $("search-info").hidden = true;
   $<HTMLInputElement>("crumbs").value = folder!;
   paintPlaces();
   paintFiles();
 }
 
-type Row = { kind: "dir" | "file"; name: string };
+// ── Search: every folder below the open one ────────────────────────────────────────────────────────────────────────
+interface Found {
+  query: string;
+  results: { path: string; name: string; folder: string }[];
+  total: number;
+  indexing: boolean;
+  scanned: number;
+}
+let found: Found | null = null;
+let searchTimer = 0;
+
+async function runSearch(rescan = false) {
+  const query = $<HTMLInputElement>("filter").value.trim();
+  clearTimeout(searchTimer);
+  if (!query || !folder) {
+    found = null;
+    $("search-info").hidden = true;
+    cursor = -1;
+    return paintFiles();
+  }
+  const response = await fetch(
+    `/__studio/search?path=${encodeURIComponent(folder)}&q=${encodeURIComponent(query)}${rescan ? "&rescan=1" : ""}`,
+  );
+  if (query !== $<HTMLInputElement>("filter").value.trim()) return;
+  const result = await response.json();
+  if (!response.ok) return status(`Search failed: ${result.error}`);
+  const first = found?.query !== query;
+  found = { query, ...result };
+  if (first) cursor = -1;
+  paintSearchInfo();
+  paintFiles();
+  // Still gathering the folder's files the first time: ask again as more come in.
+  if (result.indexing) searchTimer = window.setTimeout(() => void runSearch(), 700);
+}
+
+function paintSearchInfo() {
+  const info = $("search-info");
+  info.hidden = !found;
+  if (!found) return;
+  const count = (n: number) => n.toLocaleString();
+  info.replaceChildren(
+    found.indexing
+      ? `Looking through every folder below… ${count(found.scanned)} sounds so far, ${count(found.total)} match`
+      : `${count(found.total)} found in every folder below (${count(found.scanned)} sounds)${
+          found.total > found.results.length ? `, showing the first ${found.results.length}` : ""
+        } · `,
+  );
+  if (!found.indexing) {
+    const rescan = document.createElement("button");
+    rescan.type = "button";
+    rescan.className = "link";
+    rescan.textContent = "Rescan";
+    rescan.title = "Look again for files added since";
+    rescan.onclick = () => void runSearch(true);
+    info.append(rescan);
+  }
+}
+
+type Row = { kind: "dir" | "file"; name: string; path: string; where?: string };
 function rows(): Row[] {
-  if (!listing) return [];
-  const filter = $<HTMLInputElement>("filter").value.trim().toLowerCase();
-  const match = (name: string) => !filter || name.toLowerCase().includes(filter);
+  if (found)
+    return found.results.map((hit) => ({ kind: "file" as const, name: hit.name, path: hit.path, where: hit.folder }));
+  if (!listing || !folder) return [];
   return [
-    ...listing.dirs.filter(match).map((name) => ({ kind: "dir" as const, name })),
-    ...listing.files.filter((f) => match(f.name)).map((f) => ({ kind: "file" as const, name: f.name })),
+    ...listing.dirs.map((name) => ({ kind: "dir" as const, name, path: join(folder!, name) })),
+    ...listing.files.map((f) => ({ kind: "file" as const, name: f.name, path: join(folder!, f.name) })),
   ];
 }
 
@@ -559,18 +619,25 @@ function paintFiles() {
   if (!list.length) {
     const empty = document.createElement("li");
     empty.className = "empty";
-    empty.textContent = listing ? "No folders or sound files here." : "Pick a folder.";
+    empty.textContent = found
+      ? found.indexing
+        ? "Searching…"
+        : "Nothing matches in any folder below."
+      : listing
+        ? "No folders or sound files here."
+        : "Pick a folder.";
     host.append(empty);
   }
   list.forEach((row, i) => {
     const item = document.createElement("li");
     item.classList.toggle("current", i === cursor);
-    item.innerHTML = `<span>${row.kind === "dir" ? "📁" : "🔊"}</span><span class="name"></span>`;
-    item.querySelector(".name")!.textContent = row.name;
-    item.title = row.name;
-    if (row.kind === "dir") item.onclick = () => void open(join(folder!, row.name));
+    item.innerHTML = `<span>${row.kind === "dir" ? "📁" : "🔊"}</span><span class="name"><span class="file"></span><span class="where"></span></span>`;
+    item.querySelector(".file")!.textContent = row.name;
+    if (row.where) item.querySelector(".where")!.textContent = row.where;
+    item.title = row.where ? `${row.where}\\${row.name}` : row.name;
+    if (row.kind === "dir") item.onclick = () => void open(row.path);
     else {
-      const path = join(folder!, row.name);
+      const path = row.path;
       item.draggable = true;
       item.addEventListener("dragstart", (event) => event.dataTransfer?.setData("text/x-studio-file", path));
       item.onclick = () => {
@@ -592,10 +659,10 @@ function paintFiles() {
     }
     host.append(item);
   });
-  if (listing?.truncated) {
+  if (!found && listing?.truncated) {
     const more = document.createElement("li");
     more.className = "empty";
-    more.textContent = "Showing the first 4,000 files: use the filter.";
+    more.textContent = "Showing the first 4,000 files: search to find the rest.";
     host.append(more);
   }
 }
@@ -613,14 +680,23 @@ function audition(path: string) {
 }
 
 $<HTMLInputElement>("filter").oninput = () => {
-  cursor = -1;
-  paintFiles();
+  clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(() => void runSearch(), 220);
 };
 $<HTMLInputElement>("crumbs").addEventListener("keydown", (event) => {
   if (event.key === "Enter") void open($<HTMLInputElement>("crumbs").value.trim().replace(/^"|"$/g, ""));
 });
 $("up").onclick = () => listing?.parent && void open(listing.parent);
 $("pin").onclick = () => folder && !pins.includes(folder) && void savePins([...pins, folder]);
+$<HTMLInputElement>("filter").addEventListener("keydown", (event) => {
+  // Down from the search box goes into the results.
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    $("files").focus();
+    cursor = -1;
+    $("files").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
+  }
+});
 $("files").addEventListener("keydown", (event) => {
   const list = rows();
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -628,12 +704,12 @@ $("files").addEventListener("keydown", (event) => {
     cursor = Math.min(list.length - 1, Math.max(0, cursor + (event.key === "ArrowDown" ? 1 : -1)));
     paintCursor();
     const row = list[cursor];
-    if (row?.kind === "file" && $<HTMLInputElement>("autoplay").checked) audition(join(folder!, row.name));
+    if (row?.kind === "file" && $<HTMLInputElement>("autoplay").checked) audition(row.path);
   } else if (event.key === "Enter") {
     const row = list[cursor];
     if (!row) return;
-    if (row.kind === "dir") void open(join(folder!, row.name));
-    else if (selected) addVariant(selected.name, join(folder!, row.name));
+    if (row.kind === "dir") void open(row.path);
+    else if (selected) addVariant(selected.name, row.path);
     else status("Pick a game sound on the right first.");
   } else if (event.key === "Backspace") {
     event.preventDefault();

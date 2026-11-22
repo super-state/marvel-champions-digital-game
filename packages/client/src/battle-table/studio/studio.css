@@ -435,3 +435,34 @@ button {
   padding: 2px 8px;
   font-size: 12px;
 }
+
+.search-info {
+  margin: 6px 12px 0;
+  font-size: 11px;
+  color: var(--dim);
+}
+.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--blue);
+  cursor: pointer;
+  font: inherit;
+}
+.files li .name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.files li .file,
+.files li .where {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.files li .where {
+  font-size: 10px;
+  color: var(--dim);
+}
+.files li .where:empty {
+  display: none;
+}

@@ -69,6 +69,43 @@ function hasFfmpeg(): boolean {
   }
 }
 
+/** Windows' id for the Downloads folder in the registry's User Shell Folders. */
+const DOWNLOADS_ID = "{374DE290-123F-4565-9164-39C4925E467B}";
+
+/** Where Windows really keeps a user folder (Downloads, Music), which may have been moved off C:; null elsewhere. */
+export function knownFolder(name: string): string | null {
+  if (process.platform !== "win32") return null;
+  try {
+    const out = spawnSync(
+      "reg",
+      ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders", "/v", name],
+      { encoding: "utf8" },
+    ).stdout;
+    const value = /REG_(?:EXPAND_)?SZ\s+(.+)/.exec(out ?? "")?.[1]?.trim();
+    return value ? value.replace(/%([^%]+)%/g, (_, key: string) => process.env[key] ?? `%${key}%`) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Every search word somewhere in a file's path below the searched folder (its subfolders' names count), case aside. */
+export function matchesQuery(relative: string, query: string): boolean {
+  const haystack = relative.toLowerCase();
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => haystack.includes(word));
+}
+
+interface Index {
+  root: string;
+  /** Audio files below the root, as paths relative to it. */
+  files: string[];
+  done: boolean;
+  builtAt: number;
+}
+
 interface Settings {
   pins: string[];
 }
@@ -94,7 +131,12 @@ export function studioMiddleware(options: StudioOptions = {}) {
       return { pins: [], ...JSON.parse(readFileSync(settingsFile, "utf8")) };
     } catch {
       const home = homedir();
-      const guesses = ["E:\\Samples", "D:\\timeroad-sfx-source\\sonniss", join(home, "Music"), join(home, "Downloads")];
+      const guesses = [
+        "E:\\Samples",
+        "D:\\timeroad-sfx-source\\sonniss",
+        knownFolder("My Music") ?? join(home, "Music"),
+        knownFolder(DOWNLOADS_ID) ?? join(home, "Downloads"),
+      ];
       return { pins: [library, ...guesses.filter((path) => existsSync(path))] };
     }
   };
@@ -126,6 +168,93 @@ export function studioMiddleware(options: StudioOptions = {}) {
           .map((letter) => `${letter}:\\`)
           .filter((root) => existsSync(root))
       : ["/"];
+
+  /**
+   * Every audio file below a folder, gathered once and kept (in memory, and on disk in the studio folder), so a search
+   * of a whole sample library answers at once after the first. A folder inside one already gathered uses that one.
+   */
+  const indexes = new Map<string, Index>();
+  const indexDir = join(dir, "indexes");
+  mkdirSync(indexDir, { recursive: true });
+  const keyOf = (root: string) => createHash("sha1").update(root.toLowerCase()).digest("hex").slice(0, 16);
+  const SKIP = /^(\.|\$|__MACOSX$|System Volume Information$)/i;
+  const SEP = process.platform === "win32" ? "\\" : "/";
+  const trimmed = (path: string) => {
+    const full = resolve(path);
+    return full === parse(full).root ? full : full.replace(/[\\/]+$/, "");
+  };
+
+  function indexFor(full: string, rescan: boolean): Index {
+    const lower = full.toLowerCase();
+    if (!rescan)
+      for (const index of indexes.values()) {
+        const root = index.root.toLowerCase();
+        if (lower === root || lower.startsWith(root.endsWith(SEP) ? root : root + SEP)) return index;
+      }
+    const cached = join(indexDir, `${keyOf(full)}.json`);
+    if (!rescan && existsSync(cached)) {
+      try {
+        const index = JSON.parse(readFileSync(cached, "utf8")) as Index;
+        if (index.root.toLowerCase() === lower && index.done) {
+          indexes.set(full, index);
+          return index;
+        }
+      } catch {
+        // Unreadable: gathered again below.
+      }
+    }
+    const index: Index = { root: full, files: [], done: false, builtAt: Date.now() };
+    indexes.set(full, index);
+    void (async () => {
+      const stack = [""];
+      while (stack.length) {
+        const relative = stack.pop()!;
+        let entries;
+        try {
+          entries = await fs.readdir(join(full, relative), { withFileTypes: true });
+        } catch {
+          continue;
+        }
+        for (const entry of entries) {
+          if (SKIP.test(entry.name)) continue;
+          const child = relative ? `${relative}${SEP}${entry.name}` : entry.name;
+          if (entry.isDirectory()) stack.push(child);
+          else if (entry.isFile() && isAudio(entry.name)) index.files.push(child);
+        }
+      }
+      index.files.sort((a, b) => a.localeCompare(b, "en", { numeric: true, sensitivity: "base" }));
+      index.done = true;
+      index.builtAt = Date.now();
+      await fs.writeFile(cached, JSON.stringify(index)).catch(() => {});
+    })();
+    return index;
+  }
+
+  /** Audio files anywhere below `path` whose path (below it) holds every word of `query`. */
+  function search(path: string, query: string, rescan: boolean) {
+    const full = trimmed(path);
+    const index = indexFor(full, rescan);
+    const rootLength = index.root.endsWith(SEP) ? index.root.length : index.root.length + 1;
+    const below = full.length > index.root.length ? (full.slice(rootLength) + SEP).toLowerCase() : "";
+    const results: { path: string; name: string; folder: string }[] = [];
+    let total = 0;
+    // A copy: the index may still be growing while this reads it.
+    for (const relative of index.files.slice()) {
+      if (below && !relative.toLowerCase().startsWith(below)) continue;
+      const inside = relative.slice(below.length);
+      if (!matchesQuery(inside, query)) continue;
+      total++;
+      if (results.length < 400) {
+        const cut = inside.lastIndexOf(SEP);
+        results.push({
+          path: join(index.root, relative),
+          name: inside.slice(cut + 1),
+          folder: cut < 0 ? "" : inside.slice(0, cut),
+        });
+      }
+    }
+    return { path: full, results, total, indexing: !index.done, scanned: index.files.length, builtAt: index.builtAt };
+  }
 
   async function list(path: string) {
     const full = resolve(path);
@@ -247,6 +376,12 @@ export function studioMiddleware(options: StudioOptions = {}) {
           const pins = (JSON.parse(await body(request)) as Settings).pins.filter((pin) => typeof pin === "string");
           writeFileSync(settingsFile, JSON.stringify({ ...readSettings(), pins }, null, 1));
           return json(response, 200, { pins });
+        }
+        if (request.method === "GET" && route === "search") {
+          const path = url.searchParams.get("path");
+          const query = url.searchParams.get("q") ?? "";
+          if (!path || !query.trim()) return json(response, 400, { error: "path and q needed" });
+          return json(response, 200, search(path, query, url.searchParams.get("rescan") === "1"));
         }
         if (request.method === "GET" && route === "list") {
           const path = url.searchParams.get("path");
