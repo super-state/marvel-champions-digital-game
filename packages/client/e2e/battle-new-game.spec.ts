@@ -3,11 +3,13 @@ import { expect, test, type Page } from "@playwright/test";
 /**
  * A new game on the 3D battle table clears the whole table (`BattleTable.newGame`). Scene `advanceloss`: the main
  * scheme is two threat short and Advance (the villain schemes) is the next encounter card, so ending the turn loses
- * the game while Advance stands aside beside Rhino. Try again, or New game from the menu, must deal a table exactly
- * like a freshly opened one: no card from the lost game left behind.
+ * the game while Advance stands aside beside Rhino. Try again, or New game from the menu, must start a real game from
+ * the opening, exactly like a freshly opened table: no card from the lost game left behind, and not the set-up again
+ * (no threat already on the scheme).
  */
 
 const SCENE = "/battle/?seed=11&scene=advanceloss";
+const OPENING = "/battle/?seed=11";
 const SHOTS = process.env.BATTLE_SHOTS;
 
 interface DebugTable {
@@ -58,13 +60,19 @@ async function stepAlong(page: Page, d: Awaited<ReturnType<typeof dock>>) {
     await page.locator("#dock-primary").click();
 }
 
-/** The cards on a freshly opened table, once they have all been dealt. */
-async function freshTable(page: Page) {
-  await page.goto(SCENE);
+/** The cards on a freshly opened table with no set-up, as it asks about the opening hand. */
+async function openingTable(page: Page) {
+  await page.goto(OPENING);
+  await expect(page.locator("#dock-title")).toHaveText("Keep your hand?", { timeout: 60_000 });
+  await page.waitForTimeout(1500);
+  return (await tableCards(page)).cards;
+}
+
+async function openScene(page: Page, url: string) {
+  await page.goto(url);
   await expect(page.locator("#turn-status")).toHaveText(/Hero phase/i, { timeout: 60_000 });
   await expect(page.locator("#end-turn")).toBeEnabled({ timeout: 30_000 });
   await page.waitForTimeout(1500);
-  return (await tableCards(page)).cards;
 }
 
 /** End the turn and pass everything until the game is lost; returns the cards standing aside as it ends. */
@@ -81,15 +89,18 @@ async function loseTheGame(page: Page) {
   throw new Error(`never lost:\n${log.slice(-15).join("\n")}`);
 }
 
+/** A real new game: the opening-hand question (a set-up skips it), the set-up gone from the address, a clean table. */
 async function expectFreshTable(page: Page, fresh: string[]) {
-  await expect(page.locator("#turn-status")).toHaveText(/Hero phase/i, { timeout: 60_000 });
+  await expect(page.locator("#dock-title")).toHaveText("Keep your hand?", { timeout: 60_000 });
+  expect(new URL(page.url()).searchParams.has("scene")).toBe(false);
   await expect.poll(async () => (await tableCards(page)).parked, { timeout: 15_000 }).toEqual([]);
   await expect.poll(async () => (await tableCards(page)).cards, { timeout: 15_000 }).toEqual(fresh);
 }
 
 test("Try again after losing with Advance standing aside deals a clean table", async ({ page }) => {
   test.setTimeout(240_000);
-  const fresh = await freshTable(page);
+  const fresh = await openingTable(page);
+  await openScene(page, SCENE);
   const parked = await loseTheGame(page);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/1-lost.png` });
   // The scene's point: the game ends while Advance is still standing aside.
@@ -105,11 +116,8 @@ test("Try again after losing with Advance standing aside deals a clean table", a
  */
 test("New game from the menu while a revealed card stands aside deals a clean table", async ({ page }) => {
   test.setTimeout(240_000);
-  await page.goto("/battle/?seed=11&scene=assault");
-  await expect(page.locator("#turn-status")).toHaveText(/Hero phase/i, { timeout: 60_000 });
-  await expect(page.locator("#end-turn")).toBeEnabled({ timeout: 30_000 });
-  await page.waitForTimeout(1500);
-  const fresh = (await tableCards(page)).cards;
+  const fresh = await openingTable(page);
+  await openScene(page, "/battle/?seed=11&scene=assault");
   await page.locator("#end-turn").click();
   const log: string[] = [];
   let asked = false;
