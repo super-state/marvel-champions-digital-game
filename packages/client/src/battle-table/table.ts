@@ -2254,9 +2254,15 @@ export class BattleTable {
       schemeScale * 1.75,
       schemeOrigin.z - this.#point(schemeX, h * 0.105, schemeElevation).z,
     );
+    // The main scheme stands nearest the villain; the side schemes fill leftwards across the free mat first, a card's
+    // width and a gap apart, and only stack upwards once a row has no more room (Adam, 2026-11-22: use the space).
+    const schemeColumn = schemeScale * (HEIGHT + 0.3);
+    const leftmost = this.#point(w * 0.035, enemyRow, schemeElevation).x + (schemeScale * HEIGHT) / 2;
+    const schemeColumns = Math.max(1, Math.floor((schemeOrigin.x - leftmost) / schemeColumn) + 1);
     schemes.forEach((card, i) => {
       const position = schemeOrigin.clone();
-      position.z -= i * schemeStep;
+      position.x -= (i % schemeColumns) * schemeColumn;
+      position.z -= Math.floor(i / schemeColumns) * schemeStep;
       const projected = this.#scratch.copy(position).project(this.#camera);
       const x = (projected.x + 1) * w * 0.5;
       const y = (1 - projected.y) * this.#canvasHeight * 0.5 - this.#extension;
