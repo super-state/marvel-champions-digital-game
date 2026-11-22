@@ -6,6 +6,7 @@ import { fitBoard, fitToBox, type BoardFit, type TableBox } from "./board-fit.js
 import { loadWithRetry } from "./picture-retry.js";
 import { revealAside, type ScreenBox } from "./dock-spot.js";
 import { TokenKit, placeTokens } from "./tokens3d.js";
+import { tuckPath } from "./tuck-path.js";
 
 export interface TableCard {
   readonly attachedTo?: string | null;
@@ -2979,7 +2980,7 @@ export class BattleTable {
               : kind === "place"
                 ? 440
                 : kind === "tuck"
-                  ? 560
+                  ? 720
                   : kind === "draw"
                     ? 560
                     : kind === "stash"
@@ -2999,12 +3000,10 @@ export class BattleTable {
                 easeOutCubic(progress);
         piece.root.position.lerpVectors(from.position, piece.target.position, t);
         if (kind === "tuck") {
-          // Clear the deck, drop to the table, then slide in flat: it passes under its enemy's edge, never over it.
-          piece.root.position.y = THREE.MathUtils.lerp(
-            from.position.y,
-            piece.target.position.y,
-            THREE.MathUtils.smoothstep(progress, 0.14, 0.4),
-          );
+          // Drop to the table by the deck, then slide in flat: it passes under its enemy's edge, never over it.
+          const { drop, across } = tuckPath(progress);
+          piece.root.position.lerpVectors(from.position, piece.target.position, across);
+          piece.root.position.y = THREE.MathUtils.lerp(from.position.y, piece.target.position.y, drop);
         } else if (kind === "place") {
           const settle = Math.max(0, (progress - 0.54) / 0.46);
           piece.root.position.y += Math.sin(Math.PI * settle) * (1 - settle) * 0.24;
