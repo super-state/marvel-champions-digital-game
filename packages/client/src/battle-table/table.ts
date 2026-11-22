@@ -2108,6 +2108,12 @@ export class BattleTable {
       z0: Math.min(...rests.map((r) => r.z0)),
       z1: Math.max(...rests.map((r) => r.z1)),
     };
+    // The villain always stays in the middle of the screen (Adam, 2026-11-22): the box is widened to the same reach
+    // on both sides of the centre line it stands on, so a long row of schemes on one side never slides it over.
+    const middle = this.#point(w * 0.5, h * 0.237, 0).x;
+    const reach = Math.max(middle - box.x0, box.x1 - middle);
+    box.x0 = middle - reach;
+    box.x1 = middle + reach;
     const handCard = Math.min(h * 0.215, (h * (w < 740 ? 0.4 : 0.36) - 50) / 1.5, w * 0.245);
     // A phone's turn bar spans the screen and wraps its buttons under the question, so it stands taller.
     const bar = w < 740 ? 92 : 50;
