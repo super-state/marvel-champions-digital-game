@@ -131,6 +131,15 @@ const SCENES: Record<string, Scene> = {
     hero: { form: "alterEgo" },
     encounterTop: ["01104", "01187", "01105"],
   },
+  /**
+   * The main scheme two threat short with Advance next: end the turn and Advance (the villain schemes) loses the game
+   * while it stands aside beside Rhino. A new game must not keep it on the table.
+   */
+  advanceloss: {
+    hero: { form: "alterEgo" },
+    mainThreat: 4,
+    encounterTop: ["01186", "01186"],
+  },
   /** Hard to Keep Down on an unhurt Rhino surges into "I'm Tough!": end the turn to watch it. */
   surge: {
     encounterTop: ["01110", "01104", "01105"],

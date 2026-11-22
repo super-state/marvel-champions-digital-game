@@ -649,6 +649,18 @@ export class BattleTable {
     canvas.addEventListener("webglcontextrestored", this.#restoreContext);
   }
 
+  #dropPiece(id: string): void {
+    const piece = this.#pieces.get(id);
+    if (!piece) return;
+    this.#scene.remove(piece.root);
+    for (const token of piece.tokens.children) this.#drops.delete(token as THREE.Group);
+    if (piece.card.reverseArt || piece.card.type === "villain") piece.back.material.dispose();
+    piece.aura?.material.dispose();
+    piece.face.material.dispose();
+    this.#pieces.delete(id);
+    this.#flights.delete(id);
+  }
+
   setCards(state: TableCards): void {
     const previous = this.#state?.staged?.id;
     if (this.#state?.discardOpen !== state.discardOpen) this.#hovered = null;
@@ -676,16 +688,7 @@ export class BattleTable {
     for (const { card } of this.#stashing.values()) if (!cards.some((c) => c.id === card.id)) cards.push(card);
     if (state.staged) cards.push(state.staged);
     const live = new Set(cards.map((card) => card.id));
-    for (const [id, piece] of this.#pieces) {
-      if (live.has(id)) continue;
-      this.#scene.remove(piece.root);
-      for (const token of piece.tokens.children) this.#drops.delete(token as THREE.Group);
-      if (piece.card.reverseArt || piece.card.type === "villain") piece.back.material.dispose();
-      piece.aura?.material.dispose();
-      piece.face.material.dispose();
-      this.#pieces.delete(id);
-      this.#flights.delete(id);
-    }
+    for (const id of [...this.#pieces.keys()]) if (!live.has(id)) this.#dropPiece(id);
     const fresh = new Set<string>();
     const turnStart = performance.now();
     let readyIndex = 0;
@@ -1283,11 +1286,28 @@ export class BattleTable {
     if (host) this.#addUnder(from!, -ids.length);
   }
 
-  /** Drop any cards still standing revealed off the deck, or on their way facedown somewhere (a new game). */
-  endDeckReveal(): void {
+  /**
+   * A new game: every card from the last one leaves the table, including any still standing aside (an Advance that lost
+   * the game while the villain schemed), standing revealed off a deck, or on its way somewhere. Card ids repeat from
+   * game to game, so nothing is kept to be reused: the next `setCards` deals the table afresh.
+   */
+  newGame(): void {
     this.#deckReveal = [];
     this.#deckPicks.clear();
     this.#stashing.clear();
+    this.#encounters.clear();
+    this.#parked.clear();
+    this.#tucked.clear();
+    this.#revealing = this.#aside = this.#actor = this.#power = this.#powerHost = null;
+    this.#powerWaiting = this.#revealHeld = false;
+    this.#actionShadow.removeFromParent();
+    this.#hovered = this.#zoom = this.#press = this.#discardDeal = null;
+    this.#windup = this.#strike = this.#interrupt = this.#wave = this.#flicker = this.#deflection = null;
+    for (const id of [...this.#pieces.keys()]) this.#dropPiece(id);
+    this.#liftedTokens.clear();
+    this.#drops.clear();
+    this.#state = null;
+    this.#requestFrame();
   }
 
   /** Cards on their way facedown into a deck or under a card: they fly there, turning over, and are then gone. */

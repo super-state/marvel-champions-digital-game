@@ -3016,8 +3016,13 @@ function deal() {
   choicePicks.clear();
   staged = null;
   heldEncounter = revealWindowHeld = releaseHeld = null;
+  heldReveal = undefined;
+  readingCard = null;
+  aimTarget = null;
   reacting = null;
-  table?.endDeckReveal();
+  parkedViews.clear();
+  // Every card from the last game leaves the table, even one left standing aside when it ended.
+  table?.newGame();
   feed = [];
   paintFeed();
   const seed = seedFromUrl() ?? Math.floor(Math.random() * 2 ** 31) + 1;
