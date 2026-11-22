@@ -3496,6 +3496,30 @@ endTurnButton.replaceChildren(icon("next"), make("span", "", "End Turn"));
 endTurnButton.onclick = (event) => {
   if (!endTurnButton.disabled && (event.detail === 0 || settled())) endTurn();
 };
+// While a revealed card waits to be read, the see-through Continue layer lies over the whole page, so the bar's own
+// Continue under it never gets a real hover. Light it whenever the pointer is over where it shows.
+function mirrorRevealHover(event?: PointerEvent) {
+  const box = dockPrimary.getBoundingClientRect();
+  const over =
+    !!event &&
+    !readReveal.hidden &&
+    event.clientX >= box.left &&
+    event.clientX <= box.right &&
+    event.clientY >= box.top &&
+    event.clientY <= box.bottom;
+  dockPrimary.toggleAttribute("data-hover", over);
+}
+readReveal.addEventListener("pointermove", mirrorRevealHover);
+readReveal.addEventListener("pointerleave", () => mirrorRevealHover());
+readReveal.addEventListener("click", () => mirrorRevealHover());
+// Ctrl+Space ends the turn: the same as pressing End Turn, so it does nothing whenever the button is greyed out.
+endTurnButton.title = "End Turn (Ctrl+Space)";
+document.addEventListener("keydown", (event) => {
+  if (event.code !== "Space" || !event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return;
+  event.preventDefault();
+  if (event.repeat || gameMenu.open || gameOver.open || endTurnButton.disabled) return;
+  endTurnButton.click();
+});
 
 /**
  * The table sinks the hand on a wider screen. A narrow table (a tablet held upright beside the card panel) has no
