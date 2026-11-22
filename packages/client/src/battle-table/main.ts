@@ -1984,13 +1984,16 @@ async function showBoost(reveal: NonNullable<Beat["reveal"]>) {
   burst.remove();
 }
 
-/** "+1 card" bursting off the encounter deck, so the extra deal that follows has a cause. */
+/**
+ * "+1 card" bursting off the encounter deck, so the extra deal that follows has a cause. The word "Surge" is the
+ * surging card's own stamp: said once, on the card causing it, not again on the deck (Adam, 2026-11-22).
+ */
 async function surgeBurst() {
   const deck = table?.encounterAnchor();
   if (!deck) return;
   const burst = make("div", "surge-burst");
   burst.setAttribute("role", "status");
-  burst.append(icon("surge"), make("b", "", "Surge"), make("span", "", "+1 card"));
+  burst.append(icon("surge"), make("b", "", "+1 card"));
   burst.style.left = deck.x + "px";
   burst.style.top = deck.y + "px";
   stage.append(burst);
@@ -2181,6 +2184,8 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.surge) {
       narrate(beat, feedLineOf(beat), { title: "Surge! One more encounter card" });
       stampCard(beat.surge, "Surge!", "surge");
+      // The card says why first, then the deck answers with the extra card.
+      await sleep(reducedMotion() ? 0 : 450);
       await surgeBurst();
       continue;
     }
