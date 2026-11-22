@@ -193,6 +193,8 @@ const HEIGHT = 1.407;
 /** The layer of cards drawn over everything else, whatever their depth (see #render). */
 const FRONT_LAYER = 1;
 const TAB = 0.18;
+/** How far a hovered attachment slides out to the left from under its host, in card widths. */
+const ATTACHMENT_FAN = 0.32;
 
 /** A facedown boost card beside its enemy: smaller than the enemy, never bigger than a waiting encounter card. */
 function boostCardWidth(hostWidth: number, w: number, h: number) {
@@ -405,6 +407,8 @@ export class BattleTable {
   readonly #layoutCard = new THREE.Group();
   readonly #floor = new THREE.Plane(new THREE.Vector3(0, 1, 0));
   readonly #tucked = new Map<string, { host: string; depth: number }>();
+  /** How far each attached card has slid out from under its host while hovered (0 to 1). */
+  readonly #fan = new Map<string, number>();
   /** The cards lying facedown under another card (`TableCards.under`), as laid out: kept facedown every frame. */
   readonly #underIds = new Set<string>();
   readonly #pieces = new Map<string, Piece>();
@@ -3098,8 +3102,29 @@ export class BattleTable {
       if (!parent || !piece) continue;
       const flight = this.#flights.get(id);
       if (flight && flight.kind !== "equip") continue;
+      // A hovered card under it slides out to the left a little on the mat, so more of it shows; it is not picked up.
+      const fanGoal = this.#hovered === id && !flight ? 1 : 0;
+      const fanNow = this.#fan.get(id) ?? 0;
+      const fan = this.#reduced.matches
+        ? fanGoal
+        : Math.abs(fanGoal - fanNow) < 0.004
+          ? fanGoal
+          : fanNow + (fanGoal - fanNow) * Math.min(1, dt * 14);
+      if (fan) this.#fan.set(id, fan);
+      else this.#fan.delete(id);
+      if (fan !== fanGoal) moving = true;
+      // A hovered host rises on its own: what is attached to it stays down on the mat where it was laid out.
+      if (this.#hovered === host && !flight) {
+        if (piece.root.position.distanceToSquared(piece.target.position) > 1e-8) {
+          this.#apply(piece, this.#reduced.matches ? 1 : Math.min(1, dt * 14));
+          moving = true;
+        }
+        continue;
+      }
       parent.updateMatrixWorld();
-      piece.target.position.set(-TAB * depth, 0, -0.006 * depth).applyMatrix4(parent.matrixWorld);
+      piece.target.position
+        .set(-TAB * depth - ATTACHMENT_FAN * fan, 0, -0.006 * depth)
+        .applyMatrix4(parent.matrixWorld);
       piece.target.scale = parent.scale.x;
       piece.target.pitch = parent.rotation.x;
       piece.target.roll = parent.rotation.z;
@@ -3172,7 +3197,9 @@ export class BattleTable {
       for (const [id, piece] of this.#pieces) {
         const onEnemy = !!piece.card.attachedTo && this.#state.enemyCards.some((c) => c.id === id);
         if (piece.card.type !== "upgrade" && piece.card.type !== "attachment" && !onEnemy) continue;
-        const tucked = this.#tucked.has(id) && !this.#flights.has(id) && this.#state.staged?.id !== id;
+        // Slid out while hovered, it shows whole: the part still under its host stays hidden behind it.
+        const tucked =
+          this.#tucked.has(id) && !this.#flights.has(id) && this.#state.staged?.id !== id && !this.#fan.has(id);
         // Upgrades and attachments both print their title down the left edge: that strip is what shows when tucked.
         const geometry = tucked ? this.#tab : piece.card.landscape ? this.#landscapeFace : this.#face;
         piece.face.geometry = geometry;
