@@ -3520,6 +3520,43 @@ document.addEventListener("keydown", (event) => {
   if (event.repeat || gameMenu.open || gameOver.open || endTurnButton.disabled) return;
   endTurnButton.click();
 });
+// Enter presses whichever yellow button is on screen: the bar's (Keep hand, Continue, Confirm...) while it is out,
+// else the turn corner's End Turn. A choice the keyboard has moved onto in the bar (Pass, an option) keeps Enter for
+// itself, and the menu and game-over dialogs keep their own (Enter there presses the button they focus).
+const pressable = (button: HTMLButtonElement) => !button.disabled && !button.hidden && button.offsetParent !== null;
+function yellowButton(): HTMLButtonElement | null {
+  const barOut = !roomy.matches || !dock.hasAttribute("data-idle");
+  if (barOut && pressable(dockPrimary)) return dockPrimary;
+  if (pressable(endTurnButton)) return endTurnButton;
+  return null;
+}
+let lastEnter: { button: HTMLButtonElement | null; at: number } = { button: null, at: -Infinity };
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return;
+  if (gameMenu.open || gameOver.open) return;
+  const focus = document.activeElement as HTMLElement | null;
+  if (focus?.matches("input, textarea, select")) return;
+  if (focus !== dockPrimary && focus?.closest("#dock") && focus.matches("button:not(:disabled)")) return;
+  const button = yellowButton();
+  if (!button) return;
+  event.preventDefault();
+  // A quick second Enter must not land on the button that took the place of the one just pressed (Keep hand, then
+  // straight on to End Turn).
+  const now = performance.now();
+  if (event.repeat || (button !== lastEnter.button && now - lastEnter.at < 500)) return;
+  lastEnter = { button, at: now };
+  button.click();
+});
+// Ctrl+Z takes the last move back, as Undo does (on the game-over screen, its Undo last move).
+undoButton.title = "Undo (Ctrl+Z)";
+document.addEventListener("keydown", (event) => {
+  if (event.code !== "KeyZ" || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+  if ((document.activeElement as HTMLElement | null)?.matches("input, textarea")) return;
+  event.preventDefault();
+  if (event.repeat || gameMenu.open) return;
+  const undo = gameOver.open ? element<HTMLButtonElement>("game-over-undo") : undoButton;
+  if (pressable(undo)) undo.click();
+});
 
 /**
  * The table sinks the hand on a wider screen. A narrow table (a tablet held upright beside the card panel) has no
