@@ -352,8 +352,7 @@
   /* When the question and the buttons don't fit side by side (a tablet held upright), the buttons go underneath. */
   flex-wrap: wrap;
   align-items: center;
-  /* Room between the question and its buttons so the words never run into them (Adam, 2026-11-22). */
-  gap: 8px 28px;
+  gap: 8px 14px;
   width: max-content;
   min-width: min(440px, calc(100% - 24px));
   max-width: calc(100% - 24px);
@@ -393,6 +392,8 @@
   gap: 2px;
   min-width: 180px;
   max-width: 440px;
+  /* Extra room between the question and the buttons after it; the badge before it stays close (Adam, 2026-11-22). */
+  margin-right: 14px;
 }
 .dock-title {
   margin: 0;
