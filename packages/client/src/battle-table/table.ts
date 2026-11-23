@@ -202,6 +202,8 @@ const ATTACHMENT_TURN = 0.07;
 /** How long a threat chip taken off a card takes to sizzle out. */
 const SIZZLE_MS = 620;
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
+/** Scratch angle for a tucked card turning with its hovered host. */
+const TUCK_EULER = new THREE.Euler();
 /** Each card tucked under another sits a little higher than the one above it, so the stack steps up (card widths). */
 const STAGGER = 0.035;
 
@@ -3188,6 +3190,15 @@ export class BattleTable {
         this.#hostRest.set(host, frame);
       }
       frame.decompose(this.#framePosition, this.#frameQuaternion, this.#frameScale);
+      // A hovered host exhausting or readying (Peter Parker healing with the pointer still on him): what is under it
+      // turns with it, staying down where it lies, rather than jumping to the new angle when the pointer leaves
+      // (Adam, 2026-11-23: "it just flicked into horizontal place at the end").
+      if (hostLifted && this.#flights.get(host)?.kind === "turn") {
+        const angle = TUCK_EULER.setFromQuaternion(this.#frameQuaternion);
+        angle.z = parent.rotation.z;
+        this.#frameQuaternion.setFromEuler(angle);
+        frame.compose(this.#framePosition, this.#frameQuaternion, this.#frameScale);
+      }
       piece.target.position
         .set(...attachmentFanOffset(-TAB * depth, STAGGER * depth, fan), -0.006 * depth)
         .applyMatrix4(frame);
