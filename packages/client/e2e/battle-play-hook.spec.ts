@@ -34,6 +34,9 @@ test("Claude's play hook reads the table in words and plays a whole round throug
   expect(opening).toContain("Turn bar: Mulligan: Keep your hand?");
   // The opening is the set-up, not the end of a turn.
   expect(opening).toContain("Round 1, setup, mulligan.");
+  // The form the player is in and the hand limit, stated (Peter Parker: alter-ego form, hand size 6).
+  expect(opening).toContain("You are in alter-ego form.");
+  expect(opening).toMatch(/Hand \(6; hand size 6\):/);
   expect(await moves(page)).toContain("Keep hand");
 
   const kept = await play(page, "Keep hand");

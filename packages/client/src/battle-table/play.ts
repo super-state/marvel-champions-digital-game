@@ -57,6 +57,8 @@ export interface PlayHooks {
   /** The cards picked so far in a pick-several question (mulligan, discard, choose up to N). */
   picked(): ReadonlySet<string>;
   cardFacts(id: string): string;
+  /** The player's current form and hand size (the hand limit at the end of the turn). */
+  playerFacts(): { form: "hero" | "alterEgo"; handSize: number };
   /** Any card's name as it shows now, wherever it is (a revealed treachery on its way to the discard included). */
   cardName(id: string): string;
   /** A card ability that pays, by card and ability ("Peter Parker — Scientist"); null for a card from the hand. */
@@ -85,6 +87,31 @@ export interface Player {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const HERO_ONLY = /\bHero (?:Action|Interrupt|Response|Resource)\b|\bHero form only\b/i;
+const ALTER_EGO_ONLY = /\bAlter-Ego (?:Action|Interrupt|Response|Resource)\b|\bAlter-Ego form only\b/i;
+
+/**
+ * A card whose abilities work in one form only ("Hero Interrupt", "Alter-Ego Action", "Hero form only"), read from
+ * its rules text so it holds for every card: which form, and whether that is the form the player is in now. The table
+ * already refuses the wrong form; this only says so in words, so a player reading the text plans with it.
+ */
+export function formOnlyNote(facts: string, form: "hero" | "alterEgo"): string | null {
+  const hero = HERO_ONLY.test(facts);
+  const alterEgo = ALTER_EGO_ONLY.test(facts);
+  if (hero === alterEgo) return null;
+  const needs = hero ? "hero" : "alterEgo";
+  const words = hero ? "hero form only" : "alter-ego form only";
+  return needs === form ? words : `${words}: not usable now, except to pay with`;
+}
+
+/** What each status card does, as the Rules Reference (v1.8) and the engine have it. */
+const STATUS_RULES: Readonly<Record<string, string>> = {
+  stunned: "Stunned: its next attack (an attack event or ability too) does nothing except discard the stun.",
+  confused:
+    "Confused: its next thwart (a thwart event or ability too), or an enemy's next scheme, does nothing except discard the confusion.",
+  tough: "Tough: the next damage dealt to it is prevented, and the tough card is discarded.",
+};
+
 export function createPlayer(hooks: PlayHooks): Player {
   /** How much of the story `look` has already told. */
   let told = 0;
@@ -110,6 +137,8 @@ export function createPlayer(hooks: PlayHooks): Player {
     for (const marker of card.markers) bits.push(`${marker.name} ${marker.count}`);
     if (card.exhausted) bits.push("exhausted");
     const facts = hooks.cardFacts(card.id);
+    const formNote = card.id === hooks.state().hero.id ? null : formOnlyNote(facts, hooks.playerFacts().form);
+    if (formNote) bits.push(formNote);
     return `- ${card.name}${bits.length ? ` (${bits.join(", ")})` : ""}${facts ? `: ${facts}` : ""}`;
   }
 
@@ -211,14 +240,21 @@ export function createPlayer(hooks: PlayHooks): Player {
           : state.turn === "ending"
             ? "end of your turn"
             : "finished";
+    const player = hooks.playerFacts();
     lines.push(
-      `Round ${state.round}, ${phase}. Deck ${state.deckCount} cards, encounter deck ${state.encounterCount}.`,
+      `Round ${state.round}, ${phase}. You are in ${player.form === "hero" ? "hero" : "alter-ego"} form. ` +
+        `Deck ${state.deckCount} cards, encounter deck ${state.encounterCount}.`,
     );
     lines.push("", "Villain side:", cardLine(state.villain, [`${state.villainHp} HP`]));
     for (const card of state.enemyCards) lines.push(cardLine(card, [card.type.replace(/_/g, " ")]));
     lines.push("", "Your side:", cardLine(state.hero, [`${state.heroHp} HP`]));
     for (const card of state.inPlay) lines.push(cardLine(card, [card.type.replace(/_/g, " ")]));
-    lines.push("", `Hand (${state.hand.length}):`);
+    const over = state.hand.length - player.handSize;
+    lines.push(
+      "",
+      `Hand (${state.hand.length}; hand size ${player.handSize}` +
+        `${over > 0 ? `: ${over} to discard at the end of your turn unless you use them` : ""}):`,
+    );
     for (const card of state.hand)
       lines.push(
         cardLine(card, [
@@ -228,6 +264,14 @@ export function createPlayer(hooks: PlayHooks): Player {
         ]),
       );
     if (state.discard.length) lines.push(`Your discard pile: ${state.discard.map((c) => c.name).join(", ")}`);
+
+    const statuses = new Set(
+      [state.villain, ...state.enemyCards, state.hero, ...state.inPlay].flatMap((card) =>
+        card.markers.filter((marker) => marker.count > 0).map((marker) => marker.name.toLowerCase()),
+      ),
+    );
+    const rules = [...statuses].flatMap((status) => (STATUS_RULES[status] ? [`  ${STATUS_RULES[status]}`] : []));
+    if (rules.length) lines.push("", "Statuses in play:", ...rules);
 
     const dock = hooks.dock();
     lines.push("");

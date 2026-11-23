@@ -2,6 +2,8 @@
 
 Read before every game; condense into after every game (how: `SKILL.md`, "After every game"). Only what playing
 taught, not what the card text or the rules already say. `seen N×` = how many games backed it up; `1×` is a hunch.
+A rule misread in play is fixed in the hook's text (`play.ts`), not written down here: `look()` already says which
+cards work in one form only, what each status does and the hand limit.
 
 ## Playbook
 
@@ -17,21 +19,18 @@ taught, not what the card text or the rules already say. `seen N×` = how many g
   reaching 7. Rhino's boost is often +2; Bomb Scare adds +1 every phase; Hydra Bomber offers 2 damage or +1 threat.
   Before ending a turn, count: step (+1), Rhino 1 + 2 boost, every minion's SCH if you are Peter, 1-2 for a
   treachery. If that reaches 7, thwart more or stay in hero form. `seen 5×`
-- **Crowd Control stops all main-scheme thwarting.** Game 5 was lost at 6/7 with it in play. Clear Crowd Control
+- **Crowd Control lands late, when it hurts most.** Game 5 was lost at 6/7 with it in play. Clear Crowd Control
   (and Breakin' & Takin') the turn they land whenever the main scheme is at 4 or more. `seen 2×`
-- **Clear confusion early.** False Alarm's confusion sat on Spider-Man for most of game 5 and fizzled a For
-  Justice! in game 4. A basic thwart while the scheme is low removes it cheaply; waiting costs a thwart event later.
-  `seen 2×`
-- **Threat discipline buys the time to win.** For Justice! (4 with a mental or wild resource), Surveillance Team,
+- **Clear confusion early.** False Alarm came in three of five games; its confusion sat on Spider-Man for most of
+  game 5 and cost a For Justice! in game 4. A basic thwart while the scheme is low clears it cheaply. `seen 2×`
+- **Threat discipline buys the time to win.** For Justice! paid with a mental or wild resource, Surveillance Team,
   Spider-Tracer on a minion you are about to kill (−3), Interrogation Room, allies thwarting. `seen 3×`
 - **Alter ego is safe only with no minions out (a SCH-0 Mercenary is fine).** Then Peter dodges big attacks and
   heals (Recover, then flip back before the next big phase). With a scheming minion out, Peter loses to the scheme.
   `seen 5×`
-- **Hero interrupts do nothing as Peter:** Great Responsibility, Enhanced Spider-Sense, Spider-Sense's draw.
-  `seen 2×`
 - **Rhino's second stage piles up fast.** One villain phase can bring Toughness, Hard to Keep Down (+4 HP; cancel it
-  with Enhanced Spider-Sense), a Guard minion, Charge (7-10 ATK, overkill), Armored Rhino Suit, the nemesis. The hand
-  limit is 5, so two Kicks in one turn is not realistic. `seen 4×`
+  with Enhanced Spider-Sense), a Guard minion, Charge (7-10 ATK, overkill), Armored Rhino Suit, the nemesis. Two Kicks
+  in one turn never came together in five games (6 resources from a 5-card hand). `seen 4×`
 - **Rhino hits hard.** Stage 2 or with Charge, expect 5-10 from one attack, plus Assault, Stampede or Gang-Up
   attacking again. Hold Backflip, a ready Spider-Man, a stun or an ally. Allies can't block Charge attacks
   (overkill). `seen 5×`

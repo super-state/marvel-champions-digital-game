@@ -56,6 +56,8 @@ Every move presses the same thing a click does, so the engine decides every outc
 The point is a playbook that gets better with every game and stays short. Keep only what could only be known
 from having played: what happened, what worked, what didn't, how the encounter deck or a card actually behaves
 over a game, and what to try next. Leave out anything that reading the card text or the rules already tells you.
+If a mistake came from misreading a rule or a card (a form-only card, a status, a limit), fix how `look()` describes
+it in `play.ts` instead, so no later game has to remember it, and ship that with the lessons.
 
 1. **Add one line under "Recent games"**: date · hero (aspect) vs villain · won/lost, round, how · the one thing
    that decided it. Keep the last 10 lines; older ones go once their lesson is in the playbook.

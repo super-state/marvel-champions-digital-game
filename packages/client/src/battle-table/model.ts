@@ -8,6 +8,7 @@ import {
   characterProfile,
   createGame,
   getInstance,
+  handSize,
   legalActions,
   paymentOptionsPool,
   readsOverpaid,
@@ -1533,6 +1534,12 @@ export class BattleModel {
       : [];
     const text = face ? plainRulesTextOf(face) : "";
     return [stats.join(" "), text].filter(Boolean).join(" · ");
+  }
+
+  /** The player's current form and hand size (with modifiers, so the hand limit at the end of the turn). */
+  playerFacts(): { form: "hero" | "alterEgo"; handSize: number } {
+    const player = this.#game.players[0]!;
+    return { form: player.identity.form, handSize: handSize(this.#game, player.playerId, CORE_DEPS) };
   }
 
   /** Any card's name as it shows now (an identity by its live face), wherever the card is. For the play hook. */
