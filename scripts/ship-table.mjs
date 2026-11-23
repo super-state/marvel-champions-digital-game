@@ -27,7 +27,7 @@
  * A Pages address, unlike a Worker's workers.dev one, carries no account name.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -80,6 +80,11 @@ if (!redeploy) {
 
 console.log(`ship-table: building ${tag} (${head.slice(0, 9)})`);
 run("pnpm", ["--filter", "@mc/client", "build"], { VITE_TABLE_VERSION: version, MC_CARD_ART: "pool" });
+
+// A checkout without the card scans (a fresh worktree: they come from `pnpm assets:fetch`, not git) still builds,
+// with every face drawn as a generated frame. Never ship that.
+const scans = readdirSync(path.join(dist, "card-art/bundles/cards")).filter((f) => /^\d/.test(f)).length;
+if (scans < 1000) fail(`the build carries only ${scans} card scans: run \`pnpm assets:fetch\` first`);
 
 console.log(`ship-table: deploying ${tag}`);
 // The lock goes in as `_worker.js` (Pages' "advanced mode"): every page, script and card scan passes through it.
