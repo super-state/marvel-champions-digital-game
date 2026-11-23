@@ -34,6 +34,8 @@ interface Scene {
   deckTop?: string[];
   /** The top of the encounter deck, top first (Rhino's boost card comes off it before the encounter deal). */
   encounterTop?: string[];
+  /** Encounter cards already dealt facedown to the player, first revealed first (an extra card dealt earlier). */
+  dealt?: string[];
   /** Cards left in the player's deck; the rest go to the discard pile (to run the deck out). */
   deckLeft?: number;
   /** Cards left in the encounter deck; the rest go to its discard pile (to run it out). */
@@ -245,6 +247,15 @@ const SCENES: Record<string, Scene> = {
     hero: { form: "hero" },
     hand: ["01003", "01003", "01089"],
   },
+  /**
+   * Sandman already dealt, so two encounter cards wait facedown as the villain phase deals: end the turn and Sandman
+   * stands aside below the card still waiting, then joins the minions once that one has been revealed.
+   */
+  sandman: {
+    hero: { form: "hero" },
+    dealt: ["01102"],
+    encounterTop: ["01110", "01105"],
+  },
   /** Nick Fury in hand with the resources to pay for him: his "Choose one" waits in the dock, the table blurred behind. */
   fury: {
     hero: { form: "hero" },
@@ -321,6 +332,7 @@ function arrange(state: GameState, scene: Scene): GameState {
   const handIds = (scene.hand ?? []).map(take);
   const encounterTopIds = (scene.encounterTop ?? []).map(take);
   const topIds = (scene.deckTop ?? []).map(take);
+  const dealtIds = (scene.dealt ?? []).map(take);
   const held = [...handIds, ...gone(player.hand)];
   const hand = held.slice(0, player.hand.length);
   // Anything the chosen cards pushed out of the hand goes back into the deck, so no card ends up nowhere.
@@ -347,6 +359,7 @@ function arrange(state: GameState, scene: Scene): GameState {
         discard,
         setAside: gone(player.setAside),
         playArea: [...player.playArea, ...playIds, ...minionIds],
+        dealtEncounter: [...player.dealtEncounter, ...dealtIds],
       },
     ],
     villainArea: [...state.villainArea, ...schemeIds],

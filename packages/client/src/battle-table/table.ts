@@ -202,6 +202,11 @@ const ATTACHMENT_TURN = 0.07;
 /** How long a threat chip taken off a card takes to sizzle out. */
 const SIZZLE_MS = 620;
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
+/** Scratch vectors for a boost card's path under its enemy. */
+const TUCK_OFFSET = new THREE.Vector3();
+const TUCK_LANDING = new THREE.Vector3();
+/** Scratch angle for a tucked card turning with its hovered host. */
+const TUCK_EULER = new THREE.Euler();
 /** Each card tucked under another sits a little higher than the one above it, so the stack steps up (card widths). */
 const STAGGER = 0.035;
 
@@ -219,9 +224,17 @@ function attachmentFanOffset(x: number, y: number, fan: number): [number, number
   return [cornerX + 0.5 * cos - (HEIGHT / 2) * sin, cornerY + 0.5 * sin + (HEIGHT / 2) * cos];
 }
 
+/** Where the first encounter card dealt and waiting to be revealed lies, across the screen (the rest fan right). */
+const WAITING_X = 0.67;
+
+/** An encounter card dealt and waiting to be revealed, lying facedown in the villain's row. */
+function waitingCardWidth(w: number, h: number) {
+  return Math.min(h * 0.125, w * 0.105);
+}
+
 /** A facedown boost card beside its enemy: smaller than the enemy, never bigger than a waiting encounter card. */
 function boostCardWidth(hostWidth: number, w: number, h: number) {
-  return Math.min(hostWidth * 0.62, h * 0.125, w * 0.105);
+  return Math.min(hostWidth * 0.62, waitingCardWidth(w, h));
 }
 
 // Draw the halo in card space so it follows the hand fan and its rounded corners.
@@ -507,6 +520,8 @@ export class BattleTable {
   readonly #deckBack = new THREE.Mesh(this.#face, new THREE.MeshBasicMaterial({ toneMapped: false }));
   readonly #encounterDiscardSlot = new THREE.Group();
   readonly #encounterSlot = new THREE.Group();
+  /** The minions in the row as encounter cards were dealt, while any still wait to be revealed (null otherwise). */
+  #rowBeforeWaiting: Set<string> | null = null;
   readonly #encounterStock = new THREE.Mesh(this.#stock, this.#stockMaterial);
   readonly #encounterBack = new THREE.Mesh(this.#face, new THREE.MeshBasicMaterial({ toneMapped: false }));
   readonly #encounters = new Map<string, TableCard>();
@@ -1050,6 +1065,11 @@ export class BattleTable {
     const markers = (piece.card.markers ?? []).filter((m) => m.name !== name);
     if (count) markers.push({ name, count });
     this.#updateMarkers(piece, markers);
+    // The change comes with a form change still to play (Heroic Intuition's +1 THW as Peter becomes Spider-Man): hidden
+    // until the card has turned over and landed, so it never sits on the old side (Adam, 2026-11-23). The flip shows
+    // it again when it ends.
+    const flipping = this.#flights.get(card.id)?.kind === "flip";
+    if (flipping || (card.reverseArt && card.art !== piece.card.art)) piece.markers.visible = false;
   }
 
   #updateMarkers(piece: Piece, markers: NonNullable<TableCard["markers"]>): void {
@@ -2268,7 +2288,10 @@ export class BattleTable {
     const enemyCardWidth = Math.min(w * 0.117, h * 0.145);
     // The schemes stand a set gap left of the villain (and any cards under it), however wide the screen.
     const villainLeft = w * 0.5 - villainWidth * (0.5 + TAB * villainTabs);
-    const schemeX = Math.max(w * 0.255, villainLeft - enemyCardWidth * (0.45 + HEIGHT / 2));
+    // One gap between neighbours in the villain's row, schemes and minions alike, upright or sideways (Adam,
+    // 2026-11-23: "every card, when placed on a row, has the same gap regardless of what it is").
+    const rowGap = enemyCardWidth * 0.25;
+    const schemeX = Math.max(w * 0.255, villainLeft - rowGap - (enemyCardWidth * HEIGHT) / 2);
     const schemeElevation = 0.05;
     const schemeOrigin = this.#point(schemeX, enemyRow, schemeElevation);
     const schemeScale = this.#point(schemeX + enemyCardWidth, enemyRow, schemeElevation).x - schemeOrigin.x;
@@ -2297,7 +2320,23 @@ export class BattleTable {
       const right = (position.project(this.#camera).x + 1) * w * 0.5;
       poseEnemy(card, x, y, right - x);
     });
-    if (otherEnemies.length) {
+    // Encounter cards dealt and still waiting to be revealed lie facedown at the right end of the minions' row (below).
+    // A minion that comes out while some still wait (Sandman off the first of several) would land on top of them, so it
+    // stands aside in the open space below them until they have all been revealed, then slides into the row (Adam,
+    // 2026-11-21). Minions already in the row when the cards were dealt stay where they are.
+    const waitingCards = [...this.#encounters.values()].some(
+      (card) => card.id !== this.#revealing && !this.#parked.has(card.id) && !card.boostFor,
+    );
+    if (!waitingCards) this.#rowBeforeWaiting = null;
+    else this.#rowBeforeWaiting ??= new Set(otherEnemies.map((card) => card.id));
+    const rowBeforeWaiting = this.#rowBeforeWaiting;
+    const asideEnemies = rowBeforeWaiting ? otherEnemies.filter((card) => !rowBeforeWaiting.has(card.id)) : [];
+    const rowEnemies = otherEnemies.filter((card) => !asideEnemies.includes(card));
+    asideEnemies.forEach((card, i) => {
+      const width = enemyCardWidth * 0.85;
+      poseEnemy(card, w * WAITING_X + width * (0.2 + i * 1.2), h * 0.4, width);
+    });
+    if (rowEnemies.length) {
       const bounds = (card: TableCard, x: number, y: number, width: number, tabs: number) => {
         const elevation = 0.05 + tabs * 0.035;
         const root = this.#layoutCard;
@@ -2319,12 +2358,27 @@ export class BattleTable {
         encounterGoal.position.z,
       ).x;
       // Each minion takes a card-sized slot from the villain outwards; room to spare is left at the far end.
-      const slotWidth = Math.min((right - left) / otherEnemies.length, enemyCardWidth * 1.5);
-      otherEnemies.forEach((card, i) => {
+      const slotWidth = Math.min((right - left) / rowEnemies.length, enemyCardWidth * 1.5);
+      const sized = rowEnemies.map((card) => {
         const tabs = state.enemyCards.filter((c) => c.attachedTo === card.id).length;
         const footprint = (card.landscape ? HEIGHT : 1) + TAB * tabs;
         const width = Math.min(enemyCardWidth, Math.max(1, slotWidth * 0.78) / footprint);
-        const center = left + (i + 0.5) * slotWidth;
+        return { card, tabs, width, across: width * footprint };
+      });
+      // The same gap as the schemes keep on the villain's other side. A crowded row shrinks its cards a little to
+      // keep that gap, and only past that shares out what room there is.
+      const cards = sized.reduce((total, { across }) => total + across, 0);
+      const shrink = Math.min(1, (right - left - rowGap * (sized.length + 1)) / cards);
+      const fits = shrink >= 0.7;
+      if (fits && shrink < 1)
+        for (const one of sized) {
+          one.width *= shrink;
+          one.across *= shrink;
+        }
+      let cursor = left + rowGap;
+      sized.forEach(({ card, tabs, width, across }, i) => {
+        const center = fits ? cursor + across / 2 : left + (i + 0.5) * slotWidth;
+        cursor += across + rowGap;
         const x = center + (width * TAB * tabs) / 2;
         const { left: cardLeft, right: cardRight } = bounds(card, x, enemyRow, width, tabs);
         const perspectiveOffset = (cardLeft + cardRight) / 2 - x;
@@ -2388,9 +2442,9 @@ export class BattleTable {
       } else
         this.#pose(
           card.id,
-          w * (0.67 + (waiting++ % 3) * 0.034),
+          w * (WAITING_X + (waiting++ % 3) * 0.034),
           h * 0.26,
-          Math.min(h * 0.125, w * 0.105),
+          waitingCardWidth(w, h),
           0.07 + waiting * 0.045,
           flat,
         );
@@ -3023,6 +3077,8 @@ export class BattleTable {
       }
       if (flight) {
         const { from, started, kind, liftOffset } = flight;
+        const stashTo = kind === "stash" ? this.#stashing.get(id)?.to : undefined;
+        const stashedUnder = typeof stashTo === "object" ? stashTo.under : undefined;
         const exhausting = kind === "turn" && piece.card.exhausted;
         const readying = kind === "turn" && !exhausting;
         const duration =
@@ -3034,7 +3090,7 @@ export class BattleTable {
                 : READY_MS
               : kind === "place"
                 ? 440
-                : kind === "tuck"
+                : kind === "tuck" || stashedUnder
                   ? 720
                   : kind === "draw"
                     ? 560
@@ -3054,11 +3110,23 @@ export class BattleTable {
               : // Leave fast and glide in. The curve never overshoots, so a drawn card never shows its back.
                 easeOutCubic(progress);
         piece.root.position.lerpVectors(from.position, piece.target.position, t);
-        if (kind === "tuck") {
-          // Drop to the table by the deck, then slide in flat: it passes under its enemy's edge, never over it.
-          const { drop, across } = tuckPath(progress);
-          piece.root.position.lerpVectors(from.position, piece.target.position, across);
-          piece.root.position.y = THREE.MathUtils.lerp(from.position.y, piece.target.position.y, drop);
+        // A card going under another (a boost card under its enemy's edge, a hand card under Highway Robbery).
+        const underHost = kind === "tuck" ? this.#encounters.get(id)?.boostFor : stashedUnder;
+        const hostPiece = underHost ? this.#pieces.get(underHost) : undefined;
+        if (hostPiece && (kind === "tuck" || kind === "stash")) {
+          // Arc over whatever stands between (a minion), land on the table just past the edge it goes under, then
+          // slide in flat: it passes under that card, never over it and down through it.
+          const { fly, hop, slide } = tuckPath(progress);
+          const out = TUCK_OFFSET.copy(piece.target.position).sub(hostPiece.target.position).setY(0);
+          if (out.lengthSq() < 1e-6) out.set(1, 0, 0);
+          out.setLength(piece.target.scale * 0.85);
+          const landing = TUCK_LANDING.copy(piece.target.position).add(out);
+          if (slide > 0) piece.root.position.lerpVectors(landing, piece.target.position, slide);
+          else {
+            piece.root.position.lerpVectors(from.position, landing, fly);
+            const distance = Math.hypot(landing.x - from.position.x, landing.z - from.position.z);
+            piece.root.position.y += hop * Math.max(0.7, distance * 0.18);
+          }
         } else if (kind === "place") {
           const settle = Math.max(0, (progress - 0.54) / 0.46);
           piece.root.position.y += Math.sin(Math.PI * settle) * (1 - settle) * 0.24;
@@ -3069,7 +3137,9 @@ export class BattleTable {
           piece.root.position.y += (rise - descent) * (Math.max(0.58, piece.target.scale * 0.5) + liftOffset);
         } else piece.root.position.y += Math.sin(Math.PI * progress) * (kind === "discard" ? 0.95 : 0.46);
         // Turned facedown on the way into a deck or under a card.
-        if (kind === "stash") piece.root.rotation.y = Math.PI * THREE.MathUtils.smoothstep(progress, 0.08, 0.7);
+        // Turned over before it lands, when it is going to slide under a card.
+        if (kind === "stash")
+          piece.root.rotation.y = Math.PI * THREE.MathUtils.smoothstep(progress, 0.08, stashedUnder ? 0.55 : 0.7);
         if (kind === "draw") {
           const fromDeck =
             this.#state?.hand.some((card) => card.id === id) || this.#deckReveal.some((card) => card.id === id);
@@ -3188,6 +3258,15 @@ export class BattleTable {
         this.#hostRest.set(host, frame);
       }
       frame.decompose(this.#framePosition, this.#frameQuaternion, this.#frameScale);
+      // A hovered host exhausting or readying (Peter Parker healing with the pointer still on him): what is under it
+      // turns with it, staying down where it lies, rather than jumping to the new angle when the pointer leaves
+      // (Adam, 2026-11-23: "it just flicked into horizontal place at the end").
+      if (hostLifted && this.#flights.get(host)?.kind === "turn") {
+        const angle = TUCK_EULER.setFromQuaternion(this.#frameQuaternion);
+        angle.z = parent.rotation.z;
+        this.#frameQuaternion.setFromEuler(angle);
+        frame.compose(this.#framePosition, this.#frameQuaternion, this.#frameScale);
+      }
       piece.target.position
         .set(...attachmentFanOffset(-TAB * depth, STAGGER * depth, fan), -0.006 * depth)
         .applyMatrix4(frame);
@@ -3495,7 +3574,8 @@ export class BattleTable {
     return this.#hit(event);
   }
 
-  #hit(event: PointerEvent): string | null {
+  /** `hovering`: only for showing what the pointer is over, so the card being paid for can be read too. */
+  #hit(event: PointerEvent, hovering = false): string | null {
     const rect = this.#renderer.domElement.getBoundingClientRect();
     this.#ndc.set(
       (2 * (event.clientX - rect.left)) / rect.width - 1,
@@ -3510,7 +3590,14 @@ export class BattleTable {
     const handIds = new Set(this.#state?.hand.map((card) => card.id));
     for (const piece of this.#pieces.values()) {
       if (this.#state?.defending && !this.#state.targets.includes(piece.card.id)) continue;
-      if (this.#state?.paymentSources && !this.#state.paymentSources.includes(piece.card.id)) continue;
+      // While paying, only the resources can be picked; the card being paid for can still be pointed at to read it
+      // (Adam, 2026-11-23: "what does that card do?").
+      if (
+        this.#state?.paymentSources &&
+        !this.#state.paymentSources.includes(piece.card.id) &&
+        !(hovering && piece.card.id === this.#state.staged?.id)
+      )
+        continue;
       if (this.#state?.discardOpen && !this.#viewedPile(this.#state).some((card) => card.id === piece.card.id))
         continue;
       const [hit] = this.#ray.intersectObjects(piece.card.reverseArt ? [piece.face, piece.back] : [piece.face], false);
@@ -3556,7 +3643,7 @@ export class BattleTable {
       if (event.pointerType !== "touch") {
         const rect = this.#renderer.domElement.getBoundingClientRect();
         this.#pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top - this.#extension };
-        this.#notifyHover(this.#hit(event));
+        this.#notifyHover(this.#hit(event, true));
         if (this.#hovered && this.#state?.hand.some((card) => card.id === this.#hovered)) this.#requestFrame();
       }
       return;

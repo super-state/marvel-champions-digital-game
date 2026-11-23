@@ -1111,7 +1111,13 @@ function choose(id: string | null) {
   if (staged?.type === "event" && target && awaitsTarget(staged.id) && table && !flying) {
     const event = staged.id;
     flying = true;
-    table.channelEventTo(event, target);
+    // An attack picked onto an enemy (Swinging Web Kick with a minion out) goes onto the hero like any attack, then
+    // the hero strikes; it flew onto Rhino and stood there full size (Adam, 2026-11-23).
+    const enemy =
+      target === state.villain.id ||
+      state.enemyCards.some((card) => card.id === target && (card.type === "minion" || card.type === "villain"));
+    if (enemy) table.channelEvent(event);
+    else table.channelEventTo(event, target);
     void sleep(reducedMotion() ? 0 : 520).then(() => {
       flying = false;
       if (staged?.id === event) resolveChoice(id);
@@ -1674,10 +1680,18 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   await sleep(reducedMotion() ? 0 : 320);
   rowFocus = [];
   delete focusBlur.dataset.row;
-  focusBlur.hidden = !state.choice?.mulligan && !revealFocus && !dockFocus;
+  focusBlur.hidden = !handQuestion() && !revealFocus && !dockFocus;
   focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = "";
   // A dock question still waiting keeps its own blur.
   if (dockFocus) focusBlur.dataset.ready = "";
+}
+
+/**
+ * A question about the hand (the mulligan, the end-of-turn discard): the table softens above the hand while it is
+ * answered (Adam, 2026-11-23: the discard should blur like the mulligan).
+ */
+function handQuestion(): boolean {
+  return !!(state.choice?.mulligan || state.choice?.discardFromHand);
 }
 
 /** A word stamped across the middle of a row of cards ("No mental resources" over Black Cat's discards). */
@@ -2297,10 +2311,13 @@ async function present(beats: Snapshot["beats"]) {
   // The payment screen's stand-ins for resource abilities (Peter Parker's Scientist) are spent by now.
   displayedHand = displayedHand.filter((card) => !card.id.startsWith("ability:"));
   beats = whileStillThere(beats);
+  // Encounter cards dealt one after another all stay lit over the shade, not only the latest (Adam, 2026-11-23).
+  let dealtLit: string[] = [];
   for (let index = 0; index < beats.length; index++) {
     const beat = beats[index]!;
+    if (!beat.encounterDeal) dealtLit = [];
     if (spotted) {
-      setSpot(null);
+      if (!beat.encounterDeal) setSpot(null);
       spotted = false;
     }
     if (beat.gameEnded) break;
@@ -2759,7 +2776,8 @@ async function present(beats: Snapshot["beats"]) {
           title: penalty ? "Take an encounter card facedown" : "Deal an encounter card",
         },
       );
-      setSpot({ glow: [{ id: beat.encounterDeal, tone: "attack" }], cutouts: [beat.encounterDeal] });
+      dealtLit.push(beat.encounterDeal);
+      setSpot({ glow: dealtLit.map((id) => ({ id, tone: "attack" as const })), cutouts: [...dealtLit] });
       spotted = true;
       placeLabels();
       // Stamped on landing, like a boost card.
@@ -2843,7 +2861,7 @@ async function present(beats: Snapshot["beats"]) {
         table?.holdReveal(false);
         revealFocus = null;
         delete focusBlur.dataset.ready;
-        focusBlur.hidden = !state.choice?.mulligan;
+        focusBlur.hidden = !handQuestion();
         focusBlur.style.clipPath = "";
         revealHint.hidden = readReveal.hidden = true;
         narrate(beat, null);
@@ -3154,7 +3172,7 @@ function render() {
   dockFocus =
     waiting && !revealFocus && !rowFocus.length ? { keep: heldEncounter ?? state.choiceSource ?? null } : null;
   const blurWasHidden = focusBlur.hidden;
-  focusBlur.hidden = !state.choice?.mulligan && !revealFocus && !dockFocus && !rowFocus.length;
+  focusBlur.hidden = !handQuestion() && !revealFocus && !dockFocus && !rowFocus.length;
   if (focusBlur.hidden) delete focusBlur.dataset.ready;
   else if (dockFocus && blurWasHidden) requestAnimationFrame(() => dockFocus && (focusBlur.dataset.ready = ""));
   choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
