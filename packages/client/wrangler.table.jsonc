@@ -1,0 +1,20 @@
+// The 3D table's test site on Cloudflare's free plan: the version a friend plays (0.0.1, 0.0.2...) while Adam builds
+// the next one on his own PC. Shipped only by `pnpm table:ship` (scripts/ship-table.mjs), never by CI.
+//
+// Not the original project's `wrangler.game.jsonc` (`mc-game`, its domain marvel.champions-digital-game.com): our own
+// Worker, on its workers.dev address only, behind an invite lock (src/battle-table/test-site/gate.ts).
+// `run_worker_first: true` puts every request, card scans included, through that lock. Each one counts toward the free
+// plan's 100,000 Worker requests a day, plenty for a few testers; browsers cache the scans and scripts for a year.
+{
+  "name": "mc-table-test",
+  "main": "./src/battle-table/test-site/worker.ts",
+  "compatibility_date": "2026-10-15",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "run_worker_first": true,
+  },
+  "workers_dev": true,
+  "preview_urls": false,
+}
