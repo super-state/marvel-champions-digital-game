@@ -27,6 +27,11 @@ Two files, both next to this one:
    alone. `?remote` makes the page take moves from the dev server; `&seed=N` deals a fixed game.
 4. **Drive it from the terminal** (the browser tools can't reach the Games bubble): each call below is a plain
    request to the dev server, which the page answers through its play hook. Start with `call=wait`.
+5. **The game must stay on show.** A hidden tab is frozen by the browser (its animations stop, so moves hang on
+   "playing something out") and, hidden long enough, unloaded: game 8's first deal was lost when a video played in
+   front, and showing it again dealt a new game. If calls stop answering, check with `surf_window` what Surf shows.
+   Don't switch Surf away from what a person is watching or doing: tell Adam and ask, then switch back with
+   `surf_do` (`show_account` Games, `select_tab`), never `surf_game_open`, which reloads the game.
 
 ## The hook (`packages/client/src/battle-table/play.ts`, relayed by `packages/client/vite-battle-play.ts`)
 
