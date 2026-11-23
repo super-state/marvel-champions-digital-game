@@ -52,6 +52,9 @@ in the engine; the 3D table shows it and sends the player's choices back, it nev
   (`battle-controller.spec.ts`): that name is how the push check finds it. The old game's other browser tests never
   open the 3D table.
 - Look at a visual change in the browser before calling it done, and show a screenshot.
+- Claude can play the table itself (Adam watching in Surf) through the dev-only play hook `__battlePlay`
+  (`src/battle-table/play.ts`): follow the `claude-player` skill, which starts every game from what earlier games
+  taught (`.claude/skills/claude-player/lessons.md`) and condenses each game back into it.
 - Tests run silently.
 
 ## Git
