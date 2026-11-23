@@ -395,9 +395,11 @@ button:focus-visible {
     max-width: none;
   }
 }
+/* One height from the first turn, empty or full, so the card above never moves as the log fills up (Adam,
+   2026-11-23: "just have it that height permanently"). */
 .log {
   flex: none;
-  max-height: 38%;
+  height: 38%;
   overflow: auto;
   padding: 14px var(--card-inset) 18px;
   border-top: 1px solid var(--line);
@@ -426,9 +428,6 @@ button:focus-visible {
   font: 800 11px/1 var(--font-ui);
   letter-spacing: 0.12em;
   text-transform: uppercase;
-}
-.log:not(:has(li)) {
-  display: none;
 }
 
 /* ── Pile labels ─────────────────────────────────────────────────────────── */
