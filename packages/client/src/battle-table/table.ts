@@ -539,6 +539,8 @@ export class BattleTable {
   readonly #parked = new Set<string>();
   /** Where a revealed card stands aside for its question's picks (`revealAside`), held for that question. */
   #aside: { key: string; x: number; scale: number } | null = null;
+  /** Where the card being paid for waits, and every card that could pay for it or be picked so far (see #layout). */
+  #stagedSpot: { id: string; sources: Set<string>; spot: [number, number] | null; key: string } | null = null;
   #actor: string | null = null;
   #power: string | null = null;
   /** Damage discs, counters, status tiles, stat pills and threat chips. */
@@ -2751,7 +2753,16 @@ export class BattleTable {
       // Held up beside the hero while it is paid for, but never over a card that could pay for it (Web-Shooter):
       // right of the hero if that is clear, else left of the row, else up in the gap above the row.
       // Nor over a card the player must pick next (First Aid's target, the hero included).
-      const sources = new Set([...(state.paymentSources ?? []), ...state.targets]);
+      // Worked out once, when the card comes out of the hand, and kept until it is played: what could pay for it is
+      // only known a moment after it is staged, and narrows to the cards picked once the cost is met, so choosing
+      // afresh each time sent it to the middle, then left, then back to the middle as the bar filled (Adam,
+      // 2026-11-23: "just go straight to the left"). Until the payment is known, any card in the row might pay.
+      if (this.#stagedSpot?.id !== state.staged.id)
+        this.#stagedSpot = { id: state.staged.id, sources: new Set(), spot: null, key: "" };
+      const held = this.#stagedSpot;
+      if (!state.paymentSources) for (const card of row) if (card.id !== state.hero.id) held.sources.add(card.id);
+      for (const id of [...(state.paymentSources ?? []), ...state.targets]) held.sources.add(id);
+      const sources = held.sources;
       const stagedHalf = (playWidth * 1.12) / 2;
       // Nor under a revealed card held up full size (Enhanced Spider-Sense paid for while Shadow of the Past waits to
       // be cancelled, Adam 2026-11-21): the card being read stays on top and whole, the paid card waits beside it.
@@ -2784,8 +2795,15 @@ export class BattleTable {
       const fallback: [number, number] = revealRect
         ? [Math.min(spots[3]![0], w - stagedHalf - 8), spots[3]![1]]
         : spots[2]!;
+      // The same screen and the same revealed card: it stays where it went, unless it now covers a card to pick.
+      const key = `${w}x${h}|${revealRect ? `${revealRect.x},${revealRect.y}` : ""}|${rowY}|${first}`;
+      const kept = held.spot && held.key === key && !covers(held.spot[0], held.spot[1]) ? held.spot : null;
       const [x, y] =
-        spots.find(([sx, sy], i) => (i !== 1 || sx > playWidth * 0.7) && onScreen(sx) && !covers(sx, sy)) ?? fallback;
+        kept ??
+        spots.find(([sx, sy], i) => (i !== 1 || sx > playWidth * 0.7) && onScreen(sx) && !covers(sx, sy)) ??
+        fallback;
+      held.spot = [x, y];
+      held.key = key;
       this.#pose(state.staged.id, x, y, playWidth * 1.12, 1.18, flat + 0.12);
     }
     const pileWidth = Math.min(w * 0.125, h * 0.125);
