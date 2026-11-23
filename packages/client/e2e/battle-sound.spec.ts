@@ -79,6 +79,8 @@ test("outside automation, the first click unlocks Web Audio, every file decodes,
   // Seen as a person's browser (headless Chromium has no speakers, so this stays silent): count what starts playing.
   await page.addInitScript(() => {
     Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false });
+    // A person who has turned sound on in the menu (it starts off until the audio is approved, sound.ts).
+    localStorage.setItem("battle-sound", "on");
     const started: number[] = [];
     (globalThis as unknown as { __started: number[] }).__started = started;
     const start = AudioBufferSourceNode.prototype.start;
@@ -111,4 +113,16 @@ test("outside automation, the first click unlocks Web Audio, every file decodes,
   const started = () => page.evaluate(() => (globalThis as unknown as { __started: number[] }).__started);
   await expect.poll(async () => (await started()).length, { timeout: 10_000 }).toBeGreaterThanOrEqual(3);
   expect((await started()).every((seconds) => seconds > 0)).toBe(true);
+});
+
+test("a person's browser starts with sound off until it is turned on in the menu", async ({ page }) => {
+  test.setTimeout(120_000);
+  // Muted until Adam approves the audio (2026-11-23); the menu can turn it on.
+  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false }));
+  await page.goto("/battle/?seed=11&scene=defend");
+  await expect(page.locator("#end-turn")).toBeEnabled({ timeout: 60_000 });
+  await page.locator("#menu-button").click();
+  await expect(page.locator('[data-sound="off"]')).toHaveAttribute("aria-pressed", "true");
+  await page.locator('[data-sound="on"]').click();
+  await expect(page.locator('[data-sound="on"]')).toHaveAttribute("aria-pressed", "true");
 });

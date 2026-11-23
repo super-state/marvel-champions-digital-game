@@ -115,7 +115,7 @@ export class SoundBoard {
     this.#resolve = resolve;
     this.#random = random;
     this.#automated = automated;
-    this.#enabled = readSetting();
+    this.#enabled = readSetting(automated);
   }
 
   get enabled(): boolean {
@@ -366,12 +366,20 @@ export class SoundBoard {
   }
 }
 
-function readSetting(): boolean {
+/**
+ * Sound is off until the player turns it on in the menu (Adam, 2026-11-23: "mute the sound for now until I've approved
+ * the audio"). Browser tests keep it on, so they still hear (and record) what the table plays. When the audio is
+ * approved, make `soundOnByDefault` true.
+ */
+const soundOnByDefault = false;
+function readSetting(automated: boolean): boolean {
   try {
-    return localStorage.getItem(STORAGE_KEY) !== "off";
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) return stored === "on";
   } catch {
-    return true;
+    // Private window: the default.
   }
+  return automated || soundOnByDefault;
 }
 
 const files = import.meta.glob<string>("./sfx/*.mp3", { query: "?url", import: "default", eager: true });
