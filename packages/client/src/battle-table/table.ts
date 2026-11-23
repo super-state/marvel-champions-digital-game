@@ -202,6 +202,9 @@ const ATTACHMENT_TURN = 0.07;
 /** How long a threat chip taken off a card takes to sizzle out. */
 const SIZZLE_MS = 620;
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
+/** Scratch vectors for a boost card's path under its enemy. */
+const TUCK_OFFSET = new THREE.Vector3();
+const TUCK_LANDING = new THREE.Vector3();
 /** Each card tucked under another sits a little higher than the one above it, so the stack steps up (card widths). */
 const STAGGER = 0.035;
 
@@ -3023,6 +3026,8 @@ export class BattleTable {
       }
       if (flight) {
         const { from, started, kind, liftOffset } = flight;
+        const stashTo = kind === "stash" ? this.#stashing.get(id)?.to : undefined;
+        const stashedUnder = typeof stashTo === "object" ? stashTo.under : undefined;
         const exhausting = kind === "turn" && piece.card.exhausted;
         const readying = kind === "turn" && !exhausting;
         const duration =
@@ -3034,7 +3039,7 @@ export class BattleTable {
                 : READY_MS
               : kind === "place"
                 ? 440
-                : kind === "tuck"
+                : kind === "tuck" || stashedUnder
                   ? 720
                   : kind === "draw"
                     ? 560
@@ -3054,11 +3059,23 @@ export class BattleTable {
               : // Leave fast and glide in. The curve never overshoots, so a drawn card never shows its back.
                 easeOutCubic(progress);
         piece.root.position.lerpVectors(from.position, piece.target.position, t);
-        if (kind === "tuck") {
-          // Drop to the table by the deck, then slide in flat: it passes under its enemy's edge, never over it.
-          const { drop, across } = tuckPath(progress);
-          piece.root.position.lerpVectors(from.position, piece.target.position, across);
-          piece.root.position.y = THREE.MathUtils.lerp(from.position.y, piece.target.position.y, drop);
+        // A card going under another (a boost card under its enemy's edge, a hand card under Highway Robbery).
+        const underHost = kind === "tuck" ? this.#encounters.get(id)?.boostFor : stashedUnder;
+        const hostPiece = underHost ? this.#pieces.get(underHost) : undefined;
+        if (hostPiece && (kind === "tuck" || kind === "stash")) {
+          // Arc over whatever stands between (a minion), land on the table just past the edge it goes under, then
+          // slide in flat: it passes under that card, never over it and down through it.
+          const { fly, hop, slide } = tuckPath(progress);
+          const out = TUCK_OFFSET.copy(piece.target.position).sub(hostPiece.target.position).setY(0);
+          if (out.lengthSq() < 1e-6) out.set(1, 0, 0);
+          out.setLength(piece.target.scale * 0.85);
+          const landing = TUCK_LANDING.copy(piece.target.position).add(out);
+          if (slide > 0) piece.root.position.lerpVectors(landing, piece.target.position, slide);
+          else {
+            piece.root.position.lerpVectors(from.position, landing, fly);
+            const distance = Math.hypot(landing.x - from.position.x, landing.z - from.position.z);
+            piece.root.position.y += hop * Math.max(0.7, distance * 0.18);
+          }
         } else if (kind === "place") {
           const settle = Math.max(0, (progress - 0.54) / 0.46);
           piece.root.position.y += Math.sin(Math.PI * settle) * (1 - settle) * 0.24;
@@ -3069,7 +3086,9 @@ export class BattleTable {
           piece.root.position.y += (rise - descent) * (Math.max(0.58, piece.target.scale * 0.5) + liftOffset);
         } else piece.root.position.y += Math.sin(Math.PI * progress) * (kind === "discard" ? 0.95 : 0.46);
         // Turned facedown on the way into a deck or under a card.
-        if (kind === "stash") piece.root.rotation.y = Math.PI * THREE.MathUtils.smoothstep(progress, 0.08, 0.7);
+        // Turned over before it lands, when it is going to slide under a card.
+        if (kind === "stash")
+          piece.root.rotation.y = Math.PI * THREE.MathUtils.smoothstep(progress, 0.08, stashedUnder ? 0.55 : 0.7);
         if (kind === "draw") {
           const fromDeck =
             this.#state?.hand.some((card) => card.id === id) || this.#deckReveal.some((card) => card.id === id);
