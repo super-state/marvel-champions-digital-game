@@ -103,6 +103,23 @@ const SCENES: Record<string, Scene> = {
   minions4: {
     minions: [{ code: "01101" }, { code: "01102" }, { code: "01103" }, { code: "01110" }],
   },
+  /** Three minions out and an encounter card dealt early: it waits in the first clear spot, not on a minion. */
+  dealtcrowd: {
+    hero: { form: "alterEgo" },
+    mainThreat: 0,
+    minions: [{ code: "01110" }, { code: "01102" }, { code: "01103" }],
+    dealt: ["01166"],
+  },
+  /** Adam's round 9: two side schemes beside the main one, three cards under Rhino, two minions. */
+  latewide: {
+    hero: { form: "hero" },
+    schemes: [
+      { code: "01107", threat: 3 },
+      { code: "01109", threat: 3 },
+    ],
+    villainAttachments: [{ code: "01099" }, { code: "01100" }],
+    minions: [{ code: "01110" }, { code: "01102" }],
+  },
   /** Three minions out, as Adam had them (Sandman, Vulture, Hydra Mercenary). */
   minions3: {
     minions: [{ code: "01110" }, { code: "01102" }, { code: "01103" }],

@@ -2331,7 +2331,13 @@ export class BattleTable {
     const leftEdge = Math.max(w * 0.035, w * 0.5 - pileSpread - encounterWidth * 0.75);
     const leftmost = this.#point(leftEdge, enemyRow, schemeElevation).x + (schemeScale * HEIGHT) / 2;
     const roomFor = Math.max(1, Math.floor((schemeOrigin.x - leftmost) / schemeColumn) + 1);
-    const schemeColumns = Math.min(roomFor, Math.max(1, Math.ceil(schemes.length / 2)));
+    // Three or more always make a block of two columns, even where that reaches past the left edge above: the table
+    // widens a little to fit them, rather than standing them in one tall column (Adam, 2026-11-23: "extend the map a
+    // little bit ... and create two rows").
+    const schemeColumns = Math.min(
+      Math.max(roomFor, schemes.length >= 3 ? 2 : 1),
+      Math.max(1, Math.ceil(schemes.length / 2)),
+    );
     schemes.forEach((card, i) => {
       const position = schemeOrigin.clone();
       position.x -= (i % schemeColumns) * schemeColumn;
@@ -2355,10 +2361,6 @@ export class BattleTable {
     const rowBeforeWaiting = this.#rowBeforeWaiting;
     const asideEnemies = rowBeforeWaiting ? otherEnemies.filter((card) => !rowBeforeWaiting.has(card.id)) : [];
     const rowEnemies = otherEnemies.filter((card) => !asideEnemies.includes(card));
-    asideEnemies.forEach((card, i) => {
-      const width = enemyCardWidth * 0.85;
-      poseEnemy(card, w * WAITING_X + width * (0.2 + i * 1.2), h * 0.4, width);
-    });
     if (rowEnemies.length) {
       const bounds = (card: TableCard, x: number, y: number, width: number, tabs: number) => {
         const elevation = 0.05 + tabs * 0.035;
@@ -2427,6 +2429,47 @@ export class BattleTable {
       layRow(near, enemyRow);
       if (far.length) layRow(far, upperRow);
     }
+    // Encounter cards dealt facedown before the villain phase lie right of the middle, on the open mat. Where cards in
+    // play already stand there (a row of minions), they lie in the first clear spot further down instead, never on
+    // top of or inside a card (Adam, 2026-11-23: "just play it in a nearby space").
+    const waitingCount = [...this.#encounters.values()].filter(
+      (card) => card.id !== this.#revealing && !this.#parked.has(card.id) && !card.boostFor,
+    ).length;
+    const waitingWidth = waitingCardWidth(w, h);
+    const standing = rowEnemies.flatMap((card) => {
+      const pose = enemyPoses.get(card.id);
+      if (!pose) return [];
+      const across = pose.width * (card.landscape ? HEIGHT : 1);
+      const tall = pose.width * (card.landscape ? 1 : HEIGHT) * 0.85;
+      // With room below for its health label.
+      return [
+        { left: pose.x - across / 2, right: pose.x + across / 2, top: pose.y - tall / 2, bottom: pose.y + tall * 0.75 },
+      ];
+    });
+    const waitingAt = (y: number) => ({
+      left: w * WAITING_X - waitingWidth / 2,
+      right: w * (WAITING_X + Math.max(0, Math.min(3, waitingCount) - 1) * 0.034) + waitingWidth / 2,
+      top: y - waitingWidth * HEIGHT * 0.45,
+      bottom: y + waitingWidth * HEIGHT * 0.45,
+    });
+    const overlap = (a: ReturnType<typeof waitingAt>) =>
+      standing.reduce(
+        (total, b) =>
+          total +
+          Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) *
+            Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)),
+        0,
+      );
+    const waitingY = !waitingCount
+      ? h * 0.26
+      : [0.26, 0.34, 0.42, 0.5]
+          .map((share) => h * share)
+          .reduce((best, y) => (overlap(waitingAt(y)) < overlap(waitingAt(best)) ? y : best));
+    // A minion that comes out while they wait stands just below them.
+    asideEnemies.forEach((card, i) => {
+      const width = enemyCardWidth * 0.85;
+      poseEnemy(card, w * WAITING_X + width * (0.2 + i * 1.2), waitingY + h * 0.14, width);
+    });
     let waiting = 0;
     // Where the revealed card stands on screen while it is held up, so a card being paid for keeps clear of it.
     let revealRect: { x: number; y: number; halfWidth: number; halfHeight: number } | null = null;
@@ -2485,7 +2528,7 @@ export class BattleTable {
         this.#pose(
           card.id,
           w * (WAITING_X + (waiting++ % 3) * 0.034),
-          h * 0.26,
+          waitingY,
           waitingCardWidth(w, h),
           0.07 + waiting * 0.045,
           flat,
