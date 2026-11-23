@@ -165,7 +165,52 @@
   transform: translateY(-3px) scale(1.04);
 }
 .btn:enabled:active {
-  transform: translateY(1px) scale(0.98);
+  transform: translateY(1px) scale(0.94);
+  transition-duration: 60ms;
+}
+/* A click answers at once, even when the button goes grey the moment it is pressed (End Turn): it squashes, springs
+   back a touch past its size and settles, and a ring of light spreads out from it (Adam, 2026-11-23: "it doesn't feel
+   like you get enough feedback"). Set by main.ts on every click. */
+/* Over the pulse of a button asking to be pressed, and its hover, which both set an animation of their own. */
+.btn[data-pressed] {
+  animation: btn-press 300ms var(--ease-out) !important;
+}
+.btn[data-pressed]::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: btn-press-ring 420ms ease-out forwards;
+}
+@keyframes btn-press {
+  0% {
+    transform: translateY(1px) scale(0.92);
+    filter: brightness(1.35);
+  }
+  55% {
+    transform: translateY(-1px) scale(1.05);
+  }
+  100% {
+    transform: none;
+    filter: none;
+  }
+}
+@keyframes btn-press-ring {
+  from {
+    box-shadow: 0 0 0 0 #fff9;
+    opacity: 1;
+  }
+  to {
+    box-shadow: 0 0 0 14px #f5c35b00;
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn[data-pressed],
+  .btn[data-pressed]::after {
+    animation: none;
+  }
 }
 .btn:focus-visible {
   outline: 3px solid var(--gold);

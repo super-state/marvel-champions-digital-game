@@ -45,6 +45,21 @@ function make<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, 
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// Every button answers a click with a squash, a spring back and a ring of light (design.css `.btn[data-pressed]`),
+// restarted on each click so quick repeated presses each show.
+document.addEventListener(
+  "click",
+  (event) => {
+    const button = (event.target as Element | null)?.closest?.(".btn");
+    if (!(button instanceof HTMLElement)) return;
+    button.removeAttribute("data-pressed");
+    void button.offsetWidth;
+    button.setAttribute("data-pressed", "");
+    window.setTimeout(() => button.removeAttribute("data-pressed"), 450);
+  },
+  true,
+);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 const model = new BattleModel();
