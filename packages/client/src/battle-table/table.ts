@@ -177,6 +177,8 @@ export interface HandLayout {
   readonly sunk: boolean;
 }
 export const INTERRUPT_MS = 440;
+/** A stunned attacker straining against the stun before it is discarded. */
+export const WINDUP_STRAIN_MS = 900;
 /** How long a card under an enemy stays drawn out to its side when it activates, its damage landing on it. */
 const DRAWN_OUT_MS = 2600;
 /** Its shine waits this long, for it to come out from under first. */
@@ -560,10 +562,11 @@ export class BattleTable {
   readonly #sparkMap = sparkTexture();
   readonly #sparks: Spark[] = [];
   #pointer: { x: number; y: number } | null = null;
-  #windup: { id: string; start: number } | null = null;
-  windUp(id: string): void {
+  #windup: { id: string; start: number; strain?: boolean } | null = null;
+  /** The attacker rears up before it strikes; `strain`: it is held back (stunned), and shakes instead. */
+  windUp(id: string, options: { strain?: boolean } = {}): void {
     if (this.#reduced.matches) return;
-    this.#windup = { id, start: performance.now() };
+    this.#windup = { id, start: performance.now(), strain: !!options.strain };
     this.#requestFrame();
   }
 
@@ -1838,7 +1841,8 @@ export class BattleTable {
     if (!piece) return;
     const old = piece.card.markers ?? [];
     const count = Math.max(0, (old.find((m) => m.name === name)?.count ?? 0) + delta);
-    if (name === "tough" && delta < 0) {
+    // A status card discarded (tough used up, a stun or confusion shed) lifts off the card and fades away.
+    if ((name === "tough" || ((name === "stunned" || name === "confused") && !count)) && delta < 0) {
       const token = piece.markers.children.find((child) => child.name === name) as THREE.Group | undefined;
       if (token) {
         this.#drops.delete(token);
@@ -3151,9 +3155,18 @@ export class BattleTable {
         continue;
       }
       if (this.#windup?.id === id) {
-        const t = THREE.MathUtils.clamp((now - this.#windup.start) / 300, 0, 1);
-        const lift = Math.sin(Math.PI * t) ** 1.4;
+        const strain = !!this.#windup.strain;
+        const t = THREE.MathUtils.clamp((now - this.#windup.start) / (strain ? WINDUP_STRAIN_MS : 300), 0, 1);
+        // Straining, it rises, holds there shaking against the stun, and sinks back.
+        const lift = strain
+          ? THREE.MathUtils.smoothstep(t, 0, 0.25) - THREE.MathUtils.smoothstep(t, 0.78, 1)
+          : Math.sin(Math.PI * t) ** 1.4;
         this.#apply(piece, 1);
+        if (strain) {
+          const shake = Math.sin(Math.PI * THREE.MathUtils.clamp((t - 0.22) / 0.56, 0, 1));
+          piece.root.position.x += Math.sin(now * 0.11) * piece.target.scale * 0.022 * shake;
+          piece.root.rotation.z += Math.sin(now * 0.083) * 0.022 * shake;
+        }
         piece.root.position.y += piece.target.scale * 0.055 * lift;
         piece.root.scale.multiplyScalar(1 + 0.045 * lift);
         piece.root.rotation.x += 0.035 * lift;

@@ -124,6 +124,11 @@ const SCENES: Record<string, Scene> = {
   minions3: {
     minions: [{ code: "01110" }, { code: "01102" }, { code: "01103" }],
   },
+  /** Rhino stunned, Spider-Man in hero form: end the turn and Rhino strains to attack, then sheds the stun. */
+  stunned: {
+    hero: { form: "hero" },
+    villain: { statuses: { stunned: 1 } },
+  },
   /** Rhino one hit from his second stage: attack him and it brings in Breakin' & Takin', held up in the middle. */
   stagetwo: {
     hero: { form: "hero" },
