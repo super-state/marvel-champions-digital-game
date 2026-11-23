@@ -2280,7 +2280,9 @@ function narrate(beat: Beat, line: FeedLine | null, extra: Partial<DockView> = {
 async function present(beats: Snapshot["beats"]) {
   presenting = true;
   closeDecision();
-  if (dockFocus) {
+  if (dockFocus || (!focusBlur.hidden && !revealFocus && !rowFocus.length)) {
+    // So is a question about the hand (the end-of-turn discard): answered, it goes straight into the villain phase,
+    // which played out under the blur because nothing renders until it ends (Adam, 2026-11-23).
     // The question that softened the table is answered: the table comes back into focus for the answer to play out,
     // rather than staying soft with only the card that asked still sharp (Adam, 2026-11-22: Eviction Notice sat above
     // the blur, then the whole table stayed blurred once it had gone).
