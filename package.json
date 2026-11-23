@@ -33,6 +33,7 @@
     "battle:test": "pnpm --filter @mc/client exec vitest run src/battle-table",
     "battle:check": "pnpm --filter @mc/client typecheck && pnpm battle:test",
     "table:ship": "node scripts/ship-table.mjs",
+    "table:check": "node scripts/table-check.mjs",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
