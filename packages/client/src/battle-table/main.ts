@@ -141,6 +141,34 @@ const undoCorner = element("undo-corner");
 const endTurnButton = element<HTMLButtonElement>("end-turn");
 const railToggle = element<HTMLButtonElement>("rail-toggle");
 const hoverPicture = element<HTMLImageElement>("hover-card");
+const hoverNotes = element("hover-notes");
+const previewNotes = element("preview-notes");
+
+/** What each status card does, in the Rules Reference's terms (v1.8: Tough, Stunned, Confused). */
+const STATUS_NOTES: Record<string, { title: string; text: string }> = {
+  tough: { title: "Tough", text: "The next time this character would take damage, discard Tough instead: no damage." },
+  stunned: { title: "Stunned", text: "The next time this character would attack, discard Stunned instead: no attack." },
+  confused: {
+    title: "Confused",
+    text: "The next time this character would thwart or scheme, discard Confused instead: it doesn't happen.",
+  },
+};
+
+/** Under a card's picture, a note for each status it has, saying what that status does (Adam, 2026-11-23). */
+function paintStatusNotes(box: HTMLElement, card: { markers?: readonly { name: string; count: number }[] } | null) {
+  const notes = (card?.markers ?? []).filter((m) => m.count > 0 && STATUS_NOTES[m.name]);
+  box.replaceChildren(
+    ...notes.map(({ name }) => {
+      const note = make("div", "status-note");
+      const text = make("span", "");
+      text.append(make("b", "", STATUS_NOTES[name]!.title), ` · ${STATUS_NOTES[name]!.text}`);
+      note.append(icon(name as IconName), text);
+      return note;
+    }),
+  );
+  box.hidden = !notes.length;
+  return notes.length > 0;
+}
 const pinnedCard = element("pinned-card");
 const pinnedPicture = pinnedCard.querySelector("img")!;
 // A card picture that fails to load is asked for again a little later, as the table's own cards are.
@@ -865,8 +893,11 @@ function showPreview(card: Pick<BattleCard, "art" | "name" | "landscape">, expan
 function inspect(id: string | null) {
   if (discarding) return;
   const card = cards().find((item) => item.id === id) ?? state.payment?.subject;
-  if (card?.art) showPreview(card, card.id === hoveredCard || card.id === heldEncounter);
-  else if (!heldEncounter) setWidePreview(false);
+  if (card?.art) {
+    showPreview(card, card.id === hoveredCard || card.id === heldEncounter);
+    // The notes follow the picture: the panel keeps showing the last card read after the pointer leaves it.
+    paintStatusNotes(previewNotes, "markers" in card ? card : null);
+  } else if (!heldEncounter) setWidePreview(false);
 }
 
 function setDiscardOpen(open: boolean, encounter = viewingEncounterDiscard) {
@@ -2650,9 +2681,10 @@ async function present(beats: Snapshot["beats"]) {
     }
     if (beat.stunnedAttempt) {
       // It rears up to attack and strains against the stun; it never aims at the hero.
+      // No stamp yet: "Stunned!" read as if it had just been stunned. The stun's removal says "Unstunned" (Adam,
+      // 2026-11-23).
       table?.windUp(beat.stunnedAttempt, { strain: true });
       sfx.play("whoosh");
-      stampCard(beat.stunnedAttempt, "Stunned!", "status");
     }
     if (beat.attackAim) {
       const { source, target } = beat.attackAim;
@@ -2829,7 +2861,10 @@ async function present(beats: Snapshot["beats"]) {
       sfx.play("flip");
       if (!beat.reveal.boost) parkedViews.set(beat.reveal.id, beat.reveal);
       await sleep(360);
-      if (beat.reveal.art) showPreview(beat.reveal, !beat.reveal.boost);
+      if (beat.reveal.art) {
+        showPreview(beat.reveal, !beat.reveal.boost);
+        paintStatusNotes(previewNotes, null);
+      }
       if (beat.reveal.boost) {
         await showBoost(beat.reveal);
         dropBoostBurst(beat.reveal.id);
@@ -3760,6 +3795,7 @@ function placeHoverCard() {
   const preview = hoveredCard ? previewSpot(hoveredCard) : null;
   if (!preview) {
     hoverPicture.hidden = true;
+    hoverNotes.hidden = true;
     return;
   }
   const { card, size, spot } = preview;
@@ -3775,6 +3811,11 @@ function placeHoverCard() {
   hoverPicture.style.left = `${Math.round(spot.left)}px`;
   hoverPicture.style.top = `${Math.round(spot.top)}px`;
   hoverPicture.hidden = false;
+  if (paintStatusNotes(hoverNotes, card)) {
+    hoverNotes.style.width = `${Math.round(Math.max(size.width, 240))}px`;
+    hoverNotes.style.left = `${Math.round(spot.left)}px`;
+    hoverNotes.style.top = `${Math.round(spot.top + size.height + 8)}px`;
+  }
 }
 
 /**

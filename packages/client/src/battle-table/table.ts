@@ -3668,7 +3668,10 @@ export class BattleTable {
         ? THREE.MathUtils.smoothstep(t, 0, 0.3) - THREE.MathUtils.smoothstep(t, 0.68, 1)
         : Math.sin(Math.PI * t) ** 2;
       // A revealed card already held up full size near the camera rises only a little, or it would leave the screen.
-      const rises = pulse.activation ? (pulse.piece.card.id === this.#revealing ? 0.18 : 0.9) : 0.12;
+      // A card standing beside the villain (a revealed card parked there) springs only a little, like one held up to
+      // be read, rather than leaping far up off the row (Adam, 2026-11-23: "a little bit too high").
+      const heldUp = pulse.piece.card.id === this.#revealing || this.#parked.has(pulse.piece.card.id);
+      const rises = pulse.activation ? (heldUp ? 0.12 : 0.9) : 0.12;
       pulse.lift = this.#reduced.matches || pulse.shine || pulse.aside ? 0 : pulse.piece.root.scale.x * rises * rise;
       if (pulse.shine && !this.#reduced.matches) {
         // Up a touch along its length and back, easing out, as the light crosses it.

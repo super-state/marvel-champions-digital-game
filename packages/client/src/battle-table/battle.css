@@ -290,6 +290,51 @@ button:focus-visible {
   color: #1a1206;
 }
 /* A hovered table card, full size beside it while the card panel is folded (main.ts placeHoverCard). */
+/* What a status on the card does (Tough, Stunned, Confused), just under its picture (Adam, 2026-11-23). */
+.status-notes {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  max-width: var(--preview-max-width, 360px);
+  margin-top: 10px;
+}
+.status-note {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #0c141ceb;
+  color: var(--text-2);
+  font: 500 12.5px/1.4 var(--font-ui);
+  box-shadow: 0 8px 18px #0008;
+}
+.status-note .icon {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+.status-note b {
+  color: var(--text);
+  font-weight: 800;
+}
+/* In the panel the picture takes what height the notes leave, so they always show under it. */
+.reader:has(.status-notes:not([hidden])) {
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-content: stretch;
+}
+.reader:has(.status-notes:not([hidden])) img {
+  height: 100%;
+  min-height: 0;
+}
+.hover-notes {
+  position: absolute;
+  z-index: 9;
+  margin: 0;
+  pointer-events: none;
+}
 .hover-card {
   position: absolute;
   z-index: 9;
