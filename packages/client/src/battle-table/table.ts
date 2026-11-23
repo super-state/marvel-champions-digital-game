@@ -2329,11 +2329,9 @@ export class BattleTable {
     const schemeElevation = 0.05;
     const schemeOrigin = this.#point(schemeX, enemyRow, schemeElevation);
     const schemeScale = this.#point(schemeX + enemyCardWidth, enemyRow, schemeElevation).x - schemeOrigin.x;
-    // Leave room below each full-size scheme for its threat label.
-    const schemeStep = Math.max(
-      schemeScale * 1.75,
-      schemeOrigin.z - this.#point(schemeX, h * 0.105, schemeElevation).z,
-    );
+    // Rows of schemes a little more than a card's depth apart: room below each for its threat label and a small gap,
+    // no more (Adam, 2026-11-23: "the schemes could be a little closer together").
+    const schemeStep = schemeScale * 1.42;
     // The main scheme stands nearest the villain; the side schemes fill leftwards across the free mat first, a card's
     // width and a gap apart, and only stack upwards once a row has no more room (Adam, 2026-11-22: use the space).
     const schemeColumn = schemeScale * (HEIGHT + 0.3);
@@ -2349,10 +2347,14 @@ export class BattleTable {
       Math.max(roomFor, schemes.length >= 3 ? 2 : 1),
       Math.max(1, Math.ceil(schemes.length / 2)),
     );
+    // Two or more rows stand as a block centred on the villain's middle, the gap between them level with it, rather
+    // than one row at his middle and the rest up the mat (Adam, 2026-11-23).
+    const schemeRows = Math.ceil(schemes.length / schemeColumns);
+    const schemeDrop = ((schemeRows - 1) * schemeStep) / 2;
     schemes.forEach((card, i) => {
       const position = schemeOrigin.clone();
       position.x -= (i % schemeColumns) * schemeColumn;
-      position.z -= Math.floor(i / schemeColumns) * schemeStep;
+      position.z += schemeDrop - Math.floor(i / schemeColumns) * schemeStep;
       const projected = this.#scratch.copy(position).project(this.#camera);
       const x = (projected.x + 1) * w * 0.5;
       const y = (1 - projected.y) * this.#canvasHeight * 0.5 - this.#extension;
