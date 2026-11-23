@@ -1,6 +1,8 @@
 #!/bin/sh
-# The 3D table's gate: the type check, the 3D table's own unit tests (`pnpm battle:check`) and its own browser tests
-# must have passed on exactly the code being pushed. The pre-push hook uses it for every push that changes `packages/`
+# The 3D table's gate: the type check and the 3D table's own unit tests (`pnpm battle:check`) must have passed on
+# exactly the code being pushed. Its browser tests run only when asked for (`BATTLE_E2E=1`), which `pnpm table:ship`
+# does before a version goes to the test site: a push no longer waits for them (Adam, 2026-11-23: "run the tests
+# when we ... cut a version"; they took 5 to 15 minutes a push on a busy PC, for a one-line fix). The pre-push hook uses it for every push that changes `packages/`
 # (after the rules gate's own tests when the rules or cards changed).
 #
 #   sh .githooks/battle-gate.sh <commit> [<base>]
@@ -49,7 +51,12 @@ echo "3D table gate: type check and 3D table tests on $(git rev-parse --short "$
 every="$(ls "$root/packages/client/e2e" | grep -E 'battle.*\.spec\.ts$' || true)"
 specs="$(cd "$root" && node .githooks/battle-specs.mjs "$base" "$sha")" || specs="$every"
 if [ "$specs" = "$every" ]; then full=1; else full=""; fi
-if [ -z "$specs" ]; then
+if [ "${BATTLE_E2E:-}" != "1" ]; then
+  echo "3D table gate: browser tests skipped on a push; they run when a version is shipped (pnpm table:ship)."
+  specs=""
+  full=""
+fi
+if [ -z "$specs" ] && [ "${BATTLE_E2E:-}" = "1" ]; then
   echo "3D table gate: no browser test can be affected by this change."
 fi
 if [ -n "$specs" ]; then
