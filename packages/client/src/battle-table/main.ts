@@ -1674,10 +1674,18 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   await sleep(reducedMotion() ? 0 : 320);
   rowFocus = [];
   delete focusBlur.dataset.row;
-  focusBlur.hidden = !state.choice?.mulligan && !revealFocus && !dockFocus;
+  focusBlur.hidden = !handQuestion() && !revealFocus && !dockFocus;
   focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = "";
   // A dock question still waiting keeps its own blur.
   if (dockFocus) focusBlur.dataset.ready = "";
+}
+
+/**
+ * A question about the hand (the mulligan, the end-of-turn discard): the table softens above the hand while it is
+ * answered (Adam, 2026-11-23: the discard should blur like the mulligan).
+ */
+function handQuestion(): boolean {
+  return !!(state.choice?.mulligan || state.choice?.discardFromHand);
 }
 
 /** A word stamped across the middle of a row of cards ("No mental resources" over Black Cat's discards). */
@@ -2843,7 +2851,7 @@ async function present(beats: Snapshot["beats"]) {
         table?.holdReveal(false);
         revealFocus = null;
         delete focusBlur.dataset.ready;
-        focusBlur.hidden = !state.choice?.mulligan;
+        focusBlur.hidden = !handQuestion();
         focusBlur.style.clipPath = "";
         revealHint.hidden = readReveal.hidden = true;
         narrate(beat, null);
@@ -3154,7 +3162,7 @@ function render() {
   dockFocus =
     waiting && !revealFocus && !rowFocus.length ? { keep: heldEncounter ?? state.choiceSource ?? null } : null;
   const blurWasHidden = focusBlur.hidden;
-  focusBlur.hidden = !state.choice?.mulligan && !revealFocus && !dockFocus && !rowFocus.length;
+  focusBlur.hidden = !handQuestion() && !revealFocus && !dockFocus && !rowFocus.length;
   if (focusBlur.hidden) delete focusBlur.dataset.ready;
   else if (dockFocus && blurWasHidden) requestAnimationFrame(() => dockFocus && (focusBlur.dataset.ready = ""));
   choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
