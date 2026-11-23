@@ -1111,7 +1111,13 @@ function choose(id: string | null) {
   if (staged?.type === "event" && target && awaitsTarget(staged.id) && table && !flying) {
     const event = staged.id;
     flying = true;
-    table.channelEventTo(event, target);
+    // An attack picked onto an enemy (Swinging Web Kick with a minion out) goes onto the hero like any attack, then
+    // the hero strikes; it flew onto Rhino and stood there full size (Adam, 2026-11-23).
+    const enemy =
+      target === state.villain.id ||
+      state.enemyCards.some((card) => card.id === target && (card.type === "minion" || card.type === "villain"));
+    if (enemy) table.channelEvent(event);
+    else table.channelEventTo(event, target);
     void sleep(reducedMotion() ? 0 : 520).then(() => {
       flying = false;
       if (staged?.id === event) resolveChoice(id);
