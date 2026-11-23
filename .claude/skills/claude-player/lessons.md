@@ -7,7 +7,7 @@ cards work in one form only, what each status does and the hand limit.
 
 ## Playbook
 
-### Spider-Man vs Rhino (core set, Spider-Man's Justice deck) — 1 win, 5 losses
+### Spider-Man vs Rhino (core set, Spider-Man's Justice deck) — 1 win, 6 losses
 
 - **The last 7 HP of Rhino's second stage is where games are decided.** Games 3-6 all had Rhino's second stage on
   7 by round 5-8; in game 6 Hard to Keep Down then healed him back to 11 twice. The one win came from allies on the
@@ -24,13 +24,16 @@ cards work in one form only, what each status does and the hand limit.
   treachery. If that reaches 7, thwart more or stay in hero form. `seen 5×`
 - **Crowd Control lands late, when it hurts most.** Game 5 was lost at 6/7 with it in play. Clear Crowd Control
   (and Breakin' & Takin') the turn they land whenever the main scheme is at 4 or more. `seen 2×`
-- **Clear confusion early.** False Alarm came in three of five games; its confusion sat on Spider-Man for most of
-  game 5 and cost a For Justice! in game 4. A basic thwart while the scheme is low clears it cheaply. `seen 2×`
+- **Clear confusion early.** False Alarm came in four of seven games; its confusion sat on Spider-Man for most of
+  game 5 and cost a For Justice! in game 4. A basic thwart while the scheme is low clears it cheaply (worked in game
+  7). `seen 3×`
 - **Threat discipline buys the time to win.** For Justice! paid with a mental or wild resource, Surveillance Team,
   Spider-Tracer on a minion you are about to kill (−3), Interrogation Room, allies thwarting. `seen 3×`
-- **Alter ego is safe only with no minions out (a SCH-0 Mercenary is fine).** Then Peter dodges big attacks and
-  heals (Recover, then flip back before the next big phase). With a scheming minion out, Peter loses to the scheme.
-  `seen 5×`
+- **Alter ego is safe only with no minions out (a SCH-0 Mercenary is fine) and only in Rhino's first stage.** Then
+  Peter dodges big attacks and heals (Recover, then flip back before the next big phase). With a scheming minion out,
+  Peter loses to the scheme (games 1-3, 5). In the second stage Breakin' & Takin' deals an extra encounter card and
+  every attack treachery (Stampede, Assault, Gang-Up) surges into another while you are Peter: game 7 went 1 → 7 in
+  one phase as Peter with no minions out, five encounter cards in that phase. `seen 6×`
 - **Rhino's second stage piles up fast.** One villain phase can bring Toughness, Hard to Keep Down (+4 HP; cancel it
   with Enhanced Spider-Sense), a Guard minion, Charge (7-10 ATK, overkill), Armored Rhino Suit, the nemesis (whose
   Sweeping Swoop stuns). `seen 5×`
@@ -50,18 +53,25 @@ cards work in one form only, what each status does and the hand limit.
 
 - Pick moves from `moves()` labels only; a look's text starts with the move just made. `seen 1×`
 - Several cards can wait to be read at once: loop on "Continue (after …" before a planned sequence. `seen 3×`
-- When a scripted sequence prints only part of the look, it hides new statuses: print the whole look after every
-  villain phase. Game 6's winning double Kick fizzled on a stun that the look did show. `seen 1×`
+- When a scripted sequence prints only part of a reply, it hides what you need: print the whole look after every
+  villain phase (game 6's winning double Kick fizzled on a stun the look showed), and keep each reply's "What
+  happened" lines (game 7's losing phase can't be told card by card because a script kept only first lines). `seen 2×`
+- Remote play (curl): a move's words with an em dash or other non-ASCII letters get mangled by the Windows shell;
+  match on plain ASCII words ("Pay with Web-Shooter"). `seen 1×`
 - An action ability that costs resources (Tenacity) ends with a "Use" move after paying, not "Play". `seen 1×`
 
 ## Try next
 
+- Stay Spider-Man for the whole second stage; dodge with Webbed Up, Mockingbird, Backflip and a ready defender instead
+  of Peter.
 - Set up the double Kick again (hold a double resource, let Spider-Sense draw), and read the look before firing.
-- Clear confusion with a basic thwart the first turn the scheme is low.
 - Save Enhanced Spider-Sense for Hard to Keep Down once Rhino's second stage is under 8.
 
 ## Recent games
 
+- 2026-11-23 · Spider-Man (Justice) vs Rhino · lost in round 4, The Break-In! 1 → 7 in one phase · Kicked stage 1
+  away on 6 HP and hid as Peter from the new stage 2 with no minions out; Breakin' & Takin' plus surging treacheries
+  dealt five encounter cards. (First game played in Surf's game mode.)
 - 2026-11-23 · Spider-Man (Justice) vs Rhino · lost in round 10, The Break-In! 3 → 7 in one phase · in round 7 two
   Kicks (16) were set up against stage 2's 15, but the first fizzled on a Sweeping Swoop stun I hadn't read; Hard to
   Keep Down then healed Rhino twice. (An earlier start was wiped in round 4 when a merge reloaded the table.)
