@@ -21,10 +21,13 @@ Two files, both next to this one:
    background on a port of its own: `pnpm --filter @mc/client exec vite --port 5240 --strictPort`. Card pictures
    come from the main folder's scans (they aren't in git; a copy's dev server falls back to them). Afterwards stop
    that server and remove the copy (`git worktree remove --force ../mc-wt-play`).
-3. **Show it in Surf's game mode, never a plain tab:** `surf_game_open` with name **"Marvel Champions (Claude
-   plays)"** and url `http://localhost:5240/battle/?remote` (load the tool with ToolSearch; call it again if it says
-   the page didn't load because the server wasn't up yet). Its own name leaves Adam's own "Marvel Champions" game tab
-   alone. `?remote` makes the page take moves from the dev server; `&seed=N` deals a fixed game.
+3. **Show it in Surf's game mode, never a plain tab:** `surf_game_open` with name **"Marvel Champions"** and url
+   `http://localhost:5240/battle/?remote` (load the tool with ToolSearch; call it again if it says the page didn't
+   load because the server wasn't up yet). **One game, one tab** (Adam, 2026-11-23): always the name "Marvel
+   Champions", never a second name such as "Marvel Champions (Claude plays)", so Surf moves the one tab to your table
+   instead of opening another. Tell Adam first if he is mid-game in it. After the game, put his table back:
+   `surf_game_open` name "Marvel Champions", url `http://localhost:5173/battle/`. `?remote` makes the page take moves
+   from the dev server; `&seed=N` deals a fixed game.
 4. **Drive it from the terminal** (the browser tools can't reach the Games bubble): each call below is a plain
    request to the dev server, which the page answers through its play hook. Start with `call=wait`.
 5. **The game must stay on show.** A hidden tab is frozen by the browser (its animations stop, so moves hang on
