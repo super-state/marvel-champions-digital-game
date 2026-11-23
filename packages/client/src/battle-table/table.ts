@@ -3111,6 +3111,9 @@ export class BattleTable {
           }
         }
         if (kind === "flip") {
+          // The new side's stat changes (Heroic Intuition's +1 THW on Spider-Man) wait until it has turned up: shown at
+          // once, they sat on the old side's face for the whole turn.
+          piece.markers.visible = progress === 1;
           piece.root.position.y += Math.sin(Math.PI * t) * piece.root.scale.x * 0.65;
           piece.root.rotation.y = 0;
           piece.root.rotateY(Math.PI * (0.5 - 0.5 * Math.cos(Math.PI * t)));
@@ -3176,7 +3179,9 @@ export class BattleTable {
       // arrived, turned with it if the host is exhausted, and a card slid out from under it slides back into its place
       // there (Adam, 2026-11-22). Otherwise it follows the host's rendered pose, lift and roll included.
       parent.updateMatrixWorld();
-      const hostLifted = this.#hovered === host && !flight;
+      // So does one under a host turning over (changing form): followed through the turn, it came up on top of the
+      // host face down, its bare stock showing (Adam, 2026-11-22: "a beige back of the card when flipped").
+      const hostLifted = (this.#hovered === host || this.#flights.get(host)?.kind === "flip") && !flight;
       let frame = this.#hostRest.get(host);
       if (!hostLifted || !frame) {
         frame = parent.matrixWorld.clone();
