@@ -3,16 +3,24 @@
 # must have passed on exactly the code being pushed. The pre-push hook uses it for every push that changes `packages/`
 # (after the rules gate's own tests when the rules or cards changed).
 #
-#   sh .githooks/battle-gate.sh <commit>
+#   sh .githooks/battle-gate.sh <commit> [<base>]
 #
-# The 3D table's browser tests are the specs in `packages/client/e2e/` with `battle` in their file name. With none,
+# The 3D table's browser tests are the specs in `packages/client/e2e/` with `battle` in their file name. Given the
+# base the push is measured from, only the ones the change can affect run (`battle-specs.mjs`: a change to the pad
+# runs the pad's test, a change to the table's own code runs them all); with no base, all of them. With none to run,
 # only `pnpm battle:check` runs.
+#
+# One browser-test run at a time on this PC (Adam, 2026-11-23): each spec drives a whole WebGL table, and two
+# sessions' runs at once starved each other until tests timed out and browsers crashed. A run waits its turn on a
+# lock (`BATTLE_E2E_LOCK`, default `%LOCALAPPDATA%/mc-push-check/battle-e2e.lock`), shared by every checkout and
+# worktree; a lock whose holder has gone, or that is over 30 minutes old, is taken over.
 #
 # A pass is remembered the way the e2e gate remembers one: by the content of `packages/` and `pnpm-lock.yaml` in the
 # commit, in `<git common dir>/e2e-passed`, under a `battle-` prefix so it never counts as a pass of the whole suite.
 set -e
 
 sha="${1:-HEAD}"
+base="${2:-}"
 root="$(git rev-parse --show-toplevel)"
 key="battle-$(git rev-parse "$sha:packages")-$(git rev-parse "$sha:pnpm-lock.yaml")"
 stamps="$(git rev-parse --git-common-dir)/e2e-passed"
@@ -38,13 +46,43 @@ echo "3D table gate: type check and 3D table tests on $(git rev-parse --short "$
 (cd "$root" && pnpm battle:check) || fail "the type check or the unit tests did not pass"
 
 # File names only: Playwright reads each argument as a pattern matched against the spec's path.
-specs="$(ls "$root/packages/client/e2e" | grep -E 'battle.*\.spec\.ts$' || true)"
+every="$(ls "$root/packages/client/e2e" | grep -E 'battle.*\.spec\.ts$' || true)"
+specs="$(cd "$root" && node .githooks/battle-specs.mjs "$base" "$sha")" || specs="$every"
+if [ "$specs" = "$every" ]; then full=1; else full=""; fi
+if [ -z "$specs" ]; then
+  echo "3D table gate: no browser test can be affected by this change."
+fi
 if [ -n "$specs" ]; then
+  # Wait for our turn: `mkdir` either makes the lock or finds it taken, in one step.
+  lock="${BATTLE_E2E_LOCK:-${LOCALAPPDATA:-$HOME}/mc-push-check/battle-e2e.lock}"
+  mkdir -p "$(dirname "$lock")"
+  me="$(cat /proc/$$/winpid 2>/dev/null || echo $$)"
+  waited=0
+  while ! mkdir "$lock" 2>/dev/null; do
+    holder="$(cat "$lock/owner" 2>/dev/null || true)"
+    pid="${holder%% *}"
+    age=$(( $(date +%s) - $(stat -c %Y "$lock" 2>/dev/null || date +%s) ))
+    alive=""
+    if [ -n "$pid" ] && tasklist //FI "PID eq $pid" 2>/dev/null | grep -q " $pid "; then alive=1; fi
+    if [ -z "$alive" ] && [ "$age" -gt 20 ] || [ "$age" -gt 1800 ]; then
+      echo "3D table gate: taking over a stale browser-test lock (${holder:-no owner}, ${age}s old)."
+      rm -rf "$lock"
+      continue
+    fi
+    if [ $((waited % 60)) -eq 0 ]; then
+      echo "3D table gate: waiting for another checkout's browser tests to finish (${holder#* })..."
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+  echo "$me $root" > "$lock/owner"
+  trap 'rm -rf "$lock"' EXIT INT TERM
+
   # A port nobody is listening on, for the reason the e2e gate gives: a dev server left running by another checkout
   # would have the specs test that checkout's code.
   port="$(node -e 'const s=require("net").createServer();s.listen(0,()=>{console.log(s.address().port);s.close()})')"
   report="$(mktemp -t battle-gate.XXXXXX)"
-  trap 'rm -f "$report"' EXIT
+  trap 'rm -f "$report"; rm -rf "$lock"' EXIT INT TERM
 
   # Three at a time unless told otherwise (`BATTLE_E2E_WORKERS`): each spec drives its own WebGL page and times its pad
   # presses by the clock, so eight at once starved each other (2026-11-21: 5 of 9 failed). Once PR 9 made the pad
@@ -68,5 +106,6 @@ if [ -n "$specs" ]; then
   ' "$report" || fail "the 3D table's browser tests did not pass"
 fi
 
-echo "$key" >> "$stamps"
+# Remembered only when every browser test ran: a narrowed run vouches for this change, not for the code as a whole.
+[ -n "$full" ] && echo "$key" >> "$stamps"
 echo "3D table gate: passed."
