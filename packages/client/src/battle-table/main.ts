@@ -2633,6 +2633,12 @@ async function present(beats: Snapshot["beats"]) {
       // Scheming is called out on the card like an encounter card dealt or threat placed; an attack has its reticle.
       if (beat.scheming) stampCard(beat.scheming, "Schemes");
     }
+    if (beat.stunnedAttempt) {
+      // It rears up to attack and strains against the stun; it never aims at the hero.
+      table?.windUp(beat.stunnedAttempt, { strain: true });
+      sfx.play("whoosh");
+      stampCard(beat.stunnedAttempt, "Stunned!", "status");
+    }
     if (beat.attackAim) {
       const { source, target } = beat.attackAim;
       attacker = source;
@@ -2735,6 +2741,9 @@ async function present(beats: Snapshot["beats"]) {
         const label = labels.get(id);
         if (label?.dataset.hp) updateHpLabel(label, Number(label.dataset.hp) - delta);
         table?.healBurst(id);
+      } else if (delta < 0 && name === "stunned") {
+        stampCard(id, "Unstunned", "status");
+        sfx.play("status");
       } else if (delta > 0 && STATUS_STAMP[name]) {
         const [tone, text] = STATUS_STAMP[name]!;
         stampCard(id, text, tone);

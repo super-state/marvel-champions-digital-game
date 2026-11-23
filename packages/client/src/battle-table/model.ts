@@ -155,6 +155,8 @@ export interface BattleBeat {
   deflection?: { card: string; amount: number };
   modifier?: { id: string; name: string; count: number };
   attackAim?: { source: string; target: string };
+  /** A stunned enemy straining to attack; the stun is discarded instead (the next beat). */
+  stunnedAttempt?: string;
   turned?: { id: string; exhausted: boolean };
   draw?: string[];
   encounterDeal?: string;
@@ -539,6 +541,24 @@ export class BattleModel {
       ),
     );
     const heldReset: BattleBeat[] = [];
+    // A stunned enemy's attack: its activation is followed by the stun being discarded instead, with no attack in
+    // between (RRG 1.8 'Stun'). It is shown straining against the stun, not aiming at the hero it never reaches.
+    const stunnedAttempts = new Set<(typeof events)[number]>();
+    events.forEach((e, i) => {
+      if (e.type !== "enemyActivated" || e.activation !== "attack") return;
+      for (const later of events.slice(i + 1)) {
+        if (later.type === "enemyActivated" || later.type === "attackResolved") return;
+        if (
+          later.type === "statusRemoved" &&
+          later.status === "stunned" &&
+          later.reason === "cancelledAttack" &&
+          later.instanceId === e.enemyInstanceId
+        ) {
+          stunnedAttempts.add(e);
+          return;
+        }
+      }
+    });
     // An attack a card makes happen, aimed only once the attack goes ahead (see where it is set).
     let heldAim: { attacker: string; activity: string; beat: BattleBeat } | null = null;
     let acceleration = this.#game.mainScheme.accelerationTokens;
@@ -896,6 +916,15 @@ export class BattleModel {
           });
       } else if (e.type === "statusGiven" || e.type === "statusRemoved") {
         if (e.type === "statusRemoved" && e.status === "tough" && e.reason === "preventedDamage") continue;
+        if (e.type === "statusRemoved" && e.status === "stunned" && e.reason === "cancelledAttack") {
+          this.#beats.push({
+            enemy,
+            actor: e.instanceId,
+            statusChange: { id: e.instanceId, name: e.status, delta: -1 },
+            text: `${name(e.instanceId)} is no longer stunned`,
+          });
+          continue;
+        }
         this.#beats.push({
           enemy,
           actor: e.instanceId,
@@ -933,7 +962,16 @@ export class BattleModel {
               e.activation === "attack"
                 ? `Target: ${name(result.state.players[0]!.identity.instanceId)}`
                 : `Target: ${name(result.state.mainScheme.instanceId)}`;
-            if (e.activation === "attack") {
+            if (e.activation === "attack" && stunnedAttempts.has(e)) {
+              // It tries, but the stun holds it back: no aim at the hero (Adam, 2026-11-23).
+              this.#beats.push({
+                enemy,
+                actor,
+                text: `${name(actor)} tries to attack, but is stunned`,
+                stunnedAttempt: actor,
+              });
+              text = undefined;
+            } else if (e.activation === "attack") {
               const target = result.state.players.find((p) => p.playerId === e.playerId)?.identity.instanceId;
               if (target) {
                 this.#beats.push({
