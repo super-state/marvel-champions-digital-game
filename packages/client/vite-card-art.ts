@@ -37,6 +37,7 @@
  * server and in the copy, and the client never has to know.
  */
 
+import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -224,9 +225,35 @@ export function servedLanguages(): readonly CardLanguage[] {
   return [build, ...onDisk.filter((lang) => lang !== build)];
 }
 
+/**
+ * The main checkout's `assets/card-art/` when this server runs from a git worktree. The scans are not in git (only
+ * the card backs are), so a worktree made for a fix or a playtest has none and its table drew every face black. The
+ * dev and preview servers fall back to the main checkout's scans; a build is left as it is. Null in the main checkout
+ * itself, or outside git.
+ */
+export function mainCheckoutArtRoot(): string | null {
+  try {
+    const common = execSync("git rev-parse --path-format=absolute --git-common-dir", {
+      cwd: import.meta.dirname,
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+    const root = path.resolve(path.dirname(common), "assets/card-art");
+    return root !== ART_ROOT && existsSync(path.join(root, "bundles")) ? root : null;
+  } catch {
+    return null;
+  }
+}
+
 function servedRoutes(): ReadonlyMap<string, readonly string[]> {
   const build = cardLanguageOf();
-  return new Map(servedLanguages().map((lang) => [routeOf(lang, build), artRoots(lang)] as const));
+  const fallback = mainCheckoutArtRoot();
+  return new Map(
+    servedLanguages().map(
+      (lang) => [routeOf(lang, build), fallback ? [...artRoots(lang), fallback] : artRoots(lang)] as const,
+    ),
+  );
 }
 
 type BundleMode = "pool" | "all" | "none";

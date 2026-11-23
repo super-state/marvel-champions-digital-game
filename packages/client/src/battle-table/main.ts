@@ -11,7 +11,7 @@ import { arrangeScene } from "./debug-scenes.js";
 import { sfx, type SoundName } from "./sound.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, type BattleCard } from "./model.js";
-import { createPlayer } from "./play.js";
+import { answerRemote, createPlayer, type Player, type RemoteChannel } from "./play.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
 import { eventLook, offerDoes, spotOf, waitsOnDock, type GlowTone, type Spot } from "./spotlight.js";
 import {
@@ -4118,8 +4118,9 @@ async function studioDemo(name: string): Promise<boolean> {
 
 // ── Playing from a script (dev server only) ─────────────────────────────────────────────────────────────────────────
 // `__battlePlay` lets Claude play through the page (`play.ts`): it reads the table in words and presses the same
-// buttons and cards a click does.
-if (import.meta.env.DEV)
+// buttons and cards a click does. Opened with `?remote`, the page also takes moves from the dev server
+// (`vite-battle-play.ts`), so a table shown in Surf's Games bubble can be played from a terminal while Adam watches.
+if (import.meta.env.DEV) {
   Object.assign(globalThis, {
     __battlePlay: createPlayer({
       state: () => state,
@@ -4142,6 +4143,9 @@ if (import.meta.env.DEV)
       doneReading: () => readReveal.click(),
     }),
   });
+  if (import.meta.hot && new URLSearchParams(location.search).has("remote"))
+    answerRemote((globalThis as unknown as { __battlePlay: Player }).__battlePlay, import.meta.hot as RemoteChannel);
+}
 
 if (import.meta.env.DEV && new URLSearchParams(location.search).has("studio")) {
   document.documentElement.dataset.studio = "";

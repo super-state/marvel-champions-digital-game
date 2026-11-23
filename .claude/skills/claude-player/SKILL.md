@@ -18,23 +18,26 @@ Two files, both next to this one:
 2. **A table of your own.** Adam's table (port 5173, the main folder) reloads by itself whenever any session merges a
    fix, which restarts a game in progress (game 6 was wiped in round 4). So play on a frozen copy: from the main
    folder, `git worktree add --detach ../mc-wt-play HEAD`, `pnpm install` in it, then start its dev server in the
-   background on a port of its own: `pnpm --filter @mc/client exec vite --port 5240 --strictPort`. The hook exists
-   only on a dev server. Afterwards stop that server and remove the copy (`git worktree remove --force ../mc-wt-play`).
-3. **Open it in your own Surf tab so Adam can watch:** `browser_navigate` to `http://localhost:5240/battle/`
-   (task "Claude plays Marvel 3D"; navigate again if it opened before the server was up), then **`browser_show`
-   straight away**. Adam wants to watch the cards move; a
-   game played in a background tab is no use to him. (Surf's Games bubble can't be driven by the browser tools, so it
-   is your own tab, shown.) `?seed=N` deals a fixed game, for replaying one.
-4. Wait for the hook: `async () => { for (let i=0;i<100 && !globalThis.__battlePlay;i++) await new Promise(r=>setTimeout(r,300)); return globalThis.__battlePlay.wait(); }`
+   background on a port of its own: `pnpm --filter @mc/client exec vite --port 5240 --strictPort`. Card pictures
+   come from the main folder's scans (they aren't in git; a copy's dev server falls back to them). Afterwards stop
+   that server and remove the copy (`git worktree remove --force ../mc-wt-play`).
+3. **Show it in Surf's game mode, never a plain tab:** `surf_game_open` with name **"Marvel Champions (Claude
+   plays)"** and url `http://localhost:5240/battle/?remote` (load the tool with ToolSearch; call it again if it says
+   the page didn't load because the server wasn't up yet). Its own name leaves Adam's own "Marvel Champions" game tab
+   alone. `?remote` makes the page take moves from the dev server; `&seed=N` deals a fixed game.
+4. **Drive it from the terminal** (the browser tools can't reach the Games bubble): each call below is a plain
+   request to the dev server, which the page answers through its play hook. Start with `call=wait`.
 
-## The hook (`packages/client/src/battle-table/play.ts`)
+## The hook (`packages/client/src/battle-table/play.ts`, relayed by `packages/client/vite-battle-play.ts`)
 
-| Call (in `browser_evaluate`)           | Does                                                                                                                                                                        |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `__battlePlay.look()`                  | The table in words: what happened since the last look, round and phase, every card with its stats and rules text, the hand, the turn bar's question and the numbered moves. |
-| `__battlePlay.moves()`                 | Just the moves, `[{ n, label }]`.                                                                                                                                           |
-| `await __battlePlay.play("Keep hand")` | Makes the move whose words match (exact first, then contains) or the number, waits for the table to settle, returns `You: <move>` plus a fresh look.                        |
-| `await __battlePlay.wait()`            | Waits through the villain phase or a card in flight, then looks.                                                                                                            |
+| Call (Bash)                                                          | Does                                                                                                                                                                                       |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `curl -s -G localhost:5240/__battle-play --data-urlencode call=look` | The table in words: what happened since the last look, round, phase and form, every card with its stats, rules text and statuses, the hand and hand size, the turn bar question and moves. |
+| `… --data-urlencode call=moves`                                      | Just the moves, one `n. label` per line.                                                                                                                                                   |
+| `… --data-urlencode call=play --data-urlencode "move=Keep hand"`     | Makes the move whose words match (exact first, then contains) or its number, waits for the table to settle, answers `You: <move>` plus a fresh look.                                       |
+| `… --data-urlencode call=wait`                                       | Waits through the villain phase or a card in flight, then looks.                                                                                                                           |
+
+In the page itself the same calls are `__battlePlay.look()`, `.moves()`, `.play()` and `.wait()` (browser tests).
 
 Every move presses the same thing a click does, so the engine decides every outcome and Adam sees it happen.
 
@@ -51,7 +54,7 @@ Every move presses the same thing a click does, so the engine decides every outc
 - **Bugs.** If the table does something the rules or the card text don't allow, stop, take a screenshot, and tell
   Adam what you saw and why it's wrong (ask the `rules-expert` agent if unsure). A wording slip in the hook's text
   (only Claude reads it) is not a game bug: note it and fix it after the game.
-- At the end, leave the tab on the final screen in front of Adam; close it only when he's done.
+- At the end, leave the game on its final screen in Games; close it (`surf_games` close) only when Adam is done.
 
 ## After every game: condense into `lessons.md`
 
