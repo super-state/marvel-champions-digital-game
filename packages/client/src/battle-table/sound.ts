@@ -228,8 +228,15 @@ export class SoundBoard {
       (globalThis.__battleSounds ??= []).push({ name, at: Math.round(now), delay });
       return;
     }
-    this.playVariant(name, variants[index]!, options);
+    void this.playVariant(name, variants[index]!, options).then((run) => {
+      if (run) this.onPlayed?.(name, index, run);
+    });
   }
+
+  /** Told of each sound the table plays, which variant and when (the studio runs its playhead on it). */
+  onPlayed:
+    | ((name: SoundName, index: number, run: { at: number; offset: number; length: number; rate: number }) => void)
+    | null = null;
 
   /**
    * Plays one variant as the named sound would (its volume, the variant's cut and shape): the game's path, and the
@@ -401,6 +408,8 @@ const SPLIT_FROM_BLOCK: SoundManifest["sounds"] = {
   ability: [1, 2, 3].map((n) => ({ file: `block-${n}.mp3`, rate: 1.3 })),
   cancel: [{ file: "block-1.mp3", rate: 0.75 }],
   vanish: [{ file: "block-2.mp3", rate: 0.8 }],
+  // A card settling in the hand: the landing tap, lighter and higher, until the studio gives it a sound of its own.
+  "draw-land": [1, 2, 3].map((n) => ({ file: `place-${n}.mp3`, rate: 1.4, gainDb: -9 })),
 };
 
 /** The game's own sounds, with nothing from the studio. */

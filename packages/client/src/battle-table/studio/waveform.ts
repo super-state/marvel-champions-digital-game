@@ -132,17 +132,28 @@ export class WaveEditor {
     return { start, end, fadeIn, fadeOut, sync: this.#clampToCut(this.#variant.sync ?? start) };
   }
 
+  /** Where each labelled tab was last drawn: grabbing a tab takes its own line, even where two lines meet. */
+  #tabs: { handle: Handle; left: number; right: number; top: number; bottom: number }[] = [];
+
   #handleAt(x: number, y: number): Handle | null {
     if (!this.#buffer) return null;
+    // The tabs first (Adam, 2026-11-24: drag the Start, End and "lands here" tabs, in one go). The low "lands here"
+    // tab is checked before Start and End, whose tabs sit above it.
+    for (const tab of this.#tabs)
+      if (x >= tab.left - 2 && x <= tab.right + 2 && y >= tab.top - 2 && y <= tab.bottom + 2) return tab.handle;
     const p = this.#positions();
     const near = (t: number) => Math.abs(this.#xAt(t) - x) <= HIT;
     if (y <= PAD_TOP + 10) {
       if (near(p.start + p.fadeIn) && p.fadeIn >= 0) return "fadeIn";
       if (near(p.end - p.fadeOut)) return "fadeOut";
     }
-    if (near(p.sync)) return "sync";
+    // On the lines themselves, where "lands here" sits on Start or End: the upper half takes Start or End, the lower
+    // half the marker, so each can be pulled off the other.
+    const upper = y < PAD_TOP + 40;
+    if (near(p.sync) && !(upper && (near(p.start) || near(p.end)))) return "sync";
     if (near(p.start)) return "start";
     if (near(p.end)) return "end";
+    if (near(p.sync)) return "sync";
     return this.#view.to - this.#view.from < this.#duration() - 0.001 ? "pan" : null;
   }
 
@@ -291,7 +302,16 @@ export class WaveEditor {
     g.fillRect(0, top, Math.max(0, x0), bottom - top);
     g.fillRect(x1, top, Math.max(0, w - x1), bottom - top);
     // Handles.
-    const line = (x: number, color: string, label: string, dashed = false, active = false, low = false) => {
+    this.#tabs = [];
+    const line = (
+      x: number,
+      color: string,
+      label: string,
+      dashed = false,
+      active = false,
+      low = false,
+      handle: Handle | null = null,
+    ) => {
       g.strokeStyle = color;
       g.lineWidth = active ? 3 : 2;
       g.setLineDash(dashed ? [5, 4] : []);
@@ -307,13 +327,14 @@ export class WaveEditor {
       const y = low ? top + 4 : 2;
       g.fillStyle = color;
       g.fillRect(left, y, width, 16);
+      if (handle) this.#tabs.push({ handle, left, right: left + width, top: y, bottom: y + 16 });
       g.fillStyle = "#0a0f18";
       g.textAlign = "left";
       g.fillText(label, left + 5, y + 12);
     };
-    line(x0, "#e8edf6", "Start", false, this.#hover === "start");
-    line(x1, "#e8edf6", "End", false, this.#hover === "end");
-    line(this.#xAt(p.sync), "#f6c564", "⚡ lands here", true, this.#hover === "sync", true);
+    line(this.#xAt(p.sync), "#f6c564", "⚡ lands here", true, this.#hover === "sync", true, "sync");
+    line(x0, "#e8edf6", "Start", false, this.#hover === "start", false, "start");
+    line(x1, "#e8edf6", "End", false, this.#hover === "end", false, "end");
     for (const [t, handle] of [
       [p.start + p.fadeIn, "fadeIn"],
       [p.end - p.fadeOut, "fadeOut"],

@@ -14,6 +14,14 @@ export const SOUND_MOMENTS = [
     demo: true,
   },
   {
+    name: "draw-land",
+    label: "Card arrives in hand",
+    group: "Cards",
+    about:
+      "Each drawn card landing in the hand, about half a second after it leaves the deck (Draw a card is its take-off). Starts as a light, high landing tap: drop a file on it to change it.",
+    demo: true,
+  },
+  {
     name: "deal",
     label: "Deal encounter card",
     group: "Cards",
