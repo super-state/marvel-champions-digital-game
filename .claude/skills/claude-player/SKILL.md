@@ -15,12 +15,14 @@ Two files, both next to this one:
 ## Before the game
 
 1. **Read [`lessons.md`](lessons.md)** and pick one thing from "Try next" to test this game. Say which in a line.
-2. **The table.** Adam's table is the dev server on port 5173, run from the main folder (on this PC
-   `C:\Users\denby\Projects\marvel-champions-digital-game`; on the desktop PC `D:\AdamsWorkspace\mc`). If nothing
-   answers on `http://localhost:5173/battle/`, start it from the main folder in the background:
-   `pnpm --filter @mc/client exec vite --port 5173 --strictPort`. The hook exists only on the dev server.
-3. **Open it in your own Surf tab so Adam can watch:** `browser_navigate` to `http://localhost:5173/battle/`
-   (task "Claude plays Marvel 3D"), then **`browser_show` straight away**. Adam wants to watch the cards move; a
+2. **A table of your own.** Adam's table (port 5173, the main folder) reloads by itself whenever any session merges a
+   fix, which restarts a game in progress (game 6 was wiped in round 4). So play on a frozen copy: from the main
+   folder, `git worktree add --detach ../mc-wt-play HEAD`, `pnpm install` in it, then start its dev server in the
+   background on a port of its own: `pnpm --filter @mc/client exec vite --port 5240 --strictPort`. The hook exists
+   only on a dev server. Afterwards stop that server and remove the copy (`git worktree remove --force ../mc-wt-play`).
+3. **Open it in your own Surf tab so Adam can watch:** `browser_navigate` to `http://localhost:5240/battle/`
+   (task "Claude plays Marvel 3D"; navigate again if it opened before the server was up), then **`browser_show`
+   straight away**. Adam wants to watch the cards move; a
    game played in a background tab is no use to him. (Surf's Games bubble can't be driven by the browser tools, so it
    is your own tab, shown.) `?seed=N` deals a fixed game, for replaying one.
 4. Wait for the hook: `async () => { for (let i=0;i<100 && !globalThis.__battlePlay;i++) await new Promise(r=>setTimeout(r,300)); return globalThis.__battlePlay.wait(); }`
@@ -56,6 +58,8 @@ Every move presses the same thing a click does, so the engine decides every outc
 The point is a playbook that gets better with every game and stays short. Keep only what could only be known
 from having played: what happened, what worked, what didn't, how the encounter deck or a card actually behaves
 over a game, and what to try next. Leave out anything that reading the card text or the rules already tells you.
+Read the whole `look()` after every villain phase, the statuses on your side included: a status that arrived in that
+phase changes what your next move does (game 6 was lost to a Kick fired while stunned).
 If a mistake came from misreading a rule or a card (a form-only card, a status, a limit), fix how `look()` describes
 it in `play.ts` instead, so no later game has to remember it, and ship that with the lessons.
 

@@ -1,5 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { formOnlyNote } from "./play.js";
+import { formOnlyNote, statusWarning } from "./play.js";
+
+describe("play hook: where a form-only card is", () => {
+  const webShooter = "Hero Resource: Exhaust Web-Shooter and remove 1 web counter from it → generate a wild resource.";
+  it("a card that stays in play with a form-only ability can still be played in the other form", () => {
+    expect(formOnlyNote(webShooter, "alterEgo", "cardInHand")).toBe(
+      "its ability is hero form only; the card can still be played now",
+    );
+  });
+  it("a card marked 'Hero form only' stays in the hand in the other form", () => {
+    expect(formOnlyNote("Hero form only. Attach to an enemy.", "alterEgo", "cardInHand")).toBe(
+      "hero form only: not usable now, except to pay with",
+    );
+  });
+  it("a card in play is not offered as payment", () => {
+    expect(formOnlyNote("Alter-Ego Action: Exhaust Aunt May → heal 4 damage.", "hero", "inPlay")).toBe(
+      "alter-ego form only: not usable now",
+    );
+  });
+});
+
+describe("play hook: moves a status will cancel", () => {
+  it("warns on an attack while stunned and a thwart while confused, and nothing else", () => {
+    expect(statusWarning(new Set(["stunned"]), "attack")).toBe("stunned: this only discards the stun");
+    expect(statusWarning(new Set(["confused"]), "thwart")).toBe("confused: this only discards the confusion");
+    expect(statusWarning(new Set(["stunned"]), "thwart")).toBe(null);
+    expect(statusWarning(new Set(["confused"]), "attack")).toBe(null);
+    expect(statusWarning(new Set(), "attack")).toBe(null);
+  });
+});
 
 describe("play hook: cards that work in one form only", () => {
   it("marks a Hero Interrupt as hero form only, and unusable while in alter-ego form", () => {
