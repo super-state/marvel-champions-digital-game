@@ -1815,7 +1815,10 @@ export class BattleTable {
         this.#state?.targets.includes(previous.card.id) || this.#state?.selected.includes(previous.card.id) || false;
       previous.rim.scale.set(1.042, 1.03, 1);
     }
+    const changed = this.#actor !== id;
     this.#actor = id;
+    // The revealed card steps aside only while it is the one asking (see revealAside in #layout).
+    if (changed && this.#revealing) this.#layout();
     this.#requestFrame();
   }
 
@@ -2833,8 +2836,11 @@ export class BattleTable {
     // Worked out once per question and screen size, then held: a pick lifted under the pointer grows a little, and
     // the card must not twitch with it.
     // Not while it only waits to be read: Breakin' & Takin', brought in by Rhino's second stage in the hero phase,
-    // stood off to the left for the cards the player could pick before it came up (Adam, 2026-11-23).
-    if (revealPose && revealRect && state.targets.length && !this.#revealHeld) {
+    // stood off to the left for the cards the player could pick before it came up (Adam, 2026-11-23). But always when
+    // the revealed card itself asks for the pick (Caught Off Guard: "discard an upgrade or support"), so every card to
+    // choose from shows clear of it (Adam, 2026-11-23: "you have to always be able to see what you're choosing").
+    const asking = !this.#revealHeld || this.#actor === revealPose?.id;
+    if (revealPose && revealRect && state.targets.length && asking) {
       const key = `${revealPose.id}|${state.targets.join(",")}|${w}x${h}|${this.#question}|${this.#hand.sunk}`;
       const reveal = revealRect as { x: number; y: number; halfWidth: number; halfHeight: number };
       if (this.#aside?.key !== key) {
