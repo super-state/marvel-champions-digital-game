@@ -1145,6 +1145,7 @@ export class BattleTable {
   /** Cards under an enemy drawn out to its side, until when, and how far out they are now (0 to 1). */
   readonly #drawnOut = new Map<string, number>();
   readonly #out = new Map<string, number>();
+  readonly #drawOutSpot = new THREE.Vector3();
   #interrupt: {
     piece: Piece;
     start: number;
@@ -2920,12 +2921,7 @@ export class BattleTable {
       // just past the villain's left edge, then a flat slide in under him, like a boost card. Swept round the side
       // and dropped there, it crossed in front of him and seemed to slip through him (Adam, 2026-11-23).
       const { fly, hop, slide } = tuckPath(progress);
-      const host = enemyHost.target;
-      const landing = TUCK_LANDING.copy(target.position);
-      landing.x = Math.min(
-        target.position.x,
-        host.position.x - (host.scale + target.scale) * 0.5 - target.scale * 0.08,
-      );
+      const landing = this.#clearLanding(piece, piece.card.attachedTo!, TUCK_LANDING);
       if (slide > 0) root.position.lerpVectors(landing, target.position, slide);
       else {
         root.position.lerpVectors(from.position, landing, fly);
@@ -2961,6 +2957,65 @@ export class BattleTable {
       THREE.MathUtils.lerp(from.roll, target.roll, sweep) + Math.sin(sweep * Math.PI) * 0.08,
     );
     root.scale.setScalar(THREE.MathUtils.lerp(from.scale, target.scale, sweep));
+  }
+
+  /**
+   * Where a card going under `hostId` lands on the mat before sliding in: just past one of the host's edges, the left
+   * first, then in front, the right and behind, whichever has no other card lying there. Landing just left of a minion
+   * put it on the villain beside it, and it slid through him on its way in (Adam, 2026-11-23: "make sure that things
+   * that are sliding like this don't go through the thing that they're passing over").
+   */
+  #clearLanding(piece: Piece, hostId: string, out: THREE.Vector3): THREE.Vector3 {
+    const { target } = piece;
+    const host = this.#pieces.get(hostId)?.target;
+    out.copy(target.position);
+    if (!host) return out;
+    const footprint = (pose: Pose) => {
+      const sideways = Math.abs(Math.sin(pose.roll)) > 0.7;
+      return { across: pose.scale * (sideways ? HEIGHT : 1), deep: pose.scale * (sideways ? 1 : HEIGHT) };
+    };
+    const own = footprint(target);
+    const room = footprint(host);
+    const margin = target.scale * 0.08;
+    const others: { x: number; z: number; across: number; deep: number }[] = [];
+    for (const [id, other] of this.#pieces) {
+      if (other === piece || id === hostId || this.#tucked.get(id)?.host === hostId) continue;
+      // Only cards lying on the mat: not the hand or a card held up in the air.
+      if (!other.root.visible || other.target.position.y > 0.6) continue;
+      others.push({ x: other.target.position.x, z: other.target.position.z, ...footprint(other.target) });
+    }
+    const overlap = (x: number, z: number) =>
+      others.reduce(
+        (total, o) =>
+          total +
+          Math.max(
+            0,
+            Math.min(x + own.across / 2, o.x + o.across / 2) - Math.max(x - own.across / 2, o.x - o.across / 2),
+          ) *
+            Math.max(0, Math.min(z + own.deep / 2, o.z + o.deep / 2) - Math.max(z - own.deep / 2, o.z - o.deep / 2)),
+        0,
+      );
+    const sideX = (room.across + own.across) / 2 + margin;
+    const sideZ = (room.deep + own.deep) / 2 + margin;
+    const spots: [number, number][] = [
+      [Math.min(target.position.x, host.position.x - sideX), target.position.z],
+      [target.position.x, Math.max(target.position.z, host.position.z + sideZ)],
+      [Math.max(target.position.x, host.position.x + sideX), target.position.z],
+      [target.position.x, Math.min(target.position.z, host.position.z - sideZ)],
+    ];
+    let best = spots[0]!;
+    let least = Infinity;
+    for (const spot of spots) {
+      const amount = overlap(spot[0], spot[1]);
+      if (amount < least - 1e-6) {
+        least = amount;
+        best = spot;
+      }
+      if (amount === 0) break;
+    }
+    out.x = best[0];
+    out.z = best[1];
+    return out;
   }
 
   readonly #forward = new THREE.Vector3();
@@ -3398,9 +3453,12 @@ export class BattleTable {
         frame.compose(this.#framePosition, this.#frameQuaternion, this.#frameScale);
       }
       const [fanX, fanY] = attachmentFanOffset(-TAB * depth, STAGGER * depth, fan);
-      // Drawn out, it clears the host's left edge by a little, flat on the mat, nowhere near rising through it.
-      const outX = (1 - TAB * depth + 0.08) * (this.#out.get(id) ?? 0);
-      piece.target.position.set(fanX - outX, fanY, -0.006 * depth).applyMatrix4(frame);
+      piece.target.position.set(fanX, fanY, -0.006 * depth).applyMatrix4(frame);
+      // Drawn out, it slides flat on the mat to just past whichever edge of its host has no other card there, so it
+      // never rises through the host and never passes under a neighbour's tokens (Adam, 2026-11-23: the suit slid
+      // left under the scheme's threat tokens).
+      const out = this.#out.get(id) ?? 0;
+      if (out > 0) piece.target.position.lerp(this.#clearLanding(piece, host, this.#drawOutSpot), out);
       piece.target.scale = this.#frameScale.x;
       if (!hostLifted) {
         piece.target.pitch = parent.rotation.x;
