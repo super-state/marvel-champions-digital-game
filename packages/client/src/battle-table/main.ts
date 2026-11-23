@@ -121,6 +121,7 @@ const arena = document.querySelector<HTMLElement>(".arena")!;
 const playfield = document.querySelector<HTMLElement>(".playfield")!;
 /** Wider screens: Undo and End Turn keep the bottom corners, and the bar floats up only to say something. */
 const turnCorner = element("turn-corner");
+const railTurn = element("rail-turn");
 const undoCorner = element("undo-corner");
 const endTurnButton = element<HTMLButtonElement>("end-turn");
 const railToggle = element<HTMLButtonElement>("rail-toggle");
@@ -389,7 +390,7 @@ function paintDock(view: DockView): boolean {
   paintButton(dockSecondary, view.secondary);
   paintFeed();
   // A new question takes the keyboard focus so it is read out and answerable from the keyboard.
-  const pressing = [dock, turnCorner, undoCorner].some((home) => home.contains(document.activeElement));
+  const pressing = [dock, turnCorner, railTurn, undoCorner].some((home) => home.contains(document.activeElement));
   if (asked && !presenting && !pressing) {
     const first = view.options?.length ? dockOptions.querySelector<HTMLElement>("button") : null;
     (first ?? dockTitle).focus({ preventScroll: true });
@@ -3598,6 +3599,16 @@ function layoutHand() {
   placeDock();
 }
 
+/**
+ * End Turn spans the foot of the card panel while the panel is open on a wider screen, and keeps the table's
+ * bottom-right corner while it is folded (Adam, 2026-11-23). On a phone the bar carries it, as before.
+ */
+function placeEndTurn() {
+  const button = element<HTMLButtonElement>("end-turn");
+  const home = roomy.matches && !arena.hasAttribute("data-collapsed") ? railTurn : turnCorner;
+  if (button.parentElement !== home) home.append(button);
+}
+
 /** Undo has the bottom-left corner on a wider screen, opposite End Turn; on a phone it sits in the bar. */
 function placeUndo() {
   const home = roomy.matches ? undoCorner : dockActions;
@@ -3628,6 +3639,7 @@ function setRailCollapsed(collapsed: boolean, remember = true) {
     } catch {
       // Private windows may refuse storage: the choice just lasts this visit.
     }
+  placeEndTurn();
   layoutHand();
 }
 placeUndo();
@@ -3789,6 +3801,7 @@ document.addEventListener("contextmenu", (event) => {
 pinnedCard.querySelector<HTMLButtonElement>(".pinned-close")!.onclick = () => pinCard(null);
 roomy.addEventListener("change", () => {
   placeUndo();
+  placeEndTurn();
   layoutHand();
 });
 new ResizeObserver(layoutHand).observe(turnCorner);
