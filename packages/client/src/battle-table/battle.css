@@ -1585,7 +1585,9 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
   border: 1px solid var(--line);
   border-top: 3px solid var(--outcome-accent);
   border-radius: 16px;
-  background: radial-gradient(120% 70% at 50% 0%, #2a1416 0%, var(--bg-2) 62%);
+  /* The panel's face is its glow layer (.outcome-glow), so the confetti can fly behind it (Adam, 2026-11-23). */
+  --outcome-face: radial-gradient(120% 70% at 50% 0%, #2a1416 0%, var(--bg-2) 62%);
+  background: transparent;
   color: var(--text);
   text-align: center;
   box-shadow:
@@ -1596,7 +1598,7 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
 #game-over[data-victory] {
   --outcome-accent: var(--gold);
   --outcome-glow: #f6c56466;
-  background: radial-gradient(120% 70% at 50% 0%, #3a2c12 0%, var(--bg-2) 64%);
+  --outcome-face: radial-gradient(120% 70% at 50% 0%, #3a2c12 0%, var(--bg-2) 64%);
 }
 #game-over::backdrop {
   background: radial-gradient(circle at 50% 45%, rgb(30 8 10 / 72%), rgb(4 7 12 / 94%) 70%);
@@ -1615,6 +1617,7 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
   z-index: -1;
   overflow: hidden;
   border-radius: inherit;
+  background: var(--outcome-face);
   pointer-events: none;
 }
 .outcome-rays {
@@ -1632,11 +1635,12 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
 #game-over[data-victory] .outcome-rays {
   display: block;
 }
+/* Behind the panel's face (z-index -1), in front of the dimmed table: it bursts out from behind the panel. */
 .outcome-confetti {
   position: absolute;
   left: 50%;
   top: 50%;
-  z-index: 3;
+  z-index: -2;
   width: 100vw;
   height: 100vh;
   translate: -50% -50%;
@@ -1648,8 +1652,8 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
 }
 .confetti-bit {
   position: absolute;
-  top: -16px;
-  left: var(--x);
+  top: 50%;
+  left: 50%;
   width: var(--size);
   height: calc(var(--size) * 0.45);
   opacity: 0;
@@ -1775,7 +1779,7 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
       outcome-spin 24s linear infinite;
   }
   #game-over[open] .confetti-bit {
-    animation: confetti-fall var(--fall) var(--delay) cubic-bezier(0.25, 0.6, 0.45, 1) forwards;
+    animation: confetti-burst var(--fall) var(--delay) linear forwards;
   }
   #game-over[open]:not([data-victory]) {
     animation:
@@ -1838,6 +1842,26 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
   40%,
   80% {
     translate: 5px 0;
+  }
+}
+/* Shot out from the middle, fast then slowing, then falling away and fading. */
+@keyframes confetti-burst {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0) scale(0.6);
+    animation-timing-function: cubic-bezier(0.12, 0.8, 0.3, 1);
+  }
+  28% {
+    opacity: 1;
+    transform: translate(var(--bx), var(--by)) rotate(calc(var(--spin) * 0.35)) scale(1);
+    animation-timing-function: cubic-bezier(0.45, 0, 0.75, 0.6);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--bx) + var(--drift)), calc(var(--by) + 70vh)) rotate(var(--spin)) scale(1);
   }
 }
 @keyframes confetti-fall {

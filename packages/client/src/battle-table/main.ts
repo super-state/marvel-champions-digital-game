@@ -1329,12 +1329,15 @@ function throwConfetti() {
   if (reducedMotion()) return;
   for (let i = 0; i < 110; i++) {
     const bit = make("i", "confetti-bit");
-    const left = Math.random() * 100;
-    bit.style.setProperty("--x", left + "%");
-    bit.style.setProperty("--drift", (Math.random() - 0.5) * 220 + "px");
+    // Shot out from the middle, from behind the panel, in every direction but mostly upward (Adam, 2026-11-23).
+    const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.7;
+    const reach = 22 + Math.random() * 34;
+    bit.style.setProperty("--bx", Math.cos(angle) * reach * 1.25 + "vmin");
+    bit.style.setProperty("--by", Math.sin(angle) * reach + "vmin");
+    bit.style.setProperty("--drift", (Math.random() - 0.5) * 160 + "px");
     bit.style.setProperty("--spin", (Math.random() < 0.5 ? -1 : 1) * (360 + Math.random() * 720) + "deg");
-    bit.style.setProperty("--delay", Math.random() * 1.4 + "s");
-    bit.style.setProperty("--fall", 2.6 + Math.random() * 2 + "s");
+    bit.style.setProperty("--delay", (i < 70 ? Math.random() * 0.15 : 0.35 + Math.random() * 0.25) + "s");
+    bit.style.setProperty("--fall", 2.4 + Math.random() * 1.4 + "s");
     bit.style.setProperty("--size", 6 + Math.random() * 7 + "px");
     bit.style.background = CONFETTI[i % CONFETTI.length]!;
     if (i % 3 === 0) bit.style.borderRadius = "50%";
