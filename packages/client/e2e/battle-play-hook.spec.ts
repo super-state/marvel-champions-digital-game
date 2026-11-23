@@ -32,6 +32,8 @@ test("Claude's play hook reads the table in words and plays a whole round throug
   expect(opening).toContain("Round 1");
   expect(opening).toMatch(/Rhino \(\d+ HP\): SCH \d ATK \d/);
   expect(opening).toContain("Turn bar: Mulligan: Keep your hand?");
+  // The opening is the set-up, not the end of a turn.
+  expect(opening).toContain("Round 1, setup, mulligan.");
   expect(await moves(page)).toContain("Keep hand");
 
   const kept = await play(page, "Keep hand");
@@ -43,6 +45,9 @@ test("Claude's play hook reads the table in words and plays a whole round throug
   const card = (await moves(page)).find((m) => m.startsWith("Play "));
   if (card) {
     await play(page, card);
+    // Peter Parker's Scientist pays under his own name and the ability's, not as a bare "Spider-Man".
+    expect(await moves(page)).toContain("Pay with Peter Parker — Scientist [mental]");
+    expect((await moves(page)).some((m) => m.startsWith("Pay with Spider-Man"))).toBe(false);
     for (let i = 0; i < 8 && (await moves(page)).some((m) => m.startsWith("Pay with ")); i++) {
       const paid = await moves(page);
       if (paid.includes("Play") || paid.includes("Use")) break;
@@ -65,6 +70,7 @@ test("Claude's play hook reads the table in words and plays a whole round throug
 
   // End the turn, then answer the villain phase passively until the next hero phase comes round.
   await play(page, "End Turn");
+  const seen: string[] = [];
   for (let i = 0; i < 30; i++) {
     const text = await look(page);
     if (/Round 2, your turn/.test(text)) break;
@@ -74,6 +80,7 @@ test("Claude's play hook reads the table in words and plays a whole round throug
       await wait(page);
       continue;
     }
+    seen.push(...now);
     const pick =
       now.find((m) => /^(Pass|Don.t defend|Skip|Keep hand|Continue)/.test(m)) ??
       now.find((m) => /^Discard \d/.test(m)) ??
@@ -81,6 +88,8 @@ test("Claude's play hook reads the table in words and plays a whole round throug
       now[0]!;
     await play(page, pick);
   }
+  // Every card the villain phase held up to be read was named, never by its internal id.
+  expect(seen.join(" | ")).not.toMatch(/after reading i\d+\)/);
   const after = await look(page);
   expect(after).toContain("Round 2, your turn");
   await expect(page.locator("#round-label")).toHaveText("Round 2");

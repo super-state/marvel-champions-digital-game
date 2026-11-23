@@ -4041,6 +4041,8 @@ if (import.meta.env.DEV)
       defenseAsked: () => !!defenseQuestionDecline(state.choice),
       picked: () => choicePicks,
       cardFacts: (id) => model.cardFacts(id),
+      cardName: (id) => model.cardName(id),
+      sourceName: (sourceId, cardId) => model.paymentSourceName(sourceId, cardId),
       history: () => story,
       reading: () => (readReveal.hidden ? null : revealFocus),
       doneReading: () => readReveal.click(),
