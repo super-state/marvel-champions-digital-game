@@ -28,8 +28,14 @@ in the engine; the 3D table shows it and sends the player's choices back, it nev
 - The push check (`.githooks/pre-push`) tests only what the change can reach in the game we play (Adam, 2026-11-22:
   the old 2D game isn't played, only its rules and cards are used, and the table plays the core set, Spider-Man
   against Rhino):
-  - any change under `packages/`: the type check, the 3D table's unit tests and its browser tests, three at a time
-    (`.githooks/battle-gate.sh`, about 2½ minutes);
+  - any change under `packages/`: the type check, the 3D table's unit tests and the browser tests the change can
+    affect, three at a time (`.githooks/battle-gate.sh`, about 2½ minutes for all of them). A change to the table's
+    own code (`main.ts`, `table.ts`, `model.ts`, the styles) runs them all; a change only to the controller, the
+    Sound Studio or sounds, the play hook, unit tests or a browser test runs just the matching tests
+    (`.githooks/battle-specs.mjs`, Adam 2026-11-23);
+  - one browser-test run at a time on this PC (Adam, 2026-11-23: several sessions' runs at once made tests time out
+    and browsers crash). A push whose tests would overlap another checkout's waits its turn and says so; that wait
+    is normal, not a hang. A worktree made before 2026-11-23 has the old hooks until it merges the main line;
   - the rules or cards changed (`packages/engine`, `content`, `cards`, or `pnpm-lock.yaml`), first: their type
     check, the core set's card tests, the test beside any other card file changed, and every engine test if the
     engine changed (`.githooks/rules-gate.sh`; about 1 minute more, or 4 with the engine);

@@ -9,7 +9,8 @@
 #   - the rules or cards (`packages/engine/`, `packages/content/`, `packages/cards/`) or `pnpm-lock.yaml`: the tests
 #     of what changed that the game we play can reach, then the 3D table's gate (`.githooks/rules-gate.sh`);
 #   - anything else under `packages/` (the 3D table, the client code it borrows from the old 2D game, other packages):
-#     the 3D table's gate: the type check, its unit tests and its browser tests (`.githooks/battle-gate.sh`).
+#     the 3D table's gate: the type check, its unit tests and the browser tests the change can affect, one run at a
+#     time on this PC (`.githooks/battle-gate.sh`, `.githooks/battle-specs.mjs`).
 # The old 2D game's own browser suite (`pnpm e2e:verify`) is never part of a push (Adam, 2026-11-22: the old game is
 # not played; only its rules and cards are used).
 #
@@ -58,7 +59,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   fi
   case "$gate" in
     none) continue ;;
-    battle) sh "$hooks/battle-gate.sh" "$local_sha" < /dev/null || exit 1 ;;
+    battle) sh "$hooks/battle-gate.sh" "$local_sha" "$base" < /dev/null || exit 1 ;;
     *) sh "$hooks/rules-gate.sh" "$local_sha" "$base" < /dev/null || exit 1 ;;
   esac
 done
