@@ -4062,6 +4062,7 @@ if (import.meta.env.DEV)
       picked: () => choicePicks,
       cardFacts: (id) => model.cardFacts(id),
       cardName: (id) => model.cardName(id),
+      playerFacts: () => model.playerFacts(),
       sourceName: (sourceId, cardId) => model.paymentSourceName(sourceId, cardId),
       history: () => story,
       reading: () => (readReveal.hidden ? null : revealFocus),
