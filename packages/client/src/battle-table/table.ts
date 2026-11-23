@@ -2085,6 +2085,10 @@ export class BattleTable {
     for (const [id, piece] of this.#pieces) {
       if (!this.#flights.has(id)) this.#apply(piece, 1);
     }
+    // Drawn now, in the same frame: resizing the canvas wipes it, and left for the next frame it showed blank for a
+    // frame. The card panel folding or opening resizes it every frame for a quarter of a second, so the table flashed
+    // as if the page were reloading (Adam, 2026-11-23: "seamless ... without having to reload the main screen").
+    this.#render();
     this.#requestFrame();
   };
 

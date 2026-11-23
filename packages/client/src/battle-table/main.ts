@@ -3638,9 +3638,10 @@ try {
 } catch {
   railStored = null;
 }
-// Until it is chosen: a mouse on a smaller screen starts with the panel folded, since hovering a card shows it
-// floating; a touch screen keeps it open, with no hover to bring a folded card up.
-setRailCollapsed(railStored ? railStored === "1" : matchMedia("(hover: hover) and (max-width: 1100px)").matches, false);
+// Every game starts with the panel folded, the table at full width; hovering a card shows it beside itself (Adam,
+// 2026-11-23: "the default load to be with the sidebar collapsed"). Opening it lasts the visit. A touch screen has no
+// hover to bring a folded card up, so there it keeps the last choice, open until chosen.
+setRailCollapsed(matchMedia("(hover: hover)").matches || (railStored ? railStored === "1" : false), false);
 
 /**
  * A folded card panel floats the card whose menu is open over the table's edge on a touch screen (no hover). A
