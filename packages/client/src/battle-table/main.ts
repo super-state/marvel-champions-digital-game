@@ -3612,10 +3612,43 @@ function layoutHand() {
  * End Turn spans the foot of the card panel while the panel is open on a wider screen, and keeps the table's
  * bottom-right corner while it is folded (Adam, 2026-11-23). On a phone the bar carries it, as before.
  */
-function placeEndTurn() {
+let endTurnMove = 0;
+function placeEndTurn(sliding = false) {
   const button = element<HTMLButtonElement>("end-turn");
   const home = roomy.matches && !arena.hasAttribute("data-collapsed") ? railTurn : turnCorner;
-  if (button.parentElement !== home) home.append(button);
+  const move = ++endTurnMove;
+  if (button.parentElement === home) {
+    button.style.opacity = "";
+    return;
+  }
+  if (!sliding || reducedMotion()) {
+    button.style.transition = button.style.opacity = "";
+    home.append(button);
+    return;
+  }
+  // While the card panel slides, End Turn is hidden: moved at once, it rode the widening table and flickered left
+  // then right (Adam, 2026-11-23). Once the panel has settled it moves to its new place and fades quickly in.
+  button.style.transition = "none";
+  button.style.opacity = "0";
+  // When the panel's slide has ended (a backstop timer in case the transition never reports, a hidden tab say).
+  let settled = false;
+  const show = () => {
+    arena.removeEventListener("transitionend", ended);
+    if (settled || move !== endTurnMove) return;
+    settled = true;
+    home.append(button);
+    void button.offsetWidth;
+    button.style.transition = "opacity 140ms ease-out";
+    button.style.opacity = "1";
+    window.setTimeout(() => {
+      if (move === endTurnMove) button.style.transition = button.style.opacity = "";
+    }, 160);
+  };
+  const ended = (event: TransitionEvent) => {
+    if (event.target === arena && event.propertyName === "grid-template-columns") show();
+  };
+  arena.addEventListener("transitionend", ended);
+  window.setTimeout(show, RAIL_SLIDE_MS * 3);
 }
 
 /** Undo has the bottom-left corner on a wider screen, opposite End Turn; on a phone it sits in the bar. */
@@ -3626,6 +3659,8 @@ function placeUndo() {
 
 // The card panel folds away completely; a card being read then floats over the table's edge instead.
 const RAIL_KEY = "battle-sidebar-collapsed";
+/** How long the card panel takes to slide open or shut (`.arena`'s grid transition in battle.css). */
+const RAIL_SLIDE_MS = 240;
 function paintRailToggle() {
   const collapsed = arena.hasAttribute("data-collapsed");
   const left = arena.dataset.rail === "left";
@@ -3648,7 +3683,7 @@ function setRailCollapsed(collapsed: boolean, remember = true) {
     } catch {
       // Private windows may refuse storage: the choice just lasts this visit.
     }
-  placeEndTurn();
+  placeEndTurn(remember);
   layoutHand();
 }
 placeUndo();
