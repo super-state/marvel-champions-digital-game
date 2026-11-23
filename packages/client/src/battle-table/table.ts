@@ -2288,7 +2288,10 @@ export class BattleTable {
     const enemyCardWidth = Math.min(w * 0.117, h * 0.145);
     // The schemes stand a set gap left of the villain (and any cards under it), however wide the screen.
     const villainLeft = w * 0.5 - villainWidth * (0.5 + TAB * villainTabs);
-    const schemeX = Math.max(w * 0.255, villainLeft - enemyCardWidth * (0.45 + HEIGHT / 2));
+    // One gap between neighbours in the villain's row, schemes and minions alike, upright or sideways (Adam,
+    // 2026-11-23: "every card, when placed on a row, has the same gap regardless of what it is").
+    const rowGap = enemyCardWidth * 0.45;
+    const schemeX = Math.max(w * 0.255, villainLeft - rowGap - (enemyCardWidth * HEIGHT) / 2);
     const schemeElevation = 0.05;
     const schemeOrigin = this.#point(schemeX, enemyRow, schemeElevation);
     const schemeScale = this.#point(schemeX + enemyCardWidth, enemyRow, schemeElevation).x - schemeOrigin.x;
@@ -2356,11 +2359,19 @@ export class BattleTable {
       ).x;
       // Each minion takes a card-sized slot from the villain outwards; room to spare is left at the far end.
       const slotWidth = Math.min((right - left) / rowEnemies.length, enemyCardWidth * 1.5);
-      rowEnemies.forEach((card, i) => {
+      const sized = rowEnemies.map((card) => {
         const tabs = state.enemyCards.filter((c) => c.attachedTo === card.id).length;
         const footprint = (card.landscape ? HEIGHT : 1) + TAB * tabs;
         const width = Math.min(enemyCardWidth, Math.max(1, slotWidth * 0.78) / footprint);
-        const center = left + (i + 0.5) * slotWidth;
+        return { card, tabs, width, across: width * footprint };
+      });
+      // The same gap as the schemes keep on the villain's other side, while the row fits; a crowded row shares out
+      // what room there is instead.
+      const fits = sized.reduce((total, { across }) => total + across + rowGap, 0) <= right - left;
+      let cursor = left + rowGap;
+      sized.forEach(({ card, tabs, width, across }, i) => {
+        const center = fits ? cursor + across / 2 : left + (i + 0.5) * slotWidth;
+        cursor += across + rowGap;
         const x = center + (width * TAB * tabs) / 2;
         const { left: cardLeft, right: cardRight } = bounds(card, x, enemyRow, width, tabs);
         const perspectiveOffset = (cardLeft + cardRight) / 2 - x;
