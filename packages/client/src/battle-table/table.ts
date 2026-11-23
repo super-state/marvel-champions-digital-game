@@ -177,6 +177,10 @@ export interface HandLayout {
   readonly sunk: boolean;
 }
 export const INTERRUPT_MS = 440;
+/** How long a card under an enemy stays drawn out to its side when it activates, its damage landing on it. */
+const DRAWN_OUT_MS = 2600;
+/** Its shine waits this long, for it to come out from under first. */
+const DRAW_OUT_LEAD_MS = 260;
 /** A When Revealed firing: rise, flash, hold, settle. */
 export const ACTIVATION_MS = 1000;
 export const HIT_CONTACT_MS = 235;
@@ -1138,11 +1142,16 @@ export class BattleTable {
         }`,
     }),
   );
+  /** Cards under an enemy drawn out to its side, until when, and how far out they are now (0 to 1). */
+  readonly #drawnOut = new Map<string, number>();
+  readonly #out = new Map<string, number>();
   #interrupt: {
     piece: Piece;
     start: number;
     lift: number;
     activation?: { flashed: boolean };
+    /** A card under an enemy, drawn out to the side to shine: no rise and no smoke. */
+    aside?: boolean;
     /** A card just played (`shinePlayed`): no rise and no smoke, a stretch it is put back from each frame. */
     shine?: { flashed: boolean; stretch: number };
   } | null = null;
@@ -1160,6 +1169,20 @@ export class BattleTable {
     const piece = this.#pieces.get(id);
     if (!piece) return;
     if (this.#interrupt) this.#interrupt.piece.root.position.y -= this.#interrupt.lift;
+    // A card under an enemy (Armored Rhino Suit taking Rhino's damage) can't rise or smoke: it came up through the
+    // villain. It slides out to the side clear of him, shines there and stays out while what it does lands (the damage
+    // goes onto it), then slides back under (Adam, 2026-11-23: "we don't want things to pop up through them").
+    const underEnemy = this.#tucked.has(id) && !!this.#state?.enemyCards.some((card) => card.id === id);
+    if (underEnemy) {
+      this.#drawnOut.set(id, performance.now() + DRAWN_OUT_MS);
+      this.#interruptSheen.geometry = piece.face.geometry;
+      this.#interruptSheen.position.z = 0.028;
+      piece.root.add(this.#interruptSheen);
+      this.#interruptPuff.removeFromParent();
+      this.#interrupt = { piece, start: performance.now() + DRAW_OUT_LEAD_MS, lift: 0, aside: true };
+      this.#requestFrame();
+      return;
+    }
     this.#interruptSheen.geometry = piece.face.geometry;
     this.#interruptSheen.position.z = 0.028;
     piece.root.add(this.#interruptSheen);
@@ -2308,7 +2331,13 @@ export class BattleTable {
     const leftEdge = Math.max(w * 0.035, w * 0.5 - pileSpread - encounterWidth * 0.75);
     const leftmost = this.#point(leftEdge, enemyRow, schemeElevation).x + (schemeScale * HEIGHT) / 2;
     const roomFor = Math.max(1, Math.floor((schemeOrigin.x - leftmost) / schemeColumn) + 1);
-    const schemeColumns = Math.min(roomFor, Math.max(1, Math.ceil(schemes.length / 2)));
+    // Three or more always make a block of two columns, even where that reaches past the left edge above: the table
+    // widens a little to fit them, rather than standing them in one tall column (Adam, 2026-11-23: "extend the map a
+    // little bit ... and create two rows").
+    const schemeColumns = Math.min(
+      Math.max(roomFor, schemes.length >= 3 ? 2 : 1),
+      Math.max(1, Math.ceil(schemes.length / 2)),
+    );
     schemes.forEach((card, i) => {
       const position = schemeOrigin.clone();
       position.x -= (i % schemeColumns) * schemeColumn;
@@ -2332,10 +2361,6 @@ export class BattleTable {
     const rowBeforeWaiting = this.#rowBeforeWaiting;
     const asideEnemies = rowBeforeWaiting ? otherEnemies.filter((card) => !rowBeforeWaiting.has(card.id)) : [];
     const rowEnemies = otherEnemies.filter((card) => !asideEnemies.includes(card));
-    asideEnemies.forEach((card, i) => {
-      const width = enemyCardWidth * 0.85;
-      poseEnemy(card, w * WAITING_X + width * (0.2 + i * 1.2), h * 0.4, width);
-    });
     if (rowEnemies.length) {
       const bounds = (card: TableCard, x: number, y: number, width: number, tabs: number) => {
         const elevation = 0.05 + tabs * 0.035;
@@ -2357,34 +2382,94 @@ export class BattleTable {
         0.025,
         encounterGoal.position.z,
       ).x;
-      // Each minion takes a card-sized slot from the villain outwards; room to spare is left at the far end.
-      const slotWidth = Math.min((right - left) / rowEnemies.length, enemyCardWidth * 1.5);
-      const sized = rowEnemies.map((card) => {
+      const footprintOf = (card: TableCard) => {
         const tabs = state.enemyCards.filter((c) => c.attachedTo === card.id).length;
-        const footprint = (card.landscape ? HEIGHT : 1) + TAB * tabs;
-        const width = Math.min(enemyCardWidth, Math.max(1, slotWidth * 0.78) / footprint);
-        return { card, tabs, width, across: width * footprint };
-      });
-      // The same gap as the schemes keep on the villain's other side. A crowded row shrinks its cards a little to
-      // keep that gap, and only past that shares out what room there is.
-      const cards = sized.reduce((total, { across }) => total + across, 0);
-      const shrink = Math.min(1, (right - left - rowGap * (sized.length + 1)) / cards);
-      const fits = shrink >= 0.7;
-      if (fits && shrink < 1)
-        for (const one of sized) {
-          one.width *= shrink;
-          one.across *= shrink;
-        }
-      let cursor = left + rowGap;
-      sized.forEach(({ card, tabs, width, across }, i) => {
-        const center = fits ? cursor + across / 2 : left + (i + 0.5) * slotWidth;
-        cursor += across + rowGap;
-        const x = center + (width * TAB * tabs) / 2;
-        const { left: cardLeft, right: cardRight } = bounds(card, x, enemyRow, width, tabs);
-        const perspectiveOffset = (cardLeft + cardRight) / 2 - x;
-        poseEnemy(card, x - perspectiveOffset, enemyRow, width);
-      });
+        return { tabs, footprint: (card.landscape ? HEIGHT : 1) + TAB * tabs };
+      };
+      const fullRoom = (cards: readonly TableCard[]) =>
+        cards.reduce((total, card) => total + enemyCardWidth * footprintOf(card).footprint, 0) +
+        rowGap * (cards.length + 1);
+      // Too many for one row at full size: they fill a second row above it, level with the schemes' second row on
+      // the villain's other side, before any of them shrinks (Adam, 2026-11-23: "use the space above as well ...
+      // like we do for schemes").
+      const twoRows = rowEnemies.length > 1 && fullRoom(rowEnemies) > right - left;
+      const near = twoRows ? rowEnemies.slice(0, Math.ceil(rowEnemies.length / 2)) : rowEnemies;
+      const far = twoRows ? rowEnemies.slice(near.length) : [];
+      const upper = schemeOrigin.clone();
+      upper.z -= schemeStep;
+      const upperRow = (1 - upper.project(this.#camera).y) * this.#canvasHeight * 0.5 - this.#extension;
+      const layRow = (row: readonly TableCard[], rowY: number) => {
+        // Each minion takes a card-sized slot from the villain outwards; room to spare is left at the far end.
+        const slotWidth = Math.min((right - left) / row.length, enemyCardWidth * 1.5);
+        const sized = row.map((card) => {
+          const { tabs, footprint } = footprintOf(card);
+          const width = Math.min(enemyCardWidth, Math.max(1, slotWidth * 0.78) / footprint);
+          return { card, tabs, width, across: width * footprint };
+        });
+        // The same gap as the schemes keep on the villain's other side. A crowded row shrinks its cards a little to
+        // keep that gap, and only past that shares out what room there is.
+        const cards = sized.reduce((total, { across }) => total + across, 0);
+        const shrink = Math.min(1, (right - left - rowGap * (sized.length + 1)) / cards);
+        const fits = shrink >= 0.7;
+        if (fits && shrink < 1)
+          for (const one of sized) {
+            one.width *= shrink;
+            one.across *= shrink;
+          }
+        let cursor = left + rowGap;
+        sized.forEach(({ card, tabs, width, across }, i) => {
+          const center = fits ? cursor + across / 2 : left + (i + 0.5) * slotWidth;
+          cursor += across + rowGap;
+          const x = center + (width * TAB * tabs) / 2;
+          const { left: cardLeft, right: cardRight } = bounds(card, x, rowY, width, tabs);
+          const perspectiveOffset = (cardLeft + cardRight) / 2 - x;
+          poseEnemy(card, x - perspectiveOffset, rowY, width);
+        });
+      };
+      layRow(near, enemyRow);
+      if (far.length) layRow(far, upperRow);
     }
+    // Encounter cards dealt facedown before the villain phase lie right of the middle, on the open mat. Where cards in
+    // play already stand there (a row of minions), they lie in the first clear spot further down instead, never on
+    // top of or inside a card (Adam, 2026-11-23: "just play it in a nearby space").
+    const waitingCount = [...this.#encounters.values()].filter(
+      (card) => card.id !== this.#revealing && !this.#parked.has(card.id) && !card.boostFor,
+    ).length;
+    const waitingWidth = waitingCardWidth(w, h);
+    const standing = rowEnemies.flatMap((card) => {
+      const pose = enemyPoses.get(card.id);
+      if (!pose) return [];
+      const across = pose.width * (card.landscape ? HEIGHT : 1);
+      const tall = pose.width * (card.landscape ? 1 : HEIGHT) * 0.85;
+      // With room below for its health label.
+      return [
+        { left: pose.x - across / 2, right: pose.x + across / 2, top: pose.y - tall / 2, bottom: pose.y + tall * 0.75 },
+      ];
+    });
+    const waitingAt = (y: number) => ({
+      left: w * WAITING_X - waitingWidth / 2,
+      right: w * (WAITING_X + Math.max(0, Math.min(3, waitingCount) - 1) * 0.034) + waitingWidth / 2,
+      top: y - waitingWidth * HEIGHT * 0.45,
+      bottom: y + waitingWidth * HEIGHT * 0.45,
+    });
+    const overlap = (a: ReturnType<typeof waitingAt>) =>
+      standing.reduce(
+        (total, b) =>
+          total +
+          Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) *
+            Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)),
+        0,
+      );
+    const waitingY = !waitingCount
+      ? h * 0.26
+      : [0.26, 0.34, 0.42, 0.5]
+          .map((share) => h * share)
+          .reduce((best, y) => (overlap(waitingAt(y)) < overlap(waitingAt(best)) ? y : best));
+    // A minion that comes out while they wait stands just below them.
+    asideEnemies.forEach((card, i) => {
+      const width = enemyCardWidth * 0.85;
+      poseEnemy(card, w * WAITING_X + width * (0.2 + i * 1.2), waitingY + h * 0.14, width);
+    });
     let waiting = 0;
     // Where the revealed card stands on screen while it is held up, so a card being paid for keeps clear of it.
     let revealRect: { x: number; y: number; halfWidth: number; halfHeight: number } | null = null;
@@ -2443,7 +2528,7 @@ export class BattleTable {
         this.#pose(
           card.id,
           w * (WAITING_X + (waiting++ % 3) * 0.034),
-          h * 0.26,
+          waitingY,
           waitingCardWidth(w, h),
           0.07 + waiting * 0.045,
           flat,
@@ -2718,7 +2803,9 @@ export class BattleTable {
     // A revealed card asking the player to pick cards on the table steps aside, clear of them (`revealAside`).
     // Worked out once per question and screen size, then held: a pick lifted under the pointer grows a little, and
     // the card must not twitch with it.
-    if (revealPose && revealRect && state.targets.length) {
+    // Not while it only waits to be read: Breakin' & Takin', brought in by Rhino's second stage in the hero phase,
+    // stood off to the left for the cards the player could pick before it came up (Adam, 2026-11-23).
+    if (revealPose && revealRect && state.targets.length && !this.#revealHeld) {
       const key = `${revealPose.id}|${state.targets.join(",")}|${w}x${h}|${this.#question}|${this.#hand.sunk}`;
       const reveal = revealRect as { x: number; y: number; halfWidth: number; halfHeight: number };
       if (this.#aside?.key !== key) {
@@ -2824,6 +2911,35 @@ export class BattleTable {
 
   #equipPose(piece: Piece, from: Pose, progress: number): void {
     const { root, target } = piece;
+    const enemyHost =
+      piece.card.attachedTo && this.#state!.enemyCards.some((c) => c.id === piece.card.id)
+        ? this.#pieces.get(piece.card.attachedTo)
+        : undefined;
+    if (enemyHost) {
+      // An attachment going under the villain (Armored Rhino Suit): one arc from where it was revealed to the table
+      // just past the villain's left edge, then a flat slide in under him, like a boost card. Swept round the side
+      // and dropped there, it crossed in front of him and seemed to slip through him (Adam, 2026-11-23).
+      const { fly, hop, slide } = tuckPath(progress);
+      const host = enemyHost.target;
+      const landing = TUCK_LANDING.copy(target.position);
+      landing.x = Math.min(
+        target.position.x,
+        host.position.x - (host.scale + target.scale) * 0.5 - target.scale * 0.08,
+      );
+      if (slide > 0) root.position.lerpVectors(landing, target.position, slide);
+      else {
+        root.position.lerpVectors(from.position, landing, fly);
+        const distance = Math.hypot(landing.x - from.position.x, landing.z - from.position.z);
+        root.position.y += hop * Math.max(0.7, distance * 0.18);
+      }
+      root.rotation.set(
+        THREE.MathUtils.lerp(from.pitch, target.pitch, fly),
+        0,
+        THREE.MathUtils.lerp(from.roll, target.roll, fly),
+      );
+      root.scale.setScalar(THREE.MathUtils.lerp(from.scale, target.scale, fly));
+      return;
+    }
     const sweep = THREE.MathUtils.smoothstep(progress, 0, 0.43);
     const lower = THREE.MathUtils.smoothstep(progress, 0.38, 0.68);
     const slide = THREE.MathUtils.smoothstep(progress, 0.68, 1);
@@ -3233,6 +3349,20 @@ export class BattleTable {
       else this.#fan.delete(id);
       if (fan !== fanGoal) moving = true;
     }
+    // A card under an enemy that activates slides out clear of it and back (see `pulseInterrupt`).
+    for (const [id, until] of this.#drawnOut) {
+      const goal = now < until && this.#tucked.has(id) ? 1 : 0;
+      const was = this.#out.get(id) ?? 0;
+      const out = this.#reduced.matches
+        ? goal
+        : Math.abs(goal - was) < 0.004
+          ? goal
+          : was + (goal - was) * Math.min(1, dt * 9);
+      if (out) this.#out.set(id, out);
+      else this.#out.delete(id);
+      if (!out && !goal) this.#drawnOut.delete(id);
+      else moving = true;
+    }
     // Use the host's rendered pose, including the lift and roll between animation frames.
     for (const [id, { host, depth }] of this.#tucked) {
       const parent = this.#pieces.get(host)?.root;
@@ -3267,9 +3397,10 @@ export class BattleTable {
         this.#frameQuaternion.setFromEuler(angle);
         frame.compose(this.#framePosition, this.#frameQuaternion, this.#frameScale);
       }
-      piece.target.position
-        .set(...attachmentFanOffset(-TAB * depth, STAGGER * depth, fan), -0.006 * depth)
-        .applyMatrix4(frame);
+      const [fanX, fanY] = attachmentFanOffset(-TAB * depth, STAGGER * depth, fan);
+      // Drawn out, it clears the host's left edge by a little, flat on the mat, nowhere near rising through it.
+      const outX = (1 - TAB * depth + 0.08) * (this.#out.get(id) ?? 0);
+      piece.target.position.set(fanX - outX, fanY, -0.006 * depth).applyMatrix4(frame);
       piece.target.scale = this.#frameScale.x;
       if (!hostLifted) {
         piece.target.pitch = parent.rotation.x;
@@ -3387,7 +3518,7 @@ export class BattleTable {
         : Math.sin(Math.PI * t) ** 2;
       // A revealed card already held up full size near the camera rises only a little, or it would leave the screen.
       const rises = pulse.activation ? (pulse.piece.card.id === this.#revealing ? 0.18 : 0.9) : 0.12;
-      pulse.lift = this.#reduced.matches || pulse.shine ? 0 : pulse.piece.root.scale.x * rises * rise;
+      pulse.lift = this.#reduced.matches || pulse.shine || pulse.aside ? 0 : pulse.piece.root.scale.x * rises * rise;
       if (pulse.shine && !this.#reduced.matches) {
         // Up a touch along its length and back, easing out, as the light crosses it.
         pulse.shine.stretch = 1 + 0.05 * Math.sin(Math.PI * THREE.MathUtils.smoothstep(t, 0, 0.75));
@@ -3496,8 +3627,11 @@ export class BattleTable {
     if (held && state.hand.some((card) => card.id === held) && !state.selected.includes(held)) add(held);
     this.#frontPick = new Set(ids);
     // A card let go stays in front until it is back in its place, so it never cuts through a neighbour on the way.
+    // Not one going under another card (Armored Rhino Suit): drawn over everything, it covered the villain all the way
+    // in, then vanished under him (Adam, 2026-11-23: "clips through him").
     for (const id of this.#frontIds) {
       const piece = this.#pieces.get(id);
+      if (this.#tucked.has(id)) continue;
       if (!ids.has(id) && piece && piece.root.position.distanceTo(piece.target.position) > piece.target.scale * 0.01)
         ids.add(id);
     }

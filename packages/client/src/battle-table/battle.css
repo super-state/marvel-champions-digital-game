@@ -830,9 +830,12 @@ button:focus-visible {
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  -webkit-text-stroke: 0.08em #420a07;
-  paint-order: stroke fill;
-  filter: drop-shadow(0 4px 0 #420a07) drop-shadow(0 10px 16px #000b);
+  /* A thin outline outside the letters, like the floating numbers: a text stroke is drawn over see-through letters
+     and ate into them, so the hit's number looked heavy and dark (Adam, 2026-11-23). */
+  --shade: #420a07;
+  -webkit-text-stroke: 0;
+  filter: drop-shadow(1.5px 0 0 var(--shade)) drop-shadow(-1.5px 0 0 var(--shade)) drop-shadow(0 1.5px 0 var(--shade))
+    drop-shadow(0 -1.5px 0 var(--shade)) drop-shadow(0 4px 0 var(--shade)) drop-shadow(0 10px 16px #000b);
 }
 #impact small {
   margin-top: 2px;
@@ -892,8 +895,9 @@ button:focus-visible {
   background: linear-gradient(180deg, #f2fdff 12%, #a8ecff 60%, #49c6dd 100%);
   -webkit-background-clip: text;
   background-clip: text;
-  -webkit-text-stroke-color: #062833;
-  filter: drop-shadow(0 3px 0 #062833) drop-shadow(0 8px 14px #000b);
+  --shade: #062833;
+  filter: drop-shadow(1.5px 0 0 var(--shade)) drop-shadow(-1.5px 0 0 var(--shade)) drop-shadow(0 1.5px 0 var(--shade))
+    drop-shadow(0 -1.5px 0 var(--shade)) drop-shadow(0 3px 0 var(--shade)) drop-shadow(0 8px 14px #000b);
 }
 #impact[data-blocked="true"]::before,
 #impact[data-blocked="true"]::after {

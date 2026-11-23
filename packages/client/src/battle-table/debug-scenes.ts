@@ -95,6 +95,45 @@ const SCENES: Record<string, Scene> = {
   robbery: {
     encounterTop: ["01110", "01166"],
   },
+  /** End the turn: Armored Rhino Suit comes up and attaches to Rhino, sliding in under him. */
+  rhinosuit: {
+    encounterTop: ["01110", "01098"],
+  },
+  /** Four minions out: too many for one row, so they fill a second row above it before shrinking. */
+  minions4: {
+    minions: [{ code: "01101" }, { code: "01102" }, { code: "01103" }, { code: "01110" }],
+  },
+  /** Three minions out and an encounter card dealt early: it waits in the first clear spot, not on a minion. */
+  dealtcrowd: {
+    hero: { form: "alterEgo" },
+    mainThreat: 0,
+    minions: [{ code: "01110" }, { code: "01102" }, { code: "01103" }],
+    dealt: ["01166"],
+  },
+  /** Adam's round 9: two side schemes beside the main one, three cards under Rhino, two minions. */
+  latewide: {
+    hero: { form: "hero" },
+    schemes: [
+      { code: "01107", threat: 3 },
+      { code: "01109", threat: 3 },
+    ],
+    villainAttachments: [{ code: "01099" }, { code: "01100" }],
+    minions: [{ code: "01110" }, { code: "01102" }],
+  },
+  /** Three minions out, as Adam had them (Sandman, Vulture, Hydra Mercenary). */
+  minions3: {
+    minions: [{ code: "01110" }, { code: "01102" }, { code: "01103" }],
+  },
+  /** Rhino one hit from his second stage: attack him and it brings in Breakin' & Takin', held up in the middle. */
+  stagetwo: {
+    hero: { form: "hero" },
+    villain: { damage: 12 },
+  },
+  /** Armored Rhino Suit on Rhino: attack him and the suit slides out from under him to take the damage. */
+  suit: {
+    hero: { form: "hero" },
+    villainAttachments: [{ code: "01098" }],
+  },
   /** Highway Robbery in play with Genius under it: thwart it (1 threat) to get the card back. */
   robbed: {
     hero: { form: "hero" },
