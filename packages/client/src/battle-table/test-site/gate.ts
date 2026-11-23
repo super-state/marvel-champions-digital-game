@@ -1,12 +1,12 @@
 /**
- * The invite-only lock on the 3D table's test site (`wrangler.table.jsonc`, the Worker `mc-table-test`), where a friend
- * plays a shipped version (0.0.1, 0.0.2...) while Adam builds the next one on his own PC.
+ * The invite-only lock on the 3D table's test site (https://champions-table.pages.dev, `wrangler.table.jsonc`), where a
+ * friend plays a shipped version (0.0.1, 0.0.2...) while Adam builds the next one on his own PC.
  *
- * `run_worker_first: true` sends every request here before any static file, so a card scan or script is locked too,
+ * Shipped as Pages' `_worker.js`, it sees every request before any static file, so a card scan or script is locked too,
  * not only the page. A friend opens the invite link once (`/join/<key>`); that leaves a cookie holding the key and
  * lands them on the table. After that the site works like any other. Without the cookie, every address answers 403.
  *
- * The key is the Worker secret `INVITE_KEY` (`wrangler secret put INVITE_KEY -c packages/client/wrangler.table.jsonc`).
+ * The key is the Pages secret `INVITE_KEY` (`wrangler pages secret put INVITE_KEY --project-name champions-table`).
  * Changing it locks out every invite link handed out so far.
  */
 
