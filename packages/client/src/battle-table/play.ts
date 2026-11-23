@@ -95,13 +95,34 @@ const ALTER_EGO_ONLY = /\bAlter-Ego (?:Action|Interrupt|Response|Resource)\b|\bA
  * its rules text so it holds for every card: which form, and whether that is the form the player is in now. The table
  * already refuses the wrong form; this only says so in words, so a player reading the text plans with it.
  */
-export function formOnlyNote(facts: string, form: "hero" | "alterEgo"): string | null {
+export function formOnlyNote(
+  facts: string,
+  form: "hero" | "alterEgo",
+  /** Where the card is: an event in the hand, another card in the hand (it stays in play), or a card in play. */
+  spot: "eventInHand" | "cardInHand" | "inPlay" = "eventInHand",
+): string | null {
   const hero = HERO_ONLY.test(facts);
   const alterEgo = ALTER_EGO_ONLY.test(facts);
   if (hero === alterEgo) return null;
   const needs = hero ? "hero" : "alterEgo";
   const words = hero ? "hero form only" : "alter-ego form only";
-  return needs === form ? words : `${words}: not usable now, except to pay with`;
+  if (needs === form) return words;
+  if (spot === "inPlay") return `${words}: not usable now`;
+  // "Hero form only" on the card itself keeps it in the hand; "Hero Resource:" or "Alter-Ego Action:" on a card that
+  // stays in play only limits its ability, so it can still be played now (Web-Shooter, Aunt May).
+  if (spot === "cardInHand" && !/\b(?:Hero|Alter-Ego) form only\b/i.test(facts))
+    return `its ability is ${words}; the card can still be played now`;
+  return `${words}: not usable now, except to pay with`;
+}
+
+/**
+ * A move that a status card will cancel: an attack while the one making it is stunned, a thwart while it is confused
+ * (Rules Reference v1.8, as the engine has it). Said on the move itself, so it can't be missed when choosing.
+ */
+export function statusWarning(statuses: ReadonlySet<string>, move: "attack" | "thwart" | null): string | null {
+  if (move === "attack" && statuses.has("stunned")) return "stunned: this only discards the stun";
+  if (move === "thwart" && statuses.has("confused")) return "confused: this only discards the confusion";
+  return null;
 }
 
 /** What each status card does, as the Rules Reference (v1.8) and the engine have it. */
@@ -137,7 +158,16 @@ export function createPlayer(hooks: PlayHooks): Player {
     for (const marker of card.markers) bits.push(`${marker.name} ${marker.count}`);
     if (card.exhausted) bits.push("exhausted");
     const facts = hooks.cardFacts(card.id);
-    const formNote = card.id === hooks.state().hero.id ? null : formOnlyNote(facts, hooks.playerFacts().form);
+    const state = hooks.state();
+    const inHand = state.hand.some((c) => c.id === card.id);
+    const formNote =
+      card.id === state.hero.id
+        ? null
+        : formOnlyNote(
+            facts,
+            hooks.playerFacts().form,
+            inHand ? (card.type === "event" ? "eventInHand" : "cardInHand") : "inPlay",
+          );
     if (formNote) bits.push(formNote);
     return `- ${card.name}${bits.length ? ` (${bits.join(", ")})` : ""}${facts ? `: ${facts}` : ""}`;
   }
@@ -167,6 +197,14 @@ export function createPlayer(hooks: PlayHooks): Player {
       const listed = new Set((dock.options ?? []).map((option) => option.id));
       const picked = hooks.picked();
       const cards = new Set<string>();
+      // Two cards of the same name in one question (two Hydra Mercenaries): told apart by what's left of them.
+      const named = new Map<string, number>();
+      for (const option of choice.options)
+        if (option.cardId) named.set(name(option.cardId), (named.get(name(option.cardId)) ?? 0) + 1);
+      const tell = (cardId: string) => {
+        const card = cardById(cardId);
+        return (named.get(name(cardId)) ?? 0) > 1 && card?.hp !== undefined ? ` (${card.hp} HP left)` : "";
+      };
       for (const option of choice.options) {
         if (!option.cardId || listed.has(option.id) || cards.has(option.cardId)) continue;
         cards.add(option.cardId);
@@ -176,7 +214,7 @@ export function createPlayer(hooks: PlayHooks): Player {
             ? `${picked.has(option.id) ? "Unpick" : "Pick"} ${name(option.cardId)}`
             : choice.defense
               ? `Defend with ${name(option.cardId)}`
-              : `Choose ${option.label}`,
+              : `Choose ${option.label}${tell(option.cardId)}`,
           run: () => hooks.pick(option.cardId!),
         });
       }
@@ -192,20 +230,36 @@ export function createPlayer(hooks: PlayHooks): Player {
 
     // Your turn: play a card from your hand, or use a power.
     if (hooks.powersReady()) {
+      const statusesOf = (card: BattleCard) =>
+        new Set(card.markers.filter((m) => m.count > 0).map((m) => m.name.toLowerCase()));
+      const heroStatuses = statusesOf(state.hero);
+      const warn = (statuses: ReadonlySet<string>, move: "attack" | "thwart" | null) => {
+        const warning = statusWarning(statuses, move);
+        return warning ? ` — ${warning}` : "";
+      };
+      const kindOfText = (text: string) =>
+        /\((?:[^)]*\b)?attack\b/i.test(text) ? "attack" : /\((?:[^)]*\b)?thwart\b/i.test(text) ? "thwart" : null;
+      const kindOfLabel = (label: string) =>
+        /^attack$/i.test(label) ? "attack" : /^thwart$/i.test(label) ? "thwart" : null;
       for (const card of state.hand)
         if (card.playable && !card.requiresHeroForm)
           out.push({
-            label: `Play ${card.name}${card.cost !== null ? ` (cost ${card.cost})` : ""}`,
+            label:
+              `Play ${card.name}${card.cost !== null ? ` (cost ${card.cost})` : ""}` +
+              (card.type === "event" ? warn(heroStatuses, kindOfText(hooks.cardFacts(card.id))) : ""),
             run: () => hooks.pick(card.id),
           });
       for (const action of state.heroActions)
         out.push({
-          label: `${state.hero.name}: ${action.label}`,
+          label: `${state.hero.name}: ${action.label}${warn(heroStatuses, kindOfLabel(action.label))}`,
           run: () => hooks.useAction(state.hero.id, action.kind),
         });
       for (const card of state.inPlay)
         for (const action of hooks.fieldActions(card.id))
-          out.push({ label: `${card.name}: ${action.label}`, run: () => hooks.useAction(card.id, action.kind) });
+          out.push({
+            label: `${card.name}: ${action.label}${warn(statusesOf(card), kindOfLabel(action.label))}`,
+            run: () => hooks.useAction(card.id, action.kind),
+          });
     }
 
     for (const button of [dock.primary, dock.secondary])

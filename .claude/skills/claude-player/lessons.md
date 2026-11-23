@@ -7,12 +7,15 @@ cards work in one form only, what each status does and the hand limit.
 
 ## Playbook
 
-### Spider-Man vs Rhino (core set, Spider-Man's Justice deck) — 1 win, 4 losses
+### Spider-Man vs Rhino (core set, Spider-Man's Justice deck) — 1 win, 5 losses
 
-- **The last 7 HP of Rhino's second stage is where games are decided.** Games 3, 4 and 5 all had Rhino's second
-  stage on 7 by round 5-8. The one win came from allies on the table adding the last points (Kick 8 + Daredevil 2 +
-  Mockingbird 1). The losses had no allies out and spent every Kick, then drew only resources. Keep 1-2 cheap
-  allies alive into that stretch and hold one Kick for the finish. `seen 3×`
+- **The last 7 HP of Rhino's second stage is where games are decided.** Games 3-6 all had Rhino's second stage on
+  7 by round 5-8; in game 6 Hard to Keep Down then healed him back to 11 twice. The one win came from allies on the
+  table adding the last points (Kick 8 + Daredevil 2 + Mockingbird 1). Keep 1-2 cheap allies alive into that
+  stretch, hold one Kick for the finish, and keep Enhanced Spider-Sense for Hard to Keep Down. `seen 4×`
+- **Two Kicks in one turn is possible but needs planning.** It came together once in six games (game 6, round 7):
+  Genius (counts 2) plus a Spider-Sense draw made the 6 resources. Hold Genius, Strength or Energy for that turn,
+  and take Rhino's hit undefended the phase before so Spider-Sense draws. `seen 1×`
 - **Count lethal before anything else.** Every turn, add basic + events + every ally's attack against Rhino's HP
   (and the Armored Rhino Suit's 5, Toughness, any Guard minion) before planning defence. `seen 2×`
 - **The Break-In! is what loses, and it jumps 3-6 in one villain phase.** All four losses were the main scheme
@@ -29,8 +32,8 @@ cards work in one form only, what each status does and the hand limit.
   heals (Recover, then flip back before the next big phase). With a scheming minion out, Peter loses to the scheme.
   `seen 5×`
 - **Rhino's second stage piles up fast.** One villain phase can bring Toughness, Hard to Keep Down (+4 HP; cancel it
-  with Enhanced Spider-Sense), a Guard minion, Charge (7-10 ATK, overkill), Armored Rhino Suit, the nemesis. Two Kicks
-  in one turn never came together in five games (6 resources from a 5-card hand). `seen 4×`
+  with Enhanced Spider-Sense), a Guard minion, Charge (7-10 ATK, overkill), Armored Rhino Suit, the nemesis (whose
+  Sweeping Swoop stuns). `seen 5×`
 - **Rhino hits hard.** Stage 2 or with Charge, expect 5-10 from one attack, plus Assault, Stampede or Gang-Up
   attacking again. Hold Backflip, a ready Spider-Man, a stun or an ally. Allies can't block Charge attacks
   (overkill). `seen 5×`
@@ -46,17 +49,22 @@ cards work in one form only, what each status does and the hand limit.
 ### Driving the hook
 
 - Pick moves from `moves()` labels only; a look's text starts with the move just made. `seen 1×`
-- Several cards can wait to be read at once: loop on "Continue (after …" before a planned sequence. `seen 2×`
+- Several cards can wait to be read at once: loop on "Continue (after …" before a planned sequence. `seen 3×`
+- When a scripted sequence prints only part of the look, it hides new statuses: print the whole look after every
+  villain phase. Game 6's winning double Kick fizzled on a stun that the look did show. `seen 1×`
 - An action ability that costs resources (Tenacity) ends with a "Use" move after paying, not "Play". `seen 1×`
 
 ## Try next
 
-- Don't spend a Kick on Rhino's first stage; finish it with basics and allies, and keep both Kicks for stage 2.
+- Set up the double Kick again (hold a double resource, let Spider-Sense draw), and read the look before firing.
 - Clear confusion with a basic thwart the first turn the scheme is low.
-- Keep two allies alive into Rhino's second stage (play them, thwart and attack, don't chump-block with both).
+- Save Enhanced Spider-Sense for Hard to Keep Down once Rhino's second stage is under 8.
 
 ## Recent games
 
+- 2026-11-23 · Spider-Man (Justice) vs Rhino · lost in round 10, The Break-In! 3 → 7 in one phase · in round 7 two
+  Kicks (16) were set up against stage 2's 15, but the first fizzled on a Sweeping Swoop stun I hadn't read; Hard to
+  Keep Down then healed Rhino twice. (An earlier start was wiped in round 4 when a merge reloaded the table.)
 - 2026-11-23 · Spider-Man (Justice) vs Rhino · lost in round 9 at 6/7 · stage 1 fell in round 2 (Kick + basic) and
   stage 2 was on 7 by round 5, but Armored Suit, a Guard minion, Sandman and Crowd Control piled up with no allies
   and no Kicks left.
