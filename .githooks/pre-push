@@ -9,8 +9,8 @@
 #   - the rules or cards (`packages/engine/`, `packages/content/`, `packages/cards/`) or `pnpm-lock.yaml`: the tests
 #     of what changed that the game we play can reach, then the 3D table's gate (`.githooks/rules-gate.sh`);
 #   - anything else under `packages/` (the 3D table, the client code it borrows from the old 2D game, other packages):
-#     the 3D table's gate: the type check, its unit tests and the browser tests the change can affect, one run at a
-#     time on this PC (`.githooks/battle-gate.sh`, `.githooks/battle-specs.mjs`).
+#     the 3D table's gate: the type check and its unit tests (`.githooks/battle-gate.sh`). Its browser tests run when
+#     a version is cut (`pnpm table:check`, `pnpm table:ship`), not on a push (Adam, 2026-11-23).
 # The old 2D game's own browser suite (`pnpm e2e:verify`) is never part of a push (Adam, 2026-11-22: the old game is
 # not played; only its rules and cards are used).
 #

@@ -10,12 +10,15 @@
  *   - 1.0.0 only when every current set and character is in.
  * The repo's own version (package.json, 0.48.0) is the original project's count and has nothing to do with this.
  *
- * What it does: checks the checkout is clean and on GitHub, builds the client with the version baked in, deploys the
+ * What it does: checks the checkout is clean and on GitHub, runs the 3D table's whole check on it (type check, unit
+ * tests and every browser test: a push skips the browser tests, so they run here, once per version; Adam, 2026-11-23),
+ * builds the client with the version baked in, deploys the
  * Worker, then tags the commit `table-v<version>` and pushes the tag to super-state. The `table-` prefix keeps it clear
  * of the `v*` tags that release-on-merge.yml reacts to.
  *
  *   pnpm table:ship              ship the version in table-version.json (refuses one already shipped)
  *   pnpm table:ship --redeploy   ship the same version again (the build only, no new tag)
+ *   pnpm table:check             the release check alone, without shipping (every browser test, 3 at a time)
  *
  * The invite key is a Worker secret, set once (and changed to lock out old links):
  *   pnpm --filter @mc/sync-worker exec wrangler secret put INVITE_KEY --config "$PWD/packages/client/wrangler.table.jsonc"
@@ -62,6 +65,12 @@ const existing = git("tag", "--list", tag);
 if (existing && !redeploy) fail(`${tag} is already shipped: bump table-version.json (or pass --redeploy)`);
 if (existing && git("rev-list", "-n", "1", tag) !== head)
   fail(`${tag} points at another commit: bump the version instead`);
+
+if (!redeploy) {
+  // Every browser test, on exactly this commit; a pass is remembered, so shipping again after `table:check` is quick.
+  console.log(`ship-table: the release check on ${head.slice(0, 9)} (type check, unit tests, every browser test)`);
+  run("sh", [".githooks/battle-gate.sh", head], { BATTLE_E2E: "1" });
+}
 
 console.log(`ship-table: building ${tag} (${head.slice(0, 9)})`);
 run("pnpm", ["--filter", "@mc/client", "build"], { VITE_TABLE_VERSION: version, MC_CARD_ART: "pool" });

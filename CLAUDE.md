@@ -25,21 +25,21 @@ in the engine; the 3D table shows it and sends the player's choices back, it nev
 - `pnpm battle:test` runs the 3D table's own tests (under a minute). Run this after a 3D change, not `pnpm test`, which
   runs the whole old game.
 - `pnpm battle:check` is the type check plus those tests. It is what a push runs.
-- The push check (`.githooks/pre-push`) tests only what the change can reach in the game we play (Adam, 2026-11-22:
-  the old 2D game isn't played, only its rules and cards are used, and the table plays the core set, Spider-Man
-  against Rhino):
-  - any change under `packages/`: the type check, the 3D table's unit tests and the browser tests the change can
-    affect, three at a time (`.githooks/battle-gate.sh`, about 2½ minutes for all of them). A change to the table's
-    own code (`main.ts`, `table.ts`, `model.ts`, the styles) runs them all; a change only to the controller, the
-    Sound Studio or sounds, the play hook, unit tests or a browser test runs just the matching tests
-    (`.githooks/battle-specs.mjs`, Adam 2026-11-23);
-  - one browser-test run at a time on this PC (Adam, 2026-11-23: several sessions' runs at once made tests time out
-    and browsers crash). A push whose tests would overlap another checkout's waits its turn and says so; that wait
-    is normal, not a hang. A worktree made before 2026-11-23 has the old hooks until it merges the main line;
+- The push check (`.githooks/pre-push`) is quick, so each fix goes live in about two minutes; the browser tests run
+  once per version instead (Adam, 2026-11-23: "run the tests when we ... cut a version"):
+  - any change under `packages/`: the type check and the 3D table's unit tests (`.githooks/battle-gate.sh`, 1 to 3
+    minutes);
   - the rules or cards changed (`packages/engine`, `content`, `cards`, or `pnpm-lock.yaml`), first: their type
     check, the core set's card tests, the test beside any other card file changed, and every engine test if the
     engine changed (`.githooks/rules-gate.sh`; about 1 minute more, or 4 with the engine);
   - nothing else (docs, scripts, a new font or picture added under `packages/client/public/`): nothing.
+  - **The release check** is every 3D table browser test (all `packages/client/e2e/*battle*.spec.ts`, three at a
+    time, about 3 to 5 minutes on a quiet PC): `pnpm table:check` runs it alone, and `pnpm table:ship` runs it before
+    deploying a version to the test site and refuses to ship on a failure. A failure there covers every fix since the
+    last version: find which one broke it and fix it before shipping. One browser-test run at a time on this PC (a run
+    waits its turn on a lock shared by every checkout).
+  - Run a browser test by hand when a fix is risky for one (`cd packages/client && pnpm exec playwright test
+    battle-surge`), rather than waiting for the release.
   - Never part of a push: the old 2D game's browser suite and the other boxes' card tests. Run `pnpm test` by hand
     when a change is meant for another box's cards.
   - `PUSH_GATE_DRY_RUN=1 git push …` says which check a push would get without running it or pushing.
