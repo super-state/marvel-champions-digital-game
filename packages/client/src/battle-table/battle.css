@@ -401,6 +401,22 @@ button:focus-visible {
   background: linear-gradient(180deg, #111b25, #0c141c);
   scrollbar-width: thin;
 }
+/* End Turn across the foot of the open card panel (Adam, 2026-11-23); folded, it keeps the table's corner. */
+.rail-turn {
+  flex: none;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+  background: #0c141c;
+}
+.rail-turn:empty {
+  display: none;
+}
+.rail-turn .btn {
+  width: 100%;
+  min-height: 52px;
+  justify-content: center;
+  font-size: 16px;
+}
 .log h3 {
   margin: 0 0 10px;
   color: var(--text-3);
