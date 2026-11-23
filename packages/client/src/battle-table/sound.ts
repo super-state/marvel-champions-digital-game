@@ -110,12 +110,20 @@ export class SoundBoard {
   /** Random pitch and volume per play; off in the studio, so an edit sounds the same every time. */
   jitter = true;
 
-  constructor(manifest: SoundManifest, resolve: Resolve, { random = Math.random, automated = false } = {}) {
+  /**
+   * `alwaysOn` ignores the table's Sound setting and never changes it: the Sound Studio's own board, where the audio
+   * is heard and approved, so its Play is heard even while the table starts muted (Adam, 2026-11-23).
+   */
+  constructor(
+    manifest: SoundManifest,
+    resolve: Resolve,
+    { random = Math.random, automated = false, alwaysOn = false } = {},
+  ) {
     this.#manifest = manifest;
     this.#resolve = resolve;
     this.#random = random;
     this.#automated = automated;
-    this.#enabled = readSetting(automated);
+    this.#enabled = alwaysOn || readSetting(automated);
   }
 
   get enabled(): boolean {
