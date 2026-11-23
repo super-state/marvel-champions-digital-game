@@ -1050,6 +1050,11 @@ export class BattleTable {
     const markers = (piece.card.markers ?? []).filter((m) => m.name !== name);
     if (count) markers.push({ name, count });
     this.#updateMarkers(piece, markers);
+    // The change comes with a form change still to play (Heroic Intuition's +1 THW as Peter becomes Spider-Man): hidden
+    // until the card has turned over and landed, so it never sits on the old side (Adam, 2026-11-23). The flip shows
+    // it again when it ends.
+    const flipping = this.#flights.get(card.id)?.kind === "flip";
+    if (flipping || (card.reverseArt && card.art !== piece.card.art)) piece.markers.visible = false;
   }
 
   #updateMarkers(piece: Piece, markers: NonNullable<TableCard["markers"]>): void {
