@@ -178,6 +178,12 @@ describe("the sound board", () => {
     expect(new SoundBoard(manifest, resolve, { automated: true }).enabled).toBe(false);
   });
 
+  test("a person's browser starts muted; the studio's board is on regardless, and leaves the setting alone", () => {
+    expect(new SoundBoard(manifest, resolve).enabled).toBe(false);
+    expect(new SoundBoard(manifest, resolve, { alwaysOn: true }).enabled).toBe(true);
+    expect(localStorage.getItem("battle-sound")).toBeNull();
+  });
+
   test("a sound with no variants is ignored; a new manifest swaps what plays", () => {
     const board = new SoundBoard(manifest, resolve, { automated: true });
     board.play("win");

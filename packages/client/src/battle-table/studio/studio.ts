@@ -42,7 +42,8 @@ let listing: {
 } | null = null;
 let cursor = -1;
 
-const board = new SoundBoard(draft, resolveSound);
+// Always on: the studio is where the audio is heard and approved, so it plays even while the table starts muted.
+const board = new SoundBoard(draft, resolveSound, { alwaysOn: true });
 board.jitter = false;
 // Made at once (suspended until the first click) so waveforms can be decoded before anything plays.
 board.unlock();
