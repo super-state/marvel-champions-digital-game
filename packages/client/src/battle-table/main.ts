@@ -1323,6 +1323,20 @@ let shakeTimer: ReturnType<typeof setTimeout> | undefined;
 
 const CONFETTI = ["#f6c564", "#ff5a4e", "#4fb3ff", "#ffffff", "#7be08f", "#c77dff"];
 
+/**
+ * The sounds of cards drawn off the deck: each lifts off 120 ms in, then every 180 ms (`draw`, its marker on the
+ * take-off), and lands in the hand about 400 ms later (`draw-land`, its marker on the landing; Adam, 2026-11-24:
+ * "a sound where they arrive in the hand").
+ */
+function playDrawSounds(count: number) {
+  for (let i = 0; i < count; i++) {
+    sfx.play("draw", { contactIn: 120 + i * 180 });
+    sfx.play("draw-land", { contactIn: DRAW_LANDS_MS + i * 180 });
+  }
+}
+/** When a drawn card settles in the hand, from the start of its flight (table.ts, a 560 ms draw that lands at 0.9). */
+const DRAW_LANDS_MS = 505;
+
 function throwConfetti() {
   const host = element("outcome-confetti");
   host.replaceChildren();
@@ -2407,8 +2421,7 @@ async function present(beats: Snapshot["beats"]) {
         ? Math.max(0, Number(deckCount.textContent) - beat.draw.length)
         : state.deckCount + pendingDraws.size;
       table?.showDraw(displayedHand, beat.draw, deckSize, pilesLater ? undefined : state.discard);
-      // Each card lifts off the deck 120 ms in, then every 180 ms: its draw sound's marker lands on that.
-      beat.draw.forEach((_, i) => sfx.play("draw", { contactIn: 120 + i * 180 }));
+      playDrawSounds(beat.draw.length);
       deckCount.textContent = String(deckSize);
       narrate(beat, feedLineOf(beat));
       await sleep(680 + (beat.draw.length - 1) * 180);
@@ -4050,10 +4063,12 @@ async function studioDemo(name: string): Promise<boolean> {
         drawn.map((card) => card.id),
         state.deckCount,
       );
-      drawn.forEach((_, i) => sfx.play("draw", { contactIn: 120 + i * 180 }));
+      playDrawSounds(drawn.length);
       await sleep(900 + drawn.length * 180);
       break;
     }
+    case "draw-land":
+      return studioDemo("draw");
     case "deal":
       table.dealEncounter(fake.id);
       sfx.play("deal");

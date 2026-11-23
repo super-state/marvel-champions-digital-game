@@ -85,8 +85,16 @@ frame.addEventListener("load", () => {
   }, 250);
 });
 
+let playRequest = 0;
 async function playOnTable() {
   if (!selected) return;
+  // Picked straight after the page opens, or while another sound's preview still plays: wait for the table (a few
+  // seconds at most) rather than giving up; a newer pick takes over.
+  const request = ++playRequest;
+  for (let waited = 0; !preview()?.ready() && waited < 10_000; waited += 150) {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    if (request !== playRequest) return;
+  }
   const studio = preview();
   if (!studio?.ready()) return status("The table is still loading…");
   if (!linked) linkPreview();
@@ -251,7 +259,11 @@ function paintSounds() {
     const row = document.createElement("div");
     row.className = "sound";
     row.dataset.name = moment.name;
-    row.onclick = () => select(moment.name, 0);
+    // Picking a sound plays it on the table at once, as a preview (Adam, 2026-11-24).
+    row.onclick = () => {
+      select(moment.name, 0);
+      void playOnTable();
+    };
     row.addEventListener("dragover", (event) => {
       event.preventDefault();
       row.classList.add("drop");
@@ -568,7 +580,15 @@ async function playCut() {
   if (!variant) return;
   board.stopAll();
   board.unlock();
-  const run = await board.playVariant(selected.name, variant);
+  followPlayhead(await board.playVariant(selected.name, variant));
+}
+
+// The playhead runs when the sound being edited plays on the table too (Adam, 2026-11-24).
+board.onPlayed = (name, index, run) => {
+  if (selected && name === selected.name && index === selected.index) followPlayhead(run);
+};
+
+function followPlayhead(run: { at: number; offset: number; length: number; rate: number } | null) {
   const context = board.context;
   cancelAnimationFrame(playheadFrame);
   if (!run || !context) return;
