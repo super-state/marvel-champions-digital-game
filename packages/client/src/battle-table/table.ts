@@ -2290,7 +2290,7 @@ export class BattleTable {
     const villainLeft = w * 0.5 - villainWidth * (0.5 + TAB * villainTabs);
     // One gap between neighbours in the villain's row, schemes and minions alike, upright or sideways (Adam,
     // 2026-11-23: "every card, when placed on a row, has the same gap regardless of what it is").
-    const rowGap = enemyCardWidth * 0.45;
+    const rowGap = enemyCardWidth * 0.25;
     const schemeX = Math.max(w * 0.255, villainLeft - rowGap - (enemyCardWidth * HEIGHT) / 2);
     const schemeElevation = 0.05;
     const schemeOrigin = this.#point(schemeX, enemyRow, schemeElevation);
@@ -2365,9 +2365,16 @@ export class BattleTable {
         const width = Math.min(enemyCardWidth, Math.max(1, slotWidth * 0.78) / footprint);
         return { card, tabs, width, across: width * footprint };
       });
-      // The same gap as the schemes keep on the villain's other side, while the row fits; a crowded row shares out
-      // what room there is instead.
-      const fits = sized.reduce((total, { across }) => total + across + rowGap, 0) <= right - left;
+      // The same gap as the schemes keep on the villain's other side. A crowded row shrinks its cards a little to
+      // keep that gap, and only past that shares out what room there is.
+      const cards = sized.reduce((total, { across }) => total + across, 0);
+      const shrink = Math.min(1, (right - left - rowGap * (sized.length + 1)) / cards);
+      const fits = shrink >= 0.7;
+      if (fits && shrink < 1)
+        for (const one of sized) {
+          one.width *= shrink;
+          one.across *= shrink;
+        }
       let cursor = left + rowGap;
       sized.forEach(({ card, tabs, width, across }, i) => {
         const center = fits ? cursor + across / 2 : left + (i + 0.5) * slotWidth;
