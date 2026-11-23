@@ -365,14 +365,20 @@ function faceGeometry(shape: THREE.Shape, width: number, height: number): THREE.
 }
 
 /** A single cloth print, including the stitched binding. Card scans keep their own sRGB textures. */
-function matPrint(redraw: () => void): THREE.CanvasTexture {
+/**
+ * The mat's print, drawn at the mat's own proportions (`reshape`, whenever the table settles on a new shape): the
+ * rooftop art fills it, cropped rather than stretched, and the stitched border always runs round its edge (Adam,
+ * 2026-11-23: the mat "would stretch and fit, keeping its image ... not skewed").
+ */
+function matPrint(redraw: () => void): { texture: THREE.CanvasTexture; reshape: (aspect: number) => void } {
   const canvas = document.createElement("canvas");
   canvas.width = 1536;
   canvas.height = 976;
   const ctx = canvas.getContext("2d")!;
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  function paint(art?: HTMLImageElement) {
+  let loaded: HTMLImageElement | undefined;
+  function paint(art: HTMLImageElement | undefined = loaded) {
     const { width, height } = canvas;
     ctx.fillStyle = "#1a293b";
     ctx.fillRect(0, 0, width, height);
@@ -418,9 +424,23 @@ function matPrint(redraw: () => void): THREE.CanvasTexture {
   }
   paint();
   const img = new Image();
-  img.onload = () => paint(img);
+  img.onload = () => {
+    loaded = img;
+    paint(img);
+  };
   img.src = rooftop;
-  return texture;
+  const reshape = (aspect: number) => {
+    // About two megapixels whatever the shape; repainted only for a real change of shape.
+    const width = Math.round(Math.sqrt(1536 * 976 * Math.min(4, Math.max(0.5, aspect))));
+    const height = Math.round(width / Math.min(4, Math.max(0.5, aspect)));
+    if (Math.abs(width - canvas.width) < 24 && Math.abs(height - canvas.height) < 24) return;
+    canvas.width = width;
+    canvas.height = height;
+    // A canvas of a new size needs a new texture upload of that size.
+    texture.dispose();
+    paint();
+  };
+  return { texture, reshape };
 }
 
 /** The scene presents engine state. Only the UI can decide what picking a particular card does. */
@@ -476,6 +496,10 @@ export class BattleTable {
   readonly #auraPlane = new THREE.PlaneGeometry(1.3, HEIGHT + 0.3);
   readonly #glow = new THREE.MeshBasicMaterial({ color: 0xffc66c });
   readonly #mat = new THREE.Group();
+  #reshapeMat: ((aspect: number) => void) | null = null;
+  /** How far the piles stand from the middle on a quiet table (#layout), and whether that second pass is running. */
+  #pileSpread: number | null = null;
+  #fittingPiles = false;
   readonly #villainLight = { value: 0 };
   #phaseTarget = 0;
 
@@ -700,7 +724,8 @@ export class BattleTable {
       new THREE.MeshStandardMaterial({ color: 0x152032, roughness: 0.8 }),
     );
     binding.position.z = -0.105;
-    const print = matPrint(this.#requestFrame);
+    const { texture: print, reshape } = matPrint(this.#requestFrame);
+    this.#reshapeMat = reshape;
     print.anisotropy = Math.min(4, this.#renderer.capabilities.getMaxAnisotropy());
     this.#cloth.map = print;
     this.#cloth.onBeforeCompile = (shader) => {
@@ -2212,7 +2237,9 @@ export class BattleTable {
       box,
       this.#project,
       { ...room, top: 46, bottom: Math.max(room.bottom, lowest) },
-      { maxScale: 1.25 },
+      // A quiet board (the first turn: Rhino, the main scheme, the hero) zooms in further, so its cards are bigger
+      // rather than sitting in a sea of empty mat (Adam, 2026-11-23: "we should get some benefit from it").
+      { maxScale: 1.6 },
     );
     const place = (p: THREE.Vector3) => {
       const q = fitToBox(fit, p);
@@ -2240,16 +2267,18 @@ export class BattleTable {
       const edge = this.#project(center.x + this.#hoverRest.scale * fit.scale, center.y, center.z);
       this.#hoverFootprint = { x: at.x, y: at.y, width: edge.x - at.x };
     }
-    // The mat fills the screen as it always has, and stretches past any card or pile that would sit off its edge.
+    // The mat reaches a margin past the cards and piles on every side, the image never stretched (its pattern is laid
+    // at a fixed size), so a quiet board shows no bare mat beyond what it needs (Adam, 2026-11-23).
     const far = fitToBox(fit, { x: box.x0, y: 0, z: box.z0 });
     const near = fitToBox(fit, { x: box.x1, y: 0, z: box.z1 });
     const margin = (fitToBox(fit, { x: 0.32, y: 0, z: 0 }).x - fitToBox(fit, { x: 0, y: 0, z: 0 }).x) * 0.8;
     const screenNear = this.#point(w * 0.985, h * 0.98, 0);
-    const halfWidth = Math.max(screenNear.x, -(far.x - margin), near.x + margin);
+    const halfWidth = Math.max(-(far.x - margin), near.x + margin);
     // The mat's far edge follows the cards: no bare strip of mat above the villain's row.
-    const top = far.z - margin * 1.6;
+    const top = far.z - margin;
     const front = Math.max(screenNear.z, near.z + margin);
     this.#matGoal = { x: 0, z: (top + front) / 2, width: halfWidth * 2, depth: front - top };
+    this.#reshapeMat?.((halfWidth * 2) / Math.max(1e-6, front - top));
   }
 
   #layout(): void {
@@ -2261,7 +2290,11 @@ export class BattleTable {
     const flat = -Math.PI / 2;
     // Piles sit out at the mat's edges, leaving the middle to the cards in play. On a very wide screen they stop short
     // of the edges, so the table keeps together rather than spreading out with the room (Adam, 2026-11-22).
-    const pileSpread = Math.min(w * 0.385, h * 0.75);
+    // A quiet table brings them in, to just past its widest row (worked out below, then laid out again), so the
+    // fit can zoom in on fewer cards instead of keeping room for the piles at the screen's edges (Adam, 2026-11-23:
+    // "it doesn't even need to be that wide ... we should get some benefit").
+    if (!this.#fittingPiles) this.#pileSpread = null;
+    const pileSpread = this.#pileSpread ?? Math.min(w * 0.385, h * 0.75);
     const pileX = w * 0.5 + pileSpread;
     const pileY = h * 0.505;
     const base = this.#point(pileX, pileY, 0.025);
@@ -2821,6 +2854,23 @@ export class BattleTable {
     this.#encounterDiscardSlot.visible = state.encounterDiscard.length > 0;
     // The piles are part of the table too, the encounter discard pile even while it is empty, so a first discard
     // doesn't move everything (the first encounter card discarded once shrank and slid the whole board).
+    if (!this.#fittingPiles && rests.length) {
+      // How far the cards reach either side of the villain's line, and where a pile just past that would stand.
+      const middle = this.#point(w * 0.5, h * 0.237, 0).x;
+      const reach = Math.max(...rests.map((r) => Math.max(middle - r.x0, r.x1 - middle)));
+      const pileHalf = (discardGoal.scale * 1.0) / 2;
+      const wanted = this.#project(middle + reach + discardGoal.scale * 0.45 + pileHalf, 0.025, base.z).x - w * 0.5;
+      if (wanted < pileSpread - 8) {
+        this.#pileSpread = Math.max(w * 0.2, wanted);
+        this.#fittingPiles = true;
+        try {
+          this.#layout();
+        } finally {
+          this.#fittingPiles = false;
+        }
+        return;
+      }
+    }
     for (const goal of [discardGoal, deckGoal, encounterGoal, encounterDiscardGoal])
       rest(goal.position, goal.scale, false);
     this.#fitTable(onBoard, rests, [
