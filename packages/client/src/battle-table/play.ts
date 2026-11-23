@@ -87,6 +87,37 @@ export interface Player {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** The dev server's websocket as a page sees it (`import.meta.hot`): just what remote play uses. */
+export interface RemoteChannel {
+  on(event: "battle-play:call", listener: (data: { id: string; call: string; move: string | null }) => void): void;
+  send(event: "battle-play:result", data: { id: string; text: string }): void;
+}
+
+/**
+ * Remote play (`vite-battle-play.ts`): answer the dev server's calls with this page's player, so Claude can play a
+ * table shown where its browser tools can't reach (Surf's Games bubble). Only a page opened with `?remote` listens.
+ */
+export function answerRemote(player: Player, channel: RemoteChannel): void {
+  channel.on("battle-play:call", async ({ id, call, move }) => {
+    let text: string;
+    try {
+      if (call === "moves")
+        text = player
+          .moves()
+          .map((m) => `${m.n}. ${m.label}`)
+          .join("\n");
+      else if (call === "wait") text = await player.wait();
+      else if (call === "play") {
+        const which = (move ?? "").trim();
+        text = await player.play(/^\d+$/.test(which) ? Number(which) : which);
+      } else text = player.look();
+    } catch (error) {
+      text = `The page could not run ${call}: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    channel.send("battle-play:result", { id, text });
+  });
+}
+
 const HERO_ONLY = /\bHero (?:Action|Interrupt|Response|Resource)\b|\bHero form only\b/i;
 const ALTER_EGO_ONLY = /\bAlter-Ego (?:Action|Interrupt|Response|Resource)\b|\bAlter-Ego form only\b/i;
 
