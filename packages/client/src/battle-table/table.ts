@@ -3495,7 +3495,8 @@ export class BattleTable {
     return this.#hit(event);
   }
 
-  #hit(event: PointerEvent): string | null {
+  /** `hovering`: only for showing what the pointer is over, so the card being paid for can be read too. */
+  #hit(event: PointerEvent, hovering = false): string | null {
     const rect = this.#renderer.domElement.getBoundingClientRect();
     this.#ndc.set(
       (2 * (event.clientX - rect.left)) / rect.width - 1,
@@ -3510,7 +3511,14 @@ export class BattleTable {
     const handIds = new Set(this.#state?.hand.map((card) => card.id));
     for (const piece of this.#pieces.values()) {
       if (this.#state?.defending && !this.#state.targets.includes(piece.card.id)) continue;
-      if (this.#state?.paymentSources && !this.#state.paymentSources.includes(piece.card.id)) continue;
+      // While paying, only the resources can be picked; the card being paid for can still be pointed at to read it
+      // (Adam, 2026-11-23: "what does that card do?").
+      if (
+        this.#state?.paymentSources &&
+        !this.#state.paymentSources.includes(piece.card.id) &&
+        !(hovering && piece.card.id === this.#state.staged?.id)
+      )
+        continue;
       if (this.#state?.discardOpen && !this.#viewedPile(this.#state).some((card) => card.id === piece.card.id))
         continue;
       const [hit] = this.#ray.intersectObjects(piece.card.reverseArt ? [piece.face, piece.back] : [piece.face], false);
@@ -3556,7 +3564,7 @@ export class BattleTable {
       if (event.pointerType !== "touch") {
         const rect = this.#renderer.domElement.getBoundingClientRect();
         this.#pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top - this.#extension };
-        this.#notifyHover(this.#hit(event));
+        this.#notifyHover(this.#hit(event, true));
         if (this.#hovered && this.#state?.hand.some((card) => card.id === this.#hovered)) this.#requestFrame();
       }
       return;
