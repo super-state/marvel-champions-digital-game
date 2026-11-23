@@ -57,6 +57,10 @@ export interface PlayHooks {
   /** The cards picked so far in a pick-several question (mulligan, discard, choose up to N). */
   picked(): ReadonlySet<string>;
   cardFacts(id: string): string;
+  /** Any card's name as it shows now, wherever it is (a revealed treachery on its way to the discard included). */
+  cardName(id: string): string;
+  /** A card ability that pays, by card and ability ("Peter Parker — Scientist"); null for a card from the hand. */
+  sourceName(sourceId: string, cardId: string): string | null;
   /** The game's story so far, oldest first: the lines the turn bar's feed shows. */
   history(): readonly string[];
   /** A revealed encounter card held up to be read (the villain phase waits on its Continue): that card. */
@@ -97,7 +101,7 @@ export function createPlayer(hooks: PlayHooks): Player {
       ...state.discard,
     ].find((c) => c.id === id);
   }
-  const name = (id: string | null) => cardById(id)?.name ?? id ?? "";
+  const name = (id: string | null) => (id ? (cardById(id)?.name ?? hooks.cardName(id)) : "");
 
   function cardLine(card: BattleCard, extra: string[] = []): string {
     const bits = [...extra];
@@ -183,7 +187,8 @@ export function createPlayer(hooks: PlayHooks): Player {
 
   function payLabel(source: Source): string {
     const icons = source.icons.length ? ` [${source.icons.join(" ")}]` : "";
-    return `${source.label}${icons}`;
+    const named = source.kind === "resourceAbility" ? hooks.sourceName(source.id, source.cardId) : null;
+    return `${named ?? source.label}${icons}`;
   }
 
   function look(): string {
@@ -197,8 +202,9 @@ export function createPlayer(hooks: PlayHooks): Player {
 
     if (state.outcome)
       lines.push(`GAME OVER: ${state.outcome.result === "win" ? "you won" : "you lost"} (${state.outcome.reason}).`);
-    const phase =
-      state.turn === "player"
+    const phase = state.choice?.mulligan
+      ? "setup, mulligan"
+      : state.turn === "player"
         ? "your turn"
         : state.turn === "enemy"
           ? "villain phase"
@@ -227,7 +233,10 @@ export function createPlayer(hooks: PlayHooks): Player {
     lines.push("");
     const read = hooks.reading();
     if (read)
-      lines.push(`Revealed, to read:`, cardById(read) ? cardLine(cardById(read)!) : `- ${hooks.cardFacts(read)}`);
+      lines.push(
+        `Revealed, to read:`,
+        cardById(read) ? cardLine(cardById(read)!) : `- ${name(read)}: ${hooks.cardFacts(read)}`,
+      );
     if (!read && hooks.busy()) lines.push("The table is playing something out: call wait().");
     else {
       const asked = [dock.eyebrow?.text, dock.title].filter(Boolean).join(": ");

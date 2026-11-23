@@ -22,7 +22,7 @@ import {
   type TriggerEvent,
 } from "@mc/engine";
 import { artFor, CARD_BACKS } from "../art/art-source.js";
-import { abilityShortLabelOf } from "../view/ability-label.js";
+import { abilityLabelOf, abilityShortLabelOf } from "../view/ability-label.js";
 import {
   countersOf,
   faceOf,
@@ -1530,6 +1530,21 @@ export class BattleModel {
       : [];
     const text = face ? plainRulesTextOf(face) : "";
     return [stats.join(" "), text].filter(Boolean).join(" · ");
+  }
+
+  /** Any card's name as it shows now (an identity by its live face), wherever the card is. For the play hook. */
+  cardName(id: string): string {
+    return shortIdentityNameOf(this.#game, id as InstanceId) ?? faceUpName(this.#game, id as InstanceId);
+  }
+
+  /**
+   * A way to pay that is a card's own ability, named by the card's live face and the ability ("Peter Parker —
+   * Scientist"), for any card; null for a card spent from the hand. For the play hook: the payment bar draws the card
+   * itself, so its own label can stay short.
+   */
+  paymentSourceName(sourceId: string, cardId: string): string | null {
+    const ref = activeAbilityRefs(this.#game, cardId as InstanceId).find((ability) => sourceId.includes(ability.id));
+    return ref ? abilityLabelOf(this.#game, cardId as InstanceId, ref.id, CORE_DEPS) : null;
   }
 
   basicPower(id: string, stat: "atk" | "thw" | "rec"): number {
