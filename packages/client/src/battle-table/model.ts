@@ -903,6 +903,9 @@ export class BattleModel {
         });
       } else if (e.type === "cardExhausted" || e.type === "cardReadied") {
         const exhausted = e.type === "cardExhausted";
+        // A card defeated in the same move (an ally killed by the damage its attack brings back) isn't shown turning
+        // sideways first: it attacks, takes the damage and goes (Adam, 2026-11-23).
+        if (exhausted && defeated.has(e.instanceId)) continue;
         this.#beats.push({
           enemy,
           text: `${name(e.instanceId)} ${exhausted ? "exhausts" : "readies"}`,
