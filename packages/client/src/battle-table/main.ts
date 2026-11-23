@@ -2297,10 +2297,13 @@ async function present(beats: Snapshot["beats"]) {
   // The payment screen's stand-ins for resource abilities (Peter Parker's Scientist) are spent by now.
   displayedHand = displayedHand.filter((card) => !card.id.startsWith("ability:"));
   beats = whileStillThere(beats);
+  // Encounter cards dealt one after another all stay lit over the shade, not only the latest (Adam, 2026-11-23).
+  let dealtLit: string[] = [];
   for (let index = 0; index < beats.length; index++) {
     const beat = beats[index]!;
+    if (!beat.encounterDeal) dealtLit = [];
     if (spotted) {
-      setSpot(null);
+      if (!beat.encounterDeal) setSpot(null);
       spotted = false;
     }
     if (beat.gameEnded) break;
@@ -2759,7 +2762,8 @@ async function present(beats: Snapshot["beats"]) {
           title: penalty ? "Take an encounter card facedown" : "Deal an encounter card",
         },
       );
-      setSpot({ glow: [{ id: beat.encounterDeal, tone: "attack" }], cutouts: [beat.encounterDeal] });
+      dealtLit.push(beat.encounterDeal);
+      setSpot({ glow: dealtLit.map((id) => ({ id, tone: "attack" as const })), cutouts: [...dealtLit] });
       spotted = true;
       placeLabels();
       // Stamped on landing, like a boost card.
