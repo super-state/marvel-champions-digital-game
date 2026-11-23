@@ -7,15 +7,18 @@ cards work in one form only, what each status does and the hand limit.
 
 ## Playbook
 
-### Spider-Man vs Rhino (core set, Spider-Man's Justice deck) — 1 win, 6 losses
+### Spider-Man vs Rhino (core set, Spider-Man's Justice deck) — 2 wins, 6 losses (plus one game lost to a reload)
 
-- **The last 7 HP of Rhino's second stage is where games are decided.** Games 3-6 all had Rhino's second stage on
-  7 by round 5-8; in game 6 Hard to Keep Down then healed him back to 11 twice. The one win came from allies on the
-  table adding the last points (Kick 8 + Daredevil 2 + Mockingbird 1). Keep 1-2 cheap allies alive into that
-  stretch, hold one Kick for the finish, and keep Enhanced Spider-Sense for Hard to Keep Down. `seen 4×`
-- **Two Kicks in one turn is possible but needs planning.** It came together once in six games (game 6, round 7):
-  Genius (counts 2) plus a Spider-Sense draw made the 6 resources. Hold Genius, Strength or Energy for that turn,
-  and take Rhino's hit undefended the phase before so Spider-Sense draws. `seen 1×`
+- **The winning shape: allies on the table, two Kicks in hand, then one big turn.** Game 8 won in round 7 that way:
+  Daredevil, Mockingbird and Jessica Jones out by Rhino's second stage, two Kicks held back (Genius made the 6
+  resources), then Daredevil 2 + Kick 8 + Kick 8 = 18 against his 15. Game 4 won the same way with fewer cards.
+  The allies did double work: they blocked the three attacks of one phase (Assault, Gang-Up) so the Kick turn came.
+  `seen 2×`
+- **The last 7 HP of Rhino's second stage is where losses happen.** Games 3-6 all had Rhino's second stage on 7 by
+  round 5-8 with no allies and one Kick, and stalled; in game 6 Hard to Keep Down healed him back to 11 twice. `seen 4×`
+- **Two Kicks in one turn needs a double resource.** It came together in games 6 and 8: Genius (counts 2) plus
+  Avengers Mansion and Spider-Sense draws. Hold Genius, Strength or Energy for that turn, and once two Kicks are in
+  hand Spider-Man can defend freely (the Kicks don't need him ready). `seen 2×`
 - **Count lethal before anything else.** Every turn, add basic + events + every ally's attack against Rhino's HP
   (and the Armored Rhino Suit's 5, Toughness, any Guard minion) before planning defence. `seen 2×`
 - **The Break-In! is what loses, and it jumps 3-6 in one villain phase.** All four losses were the main scheme
@@ -62,13 +65,17 @@ cards work in one form only, what each status does and the hand limit.
 
 ## Try next
 
-- Stay Spider-Man for the whole second stage; dodge with Webbed Up, Mockingbird, Backflip and a ready defender instead
-  of Peter.
-- Set up the double Kick again (hold a double resource, let Spider-Sense draw), and read the look before firing.
+- Repeat game 8's shape: Avengers Mansion early, two or three allies before the second stage, two Kicks held back.
+- Stay Spider-Man for the whole second stage again (worked in game 8: allies blocked, he defended once the Kicks
+  were in hand).
 - Save Enhanced Spider-Sense for Hard to Keep Down once Rhino's second stage is under 8.
 
 ## Recent games
 
+- 2026-11-23 · Spider-Man (Justice) vs Rhino · **won** in round 7 · Mansion from round 1, Mockingbird, Daredevil and
+  Jessica Jones out by stage 2; stayed Spider-Man through stage 2 while the allies took three attacks in one phase,
+  then Daredevil + two Kicks = 18 against 15. (The game before it was lost unfinished in round 4: its Games tab was
+  hidden behind a video, the browser unloaded it, and it came back as a new deal.)
 - 2026-11-23 · Spider-Man (Justice) vs Rhino · lost in round 4, The Break-In! 1 → 7 in one phase · Kicked stage 1
   away on 6 HP and hid as Peter from the new stage 2 with no minions out; Breakin' & Takin' plus surging treacheries
   dealt five encounter cards. (First game played in Surf's game mode.)
