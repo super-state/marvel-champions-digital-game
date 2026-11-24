@@ -2090,8 +2090,11 @@ function placeLabels() {
     const edge = table.paymentEdge;
     const mask = `linear-gradient(to bottom, #000 ${Math.round(edge - 30)}px, transparent ${Math.round(edge + 90)}px)`;
     focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = mask;
-    // Fades in only once the dealt cards have landed in the hand; then it stays, whatever the hand does.
-    if (table.handSettled) focusBlur.dataset.ready = "";
+    // Fades in only once the dealt cards have landed in the hand; then it stays, whatever the hand does. While the
+    // table is still behind the campaign shelf or bringing its pieces in from it, it waits for the last one to land
+    // (Adam, 2026-11-24: the blur came up while cards were still being placed).
+    if (shelfUp || table.entering) delete focusBlur.dataset.ready;
+    else if (table.handSettled) focusBlur.dataset.ready = "";
   }
   // The mulligan question waits for the dealt cards to land too.
   dock.toggleAttribute(
@@ -4317,6 +4320,8 @@ async function showShelf() {
       shown: () => {
         shelfUp = false;
         tableInert(false);
+        // The mulligan's blur and question waited for the shelf to go; the table may be standing still by now.
+        placeLabels();
         dockTitle.focus({ preventScroll: true });
       },
     });
