@@ -7,13 +7,18 @@ cards work in one form only, what each status does and the hand limit.
 
 ## Playbook
 
-### Spider-Man vs Rhino (core set, Spider-Man's Justice deck) — 2 wins, 6 losses (plus one game lost to a reload)
+### Spider-Man vs Rhino (core set, Spider-Man's Justice deck) — 3 wins, 6 losses (plus one game lost to a reload)
 
-- **The winning shape: allies on the table, two Kicks in hand, then one big turn.** Game 8 won in round 7 that way:
-  Daredevil, Mockingbird and Jessica Jones out by Rhino's second stage, two Kicks held back (Genius made the 6
-  resources), then Daredevil 2 + Kick 8 + Kick 8 = 18 against his 15. Game 4 won the same way with fewer cards.
-  The allies did double work: they blocked the three attacks of one phase (Assault, Gang-Up) so the Kick turn came.
-  `seen 2×`
+- **The winning shape: allies on the table, Kicks saved for the second stage, then finish fast.** Game 8 won in
+  round 7: Daredevil, Mockingbird and Jessica Jones out by Rhino's second stage, then Daredevil 2 + Kick 8 + Kick 8
+  = 18 against his 15. Game 9 won in round 8: stage 1 was worn down by basics and allies (Black Cat, Jessica), the
+  Kicks went only into stage 2 (one the turn it arrived, one the next). Game 4 won the same way with fewer cards.
+  The allies do double work: damage, and blocking the attacks that would stun or kill Spider-Man. `seen 3×`
+- **Kick the second stage the turn it arrives if the hand would be full.** Holding two Kicks plus three resources
+  leaves a full hand and no draw, so next turn only one Kick is payable. Kicking once at once and drawing three found
+  the finishing resources (game 9). `seen 1×`
+- **Let an ally take Stampede.** Its stun on Spider-Man would cancel the finishing Kick; Black Cat blocked it the
+  phase before the win (game 9), as Jessica did in game 7. `seen 2×`
 - **The last 7 HP of Rhino's second stage is where losses happen.** Games 3-6 all had Rhino's second stage on 7 by
   round 5-8 with no allies and one Kick, and stalled; in game 6 Hard to Keep Down healed him back to 11 twice. `seen 4×`
 - **Two Kicks in one turn needs a double resource.** It came together in games 6 and 8: Genius (counts 2) plus
@@ -65,13 +70,16 @@ cards work in one form only, what each status does and the hand limit.
 
 ## Try next
 
-- Repeat game 8's shape: Avengers Mansion early, two or three allies before the second stage, two Kicks held back.
-- Stay Spider-Man for the whole second stage again (worked in game 8: allies blocked, he defended once the Kicks
-  were in hand).
-- Save Enhanced Spider-Sense for Hard to Keep Down once Rhino's second stage is under 8.
+- Keep the shape (allies, Kicks for stage 2, stay Spider-Man); try Webbed Up on Rhino the turn before stage 1
+  falls, so its stun carries into stage 2 (it did in game 9) and covers the first turn there.
+- Save Enhanced Spider-Sense for Hard to Keep Down (cancelled it in stage 1 in game 9; worked).
+- Try a different villain or hero next, now that Spider-Man vs Rhino wins two in a row.
 
 ## Recent games
 
+- 2026-11-24 · Spider-Man (Justice) vs Rhino · **won** in round 8 · Black Cat and Jessica wore stage 1 down while
+  both Kicks waited; Webbed Up's stun carried into stage 2; Kick on arrival, Black Cat blocked Stampede, Kick to
+  finish. First game in Adam's single "Marvel Champions" Games tab.
 - 2026-11-23 · Spider-Man (Justice) vs Rhino · **won** in round 7 · Mansion from round 1, Mockingbird, Daredevil and
   Jessica Jones out by stage 2; stayed Spider-Man through stage 2 while the allies took three attacks in one phase,
   then Daredevil + two Kicks = 18 against 15. (The game before it was lost unfinished in round 4: its Games tab was
