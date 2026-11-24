@@ -99,7 +99,7 @@ const SCENES: Record<string, Scene> = {
   rhinosuit: {
     encounterTop: ["01110", "01098"],
   },
-  /** Four minions out: too many for one row, so they fill a second row above it before shrinking. */
+  /** Four minions out: too many for one row, so they stand in a block of two rows centred on the villain. */
   minions4: {
     minions: [{ code: "01101" }, { code: "01102" }, { code: "01103" }, { code: "01110" }],
   },
@@ -119,6 +119,19 @@ const SCENES: Record<string, Scene> = {
     ],
     villainAttachments: [{ code: "01099" }, { code: "01100" }],
     minions: [{ code: "01110" }, { code: "01102" }],
+  },
+  /** Adam's Klaw game (2026-11-24): a side scheme and three minions, the one too many standing left of the schemes. */
+  minions3side: {
+    schemes: [{ code: "01107", threat: 3 }],
+    minions: [{ code: "01110" }, { code: "01102" }, { code: "01103" }],
+  },
+  /** Five minions and two side schemes: no room left of the schemes, so a block of two rows. */
+  minions5: {
+    schemes: [
+      { code: "01107", threat: 3 },
+      { code: "01109", threat: 3 },
+    ],
+    minions: [{ code: "01101" }, { code: "01102" }, { code: "01103" }, { code: "01110" }, { code: "01104" }],
   },
   /** Three minions out, as Adam had them (Sandman, Vulture, Hydra Mercenary). */
   minions3: {
