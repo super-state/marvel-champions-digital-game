@@ -230,7 +230,7 @@ export function adminPage(players: readonly PlayerRow[], games: readonly GameRow
   table { border-collapse: collapse; width: 100%; font-size: 14px; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #18232f; vertical-align: top; white-space: nowrap; }
   th { color: #8a9bb0; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-  td.link code { display: inline-block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; font-size: 12px; color: #9fb3c8; }
+  td.link code { user-select: all; display: inline-block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; font-size: 12px; color: #9fb3c8; }
   tr.added td { background: #10263d; } tr.off td { opacity: .5; }
   td.win { color: #7bd88f; } td.loss { color: #ff8a80; }
   .empty { color: #8a9bb0; }
@@ -253,8 +253,26 @@ export function adminPage(players: readonly PlayerRow[], games: readonly GameRow
   </table></div>
 </main>
 <script>
+  // Some browsers refuse the clipboard API (Surf did, 2026-11-24): fall back to the old copy command, then to a box
+  // holding the link ready selected.
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch {}
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+    document.body.append(area);
+    area.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch {}
+    area.remove();
+    return ok;
+  }
   for (const b of document.querySelectorAll("[data-copy]"))
-    b.onclick = async () => { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy link"), 1500); };
+    b.onclick = async () => {
+      if (await copyText(b.dataset.copy)) b.textContent = "Copied";
+      else { window.prompt("Copy this link:", b.dataset.copy); return; }
+      setTimeout(() => (b.textContent = "Copy link"), 1500);
+    };
 </script>`;
 }
 

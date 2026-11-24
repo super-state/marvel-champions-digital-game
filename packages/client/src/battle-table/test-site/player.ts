@@ -142,16 +142,42 @@ const mailto = (link: string) =>
     `Open this on a laptop or computer to play. It's your login, so keep it to yourself:\n\n${link}\n`,
   )}`;
 
+/**
+ * Copies text. Some browsers refuse the clipboard API (Surf did, 2026-11-24): then the old copy command; false when
+ * neither works, and the caller shows the link to copy by hand.
+ */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Falls through to the old way.
+  }
+  const area = make("textarea");
+  area.value = text;
+  area.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+  // Inside the open dialog, or the page's inert backdrop would keep it from being selected.
+  (document.querySelector("dialog[open]") ?? document.body).append(area);
+  area.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  area.remove();
+  return ok;
+}
+
 function linkActions(link: string): HTMLElement {
   const row = make("div", "player-link-actions");
   const copy = make("button", "btn btn-secondary", "Copy link");
   copy.type = "button";
   copy.onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(link);
-      copy.textContent = "Copied";
-    } catch {
-      copy.textContent = "Couldn't copy";
+    if (await copyText(link)) copy.textContent = "Copied";
+    else {
+      window.prompt("Copy this link:", link);
+      return;
     }
     setTimeout(() => (copy.textContent = "Copy link"), 1600);
   };
