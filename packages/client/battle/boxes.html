@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Choose a Campaign · Marvel Champions</title>
+  </head>
+  <body>
+    <!-- Campaign boxes (mock-up, dev server only; not in the build): the campaigns stand on the table as retail boxes.
+         Pick one and its lid lifts off and the villain comes out. ?open=rhino jumps straight to an opened box. -->
+    <div id="stage" class="stage"></div>
+    <header class="boxes-head">
+      <p class="kicker">Mock-up</p>
+      <h1>Choose your campaign</h1>
+    </header>
+    <p class="hover-tag" id="hover-tag" hidden></p>
+    <p class="hint" id="hint">Pick a box to open it</p>
+    <section class="opened" id="opened" hidden>
+      <p class="kicker" id="opened-kicker"></p>
+      <h2 id="opened-title"></h2>
+      <p class="opened-blurb" id="opened-blurb"></p>
+      <div class="opened-buttons">
+        <a class="btn gold" id="play" href="/battle/">Play</a>
+        <button type="button" class="btn" id="back">Back to the shelf</button>
+      </div>
+    </section>
+    <p class="toast" id="toast" hidden></p>
+    <script type="module" src="../src/battle-table/boxes/boxes.ts"></script>
+  </body>
+</html>
