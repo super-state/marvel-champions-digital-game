@@ -1313,7 +1313,8 @@ function showOutcome(outcome: Snapshot["outcome"]) {
   gameOver.toggleAttribute("data-victory", won);
   gameOverUndo.hidden = !model.canUndo;
   tryAgain.replaceChildren(icon("mulligan"), make("span", "", won ? "Play again" : "Try again"));
-  if (!gameOver.open) {
+  // Never over the campaign shelf: the dialog would sit on top of it with the page underneath untouchable.
+  if (!gameOver.open && !shelfUp) {
     if (gameMenu.open) gameMenu.close();
     if (won) throwConfetti();
     sfx.play(won ? "win" : "lose");
@@ -4160,6 +4161,8 @@ const pad = startController({
 // tests, scenes, the play hook, the sound studio) goes straight to the table, as does a reload during a game: the dev
 // server reloads the page on every change, and that should land back at the table, not the shelf.
 const AT_TABLE = "battle-at-table";
+/** The campaign shelf is over the table. */
+let shelfUp = false;
 function opensOnShelf(): boolean {
   const params = new URLSearchParams(location.search);
   if (params.has("open")) return true;
@@ -4184,6 +4187,7 @@ function tableInert(inert: boolean) {
     if (child instanceof HTMLElement && child.id !== "shelf") child.inert = inert;
 }
 async function showShelf() {
+  shelfUp = true;
   rememberAtTable(null);
   tableInert(true);
   // Dark until the room is drawn, so the bare table never shows while the shelf loads.
@@ -4199,6 +4203,7 @@ async function showShelf() {
       table: () => table ?? null,
       state: () => state,
       shown: () => {
+        shelfUp = false;
         tableInert(false);
         dockTitle.focus({ preventScroll: true });
       },
@@ -4206,6 +4211,7 @@ async function showShelf() {
   } catch (error) {
     // No shelf (it failed to load): the table deals as it always has.
     console.error(error);
+    shelfUp = false;
     tableInert(false);
     start();
   } finally {

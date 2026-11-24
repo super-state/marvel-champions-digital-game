@@ -610,7 +610,9 @@ root.querySelector(".shelf-stage")!.append(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0d0a08);
-scene.fog = new THREE.Fog(0x0d0a08, 13, 26);
+const FOG_NEAR = 13;
+const FOG_FAR = 26;
+scene.fog = new THREE.Fog(0x0d0a08, FOG_NEAR, FOG_FAR);
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.32;
@@ -1112,13 +1114,18 @@ function pose(time: number, dt: number) {
   const pullBack = Math.max(1, 1.45 / camera.aspect);
   camera.position.lerpVectors(CAM_SHELF.pos, CAM_OPEN.pos, c);
   aim.lerpVectors(CAM_SHELF.at, CAM_OPEN.at, c);
-  camera.position
-    .sub(aim)
-    .multiplyScalar(lerp(pullBack, Math.max(1, 1.1 / camera.aspect), c))
-    .add(aim);
+  const pull = lerp(pullBack, Math.max(1, 1.1 / camera.aspect), c);
+  const near = camera.position.distanceTo(aim);
+  camera.position.sub(aim).multiplyScalar(pull).add(aim);
   camera.position.x += (1 - c) * (pointer.x > -2 ? pointer.x * 0.35 : 0);
   // Play: the camera swings round to the game table's own angle.
   const toGame = outro ? span(outro.u, 0, 1.2) : 0;
+  // The fog starts as far beyond the boxes as it does on a wide screen, however far a narrow one pulls the camera
+  // back: otherwise a phone held upright sees the boxes through it, or not at all.
+  const fog = scene.fog as THREE.Fog;
+  const extra = near * (pull - 1) * (1 - toGame);
+  fog.near = FOG_NEAR + extra;
+  fog.far = FOG_FAR + extra;
   camera.position.lerp(CAM_GAME.pos, toGame);
   aim.lerp(CAM_GAME.at, toGame);
   camera.lookAt(aim);
