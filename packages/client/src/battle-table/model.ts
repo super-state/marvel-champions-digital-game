@@ -389,6 +389,13 @@ const KLAW_GEAR_ACTIONS: ReadonlySet<string> = new Set([
   "01119.solid-sound-body-action",
 ]);
 
+/** What a side scheme's printed icons do (RRG 1.8 "Acceleration Icon", "Crisis Icon", "Hazard Icon"). */
+const SCHEME_ICON_TEXT: Record<string, string> = {
+  acceleration: "Acceleration icon: 1 more threat goes on the main scheme each villain phase while this is in play.",
+  crisis: "Crisis icon: no threat can be removed from the main scheme while this is in play.",
+  hazard: "Hazard icon: 1 more encounter card is dealt to the first player each villain phase while this is in play.",
+};
+
 /** The villains the table can deal, each a Core Set scenario played with Spider-Man's precon deck. */
 export const VILLAINS = [
   { id: "rhino", name: "Rhino" },
@@ -1680,7 +1687,15 @@ export class BattleModel {
       ? shown.flatMap((stat) => (typeof profile[stat] === "number" ? [`${stat.toUpperCase()} ${profile[stat]}`] : []))
       : [];
     const text = face ? plainRulesTextOf(face) : "";
-    return [stats.join(" "), text].filter(Boolean).join(" · ");
+    // A side scheme's icons are printed, not written in its text: say what each does (Klaw's Defense Network is a
+    // crisis, so the main scheme can't be thwarted until it goes; a thwart went to it without asking in a game).
+    const icons =
+      card.type === "side_scheme" && "icons" in card
+        ? ((card.icons as readonly string[] | undefined) ?? []).flatMap((icon) =>
+            SCHEME_ICON_TEXT[icon] ? [SCHEME_ICON_TEXT[icon]] : [],
+          )
+        : [];
+    return [stats.join(" "), text, ...icons].filter(Boolean).join(" · ");
   }
 
   /** The player's current form and hand size (with modifiers, so the hand limit at the end of the turn). */

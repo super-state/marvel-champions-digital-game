@@ -145,4 +145,11 @@ describe("Klaw's dev scenes", () => {
     attack("Daredevil");
     expect(view().outcome).toMatchObject({ result: "win" });
   });
+
+  test("the play hook's facts say Defense Network is a crisis", () => {
+    const battle = new BattleModel();
+    battle.reset({ villain: "klaw", seed: 7, mulligan: true });
+    const network = battle.snapshot().enemyCards.find((card) => card.name === "Defense Network")!;
+    expect(battle.cardFacts(network.id)).toContain("Crisis icon: no threat can be removed from the main scheme");
+  });
 });
