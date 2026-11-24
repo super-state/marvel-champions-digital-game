@@ -599,8 +599,14 @@ export class BattleModel {
     beats: BattleBeat[];
     aimed: Set<string>;
     effectAttack: { enemy: string; activity: string } | null;
+    dronesDefeated: Map<string, string>;
   }[] = [];
 
+  /**
+   * The cards defeated as Drones that still lie in the discard pile, and their names: a question about that defeat
+   * asked on a later move (Interrogation Room, after Spider-Tracer has had its say) still speaks of the Drone.
+   */
+  #dronesDefeated = new Map<string, string>();
   #setup: string[] = [];
   /** What the scenario's setup put on the table before the first hand was drawn, for the log. */
   get setupNotes(): readonly string[] {
@@ -625,6 +631,7 @@ export class BattleModel {
     this.#beats = previous.beats;
     this.#aimed = previous.aimed;
     this.#effectAttack = previous.effectAttack;
+    this.#dronesDefeated = previous.dronesDefeated;
     this.#setGame(previous.game, []);
     return true;
   }
@@ -635,6 +642,7 @@ export class BattleModel {
     this.#aimed = new Set();
     this.#effectAttack = null;
     this.#beats = [];
+    this.#dronesDefeated = new Map();
     const opening = openingTurn(options);
     this.#setup = opening.setup;
     this.#setGame(opening.state, opening.state.players[0]!.hand);
@@ -665,6 +673,7 @@ export class BattleModel {
       beats: this.#beats,
       aimed: new Set(this.#aimed),
       effectAttack: this.#effectAttack,
+      dronesDefeated: new Map(this.#dronesDefeated),
     });
     const events = [...result.events];
     for (;;) {
@@ -817,8 +826,11 @@ export class BattleModel {
       }
       const before = this.#beats.length;
       if (clearedAway.has(e)) continue;
+      // Out of the discard pile again (shuffled into a new deck, taken back into the hand), it is a card like any other.
+      if (e.type === "playerDeckReset") this.#dronesDefeated.clear();
+      else if (e.type === "cardMoved" && e.from.kind === "discard") this.#dronesDefeated.delete(e.instanceId);
       if (e.type === "deckShuffled" && e.zone.kind === "deck") shuffledDeck = deckLeft = e.order.length;
-      else if (e.type === "cardDrawn") deckLeft--;
+      // Every card that leaves the deck is a move off it, a draw included (the engine reports the draw as well).
       else if (e.type === "cardMoved" && e.from.kind === "deck" && !facedownPuts.has(e.instanceId)) deckLeft--;
       if (e.type === "abilityResolved") resolving = { card: e.instanceId, label: triggerLabel(e.abilityId) };
       // Only the ability that resolved last owns what follows; a move into play or a new step ends its say.
@@ -948,6 +960,7 @@ export class BattleModel {
           // The Drone is defeated and the card under it is known at last, on its way to its owner's discard pile.
           drones.delete(e.instanceId);
           const was = cardOf(result.state, e.instanceId)?.name ?? "a card";
+          this.#dronesDefeated.set(e.instanceId, was);
           this.#beats.push({
             enemy,
             defeatedCard: e.instanceId,
@@ -1464,7 +1477,7 @@ export class BattleModel {
     if (!headline || pending.prompt.kind !== "chooseTriggers") return headline;
     const event = answeredEventsOf(this.#game, pending)[0] ?? pending.prompt.event;
     if (event.kind !== "characterDefeated") return headline;
-    const was = this.#beats.find((beat) => beat.defeatedCard === event.instanceId && beat.droneWas)?.droneWas;
+    const was = this.#dronesDefeated.get(event.instanceId);
     return was && headline.startsWith(was) ? `The ${DRONE_NAME}${headline.slice(was.length)}` : headline;
   }
 

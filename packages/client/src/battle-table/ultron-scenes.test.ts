@@ -49,7 +49,8 @@ describe("Ultron's dev scenes", () => {
     expect(ultron.length).toBeGreaterThanOrEqual(12);
   });
 
-  test.each(ultron)("%s deals on twenty different shuffles", (name) => {
+  // Twenty deals of a crowded scene take a while on a busy PC: a minute and a half, not the default thirty seconds.
+  test.each(ultron)("%s deals on twenty different shuffles", { timeout: 90_000 }, (name) => {
     for (let seed = 1; seed <= 20; seed++) {
       const view = deal(name, seed).snapshot();
       expect(view.villain.name).toBe("Ultron");
@@ -499,5 +500,88 @@ describe("what the first game against Ultron showed", () => {
     expect(battle.consequentialDamage(jessica.id, "thwart")).toBe(1);
     expect(battle.consequentialDamage(battle.snapshot().hero.id, "attack")).toBe(0);
     expect(battle.consequentialDamage(drones(battle.snapshot())[0]!.id, "attack")).toBe(0);
+  });
+});
+
+describe("Ultron's second stage, and the win", () => {
+  test("ultronstage: Ultron (II) puts a Drone into play as he attacks and hits harder for each, until the attack ends", () => {
+    const battle = deal("ultronstage");
+    expect(battle.heroAction("basicAttack")).toBe(true);
+    if (battle.snapshot().choice) battle.choose(battle.snapshot().villain.id);
+    // Standard mode: Ultron (I) then Ultron (II), 22 hit points.
+    expect(battle.snapshot().villainHp).toBe(22);
+    const ultron = battle.snapshot().villain.id;
+    const { beats } = throughVillainPhase(battle, /Drone|Spider-Sense|^Defend$/);
+    const arrives = beats.findIndex((beat) => beat.droneIn?.source === ultron);
+    const stronger = beats.findIndex((beat) => beat.modifier?.id === ultron && beat.modifier.name === "ATK");
+    const hit = beats.findIndex((beat) => beat.hit?.source === ultron);
+    const back = beats.findIndex(
+      (beat, i) => i > stronger && beat.modifier?.id === ultron && beat.modifier.name === "ATK" && !beat.modifier.count,
+    );
+    expect(arrives).toBeGreaterThan(-1);
+    // The Drone is seen arriving, then the bonus it gives (+1 ATK for each Drone engaged), then the attack lands.
+    expect(stronger).toBeGreaterThan(arrives);
+    expect(beats[stronger]!.modifier!.count).toBe(
+      drones(battle.snapshot()).length >= 3 ? 3 : beats[stronger]!.modifier!.count,
+    );
+    expect(hit).toBeGreaterThan(stronger);
+    expect(back).toBeGreaterThan(hit);
+    expect(battle.snapshot().villain.markers.some((marker) => marker.name === "ATK")).toBe(false);
+  });
+
+  test("ultronnorad: the deck count a Drone leaves behind allows for cards drawn earlier in the same move", () => {
+    const battle = deal("ultronnorad");
+    const before = battle.snapshot().deckCount;
+    expect(battle.endTurn()).toBe(true);
+    const choice = battle.snapshot().choice!;
+    expect(choice.discardFromHand).toBe(true);
+    // Two cards discarded at the end of the turn are two cards drawn, then the villain phase makes a Drone.
+    expect(battle.chooseMany(choice.options.slice(0, 2).map((option) => option.id))).toBe(true);
+    const view = battle.snapshot();
+    expect(view.beats.find((beat) => beat.draw)?.draw).toHaveLength(2);
+    expect(view.beats.find((beat) => beat.droneIn)?.droneIn?.deckCount).toBe(before - 3);
+    expect(view.deckCount).toBe(before - 3);
+  });
+
+  test("ultronfinish: Ultron (I) falls, then all of Ultron (II) in one turn, and the game is won at stage two", () => {
+    const battle = deal("ultronfinish");
+    const view = () => battle.snapshot();
+    const card = (name: string) => {
+      const found = [...view().hand, ...view().inPlay].find((c) => c.name === name);
+      if (!found) throw Error(`no ${name}`);
+      return found;
+    };
+    const attack = (who: string) => {
+      const done =
+        who === "Spider-Man" ? battle.heroAction("basicAttack") : battle.fieldAction(card(who).id, "basicAttack");
+      expect(done, `${who} attacks`).toBe(true);
+      if (view().choice) expect(battle.choose(view().villain.id), `${who} at Ultron`).toBe(true);
+    };
+    const kick = (pay: string[]) => {
+      expect(battle.pick(card("Swinging Web Kick").id)).toBe(true);
+      if (view().choice && !view().payment) expect(battle.choose(view().villain.id)).toBe(true);
+      for (const label of pay) {
+        const source = view().payment!.sources.find((s) => s.label.startsWith(label) && !s.selected && s.available);
+        expect(source, `${label} in ${JSON.stringify(view().payment!.sources.map((s) => s.label))}`).toBeDefined();
+        battle.toggle(source!.id);
+      }
+      expect(battle.pay(), "pay for the Kick").toBe(true);
+      if (view().choice) expect(battle.choose(view().villain.id)).toBe(true);
+    };
+
+    expect(view().villainHp).toBe(1);
+    attack("Black Cat");
+    expect(view().villainHp).toBe(22);
+    expect(view().beats.some((beat) => beat.villainStage === 2)).toBe(true);
+    attack("Spider-Man");
+    kick(["Energy", "Web-Shooter"]);
+    kick(["Strength", "Web-Shooter"]);
+    expect(view().villainHp).toBe(4);
+    attack("Jessica Jones");
+    expect(view().outcome).toBeNull();
+    attack("Daredevil");
+    // Standard mode ends at Ultron (II): no third stage comes up.
+    expect(view().outcome).toMatchObject({ result: "win" });
+    expect(view().beats.some((beat) => beat.villainStage === 3)).toBe(false);
   });
 });

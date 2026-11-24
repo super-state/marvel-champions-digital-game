@@ -249,7 +249,7 @@ function attachmentFanOffset(x: number, y: number, fan: number): [number, number
 const UPRIGHT_AMONG_SCHEMES = 0.8;
 const WAITING_X = 0.67;
 /** Where they lie instead when everything right of the middle is taken: left of the player's row. */
-const WAITING_LEFT_X = 0.235;
+const WAITING_LEFT_X = 0.2;
 
 /** An encounter card dealt and waiting to be revealed, lying facedown in the villain's row. */
 function waitingCardWidth(w: number, h: number) {
@@ -2812,7 +2812,7 @@ export class BattleTable {
       (card) => card.id !== this.#revealing && !this.#parked.has(card.id) && !card.boostFor,
     ).length;
     const waitingWidth = waitingCardWidth(w, h);
-    const standing = rowEnemies.flatMap((card) => {
+    const standing = [state.villain, ...schemes, ...rowEnemies].flatMap((card) => {
       const pose = enemyPoses.get(card.id);
       if (!pose) return [];
       const across = pose.width * (card.landscape ? HEIGHT : 1);
@@ -2858,9 +2858,10 @@ export class BattleTable {
     // cards below, the open mat left of the player's row (between it and the player's deck) is the nearest clear spot.
     const waitingSpot = !waitingCount
       ? { x: WAITING_X, y: h * 0.26 }
-      : [WAITING_X, WAITING_LEFT_X]
-          .flatMap((x) => [0.26, 0.34, 0.42, 0.5].map((share) => ({ x, y: h * share })))
-          .reduce((best, spot) => (overlap(waitingAt(spot)) < overlap(waitingAt(best)) ? spot : best));
+      : [
+          ...[0.26, 0.34, 0.42, 0.5].map((share) => ({ x: WAITING_X, y: h * share })),
+          ...[0.5, 0.56].map((share) => ({ x: WAITING_LEFT_X, y: h * share })),
+        ].reduce((best, spot) => (overlap(waitingAt(spot)) < overlap(waitingAt(best)) ? spot : best));
     const waitingY = waitingSpot.y;
     // A minion that comes out while they wait stands just below them.
     asideEnemies.forEach((card, i) => {

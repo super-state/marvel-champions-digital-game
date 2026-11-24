@@ -997,6 +997,8 @@ const play = el<HTMLButtonElement>("#shelf-play");
 let boxes: Box[] = [];
 /** The open box, or -1 on the shelf. */
 let chosen = -1;
+/** A box asked for from the keyboard while another was still going back onto the shelf. */
+let queued = -1;
 /** How far into the opening the chosen box is, in seconds (0 = on the shelf, OPENED = all out). */
 let s = 0;
 let target = 0;
@@ -1020,6 +1022,7 @@ function choose(index: number) {
     return;
   }
   chosen = index;
+  queued = -1;
   target = OPENED;
   hovered = -1;
   hoverTag.hidden = true;
@@ -1448,6 +1451,11 @@ function frame(now: number) {
     if (s === 0 && chosen >= 0) {
       chosen = -1;
       hint.hidden = false;
+      if (queued >= 0) {
+        const next = queued;
+        queued = -1;
+        choose(next);
+      }
     }
   }
   pose(now / 1000, dt);
@@ -1483,8 +1491,12 @@ async function build() {
     button.type = "button";
     button.textContent = c.open ? `Open ${name}` : `${name} (coming soon)`;
     button.onclick = () => {
+      if (outro) return;
       // On the shelf, or this box still going back onto it (it turns round and opens again).
-      if (!outro && (chosen < 0 || (chosen === i && target === 0))) choose(i);
+      if (chosen < 0 || (chosen === i && target === 0)) choose(i);
+      // Another box, asked for while the last one is still going back: it opens as soon as that one is home (the
+      // press used to be dropped, so Escape then a different box did nothing).
+      else if (chosen !== i && target === 0) queued = i;
     };
     button.onfocus = () => {
       if (chosen < 0) hovered = i;

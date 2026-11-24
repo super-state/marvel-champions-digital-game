@@ -572,6 +572,24 @@ const SCENES: Record<string, Scene> = {
     deckLeft: 1,
     dealt: ["01150"],
   },
+  /**
+   * The finish against Ultron: Ultron (I) one hit from his second stage, with enough on the table for the whole of
+   * Ultron (II)'s 22 in one turn. Black Cat takes Ultron (I)'s last hit point; then Spider-Man (2), two Swinging Web
+   * Kicks (Energy and both Web-Shooters; Strength and Genius), Jessica Jones (2) and Daredevil (2).
+   */
+  ultronfinish: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    villain: { damage: 16 },
+    play: [
+      { code: "01058" },
+      { code: "01059" },
+      { code: "01002" },
+      { code: "01008", counters: { web: 3 } },
+      { code: "01008", counters: { web: 3 } },
+    ],
+    hand: ["01005", "01005", "01088", "01090", "01089"],
+  },
   /** Ultron's crowded table: five Drones and an Advanced Ultron Drone, two side schemes, two attachments on Ultron. */
   ultroncrowd: {
     scenario: "ultron",
