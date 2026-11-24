@@ -447,6 +447,14 @@ const SCENES: Record<string, Scene> = {
     drones: [{ code: "01005" }, { code: "01002" }, { code: "01008" }],
     play: [{ code: "01059" }],
   },
+  /** Interrogation Room in play and two Drones out: defeat one and the room asks about the Drone, not the card it was. */
+  ultronroom: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    mainThreat: 2,
+    drones: [{ code: "01005" }],
+    play: [{ code: "01063" }],
+  },
   /** Spider-Man in hero form: end the turn, Ultron attacks, then asks for 1 threat or the top card of the deck as a Drone. */
   ultronattack: {
     scenario: "ultron",

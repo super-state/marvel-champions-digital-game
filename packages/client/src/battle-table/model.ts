@@ -752,7 +752,13 @@ export class BattleModel {
     };
     // The revealed card whose effect discards from the deck (Rage of Ultron, Invasive AI): its discard is its own,
     // though another ability resolved in the middle of it (Spider-Sense, drawn as Rage of Ultron's attack began).
-    let milling: { card: InstanceId; label: string } | null = null;
+    // A card revealed on an earlier move and still resolving (its attack stopped to ask about Spider-Sense) counts too.
+    const stillRevealed = this.#game.players[0]!.dealtEncounter.find(
+      (id) => getInstance(this.#game, id)?.faceup && millsDeck(id),
+    );
+    let milling: { card: InstanceId; label: string } | null = stillRevealed
+      ? { card: stillRevealed, label: "When Revealed" }
+      : null;
     // How many cards the player's deck was just shuffled from (a reset reports it just after).
     let shuffledDeck: number | null = null;
     // An encounter deck shuffle is a run-out reset when an acceleration token follows it (effects.ts

@@ -188,7 +188,9 @@ test("Spider-Tracer can attach after Spider-Man attacks and interrupts only the 
   spend("Helicarrier");
   expect(battle.pay()).toBe(true);
   expect(battle.choose(battle.snapshot().choice!.options.find((o) => o.cardId === minion.id)!.id)).toBe(true);
-  expect(battle.snapshot().beats.find((beat) => beat.defeatedCard === minion.id)).toMatchObject({ text: "" });
+  expect(battle.snapshot().beats.find((beat) => beat.defeatedCard === minion.id)).toMatchObject({
+    text: "Hydra Bomber is defeated",
+  });
   expect(battle.snapshot().enemyCards.find((c) => c.type === "main_scheme")?.threat).toBe(1);
   expect(battle.snapshot().discard.map((c) => c.id)).toContain(tracer.id);
 });

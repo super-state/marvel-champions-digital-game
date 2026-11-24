@@ -340,9 +340,8 @@ describe("Ultron on the table (seed 7 unless a test says otherwise)", () => {
     expect(beats[milled]!.milled).toHaveLength(dealt);
   });
 
-  // KNOWN BUG (reported): the mill is credited to Spider-Man's interrupt (Enhanced Spider-Sense, resolved during the
-  // attack), not to Rage of Ultron: millSource is {card: <Spider-Man>, label: "Interrupt"} at seed 7.
-  test.fails("ultronrage: the cards Rage of Ultron discards say Rage of Ultron discarded them", () => {
+  // Spider-Sense resolves in the middle of Rage of Ultron's attack: the discard is still Rage of Ultron's.
+  test("ultronrage: the cards Rage of Ultron discards say Rage of Ultron discarded them", () => {
     const battle = deal("ultronrage");
     const { beats } = throughVillainPhase(battle, /Drone/);
     const rage = idOf(beats, "Rage of Ultron");
@@ -443,14 +442,62 @@ describe("the hero is defeated in the villain phase (ultrongear, seed 7)", () =>
     expect(lastHit(beats, hero)).toBeGreaterThan(-1);
   });
 
-  // KNOWN BUG (reported): after the killing hit the table still plays out "Discard from your hand" (7 cards) and
-  // "Discard from the top of your deck" (29 cards, millSource Concussive Blast), i.e. the elimination's clear-away is
-  // shown card by card. The `eliminated` guard in model.ts only skips cardMoved events after `playerEliminated`.
-  test.fails("nothing is discarded from the hand or the deck after the hero's last hit", () => {
+  // An eliminated player's hand, deck and cards in play are cleared away: that is not played out card by card.
+  test("nothing is discarded from the hand or the deck after the hero's last hit", () => {
     const battle = deal("ultrongear");
     const hero = battle.snapshot().hero.id;
     const { beats } = throughVillainPhase(battle, /Drone/);
     const after = beats.slice(lastHit(beats, hero) + 1);
     expect(after.filter((beat) => beat.milled || beat.handDiscard).map((beat) => beat.text)).toEqual([]);
+  });
+});
+
+// Found playing a whole game against Ultron (2026-11-24).
+describe("what the first game against Ultron showed", () => {
+  test("ultronroom: a reaction to a Drone's defeat asks about the Drone, not the card it turned out to be", () => {
+    const battle = deal("ultronroom");
+    const drone = drones(battle.snapshot())[0]!;
+    expect(battle.heroAction("basicAttack")).toBe(true);
+    expect(battle.choose(drone.id)).toBe(true);
+    const view = battle.snapshot();
+    const was = view.beats.find((beat) => beat.defeatedCard === drone.id)?.droneWas;
+    expect(was).toBeTruthy();
+    expect(view.choice?.prompt).toMatch(/^The Drone was defeated/);
+    expect(view.choice?.prompt).not.toContain(was!);
+  });
+
+  test("ultrondeck: a Drone that takes the deck's last card is seen going before the deck is made again", () => {
+    const battle = deal("ultrondeck");
+    expect(battle.snapshot().deckCount).toBe(1);
+    expect(battle.endTurn()).toBe(true);
+    const beats: Beat[] = [...battle.snapshot().beats];
+    for (let i = 0; i < 40; i++) {
+      const view = battle.snapshot();
+      if (view.outcome || (view.turn === "player" && !view.choice)) break;
+      const choice = view.choice!;
+      // Keep the whole hand at the end of the turn, so nothing is drawn and the deck still holds its one card.
+      const done = choice.discardFromHand
+        ? battle.chooseMany([])
+        : battle.choose(choice.options.at(-1)?.id ?? null) || battle.choose(null);
+      expect(done, JSON.stringify(choice)).toBe(true);
+      beats.push(...battle.snapshot().beats);
+    }
+    const last = beats.findIndex((beat) => beat.droneIn?.deckCount === 0);
+    const reset = beats.findIndex((beat) => beat.deckReset !== undefined);
+    expect(last).toBeGreaterThan(-1);
+    expect(reset).toBeGreaterThan(last);
+    // The encounter card dealt for running out follows the reset, and the next Drone comes off the new deck.
+    expect(beats.findIndex((beat, i) => i > reset && beat.penalty)).toBeGreaterThan(reset);
+    const next = beats.find((beat, i) => i > reset && beat.droneIn);
+    expect(next?.droneIn?.deckCount).toBe(beats[reset]!.deckReset! - 1);
+  });
+
+  test("an ally's own attack or thwart costs it damage, which the play hook can warn about", () => {
+    const battle = deal("ultrondrones");
+    const jessica = battle.snapshot().inPlay.find((card) => card.name === "Jessica Jones")!;
+    expect(battle.consequentialDamage(jessica.id, "attack")).toBe(1);
+    expect(battle.consequentialDamage(jessica.id, "thwart")).toBe(1);
+    expect(battle.consequentialDamage(battle.snapshot().hero.id, "attack")).toBe(0);
+    expect(battle.consequentialDamage(drones(battle.snapshot())[0]!.id, "attack")).toBe(0);
   });
 });
