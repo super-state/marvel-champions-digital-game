@@ -1063,6 +1063,7 @@ export class BattleTable {
   stageEvent(card: TableCard): void {
     const s = this.#state;
     if (!s || s.staged?.id === card.id) return;
+    this.#pinnedEvent = null;
     this.setCards({
       ...s,
       staged: card,
@@ -1076,6 +1077,7 @@ export class BattleTable {
   discardEvent(card: TableCard): void {
     const s = this.#state;
     if (!s) return;
+    if (this.#pinnedEvent?.id === card.id) this.#pinnedEvent = null;
     this.setCards({
       ...s,
       staged: null,
@@ -1317,6 +1319,28 @@ export class BattleTable {
   }
 
   /** A played event waits for its target to be picked, on the mat clear of every card, nothing under it. */
+  /**
+   * The event that just cancelled a revealed card (Enhanced Spider-Sense) waits exactly where it stands, beside where
+   * that card was, until it goes to the discard pile: sent back to the spot it was paid for in, it flew left across
+   * the table and then right again to the pile (Adam, 2026-11-24).
+   */
+  holdEventHere(id: string): void {
+    const piece = this.#pieces.get(id);
+    if (!piece) return;
+    piece.root.updateMatrixWorld();
+    this.#pinnedEvent = {
+      id,
+      pose: {
+        position: piece.root.position.clone(),
+        pitch: piece.root.rotation.x,
+        roll: piece.root.rotation.z,
+        scale: piece.root.scale.x,
+      },
+    };
+    this.holdEvent(id);
+  }
+  #pinnedEvent: { id: string; pose: Pose } | null = null;
+
   holdEvent(id: string): void {
     if (!this.#pieces.has(id)) return;
     this.#power = id;
@@ -2866,7 +2890,11 @@ export class BattleTable {
         fallback;
       held.spot = [x, y];
       held.key = key;
-      this.#pose(state.staged.id, x, y, playWidth * 1.12, 1.18, flat + 0.12);
+      const pinned = this.#pinnedEvent?.id === state.staged.id ? this.#pinnedEvent.pose : null;
+      if (pinned) {
+        const piece = this.#pieces.get(state.staged.id);
+        if (piece) piece.target = { ...pinned, position: pinned.position.clone() };
+      } else this.#pose(state.staged.id, x, y, playWidth * 1.12, 1.18, flat + 0.12);
     }
     const pileWidth = Math.min(w * 0.125, h * 0.125);
     const discardGoal = { position: base.clone(), scale: this.#point(pileX + pileWidth, pileY, 0.025).x - base.x };
