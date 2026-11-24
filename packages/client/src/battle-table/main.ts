@@ -2757,7 +2757,7 @@ async function present(beats: Snapshot["beats"]) {
         sfx.play("cancel");
         stampCard(cancelled, "Cancelled");
         await sleep(reducedMotion() ? 300 : 760);
-        table?.holdEvent(beat.interrupt);
+        table?.holdEventHere(beat.interrupt);
         letGoOfEncounter(cancelled, []);
         heldEncounter = revealWindowHeld = null;
         await sleep(reducedMotion() ? 200 : 620);
