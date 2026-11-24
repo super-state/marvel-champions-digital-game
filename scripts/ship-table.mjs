@@ -99,7 +99,7 @@ const secrets = execFileSync("node", [wrangler, "pages", "secret", "list", "--pr
   cwd: scratch,
   encoding: "utf8",
 });
-if (!/bADMIN_KEYb/.test(secrets))
+if (!/\bADMIN_KEY\b/.test(secrets))
   console.warn("ship-table: ADMIN_KEY isn't set, so the players page (/admin) can't be opened yet");
 const pagesDir = path.join(scratch, "pages");
 mkdirSync(pagesDir);
