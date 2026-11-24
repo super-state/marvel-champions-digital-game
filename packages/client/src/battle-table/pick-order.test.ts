@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { arrangeScene } from "./debug-scenes.js";
 import { BattleModel, type BattleSnapshot } from "./model.js";
-import { pickOrder } from "./pick-order.js";
+import { cardPlaces, pickOrder } from "./pick-order.js";
 
 const options = ["a", "b", "c"].map((id) => ({ id, label: id, cardId: id }));
 
@@ -33,17 +33,46 @@ describe("pickOrder", () => {
   });
 });
 
+describe("cardPlaces", () => {
+  test("a card that is one option of the question wears its place", () => {
+    expect([...cardPlaces({ ordered: true, options }, ["b", "a"])]).toEqual([
+      ["b", 1],
+      ["a", 2],
+    ]);
+  });
+
+  test("a card the question asks about twice (Quickstrike and Teamwork) wears no number: the list numbers them", () => {
+    const keywords = [
+      { id: "quickstrike", label: "Quickstrike", cardId: "m" },
+      { id: "teamwork", label: "Teamwork", cardId: "m" },
+      { id: "c", label: "c", cardId: "c" },
+    ];
+    expect([...pickOrder({ ordered: true, options: keywords }, ["teamwork", "c"])]).toEqual([
+      ["teamwork", 1],
+      ["c", 2],
+    ]);
+    expect([...cardPlaces({ ordered: true, options: keywords }, ["teamwork", "c"])]).toEqual([["c", 2]]);
+  });
+
+  test("an option with no card wears nothing on the table", () => {
+    const listed = [{ id: "x", label: "x", cardId: null }, ...options];
+    expect([...cardPlaces({ ordered: true, options: listed }, ["x", "a"])]).toEqual([["a", 2]]);
+  });
+});
+
 /**
  * Klaw's Masters of Mayhem (`/battle/?scene=klawmasters`): "Order the enemies" is an ordered question, and the order
  * the badges show is the order the minions attack in.
  */
 describe("Masters of Mayhem's order", () => {
   /** End the turn and answer plainly (pass, don't defend, the first cards) until a question orders the enemies. */
-  function untilOrdered(battle: BattleModel): NonNullable<BattleSnapshot["choice"]> {
+  function untilOrdered(battle: BattleModel, seen: string[] = []): NonNullable<BattleSnapshot["choice"]> {
     expect(battle.endTurn()).toBe(true);
     for (let i = 0; i < 40; i++) {
       const choice = battle.snapshot().choice;
       if (choice?.ordered) return choice;
+      // Every question before it is not ordered: noted by kind, so the test can say which kinds those were.
+      seen.push(choice?.offers?.length ? "offer" : choice?.max === 1 ? "single" : "other");
       expect(choice, "Masters of Mayhem's question never came").toBeTruthy();
       const options = choice!.options;
       const decline = options.find((o) => !o.cardId);
@@ -60,7 +89,11 @@ describe("Masters of Mayhem's order", () => {
   test.each([[false], [true]])("the minions attack in the order their badges show (reversed: %s)", (reversed) => {
     const battle = new BattleModel();
     battle.reset({ villain: "klaw", seed: 7, arrange: arrangeScene("klawmasters")! });
-    const choice = untilOrdered(battle);
+    const seen: string[] = [];
+    const choice = untilOrdered(battle, seen);
+    // On the way, reaction windows (Spider-Sense) and single picks (defenders) came up, none of them ordered.
+    expect(seen).toContain("offer");
+    expect(seen).toContain("single");
     expect(choice.prompt).toBe("Order the enemies");
     expect(choice.options.map((o) => o.label).sort()).toEqual(["Melter", "Tiger Shark"]);
     const picks = choice.options.map((o) => o.id);

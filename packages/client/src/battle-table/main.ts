@@ -7,7 +7,7 @@ import { besideSpot, dockSpot } from "./dock-spot.js";
 import { whileStillThere } from "./beat-order.js";
 import { handBetweenBeats } from "./hand-flow.js";
 import { nextOfferIndex } from "./offer-queue.js";
-import { pickOrder } from "./pick-order.js";
+import { cardPlaces, pickOrder } from "./pick-order.js";
 import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js";
 import { arrangeScene, sceneVillain } from "./debug-scenes.js";
 import { sfx, type SoundName } from "./sound.js";
@@ -421,7 +421,7 @@ function paintDock(view: DockView): boolean {
       button.type = "button";
       button.dataset.option = option.id;
       if (option.pressed !== undefined) button.setAttribute("aria-pressed", String(option.pressed));
-      if (option.order !== undefined) button.append(orderBadge(option.order));
+      if (option.order !== undefined) button.append(orderBadge(option.order, false));
       else if (option.icon) button.append(icon(option.icon));
       button.append(make("span", "", option.label));
       if (option.detail) button.append(make("small", "", option.detail));
@@ -1375,6 +1375,7 @@ function synchronizeLabels() {
   const visible = discardOpen
     ? viewedPile()
     : [state.hero, state.villain, ...state.enemyCards, ...displayedHand, ...state.inPlay];
+  const places = cardPlaces(state.choice, choicePicks);
   for (const [id, label] of labels) {
     if (!visible.some((c) => c.id === id)) {
       label.remove();
@@ -1421,8 +1422,12 @@ function synchronizeLabels() {
     const picked = handPick && choicePicks.has(target!.id);
     // An ordered question (Masters of Mayhem's "Order the enemies"): the plate says each pick's place, and the card
     // itself wears it as a number (`placeOrderBadges`).
-    const ordering = !!state.choice?.ordered && !!target && !handPick;
-    const place = ordering ? pickOrder(state.choice, choicePicks).get(target!.id) : undefined;
+    const ordering =
+      !!state.choice?.ordered &&
+      !!target &&
+      !handPick &&
+      state.choice.options.filter((option) => option.cardId === card.id).length === 1;
+    const place = ordering ? places.get(card.id) : undefined;
     if (source || handPick) label.setAttribute("aria-pressed", String(source?.selected ?? picked));
     else if (ordering) label.setAttribute("aria-pressed", String(place !== undefined));
     else label.removeAttribute("aria-pressed");
@@ -1494,9 +1499,9 @@ function synchronizeLabels() {
 }
 
 /** The place a pick stands in an ordered question, as a gold number on its card's plate or its button. */
-function orderBadge(place: number) {
+function orderBadge(place: number, hidden = true) {
   const badge = make("span", "pick-order", String(place));
-  badge.setAttribute("aria-hidden", "true");
+  if (hidden) badge.setAttribute("aria-hidden", "true");
   return badge;
 }
 
@@ -1892,12 +1897,24 @@ function untagBoost(id: string) {
  * first, on its top-left corner, above the shade the question draws over the table. They go as soon as the picks do.
  */
 const orderBadges = new Map<string, HTMLElement>();
-function placeOrderBadges(projected: ReturnType<BattleTable["anchors"]>) {
-  const order = new Map<string, number>();
-  for (const [optionId, place] of pickOrder(state.choice, choicePicks)) {
-    const cardId = state.choice?.options.find((option) => option.id === optionId)?.cardId;
-    if (cardId) order.set(cardId, place);
+// The badges sit in the innermost of the clips, inside the layer that keeps them above the question's shade: a clip
+// path makes a stacking context of its own, which would sink them under the shade if it were outside.
+const orderHost = orderLayer.appendChild(make("div", "label-clip"));
+const orderClips = [orderHost];
+function placeOrderBadges(projected: ReturnType<BattleTable["anchors"]>, clips: readonly string[]) {
+  // The discard pile's fan covers the table: its cards wear no numbers.
+  const order = discardOpen ? new Map<string, number>() : cardPlaces(state.choice, choicePicks);
+  // Cut out under the cards held in front (the hand, a card being read), as the plates are (`placeLabels`).
+  while (orderClips.length < clips.length) {
+    const inner = orderClips[orderClips.length - 1]!;
+    const outer = make("div", "label-clip");
+    inner.before(outer);
+    outer.append(inner);
+    orderClips.push(outer);
   }
+  orderClips.forEach((layer, i) => {
+    layer.style.clipPath = clips[i] ?? "";
+  });
   for (const [id, badge] of orderBadges)
     if (!order.has(id)) {
       badge.remove();
@@ -1913,7 +1930,8 @@ function placeOrderBadges(projected: ReturnType<BattleTable["anchors"]>) {
     }
     if (!badge) {
       badge = orderBadge(place);
-      orderLayer.append(badge);
+      badge.dataset.card = id;
+      orderHost.append(badge);
       orderBadges.set(id, badge);
     }
     badge.textContent = String(place);
@@ -2005,7 +2023,7 @@ function placeLabels() {
     if (card) placeBoostBurst(burst.node, card);
     else dropBoostBurst(id);
   }
-  placeOrderBadges(projected);
+  placeOrderBadges(projected, clips);
   // Klaw's attacks deal him two boost cards, fanned beside him: one tag, on the outermost card, counts them
   // ("Boost ×2"), rather than a tag per card drawn over each other.
   const boostsBy = new Map<string, string[]>();

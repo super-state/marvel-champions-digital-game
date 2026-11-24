@@ -19,7 +19,7 @@ const moves = (page: Page) =>
 const play = (page: Page, move: string) =>
   page.evaluate((m) => (window as unknown as { __battlePlay: PlayHook }).__battlePlay.play(m), move);
 
-/** The number on a minion: said with its name on its plate, and shown on its card. Null when it has none. */
+/** The number on a minion: said with its name on its plate, and worn on that same card. Null when it has none. */
 const badge = async (page: Page, name: string) => {
   const { said, shown } = await page.evaluate((card) => {
     const plate = [...document.querySelectorAll<HTMLElement>(".anchor")].find((label) =>
@@ -27,13 +27,11 @@ const badge = async (page: Page, name: string) => {
     );
     if (!plate) throw new Error(`No plate for ${card}`);
     const place = /, (\d+)(st|nd|rd|th)$/.exec(plate.getAttribute("aria-label") ?? "")?.[1] ?? null;
-    return {
-      said: place,
-      shown: [...document.querySelectorAll("#order-badges .pick-order")].map((b) => b.textContent),
-    };
+    const worn = document.querySelector(`#order-badges .pick-order[data-card="${plate.dataset.card}"]`);
+    return { said: place, shown: worn?.textContent ?? null };
   }, name);
-  // Placed on the table's next frame: "(not on the card)" until it is there.
-  return said === null || shown.includes(said) ? said : `${said} (not on the card)`;
+  // The card's own number is placed on the table's next frame: until then the two differ, and the poll waits.
+  return said === shown ? said : `plate says ${said}, card shows ${shown}`;
 };
 
 /** End the turn and answer plainly (pass, don't defend, discard the first card) until the enemies are to be ordered. */
