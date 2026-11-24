@@ -788,7 +788,9 @@ export class BattleTable {
     if (!piece) return;
     this.#scene.remove(piece.root);
     for (const token of piece.tokens.children) this.#drops.delete(token as THREE.Group);
-    if (piece.card.reverseArt || piece.card.type === "villain") piece.back.material.dispose();
+    // Its own back (an identity, the villain, a card that has turned over), never the deck backs it may share.
+    if (piece.back.material !== this.#deckBack.material && piece.back.material !== this.#encounterBack.material)
+      piece.back.material.dispose();
     piece.aura?.material.dispose();
     piece.face.material.dispose();
     this.#pieces.delete(id);
@@ -883,6 +885,10 @@ export class BattleTable {
         fresh.add(card.id);
       }
       if (!fresh.has(card.id) && card.reverseArt && card.art !== piece.card.art) {
+        // A card made without a back of its own shares the deck's or the encounter deck's (Klaw's main scheme, which
+        // turns over when it advances): it gets its own before the new face is painted on, or the deck wears it.
+        if (piece.back.material === this.#deckBack.material || piece.back.material === this.#encounterBack.material)
+          piece.back.material = new THREE.MeshBasicMaterial({ toneMapped: false });
         piece.back.material.map = this.#texture(card.art);
         this.#startFlight(card.id, "flip");
       } else if (fresh.has(card.id) || card.art !== piece.card.art) {
@@ -1661,6 +1667,38 @@ export class BattleTable {
     if (this.#state) {
       this.setCards({ ...this.#state, villain: flip ? { ...card, reverseArt: this.#state.villain.art } : card });
     }
+  }
+
+  /** A card on the villain's side turns over to a new face: the main scheme advancing to its next stage. */
+  turnEnemyCard(card: TableCard): void {
+    const state = this.#state;
+    if (!state) return;
+    const shown = state.enemyCards.find((c) => c.id === card.id);
+    if (!shown) return;
+    const turned = { ...card, reverseArt: shown.art };
+    this.setCards({ ...state, enemyCards: state.enemyCards.map((c) => (c.id === card.id ? turned : c)) });
+  }
+
+  /**
+   * A minion put into play without being revealed (Klaw's main scheme discards until it finds one): it comes off the
+   * encounter discard pile, where the search left it, to its place on the table.
+   */
+  bringInEnemy(card: TableCard): void {
+    const state = this.#state;
+    if (!state || state.enemyCards.some((c) => c.id === card.id)) return;
+    this.setCards({
+      ...state,
+      enemyCards: [...state.enemyCards, card],
+      encounterDiscard: state.encounterDiscard.filter((c) => c.id !== card.id),
+    });
+    const root = this.#pieces.get(card.id)?.root;
+    if (!root) return;
+    root.position.copy(this.#encounterDiscardSlot.position);
+    root.position.y += 0.15;
+    root.scale.copy(this.#encounterDiscardSlot.scale);
+    root.rotation.copy(this.#encounterDiscardSlot.rotation);
+    this.#startFlight(card.id, "place");
+    this.#requestFrame();
   }
 
   /**
@@ -2487,7 +2525,14 @@ export class BattleTable {
       const upper = schemeOrigin.clone();
       upper.z -= schemeStep;
       const upperRow = (1 - upper.project(this.#camera).y) * this.#canvasHeight * 0.5 - this.#extension;
-      const layRow = (row: readonly TableCard[], rowY: number) => {
+      // The upper row stands level with the encounter discard pile, which is further back than the deck: it ends at
+      // that pile's edge (Klaw's four Masters of Evil slid the last one under it).
+      const discardPile = encounterPile(encounterDiscardY);
+      const upperRight = Math.min(
+        right,
+        this.#project(discardPile.position.x - discardPile.scale * 0.5, 0.025, discardPile.position.z).x,
+      );
+      const layRow = (row: readonly TableCard[], rowY: number, right: number) => {
         // Each minion takes a card-sized slot from the villain outwards; room to spare is left at the far end.
         const slotWidth = Math.min((right - left) / row.length, enemyCardWidth * 1.5);
         const sized = row.map((card) => {
@@ -2515,8 +2560,8 @@ export class BattleTable {
           poseEnemy(card, x - perspectiveOffset, rowY, width);
         });
       };
-      layRow(near, enemyRow);
-      if (far.length) layRow(far, upperRow);
+      layRow(near, enemyRow, right);
+      if (far.length) layRow(far, upperRow, upperRight);
     }
     // Encounter cards dealt facedown before the villain phase lie right of the middle, on the open mat. Where cards in
     // play already stand there (a row of minions), they lie in the first clear spot further down instead, never on
@@ -2592,11 +2637,10 @@ export class BattleTable {
         // a held card but small, raised over anything in that row so the labels it covers hide behind it.
         const villain = enemyPoses.get(state.villain.id)!;
         const width = Math.min(villain.width * 0.6, h * 0.2);
-        const boostsOut = [...this.#encounters.values()].some((other) => other.boostFor === state.villain.id);
-        const x = Math.min(
-          w - 12 - width * 0.5,
-          villain.x + villain.width * 0.5 + (boostsOut ? boostCardWidth(villain.width, w, h) * 0.55 : 0) + width * 0.62,
-        );
+        // Klaw's attacks fan two boost cards out from under him, each 0.3 of a card further right: clear them all.
+        const boostsOut = [...this.#encounters.values()].filter((other) => other.boostFor === state.villain.id).length;
+        const boostReach = boostsOut ? boostCardWidth(villain.width, w, h) * (0.55 + (boostsOut - 1) * 0.3) : 0;
+        const x = Math.min(w - 12 - width * 0.5, villain.x + villain.width * 0.5 + boostReach + width * 0.62);
         this.#pose(card.id, x, villain.y + width * 0.12, width, 1.2, this.#camera.rotation.x, -0.05);
       } else if (card.boostFor && host) {
         // A boost card waits facedown beside the enemy it was dealt to, tucked under its right edge, until the

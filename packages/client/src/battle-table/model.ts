@@ -162,6 +162,16 @@ export interface BattleBeat {
   encounterDeal?: string;
   villainStage?: number;
   villainFlip?: boolean;
+  /**
+   * The main scheme's stage was completed and it turned over to its next one (Klaw's Underground Distribution to
+   * Secret Rendezvous): `from` and `to` are the stage names, `threat` and `target` the new stage's threat and goal.
+   */
+  schemeAdvance?: { scheme: string; from: string; to: string; stage: number; threat: number; target: number | null };
+  /**
+   * An encounter card put into play without being revealed (Klaw's main scheme discarding cards until a minion, then
+   * putting that minion into play): it comes onto the table on its own beat.
+   */
+  entersPlay?: string;
   defeat?: string;
   defeatedCard?: string;
   /** A card in play discarded without being defeated: an attachment used up, a support Caught Off Guard took. */
@@ -236,6 +246,8 @@ export interface BattleBeat {
   encounterResolved?: string;
   actor?: string | null;
   phase?: "hero" | "villain";
+  /** With `phase`: the round it belongs to (the final state may already be a round on, after a whole villain phase). */
+  round?: number;
   gameEnded?: true;
   activate?: { card: string; hero: string };
   threat?: { scheme: string; delta: number };
@@ -270,6 +282,25 @@ export interface BattleSnapshot {
   round: number;
   outcome: GameState["outcome"];
   canEndTurn: boolean;
+}
+
+/**
+ * A payment a card offers instead of something worse says what the something worse is: Sonic Boom's "Either spend
+ * [energy][mental][physical] resources or exhaust each character you control" asks "Spend 1 energy, 1 mental, 1
+ * physical, or exhaust each character you control?", where the bare "Spend 3 resources?" hid what declining does.
+ */
+function eitherOrTitle(state: GameState, pending: NonNullable<GameState["pendingChoice"]>): string | null {
+  if (pending.prompt.kind !== "spendResources" || pending.prompt.formChangeCost) return null;
+  const source = choiceSourceOf(state, pending)?.instanceId;
+  const card = source ? cardOf(state, source) : undefined;
+  const otherwise = card && /\bEither spend\b[^.]*?\bor ([^.]+)\./i.exec(plainRulesTextOf(card))?.[1];
+  if (!otherwise) return null;
+  const { requirement } = pending.prompt;
+  const parts = (["energy", "mental", "physical", "wild", "generic"] as const).flatMap((type) => {
+    const n = requirement[type] ?? 0;
+    return n ? [`${n} ${type === "generic" ? "resource" : type}`] : [];
+  });
+  return `Spend ${parts.join(", ")}, or ${otherwise}?`;
 }
 
 function statModifiers(state: GameState, id: InstanceId) {
@@ -352,7 +383,26 @@ function apply(state: GameState, command: Command) {
 /** The repeatable practice deal the tests use: seed 75 deals Swinging Web Kick, Strength and several priced permanents. */
 export const PRACTICE_SEED = 75;
 
+/** Sonic Converter's and Solid-Sound Body's "Hero Action: Spend [energy][mental][physical] resources → discard this card." */
+const KLAW_GEAR_ACTIONS: ReadonlySet<string> = new Set([
+  "01118.sonic-converter-action",
+  "01119.solid-sound-body-action",
+]);
+
+/** The villains the table can deal, each a Core Set scenario played with Spider-Man's precon deck. */
+export const VILLAINS = [
+  { id: "rhino", name: "Rhino" },
+  { id: "klaw", name: "Klaw" },
+] as const;
+export type VillainId = (typeof VILLAINS)[number]["id"];
+
+export function isVillainId(id: unknown): id is VillainId {
+  return VILLAINS.some((villain) => villain.id === id);
+}
+
 export interface DealOptions {
+  /** Which scenario: Rhino unless chosen otherwise. */
+  villain?: VillainId;
   /** The shuffle. Every seed is a different, repeatable deal. */
   seed?: number;
   /** Stop at the opening hand so the player can mulligan (RRG Appendix II step 15); otherwise keep it. */
@@ -361,9 +411,14 @@ export interface DealOptions {
   arrange?: (state: GameState) => GameState;
 }
 
-function openingTurn({ seed = PRACTICE_SEED, mulligan: ask = false, arrange }: DealOptions = {}): GameState {
+function openingTurn({
+  villain = "rhino",
+  seed = PRACTICE_SEED,
+  mulligan: ask = false,
+  arrange,
+}: DealOptions = {}): GameState {
   const created = createGame(
-    coreScenario("rhino", {
+    coreScenario(villain, {
       seed,
       players: [{ starterDeckId: "core-spider-man-justice" }],
     }),
@@ -500,6 +555,17 @@ export class BattleModel {
     const drawn = events.flatMap((event) => (event.type === "cardDrawn" ? [event.instanceId] : []));
     let enemy = this.#game.step.phase === "villain";
     const name = (id: InstanceId) => shortIdentityNameOf(result.state, id) ?? faceUpName(result.state, id);
+    // The main scheme is one card through all its stages: until it advances in these events, it is still called by
+    // the stage it was on (the threat that completes Underground Distribution goes on Underground Distribution).
+    const mainId = this.#game.mainScheme.instanceId;
+    let mainStageName = faceUpName(this.#game, mainId);
+    const schemeName = (id: InstanceId) => (id === mainId ? mainStageName : name(id));
+    // Cards that come in face up off the encounter deck are presented by their reveal; the rest just enter play.
+    const revealedHere = new Set(
+      events.flatMap((e) =>
+        e.type === "encounterCardRevealed" || e.type === "boostCardFlipped" ? [e.instanceId] : [],
+      ),
+    );
     this.#beats = [];
     const toughAttacks = new Set<string>();
     // Surge deals its extra card first and names the surging card just after; pair them up so the table can say
@@ -562,7 +628,9 @@ export class BattleModel {
     // An attack a card makes happen, aimed only once the attack goes ahead (see where it is set).
     let heldAim: { attacker: string; activity: string; beat: BattleBeat } | null = null;
     let acceleration = this.#game.mainScheme.accelerationTokens;
+    let round = this.#game.round;
     for (const e of events) {
+      if (e.type === "roundStarted") round = e.round;
       const before = this.#beats.length;
       if (e.type === "deckShuffled" && e.zone.kind === "deck") shuffledDeck = e.order.length;
       if (e.type === "abilityResolved") resolving = { card: e.instanceId, label: triggerLabel(e.abilityId) };
@@ -602,6 +670,7 @@ export class BattleModel {
             enemy: villainPhase,
             text: villainPhase ? "Villain Phase" : "Hero Phase",
             phase: villainPhase ? "villain" : "hero",
+            round,
           });
         enemy = villainPhase;
       } else if (e.type === "gameEnded") {
@@ -615,6 +684,40 @@ export class BattleModel {
           ...(e.type === "villainStageAdvanced"
             ? { defeat: `${faceUpName(this.#game, e.instanceId)} · Stage ${e.stageIndex} defeated` }
             : {}),
+        });
+      } else if (e.type === "mainSchemeAdvanced" && !e.schemeInstanceId) {
+        const card = cardOf(result.state, mainId);
+        const stage = card?.type === "main_scheme" ? card.stages[e.stageIndex] : undefined;
+        const from = mainStageName;
+        mainStageName = stage?.name ?? card?.name ?? name(mainId);
+        const players = result.state.players.length;
+        const amount = (value: { base: number; perPlayer: number } | undefined) =>
+          value ? value.base + value.perPlayer * players : 0;
+        this.#beats.push({
+          enemy,
+          actor: mainId,
+          text: `${from} is completed: the main scheme advances to ${mainStageName}`,
+          schemeAdvance: {
+            scheme: mainId,
+            from,
+            to: mainStageName,
+            stage: stage?.stageNumber ?? e.stageIndex + 1,
+            threat: amount(stage?.startingThreat),
+            target: stage?.targetThreat ? amount(stage.targetThreat) : null,
+          },
+        });
+      } else if (
+        e.type === "cardMoved" &&
+        e.to.kind === "playArea" &&
+        (e.from.kind === "encounterDeck" || e.from.kind === "encounterDiscard" || e.from.kind === "setAside") &&
+        !revealedHere.has(e.instanceId) &&
+        cardOf(result.state, e.instanceId)?.type === "minion"
+      ) {
+        this.#beats.push({
+          enemy,
+          actor: e.instanceId,
+          text: `${name(e.instanceId)} enters play`,
+          entersPlay: e.instanceId,
         });
       } else if (e.type === "villainFlipped") {
         this.#beats.push({
@@ -948,9 +1051,9 @@ export class BattleModel {
           actor: e.sourceInstanceId ?? e.schemeInstanceId,
           text: placed
             ? e.sourceInstanceId && e.sourceInstanceId !== e.schemeInstanceId
-              ? `${name(e.sourceInstanceId)} places ${e.amount} threat on ${name(e.schemeInstanceId)}`
-              : `${name(e.schemeInstanceId)} gains ${e.amount} threat`
-            : `Remove ${e.amount} threat from ${name(e.schemeInstanceId)}`,
+              ? `${name(e.sourceInstanceId)} places ${e.amount} threat on ${schemeName(e.schemeInstanceId)}`
+              : `${schemeName(e.schemeInstanceId)} gains ${e.amount} threat`
+            : `Remove ${e.amount} threat from ${schemeName(e.schemeInstanceId)}`,
           threat: { scheme: e.schemeInstanceId, delta: placed ? e.amount : -e.amount },
         });
       } else if (enemy) {
@@ -961,7 +1064,7 @@ export class BattleModel {
             text =
               e.activation === "attack"
                 ? `Target: ${name(result.state.players[0]!.identity.instanceId)}`
-                : `Target: ${name(result.state.mainScheme.instanceId)}`;
+                : `Target: ${schemeName(result.state.mainScheme.instanceId)}`;
             if (e.activation === "attack" && stunnedAttempts.has(e)) {
               // It tries, but the stun holds it back: no aim at the hero (Adam, 2026-11-23).
               this.#beats.push({
@@ -1284,7 +1387,10 @@ export class BattleModel {
       : pending
         ? {
             id: pending.choiceId,
-            prompt: trigger?.headline ?? promptTitleOf(pending.prompt, CORE_DEPS, pending, state),
+            prompt:
+              trigger?.headline ??
+              eitherOrTitle(state, pending) ??
+              promptTitleOf(pending.prompt, CORE_DEPS, pending, state),
             ...(pending.prompt.kind === "declareDefender"
               ? {
                   prompt: pending.options.some((o) => o.ref.kind === "card")
@@ -1526,7 +1632,10 @@ export class BattleModel {
           ? "Next card costs 1 less"
           : action.abilityId === "01091.avengers-mansion-action"
             ? "Draw 1 card"
-            : does.charAt(0).toUpperCase() + does.slice(1);
+            : // Klaw's attachments: the short label is only the cost, so say what paying it does.
+              KLAW_GEAR_ACTIONS.has(action.abilityId)
+              ? "Discard it: spend energy, mental, physical"
+              : does.charAt(0).toUpperCase() + does.slice(1);
       return [{ kind: String(action.abilityId), label, exhausts: !!ability.cost?.exhaustSelf, entry }];
     });
   }

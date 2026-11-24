@@ -14,7 +14,7 @@
 import { writeFileSync } from "node:fs";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import * as engine from "@mc/engine";
-import { BattleModel, type BattleBeat, type BattleSnapshot } from "./model.js";
+import { BattleModel, type BattleBeat, type BattleSnapshot, type VillainId } from "./model.js";
 
 type Snap = BattleSnapshot;
 type Choice = NonNullable<Snap["choice"]>;
@@ -28,6 +28,11 @@ const GAME_COUNT = Number(process.env.FUZZ_GAMES ?? 15);
 const MAX_MOVES = 400;
 /** Seeds for the broad loop. Seed 75 is the table's own deal; the rest vary the shuffle. */
 const FUZZ_SEEDS: readonly number[] = Array.from({ length: GAME_COUNT }, (_, i) => (i === 0 ? 75 : 1000 + i * 37));
+/** Klaw's deals: fewer in the unit run (KLAW_FUZZ_GAMES=250 for the deep one). */
+const KLAW_SEEDS: readonly number[] = Array.from(
+  { length: Number(process.env.KLAW_FUZZ_GAMES ?? 10) },
+  (_, i) => 2000 + i * 41,
+);
 
 /**
  * Failure kinds already reported and reproduced below as test.fails(...). The broad loop records these instead of
@@ -225,7 +230,7 @@ interface Gesture {
   run: () => boolean;
 }
 
-function playGame(seed: number, policy: Policy): GameResult {
+function playGame(seed: number, policy: Policy, villain: VillainId = "rhino"): GameResult {
   const started = performance.now();
   const rnd = mulberry(seed * 7919 + POLICIES.indexOf(policy) * 104729 + 13);
   const chance = (p: number) => rnd() < p;
@@ -283,7 +288,7 @@ function playGame(seed: number, policy: Policy): GameResult {
   };
 
   let firstHand = "";
-  const reset = guard("reset()", () => model.reset());
+  const reset = guard("reset()", () => model.reset({ villain }));
   if (!reset.ok) return result("aborted");
   firstHand = model
     .snapshot()
@@ -867,6 +872,19 @@ test.each(
   "fuzz game seed $seed ($policy)",
   ({ seed, policy }) => {
     const game = playGame(seed, policy);
+    results.push(game);
+  },
+  60_000,
+);
+
+test.each(
+  KLAW_SEEDS.map((seed, i) => ({ seed, policy: POLICIES[i % POLICIES.length]! })).filter(
+    (g) => !process.env.FUZZ_ONLY || String(g.seed) === process.env.FUZZ_ONLY,
+  ),
+)(
+  "fuzz game against Klaw, seed $seed ($policy)",
+  ({ seed, policy }) => {
+    const game = playGame(seed, policy, "klaw");
     results.push(game);
   },
   60_000,

@@ -1,4 +1,5 @@
-import { activeEncounterDeck, activeEncounterDeckId, type GameState, type InstanceId } from "@mc/engine";
+import { activeEncounterDeck, activeEncounterDeckId, cardOf, type GameState, type InstanceId } from "@mc/engine";
+import type { VillainId } from "./model.js";
 
 /**
  * Table set-ups for looking at the presentation without playing a game to them: `/battle/?scene=crowded`.
@@ -17,6 +18,8 @@ interface Placement {
 }
 
 interface Scene {
+  /** The scenario it is dealt from: Rhino unless it says otherwise. */
+  scenario?: VillainId;
   hero?: { form?: "hero" | "alterEgo"; damage?: number; statuses?: Record<string, number>; exhausted?: boolean };
   villain?: { damage?: number; statuses?: Record<string, number> };
   mainThreat?: number;
@@ -26,7 +29,7 @@ interface Scene {
   minions?: Placement[];
   /** Side schemes in the villain area. */
   schemes?: Placement[];
-  /** Encounter attachments on Rhino. */
+  /** Encounter attachments on the villain. */
   villainAttachments?: Placement[];
   /** Cards to have in hand (the rest of the hand is refilled from the deck). */
   hand?: string[];
@@ -40,6 +43,11 @@ interface Scene {
   deckLeft?: number;
   /** Cards left in the encounter deck; the rest go to its discard pile (to run it out). */
   encounterLeft?: number;
+  /**
+   * The minions setup put into play go to the encounter discard pile first (Klaw's main scheme brings one in, and a
+   * guard among them would stop the hero attacking Klaw), so the scene's own `minions` are the only ones engaged.
+   */
+  clearMinions?: boolean;
 }
 
 const SCENES: Record<string, Scene> = {
@@ -300,6 +308,87 @@ const SCENES: Record<string, Scene> = {
     dealt: ["01102"],
     encounterTop: ["01110", "01105"],
   },
+  // ── Klaw (Underground Distribution, the Klaw set, Masters of Evil): `/battle/?scene=klawboost` ──────────────────
+  /**
+   * Spider-Man in hero form: end the turn and Klaw attacks with two boost cards fanned beside him (one tag, "Boost
+   * ×2"). The first is Weapons Runner, whose boost puts it into play engaged with you; Assault is dealt after.
+   */
+  klawboost: {
+    scenario: "klaw",
+    clearMinions: true,
+    hero: { form: "hero" },
+    encounterTop: ["01121", "01123", "01187"],
+  },
+  /** Klaw one hit from his second stage: attack him, Klaw (II) comes up and reveals The "Immortal" Klaw (+10 hit points). */
+  klawstage: {
+    scenario: "klaw",
+    clearMinions: true,
+    hero: { form: "hero" },
+    villain: { damage: 11 },
+  },
+  /** Underground Distribution one threat from full: end the turn, it turns over to Secret Rendezvous and a minion comes in. */
+  klawadvance: {
+    scenario: "klaw",
+    clearMinions: true,
+    mainThreat: 5,
+  },
+  /**
+   * Sonic Converter and Solid-Sound Body on Klaw, the resources for one in hand: spend [energy][mental][physical] to take
+   * one off, or attack him and take Solid-Sound Body's retaliate 1.
+   */
+  klawgear: {
+    scenario: "klaw",
+    clearMinions: true,
+    hero: { form: "hero" },
+    villainAttachments: [{ code: "01118" }, { code: "01119" }],
+    hand: ["01088", "01089", "01090"],
+  },
+  /** The "Immortal" Klaw in play (+10 hit points on Klaw): thwart its last threat and watch his health drop back. */
+  klawimmortal: {
+    scenario: "klaw",
+    clearMinions: true,
+    hero: { form: "hero" },
+    villain: { damage: 6 },
+    schemes: [{ code: "01127", threat: 1 }],
+  },
+  /** Klaw's crowded table: five minions in two rows, a second side scheme, Sonic Converter under Klaw. */
+  klawcrowd: {
+    scenario: "klaw",
+    clearMinions: true,
+    villain: { damage: 4 },
+    mainThreat: 2,
+    minions: [{ code: "01129" }, { code: "01130", damage: 2 }, { code: "01131" }, { code: "01132" }, { code: "01121" }],
+    schemes: [{ code: "01126", threat: 3 }],
+    villainAttachments: [{ code: "01118" }],
+    play: [{ code: "01002" }],
+  },
+  /**
+   * Spider-Man in hero form with Black Cat, Melter and Tiger Shark engaged: end the turn, Klaw and both minions attack
+   * (Melter's attack must be defended by Black Cat), then Masters of Mayhem has both attack again.
+   */
+  klawmasters: {
+    scenario: "klaw",
+    clearMinions: true,
+    hero: { form: "hero" },
+    minions: [{ code: "01131" }, { code: "01132" }],
+    play: [{ code: "01002" }],
+    encounterTop: ["01186", "01188", "01133"],
+  },
+  /** Sonic Boom comes up in alter-ego form with the resources in hand: spend [energy][mental][physical] or exhaust everything. */
+  klawsonic: {
+    scenario: "klaw",
+    clearMinions: true,
+    play: [{ code: "01002" }],
+    hand: ["01088", "01089", "01090"],
+    encounterTop: ["01124", "01123"],
+  },
+  /** Spider-Man in hero form as Klaw's Vengeance comes up after Klaw's own attack: Klaw attacks a second time. */
+  klawvengeance: {
+    scenario: "klaw",
+    clearMinions: true,
+    hero: { form: "hero" },
+    encounterTop: ["01186", "01187", "01122", "01124", "01188"],
+  },
   /** Nick Fury in hand with the resources to pay for him: his "Choose one" waits in the dock, the table blurred behind. */
   fury: {
     hero: { form: "hero" },
@@ -317,7 +406,13 @@ export function arrangeScene(name: string): ((state: GameState) => GameState) | 
   return (state) => arrange(state, scene);
 }
 
+/** The villain a scene is dealt against: it must be dealt from that scenario for its cards to be there. */
+export function sceneVillain(name: string): VillainId {
+  return SCENES[name]?.scenario ?? "rhino";
+}
+
 function arrange(state: GameState, scene: Scene): GameState {
+  if (scene.clearMinions) state = discardMinions(state);
   const player = state.players[0]!;
   const piles = activeEncounterDeck(state);
   const used = new Set<InstanceId>();
@@ -411,6 +506,34 @@ function arrange(state: GameState, scene: Scene): GameState {
     encounterDecks: {
       ...state.encounterDecks,
       [deckId]: { ...piles, deck: encounterDeck, discard: encounterDiscard },
+    },
+  };
+}
+
+/** The minions engaged with the player go to the encounter discard pile, where `take` can find them again. */
+function discardMinions(state: GameState): GameState {
+  const player = state.players[0]!;
+  const minions = player.playArea.filter((id) => cardOf(state, id)?.type === "minion");
+  if (!minions.length) return state;
+  const instances = { ...state.instances };
+  for (const id of minions)
+    instances[id] = {
+      ...instances[id]!,
+      engagedWith: null,
+      damage: 0,
+      statuses: { stunned: 0, confused: 0, tough: 0 },
+    };
+  const piles = activeEncounterDeck(state);
+  return {
+    ...state,
+    instances,
+    players: [
+      { ...player, playArea: player.playArea.filter((id) => !minions.includes(id)) },
+      ...state.players.slice(1),
+    ],
+    encounterDecks: {
+      ...state.encounterDecks,
+      [activeEncounterDeckId(state)]: { ...piles, discard: [...piles.discard, ...minions] },
     },
   };
 }
