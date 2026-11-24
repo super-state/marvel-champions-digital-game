@@ -11,7 +11,7 @@ import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js
 import { arrangeScene, sceneVillain } from "./debug-scenes.js";
 import { sfx, type SoundName } from "./sound.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
-import { BattleModel, isVillainId, VILLAINS, type BattleCard, type VillainId } from "./model.js";
+import { BattleModel, DRONE_NAME, isVillainId, VILLAINS, type BattleCard, type VillainId } from "./model.js";
 import { answerRemote, createPlayer, type Player, type RemoteChannel } from "./play.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
 import { spreadPlates, type Obstacle, type Plate, type PlateShift } from "./plate-spread.js";
@@ -258,8 +258,15 @@ function cards() {
   ];
 }
 
+/**
+ * The facedown Drones on the table (Ultron's): each is "Drone" in every line until its defeat has played out, though
+ * by the end of a move it may already lie faceup in the discard pile under its own name.
+ */
+let droneIds = new Set<string>();
+
 function nameOf(id: string | null | undefined): string {
   if (!id) return "";
+  if (droneIds.has(id)) return DRONE_NAME;
   return (cards().find((card) => card.id === id) ?? (staged?.id === id ? staged : undefined))?.name ?? "";
 }
 
@@ -494,6 +501,8 @@ function toast(text: string) {
 function optionIcon(label: string): IconName | null {
   const text = label.toLowerCase();
   if (/\bheal/.test(text)) return "heal";
+  // A card off the player's deck becoming a Drone (Ultron, Assault on NORAD, Android Efficiency).
+  if (/\bdrone\b/.test(text)) return "deck";
   if (/remove .*threat|thwart/.test(text)) return "thwart";
   if (/threat/.test(text)) return "threat";
   if (/deal .*damage|attack/.test(text)) return "attack";
@@ -692,6 +701,7 @@ function choiceView(choice: Choice): DockView {
       parkedViews.get(state.choiceSource ?? "")?.name ||
       (state.turn === "enemy" ? "Villain phase" : state.turn === "ending" ? "End of turn" : staged?.name || ""));
   const heading = /^choose one[.:]?$/i.test(choice.prompt.trim()) ? "Choose one" : choice.prompt;
+  const eitherOr = /^Spend .+, or .+\?$/.test(choice.prompt);
   const order = pickOrder(choice, choicePicks);
   return {
     tone,
@@ -714,7 +724,10 @@ function choiceView(choice: Choice): DockView {
     })),
     primary: multiple
       ? {
-          label: n ? `Confirm ${n}` : "Confirm",
+          // An either-or payment ("Spend 1 physical, or put the top card of the deck into play ... as a Drone
+          // minion?"): the button says which half pressing it now takes, where a bare "Confirm" with nothing picked
+          // hid that it means the "or".
+          label: eitherOr ? (n ? `Spend ${n}` : "Don’t spend") : n ? `Confirm ${n}` : "Confirm",
           icon: "next",
           disabled: n < choice.min || discarding,
           attention: n >= choice.min,
@@ -1237,12 +1250,18 @@ function hpPill(hp: number): HTMLElement {
   return pill;
 }
 
-function threatPill(count: number, target: number | null): HTMLElement {
+function threatPill(count: number, target: number | null, lock?: string): HTMLElement {
   const pill = make("span", "stat-pill scheme-threat");
   pill.dataset.kind = "threat";
   if (target != null) pill.dataset.target = String(target);
   pill.append(icon("threat"), make("b", "", ""));
   if (target != null) pill.append(make("i", "", `/${target}`));
+  // Threat the player can't remove (Countdown to Oblivion; the main scheme under a crisis icon) wears a lock.
+  if (lock) {
+    pill.dataset.locked = "";
+    pill.title = lock;
+    pill.append(icon("lock", lock));
+  }
   updateThreatLabel(pill, count);
   return pill;
 }
@@ -1466,7 +1485,8 @@ function synchronizeLabels() {
     }
     if (hp === undefined || discardOpen || inHand) delete label.dataset.hp;
     else label.dataset.hp = String(hp);
-    if (card.threat !== null && onTable(card.id)) label.append(threatPill(card.threat, card.threatTarget));
+    if (card.threat !== null && onTable(card.id))
+      label.append(threatPill(card.threat, card.threatTarget, card.threatLock));
     if (
       !inHand &&
       target &&
@@ -2494,6 +2514,13 @@ function feedLineOf(beat: Beat): FeedLine | null {
       icon: "discard",
       tone: "hero",
     };
+  if (beat.droneIn) return { text: beat.text, icon: "deck", tone: "villain" };
+  if (beat.defeatedCard && beat.droneWas)
+    return {
+      text: `${DRONE_NAME} defeated: it was ${beat.droneWas}, now in your discard pile`,
+      icon: "defeated",
+      tone: "hero",
+    };
   if (beat.defeatedCard)
     return { text: `${nameOf(beat.defeatedCard) || "A card"} is defeated`, icon: "defeated", tone: "hero" };
   if (beat.defeat) return { text: beat.defeat, icon: "defeated", tone: "hero" };
@@ -2816,9 +2843,33 @@ async function present(beats: Snapshot["beats"]) {
       table?.setThreat(scheme, threat);
       sfx.play("flip");
       const counter = labels.get(scheme)?.querySelector<HTMLElement>(".scheme-threat");
-      if (counter) counter.replaceWith(threatPill(threat, target));
+      if (counter) counter.replaceWith(threatPill(threat, target, face?.threatLock));
       inspect(scheme);
       await sleep(reducedMotion() ? 300 : 1100);
+      continue;
+    }
+    if (beat.droneIn) {
+      // Ultron's Drones: the top card of the player's deck is seen leaving it, back up, and landing in the villain's
+      // row as a Drone. The card that made it happen (Ultron, a scheme stage, Android Efficiency) is named above it.
+      const { card, from, source, deckCount: left } = beat.droneIn;
+      droneIds.add(card.id);
+      const arrived = state.enemyCards.find((c) => c.id === card.id) ?? card;
+      narrate(beat, feedLineOf(beat), {
+        eyebrow: { text: nameOf(source) || beat.activity || "Ultron Drones", icon: "forced", tone: "villain" },
+        title:
+          from === "discard"
+            ? "The top card of your discard pile becomes a Drone"
+            : "The top card of your deck becomes a Drone",
+      });
+      if (source && onTable(source)) table?.markActor(source);
+      table?.bringInDrone(arrived, from, left);
+      if (from === "deck") deckCount.textContent = String(left);
+      sfx.play("deal");
+      await sleep(reducedMotion() ? 250 : 980);
+      synchronizeLabels();
+      placeLabels();
+      stampCard(card.id, DRONE_NAME, "boost");
+      await sleep(reducedMotion() ? 200 : 620);
       continue;
     }
     if (beat.entersPlay) {
@@ -2876,6 +2927,24 @@ async function present(beats: Snapshot["beats"]) {
       labels.delete(id);
       const encounter = state.encounterDiscard.find((card) => card.id === id);
       const discarded = encounter ?? state.discard.find((card) => card.id === id);
+      if (beat.droneWas) {
+        // A defeated Drone turns over where it stands: the card it was all along is seen before it goes to the
+        // player's discard pile (RRG 1.8 "Discard": faceup on its owner's pile).
+        droneIds.delete(id);
+        if (discarded) {
+          table?.turnEnemyCard({ ...discarded, type: "minion", landscape: false, markers: [] });
+          sfx.play("flip");
+          paintDock({
+            tone: "hero",
+            asking: false,
+            eyebrow: { text: `${DRONE_NAME} defeated`, icon: "defeated", tone: "hero" },
+            title: `It was ${beat.droneWas}: into your discard pile`,
+            help: null,
+            primary: null,
+          });
+          await sleep(reducedMotion() ? 500 : 1150);
+        }
+      }
       table?.discardDefeatedCard(id, discarded, encounter ? "encounterDiscard" : "discard");
       if (discarded) await sleep(520);
       continue;
@@ -3418,6 +3487,7 @@ function render() {
       return card ? [{ ...card, id, resourceAbility: true, reverseArt: null }] : [];
     }) ?? [];
   displayedHand = [...abilityCards, ...state.hand.filter((card) => card.id !== staged?.id)];
+  droneIds = new Set(state.enemyCards.flatMap((card) => (card.drone ? [card.id] : [])));
   const selected =
     state.payment?.sources.filter((item) => item.selected).map(resourcePieceId) ??
     state.choice?.options.flatMap((option) => (option.cardId && choicePicks.has(option.id) ? [option.cardId] : [])) ??
@@ -3546,6 +3616,8 @@ function renderCardMenu() {
   const card = [state.hero, ...state.inPlay].find((c) => c.id === id);
   const actions = id === state.hero.id ? state.heroActions : model.fieldActions(id);
   if (!actions.length) decision.append(make("p", "menu-note", card?.exhausted ? "Exhausted" : "No actions available"));
+  // A power missing for a reason the hero's own card doesn't show (no scheme's threat can be removed) says why.
+  if (id === state.hero.id) for (const note of model.heroNotes()) decision.append(make("p", "menu-note", note));
   for (const action of actions) {
     const button = make("button", "btn btn-secondary menu-action");
     button.type = "button";
@@ -3696,6 +3768,13 @@ function deal() {
   model.reset(arrange ? { villain, seed, arrange } : { villain, seed, mulligan: true });
   villainDealt = villain;
   paintMatchup();
+  // The table opens with what the scenario's setup already did (Ultron's Drones environment and the first Drone off
+  // the player's deck): the log says so, so nothing on it is there unexplained.
+  for (const note of model.setupNotes) {
+    story.push(note);
+    pushFeed({ text: note, icon: "deck", tone: "villain" });
+  }
+  paintFeed();
   state = model.snapshot();
   presented = state.beats;
   if (!table) {
@@ -4565,6 +4644,7 @@ if (import.meta.env.DEV) {
       defenseAsked: () => !!defenseQuestionDecline(state.choice),
       picked: () => choicePicks,
       cardFacts: (id) => model.cardFacts(id),
+      consequentialDamage: (id, power) => model.consequentialDamage(id, power),
       cardName: (id) => model.cardName(id),
       playerFacts: () => model.playerFacts(),
       sourceName: (sourceId, cardId) => model.paymentSourceName(sourceId, cardId),

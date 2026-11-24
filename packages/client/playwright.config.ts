@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { defineConfig, devices } from "@playwright/test";
 
@@ -10,8 +11,15 @@ import { defineConfig, devices } from "@playwright/test";
  * A fixed, distinct port (5193) plus `reuseExistingServer: false` in CI: other agents/sessions routinely run their
  * own dev servers on other ports (5183 and friends — see `docs/guided-mode.md` §6), so this must never attach to
  * someone else's server, locally or in CI.
+ *
+ * Locally every checkout (the main folder, each worktree) gets a port of its own, worked out from its path. With one
+ * port for all of them, a dev server a finished session left running on 5193 was reused by every later run from any
+ * checkout, so the specs tested that session's old code and not the change in hand (found 2026-11-24: the shelf's
+ * Klaw box "dealt Rhino" for two sessions, on code that deals Klaw). `E2E_PORT` still names one outright.
  */
-const PORT = Number(process.env.E2E_PORT ?? "5193");
+const OWN_PORT =
+  5300 + (parseInt(createHash("sha1").update(process.cwd().toLowerCase()).digest("hex").slice(0, 6), 16) % 400);
+const PORT = Number(process.env.E2E_PORT ?? (process.env.CI ? "5193" : OWN_PORT));
 
 export default defineConfig({
   testDir: "./e2e",

@@ -1,7 +1,8 @@
 /**
  * The campaign shelf, the 3D table's front door: the campaigns stand on a wooden table as retail boxes, with a cube
  * shelf of other game boxes in the dim room behind. Pick one and it tips onto its back, the lid lifts off and is set
- * aside, and the villain card rises out of the tray towards you. Ultron is still sealed ("coming soon") and won't open.
+ * aside, and the villain card rises out of the tray towards you. A campaign marked `open: false` is sealed ("coming
+ * soon") and won't open; all three Core Set villains are open.
  *
  * It lies over the table page (`main.ts` loads it when the page opens on the shelf, and again for New game), with its
  * own renderer. Play deals the game on the table underneath, out of sight, then flies every piece from the box to the
@@ -83,8 +84,9 @@ const CAMPAIGNS: readonly Campaign[] = [
     accent: "#ff8a2a",
     ink: "#1a0d04",
     difficulty: 3,
-    blurb: "Ultron's drones are coming.",
-    open: false,
+    blurb: "Ultron turns the cards in your own deck into his Drones. Break them, then him, before his countdown ends.",
+    open: true,
+    villain: "ultron",
   },
 ];
 
@@ -995,6 +997,8 @@ const play = el<HTMLButtonElement>("#shelf-play");
 let boxes: Box[] = [];
 /** The open box, or -1 on the shelf. */
 let chosen = -1;
+/** A box asked for from the keyboard while another was still going back onto the shelf. */
+let queued = -1;
 /** How far into the opening the chosen box is, in seconds (0 = on the shelf, OPENED = all out). */
 let s = 0;
 let target = 0;
@@ -1018,6 +1022,7 @@ function choose(index: number) {
     return;
   }
   chosen = index;
+  queued = -1;
   target = OPENED;
   hovered = -1;
   hoverTag.hidden = true;
@@ -1446,6 +1451,11 @@ function frame(now: number) {
     if (s === 0 && chosen >= 0) {
       chosen = -1;
       hint.hidden = false;
+      if (queued >= 0) {
+        const next = queued;
+        queued = -1;
+        choose(next);
+      }
     }
   }
   pose(now / 1000, dt);
@@ -1481,8 +1491,12 @@ async function build() {
     button.type = "button";
     button.textContent = c.open ? `Open ${name}` : `${name} (coming soon)`;
     button.onclick = () => {
+      if (outro) return;
       // On the shelf, or this box still going back onto it (it turns round and opens again).
-      if (!outro && (chosen < 0 || (chosen === i && target === 0))) choose(i);
+      if (chosen < 0 || (chosen === i && target === 0)) choose(i);
+      // Another box, asked for while the last one is still going back: it opens as soon as that one is home (the
+      // press used to be dropped, so Escape then a different box did nothing).
+      else if (chosen !== i && target === 0) queued = i;
     };
     button.onfocus = () => {
       if (chosen < 0) hovered = i;

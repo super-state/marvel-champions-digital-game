@@ -34,6 +34,12 @@ const KLAW_SEEDS: readonly number[] = Array.from(
   (_, i) => 2000 + i * 41,
 );
 
+/** Ultron's deals (ULTRON_FUZZ_GAMES=250 for the deep run). */
+const ULTRON_SEEDS: readonly number[] = Array.from(
+  { length: Number(process.env.ULTRON_FUZZ_GAMES ?? 10) },
+  (_, i) => 3000 + i * 43,
+);
+
 /**
  * Failure kinds already reported and reproduced below as test.fails(...). The broad loop records these instead of
  * throwing, so the file stays green; any other failure kind fails the loop. Remove an entry once its repro starts
@@ -208,6 +214,7 @@ function beatIds(b: BattleBeat): [string, string][] {
     ["turned.id", b.turned?.id],
     ["encounterDeal", b.encounterDeal],
     ["defeatedCard", b.defeatedCard],
+    ["droneIn.card", b.droneIn?.card.id],
     ["reveal.id", b.reveal?.id],
     ["reveal.boost.enemy", b.reveal?.boost?.enemy],
     ["activate.card", b.activate?.card],
@@ -365,6 +372,7 @@ function playGame(seed: number, policy: Policy, villain: VillainId = "rhino"): G
     if (s.hero.threat !== null && s.hero.threat < 0) note("negative-threat", "hero", "hero threat < 0");
     if (s.turn === "finished" && s.outcome === null)
       note("finished-without-outcome", "x", "turn finished, outcome null");
+    inspectDrones(s);
     const known = new Set<string>([
       ...zones.flatMap(([, list]) => list.map((c) => c.id)),
       ...s.facedownEncounters,
@@ -379,6 +387,66 @@ function playGame(seed: number, policy: Policy, villain: VillainId = "rhino"): G
             field,
             `beat "${b.text}" ${field}=${id} is on no zone of the table; ${engineDiag()}; engine zone=${orphanZone(id)}`,
           );
+  }
+
+  // Ultron's Drones: a player's card in play facedown is a minion on the villain's side called "Drone". Nothing the
+  // table is told (a card, a beat, a question) names the card under it while it is facedown, every Drone is seen
+  // coming into play, and every Drone that goes is seen going.
+  let dronesBefore: Set<string> | null = null;
+  function inspectDrones(s: Snap) {
+    const st = lastEngineState;
+    if (!st) return;
+    const facedown = new Set<string>(
+      st.players.flatMap((p) => p.playArea).filter((id) => st.instances[id]?.facedownAs?.kind === "minion"),
+    );
+    // A name the table may say anyway: another copy of the card that is faceup somewhere out of the decks.
+    const visibleNames = new Set(
+      Object.keys(st.instances)
+        .filter((id) => {
+          const zone = engine.locateCard(st, id as engine.InstanceId)?.kind;
+          return !facedown.has(id) && zone !== undefined && zone !== "deck" && zone !== "encounterDeck";
+        })
+        .map((id) => engine.cardOf(st, id as engine.InstanceId)?.name),
+    );
+    for (const b of s.beats) {
+      if (b.droneIn) coverage["drone:in"] = (coverage["drone:in"] ?? 0) + 1;
+      if (b.droneWas) coverage["drone:defeated"] = (coverage["drone:defeated"] ?? 0) + 1;
+    }
+    const told = JSON.stringify([s.beats, s.choice, s.enemyCards, s.inPlay, s.payment]);
+    for (const id of facedown) {
+      const shown = s.enemyCards.find((c) => c.id === id);
+      const zone = s.inPlay.some((c) => c.id === id) ? "inPlay" : s.hand.some((c) => c.id === id) ? "hand" : "nowhere";
+      if (!shown) fail("drone-misplaced", zone, `facedown Drone ${id} is not on the villain's side (${zone})`);
+      else if (shown.name !== "Drone" || shown.type !== "minion" || shown.cost !== null || shown.hp === undefined)
+        fail("drone-leak", "card", `Drone ${id} shows as ${JSON.stringify({ ...shown, art: undefined })}`);
+      else if (!/stand-ins\//.test(shown.art)) fail("drone-leak", "art", `Drone ${id} shows art ${shown.art}`);
+      const hidden = engine.cardOf(st, id as engine.InstanceId)?.name;
+      if (hidden && !visibleNames.has(hidden) && told.includes(JSON.stringify(hidden).slice(1, -1)))
+        fail(
+          "drone-leak",
+          "name",
+          `"${hidden}" is facedown as a Drone but the table was told its name; ${engineDiag()}`,
+        );
+      const facts = model.cardFacts(id);
+      if (hidden && facts.includes(hidden)) fail("drone-leak", "facts", `cardFacts names ${hidden}`);
+    }
+    if (dronesBefore) {
+      for (const id of facedown)
+        if (!dronesBefore.has(id) && !s.beats.some((b) => b.droneIn?.card.id === id))
+          fail(
+            "drone-unseen",
+            "in",
+            `Drone ${id} came into play with no beat; beats: ${s.beats.map((b) => b.text).join(" | ")}`,
+          );
+      for (const id of dronesBefore)
+        if (!facedown.has(id) && !s.beats.some((b) => (b.defeatedCard === id && b.droneWas) || b.leftPlay === id))
+          fail(
+            "drone-unseen",
+            "out",
+            `Drone ${id} left play with no beat; beats: ${s.beats.map((b) => b.text).join(" | ")}`,
+          );
+    }
+    dronesBefore = facedown;
   }
 
   // ---- payment -------------------------------------------------------------------------------------------------
@@ -885,6 +953,19 @@ test.each(
   "fuzz game against Klaw, seed $seed ($policy)",
   ({ seed, policy }) => {
     const game = playGame(seed, policy, "klaw");
+    results.push(game);
+  },
+  60_000,
+);
+
+test.each(
+  ULTRON_SEEDS.map((seed, i) => ({ seed, policy: POLICIES[i % POLICIES.length]! })).filter(
+    (g) => !process.env.FUZZ_ONLY || String(g.seed) === process.env.FUZZ_ONLY,
+  ),
+)(
+  "fuzz game against Ultron, seed $seed ($policy)",
+  ({ seed, policy }) => {
+    const game = playGame(seed, policy, "ultron");
     results.push(game);
   },
   60_000,

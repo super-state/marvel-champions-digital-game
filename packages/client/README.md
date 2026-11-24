@@ -132,7 +132,7 @@ helper (`clickText`, `clickFocus`, `clickStop`, `pressAt`, `pressKey`) lets the 
 that changed nothing, noting the repeat in the report (`press repeated` annotation); pass `until` to `clickText`, or use
 `pressUntil(page, press, reached, label)`, whenever the next state can be read. Wait with `waitFor` or `settle(page)`
 (the screen has stopped changing), never a fixed `waitForTimeout` (only for loop pacing and for asserting an absence).
-`E2E_PORT` moves the dev server off 5193 (for a second run beside the first).
+`E2E_PORT` names the dev server's port. Without it, CI uses 5193 and a run on a PC uses a port of its own for each checkout (5300 to 5699, worked out from the folder), so a run never attaches to another checkout's server.
 
 Shared driving code is in `e2e/helpers.ts` and `e2e/wave6-helpers-a.ts` / `-b.ts`.
 

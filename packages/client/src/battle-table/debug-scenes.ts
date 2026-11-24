@@ -27,10 +27,19 @@ interface Scene {
   play?: Placement[];
   /** Minions engaged with the hero. */
   minions?: Placement[];
+  /**
+   * Player cards put into play facedown as Drone minions (Ultron's scenario only, which always has one to copy the
+   * role from): `code` is the card under each, known only once the Drone is defeated.
+   */
+  drones?: Placement[];
+  /** The main scheme's stage, counted from 1 (Ultron's Countdown to Oblivion is 3). */
+  mainStage?: number;
   /** Side schemes in the villain area. */
   schemes?: Placement[];
   /** Encounter attachments on the villain. */
   villainAttachments?: Placement[];
+  /** Encounter attachments on Ultron's environment, Ultron Drones (Upgraded Drones attaches there, not to Ultron). */
+  environmentAttachments?: Placement[];
   /** Cards to have in hand (the rest of the hand is refilled from the deck). */
   hand?: string[];
   /** The top of the player's deck, top first. */
@@ -427,6 +436,176 @@ const SCENES: Record<string, Scene> = {
     ],
     hand: ["01005", "01005", "01060", "01089", "01090", "01088"],
   },
+  // ── Ultron (The Crimson Cowl, the Ultron set, Under Attack): `/battle/?scene=ultrondrones` ─────────────────────
+  /**
+   * Three Drones engaged with Spider-Man as well as the one from setup (a Swinging Web Kick, Black Cat and a
+   * Web-Shooter under them): attack one and it turns over to show the card it was, on its way to the discard pile.
+   */
+  ultrondrones: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    drones: [{ code: "01005" }, { code: "01002" }, { code: "01008" }],
+    play: [{ code: "01059" }],
+  },
+  /** Interrogation Room in play and two Drones out: defeat one and the room asks about the Drone, not the card it was. */
+  ultronroom: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    mainThreat: 2,
+    drones: [{ code: "01005" }],
+    play: [{ code: "01063" }],
+  },
+  /** Spider-Man in hero form: end the turn, Ultron attacks, then asks for 1 threat or the top card of the deck as a Drone. */
+  ultronattack: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    encounterTop: ["01189", "01188"],
+  },
+  /**
+   * Ultron (I) one hit from his second stage with two Drones out: attack him, then end the turn. Ultron (II) puts
+   * another Drone into play as he attacks and gets +1 ATK for each.
+   */
+  ultronstage: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    villain: { damage: 16 },
+    drones: [{ code: "01088" }],
+    encounterTop: ["01189", "01188"],
+  },
+  /** The Crimson Cowl one threat from full: end the turn, it turns over to Assault on NORAD and a Drone comes off the deck. */
+  ultronnorad: {
+    scenario: "ultron",
+    mainThreat: 2,
+  },
+  /** Assault on NORAD in play: end the turn, and after its threat it asks for 2 more threat or a Drone. */
+  ultronassault: {
+    scenario: "ultron",
+    mainStage: 2,
+    mainThreat: 1,
+  },
+  /** Countdown to Oblivion with threat on it and Drone Factory beside it: thwarting reaches the side scheme only. */
+  ultroncountdown: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    mainStage: 3,
+    mainThreat: 3,
+    schemes: [{ code: "01148", threat: 3 }],
+    hand: ["01060", "01089"],
+  },
+  /**
+   * Upgraded Drones on the Ultron Drones environment and Program Transmitter on Ultron, two Drones out, the resources
+   * to pay either off in hand.
+   */
+  ultrongear: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    villainAttachments: [{ code: "01141" }],
+    environmentAttachments: [{ code: "01142" }],
+    drones: [{ code: "01005" }],
+    hand: ["01088", "01089", "01090"],
+  },
+  /** Vibranium Armor and Concussion Blasters (Under Attack) on Ultron: attack him for the retaliate and the tough card. */
+  ultronarmor: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    villainAttachments: [{ code: "01152" }, { code: "01153" }],
+    hand: ["01090", "01088", "01089"],
+  },
+  /** Swarm Attack comes up with three Drones engaged: end the turn and each Drone attacks. */
+  ultronswarm: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    drones: [{ code: "01005" }, { code: "01002" }],
+    play: [{ code: "01059" }],
+    dealt: ["01147"],
+    encounterTop: ["01189"],
+  },
+  /** Repair Sequence with two Drones out and Ultron hurt: he heals 2 for each Drone. */
+  ultronrepair: {
+    scenario: "ultron",
+    villain: { damage: 8 },
+    drones: [{ code: "01005" }],
+    dealt: ["01146"],
+  },
+  /** Rage of Ultron in hero form: Ultron attacks, and a card comes off the deck for each damage dealt. */
+  ultronrage: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    dealt: ["01145"],
+    encounterTop: ["01189", "01188"],
+  },
+  /** Invasive AI: the top 3 cards of the deck are discarded. */
+  ultroninvasive: {
+    scenario: "ultron",
+    dealt: ["01149"],
+  },
+  /** Drone Factory, then Ultron's Imperative: three more Drones, and threat on the Factory for each Drone in play. */
+  ultronfactory: {
+    scenario: "ultron",
+    dealt: ["01148", "01150"],
+  },
+  /** Android Efficiency as Ultron's boost card with an Energy in hand: spend it, or the top card of the deck becomes a Drone. */
+  ultronefficiency: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    hand: ["01088"],
+    encounterTop: ["01144a", "01188"],
+  },
+  /** Under Attack, then Concussive Blast: 2 threat or 3 damage, then 1 damage to every friendly character. */
+  ultronunder: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    play: [{ code: "01059" }, { code: "01002" }],
+    dealt: ["01151", "01154"],
+    encounterTop: ["01189"],
+  },
+  /** Advanced Ultron Drone engaged and hurt: defeat it and the top card of the deck becomes a Drone in its place. */
+  ultronadvanced: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    minions: [{ code: "01143", damage: 2 }],
+    play: [{ code: "01059" }],
+  },
+  /** One card left in the deck as Ultron's Imperative comes up: its first Drone takes it, its second finds the deck empty. */
+  ultrondeck: {
+    scenario: "ultron",
+    deckLeft: 1,
+    dealt: ["01150"],
+  },
+  /**
+   * The finish against Ultron: Ultron (I) one hit from his second stage, with enough on the table for the whole of
+   * Ultron (II)'s 22 in one turn. Black Cat takes Ultron (I)'s last hit point; then Spider-Man (2), two Swinging Web
+   * Kicks (Energy and both Web-Shooters; Strength and Genius), Jessica Jones (2) and Daredevil (2).
+   */
+  ultronfinish: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    villain: { damage: 16 },
+    play: [
+      { code: "01058" },
+      { code: "01059" },
+      { code: "01002" },
+      { code: "01008", counters: { web: 3 } },
+      { code: "01008", counters: { web: 3 } },
+    ],
+    hand: ["01005", "01005", "01088", "01090", "01089"],
+  },
+  /** Ultron's crowded table: five Drones and an Advanced Ultron Drone, two side schemes, two attachments on Ultron. */
+  ultroncrowd: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    villain: { damage: 5 },
+    mainThreat: 2,
+    drones: [{ code: "01005" }, { code: "01002" }, { code: "01008" }, { code: "01088", statuses: { stunned: 1 } }],
+    minions: [{ code: "01143", damage: 1 }],
+    schemes: [
+      { code: "01148", threat: 4 },
+      { code: "01150", threat: 2 },
+    ],
+    villainAttachments: [{ code: "01152" }],
+    environmentAttachments: [{ code: "01142" }],
+    play: [{ code: "01059" }, { code: "01058" }],
+  },
   /** Nick Fury in hand with the resources to pay for him: his "Choose one" waits in the dock, the table blurred behind. */
   fury: {
     hero: { form: "hero" },
@@ -449,8 +628,50 @@ export function sceneVillain(name: string): VillainId {
   return SCENES[name]?.scenario ?? "rhino";
 }
 
+/**
+ * The Drone that Ultron's setup put into play is whatever card was on top of the deck. When it is one the scene needs
+ * (the deck's only Strength), it changes places with a deck card the scene has no use for, so the scene deals on every
+ * shuffle.
+ */
+function freeSetupDrone(state: GameState, scene: Scene): GameState {
+  const player = state.players[0]!;
+  const needed = new Set(JSON.stringify(scene).match(/\b\d{5}[a-c]?\b/g) ?? []);
+  const drone = player.playArea.find(
+    (id) => state.instances[id]?.facedownAs && needed.has(state.instances[id]!.cardId),
+  );
+  const spare = player.deck.find((id) => !needed.has(state.instances[id]!.cardId));
+  if (!drone || !spare) return state;
+  const under = state.instances[drone]!;
+  const other = state.instances[spare]!;
+  const role = {
+    faceup: under.faceup,
+    controllerId: under.controllerId,
+    engagedWith: under.engagedWith,
+    facedownAs: under.facedownAs,
+  };
+  const plain = {
+    faceup: other.faceup,
+    controllerId: other.controllerId,
+    engagedWith: other.engagedWith,
+    facedownAs: other.facedownAs,
+  };
+  return {
+    ...state,
+    instances: { ...state.instances, [drone]: { ...under, ...plain }, [spare]: { ...other, ...role } },
+    players: [
+      {
+        ...player,
+        playArea: player.playArea.map((id) => (id === drone ? spare : id)),
+        deck: player.deck.map((id) => (id === spare ? drone : id)),
+      },
+      ...state.players.slice(1),
+    ],
+  };
+}
+
 function arrange(state: GameState, scene: Scene): GameState {
   if (scene.clearMinions) state = discardMinions(state);
+  if (scene.scenario === "ultron") state = freeSetupDrone(state, scene);
   const player = state.players[0]!;
   const piles = activeEncounterDeck(state);
   const used = new Set<InstanceId>();
@@ -487,8 +708,27 @@ function arrange(state: GameState, scene: Scene): GameState {
   };
   const playIds = (scene.play ?? []).map((p) => place(p));
   const minionIds = (scene.minions ?? []).map((p) => place(p, { engagedWith: player.playerId }));
+  // A Drone is a player card in play facedown, engaged with its owner and on the encounter side: the role is copied
+  // from the Drone that Ultron's setup put into play.
+  const droneRole = player.playArea
+    .map((id) => state.instances[id]?.facedownAs)
+    .find((role) => role?.kind === "minion");
+  if (scene.drones?.length && !droneRole) throw new Error("scene: drones need Ultron's scenario");
+  const droneIds = (scene.drones ?? []).map((p) =>
+    place(p, { faceup: false, controllerId: null, engagedWith: player.playerId, facedownAs: droneRole! }),
+  );
   const schemeIds = (scene.schemes ?? []).map((p) => place(p));
   const attached = (scene.villainAttachments ?? []).map((p) => place(p, { attachedTo: villain }));
+  const environment = [...state.villainArea, ...player.playArea].find(
+    (id) => cardOf(state, id)?.type === "environment",
+  );
+  if (scene.environmentAttachments?.length && !environment) throw new Error("scene: no environment in play");
+  const onEnvironment = (scene.environmentAttachments ?? []).map((p) => place(p, { attachedTo: environment! }));
+  if (environment)
+    instances[environment] = {
+      ...instances[environment]!,
+      attachments: [...instances[environment]!.attachments, ...onEnvironment],
+    };
   instances[villain] = {
     ...instances[villain]!,
     damage: scene.villain?.damage ?? 0,
@@ -527,6 +767,7 @@ function arrange(state: GameState, scene: Scene): GameState {
   return {
     ...state,
     instances,
+    ...(scene.mainStage !== undefined ? { mainScheme: { ...state.mainScheme, stageIndex: scene.mainStage - 1 } } : {}),
     players: [
       {
         ...player,
@@ -535,7 +776,7 @@ function arrange(state: GameState, scene: Scene): GameState {
         deck,
         discard,
         setAside: gone(player.setAside),
-        playArea: [...player.playArea, ...playIds, ...minionIds],
+        playArea: [...player.playArea, ...playIds, ...minionIds, ...droneIds],
         dealtEncounter: [...player.dealtEncounter, ...dealtIds],
       },
     ],

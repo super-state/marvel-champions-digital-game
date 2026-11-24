@@ -26,6 +26,8 @@ export interface TableCard {
   readonly type: string;
   /** Lying facedown under this card (Highway Robbery's stolen card): only its back shows, peeking out. */
   readonly under?: string;
+  /** A player's card in play facedown as a Drone minion (Ultron's): it flies from the deck straight to its row. */
+  readonly drone?: true;
 }
 
 export function isTuckedUpgrade(card: Pick<TableCard, "type" | "showAsFullCard">): boolean {
@@ -88,11 +90,14 @@ interface Piece {
   target: Pose;
 }
 
+/** A Drone's flight from the player's deck to the villain's row. */
+const DRONE_MS = 900;
+
 interface Flight {
   from: Pose;
   started: number;
   liftOffset: number;
-  kind: "play" | "return" | "discard" | "draw" | "place" | "equip" | "flip" | "turn" | "tuck" | "stash";
+  kind: "play" | "return" | "discard" | "draw" | "place" | "equip" | "flip" | "turn" | "tuck" | "stash" | "drone";
   /** Set once the landing puff for this flight has been thrown. */
   puffed?: boolean;
   /** Out of sight until it starts: a card coming onto the table in the campaign shelf's entrance (`enter`). */
@@ -240,7 +245,11 @@ function attachmentFanOffset(x: number, y: number, fan: number): [number, number
 }
 
 /** Where the first encounter card dealt and waiting to be revealed lies, across the screen (the rest fan right). */
+/** An upright card standing among the schemes, as a share of a scheme's short side. */
+const UPRIGHT_AMONG_SCHEMES = 0.8;
 const WAITING_X = 0.67;
+/** Where they lie instead when everything right of the middle is taken: left of the player's row. */
+const WAITING_LEFT_X = 0.2;
 
 /** An encounter card dealt and waiting to be revealed, lying facedown in the villain's row. */
 function waitingCardWidth(w: number, h: number) {
@@ -988,7 +997,7 @@ export class BattleTable {
 
   #startFlight(id: string, kind: Flight["kind"], started = performance.now(), liftOffset = 0): void {
     const { position, rotation, scale } = this.#pieces.get(id)!.root;
-    if (kind !== "draw") rotation.y = 0;
+    if (kind !== "draw" && kind !== "drone") rotation.y = 0;
     this.#flights.set(id, {
       kind,
       started,
@@ -1788,6 +1797,32 @@ export class BattleTable {
   }
 
   /**
+   * The top card of the player's deck put into play facedown as a Drone minion (Ultron Drones): it slides off the deck
+   * showing its back, crosses the table to the villain's row and turns up there as a Drone. From the discard pile
+   * (other scenarios), the card is already faceup there and simply flies across.
+   */
+  bringInDrone(card: TableCard, from: "deck" | "discard", deckCount: number): void {
+    const state = this.#state;
+    if (!state || state.enemyCards.some((c) => c.id === card.id)) return;
+    this.setCards({
+      ...state,
+      enemyCards: [...state.enemyCards, card],
+      discard: state.discard.filter((c) => c.id !== card.id),
+      deckCount,
+    });
+    const root = this.#pieces.get(card.id)?.root;
+    if (!root) return;
+    if (from === "deck") {
+      root.position.copy(this.#deckSlot.position);
+      root.position.y += this.#deckBack.position.z * this.#deckSlot.scale.x + 0.03;
+      root.scale.copy(this.#deckSlot.scale);
+      root.rotation.set(-Math.PI / 2, Math.PI, 0);
+      this.#startFlight(card.id, "drone");
+    } else this.#startFlight(card.id, "place");
+    this.#requestFrame();
+  }
+
+  /**
    * The revealed card `id` steps aside while its effect plays out: it goes from the middle of the table to stand beside
    * the villain, still face up, so the attack or question it causes is seen and the card is still there to see after.
    */
@@ -1962,6 +1997,13 @@ export class BattleTable {
     if (!state || !this.#pieces.has(id)) return;
     // Only the defeated card leaves here: anything attached to it keeps its place until its own beat discards it.
     const stillInPlay = (card: TableCard) => card.id !== id;
+    // A defeated Drone turned up to show the card it was, which left the Drone picture on its back: in the player's
+    // discard pile it is one of the deck's cards again, with the deck's back (it is shuffled back in facedown).
+    const piece = this.#pieces.get(id)!;
+    if (pile === "discard" && discarded && !discarded.reverseArt && this.#ownsBack(piece)) {
+      piece.back.material.dispose();
+      piece.back.material = this.#deckBack.material;
+    }
     if (discarded) this.#startFlight(id, "discard");
     this.setCards({
       ...state,
@@ -2558,8 +2600,13 @@ export class BattleTable {
     const villainWidth = Math.min(boardWidth, (w * 0.3) / (1 + 2 * TAB * villainTabs));
     poseEnemy(state.villain, w * 0.5, h * 0.237, villainWidth);
     const isScheme = (card: TableCard) => card.type === "main_scheme" || card.type === "side_scheme";
-    const schemes = enemies.filter(isScheme);
-    const otherEnemies = enemies.filter((card) => !isScheme(card));
+    // An environment (Ultron Drones) is no minion: it stands with the schemes on the villain's other side, after
+    // them, with anything attached to it tucked under it (Upgraded Drones), so the block beside the villain is the
+    // minions' alone. In among six Drones it stood too small to read, its attachment out of sight under it (found
+    // playing Ultron, 2026-11-24).
+    const isScenarioCard = (card: TableCard) => card.type === "environment";
+    const schemes = [...enemies.filter(isScheme), ...enemies.filter(isScenarioCard)];
+    const otherEnemies = enemies.filter((card) => !isScheme(card) && !isScenarioCard(card));
     const enemyRow = h * 0.242;
     const enemyCardWidth = Math.min(w * 0.117, h * 0.145);
     // The schemes stand a set gap left of the villain (and any cards under it), however wide the screen.
@@ -2602,7 +2649,8 @@ export class BattleTable {
       const y = (1 - projected.y) * this.#canvasHeight * 0.5 - this.#extension;
       position.x += schemeScale;
       const right = (position.project(this.#camera).x + 1) * w * 0.5;
-      poseEnemy(card, x, y, right - x);
+      // An upright card among the schemes (the environment) stands a little smaller, so it is no taller than a row.
+      poseEnemy(card, x, y, (right - x) * (card.landscape ? 1 : UPRIGHT_AMONG_SCHEMES));
     });
     // Encounter cards dealt and still waiting to be revealed lie facedown at the right end of the minions' row (below).
     // A minion that comes out while some still wait (Sandman off the first of several) would land on top of them, so it
@@ -2614,7 +2662,12 @@ export class BattleTable {
     if (!waitingCards) this.#rowBeforeWaiting = null;
     else this.#rowBeforeWaiting ??= new Set(otherEnemies.map((card) => card.id));
     const rowBeforeWaiting = this.#rowBeforeWaiting;
-    const asideEnemies = rowBeforeWaiting ? otherEnemies.filter((card) => !rowBeforeWaiting.has(card.id)) : [];
+    // A Drone is the exception: it comes off the player's deck in the middle of things, several at a time, and is
+    // seen flying to its place among the minions. Standing aside, it landed on the player's own cards and under the
+    // turn bar (found playing Ultron, 2026-11-24); the waiting cards find a clear spot around the row it joins.
+    const asideEnemies = rowBeforeWaiting
+      ? otherEnemies.filter((card) => !rowBeforeWaiting.has(card.id) && !card.drone)
+      : [];
     const rowEnemies = otherEnemies.filter((card) => !asideEnemies.includes(card));
     if (rowEnemies.length) {
       const bounds = (card: TableCard, x: number, y: number, width: number, tabs: number) => {
@@ -2667,20 +2720,24 @@ export class BattleTable {
         ),
       );
       const villainLine = this.#point(w * 0.5, h * 0.237, 0).x;
-      const lastOne = rowEnemies[rowEnemies.length - 1]!;
-      const oneRow = (of: typeof piles) => rowEnemies.length < 2 || fullRoom(rowEnemies) <= rightOf(of) - left;
-      const leftFits = (of: typeof piles) => {
+      // How far left the table reaches: as far as the encounter piles reach right.
+      const farLeft = (of: typeof piles) => {
         const deck = encounterPile(of.deckY, of.width);
-        const farthest = this.#project(
-          2 * villainLine - (deck.position.x + deck.scale * 0.5),
-          schemeElevation,
-          schemeOrigin.z,
-        ).x;
-        return (
-          fullRoom(rowEnemies.slice(0, -1)) <= rightOf(of) - left &&
-          schemesLeft - farthest >= enemyCardWidth * footprintOf(lastOne).footprint + rowGap * 1.5
-        );
+        return this.#project(2 * villainLine - (deck.position.x + deck.scale * 0.5), schemeElevation, schemeOrigin.z).x;
       };
+      const roomPastSchemes = (card: TableCard, of: typeof piles) =>
+        schemesLeft - farLeft(of) >= enemyCardWidth * footprintOf(card).footprint + rowGap * 1.5;
+      const standPastSchemes = (card: TableCard) => {
+        const { tabs, footprint } = footprintOf(card);
+        const x = schemesLeft - rowGap - (enemyCardWidth * footprint) / 2 + (enemyCardWidth * TAB * tabs) / 2;
+        const { left: cardLeft, right: cardRight } = bounds(card, x, enemyRow, enemyCardWidth, tabs);
+        poseEnemy(card, x - ((cardLeft + cardRight) / 2 - x), enemyRow, enemyCardWidth);
+      };
+      const row = rowEnemies;
+      const lastOne = row[row.length - 1]!;
+      const oneRow = (of: typeof piles) => row.length < 2 || fullRoom(row) <= rightOf(of) - left;
+      const leftFits = (of: typeof piles) =>
+        fullRoom(row.slice(0, -1)) <= rightOf(of) - left && roomPastSchemes(lastOne, of);
       // The piles stay full size while the minions have a row of their own beside the villain, or one stands past the
       // schemes; they shrink when that makes room for the row, or when the minions need two rows anyway.
       const small = pilesOf(false);
@@ -2695,17 +2752,12 @@ export class BattleTable {
       // before any of them shrinks (Adam, 2026-11-24: "they should be almost the same as ... when we've got 4
       // schemes"). The rows are a minion's height apart, with room for its health below.
       const twoRows = overflow && !toLeft;
-      const inRow = toLeft ? rowEnemies.slice(0, -1) : rowEnemies;
+      const inRow = toLeft ? row.slice(0, -1) : row;
       const near = twoRows ? inRow.slice(0, Math.ceil(inRow.length / 2)) : inRow;
       const far = twoRows ? inRow.slice(near.length) : [];
       const nearRow = twoRows ? screenY(schemeOrigin.z + minionStep / 2) : enemyRow;
       const upperRow = screenY(schemeOrigin.z - minionStep / 2);
-      if (toLeft) {
-        const { tabs, footprint } = footprintOf(lastOne);
-        const x = schemesLeft - rowGap - (enemyCardWidth * footprint) / 2 + (enemyCardWidth * TAB * tabs) / 2;
-        const { left: cardLeft, right: cardRight } = bounds(lastOne, x, enemyRow, enemyCardWidth, tabs);
-        poseEnemy(lastOne, x - ((cardLeft + cardRight) / 2 - x), enemyRow, enemyCardWidth);
-      }
+      if (toLeft) standPastSchemes(lastOne);
       const sizeRow = (row: readonly TableCard[], rowY: number) => {
         // Each minion takes a card-sized slot from the villain outwards; room to spare is left at the far end.
         const slotWidth = Math.min((right - left) / row.length, enemyCardWidth * 1.5);
@@ -2760,7 +2812,7 @@ export class BattleTable {
       (card) => card.id !== this.#revealing && !this.#parked.has(card.id) && !card.boostFor,
     ).length;
     const waitingWidth = waitingCardWidth(w, h);
-    const standing = rowEnemies.flatMap((card) => {
+    const standing = [state.villain, ...schemes, ...rowEnemies].flatMap((card) => {
       const pose = enemyPoses.get(card.id);
       if (!pose) return [];
       const across = pose.width * (card.landscape ? HEIGHT : 1);
@@ -2770,9 +2822,27 @@ export class BattleTable {
         { left: pose.x - across / 2, right: pose.x + across / 2, top: pose.y - tall / 2, bottom: pose.y + tall * 0.75 },
       ];
     });
-    const waitingAt = (y: number) => ({
-      left: w * WAITING_X - waitingWidth / 2,
-      right: w * (WAITING_X + Math.max(0, Math.min(3, waitingCount) - 1) * 0.034) + waitingWidth / 2,
+    // The player's own row is laid out further down, but where it will stand follows from its cards alone: a waiting
+    // encounter card keeps off it as well as off the minions (it lay across Interrogation Room, 2026-11-24).
+    {
+      const permanents = state.inPlay.filter((c) => c.id !== state.staged?.id);
+      const shown = [state.hero, ...permanents.filter((card) => card.type !== "upgrade" || card.showAsFullCard)];
+      const footprints = shown.map((card) => (card.exhausted !== card.landscape ? HEIGHT : 1));
+      const tabs = permanents.filter(isTuckedUpgrade).length * TAB * (state.hero.exhausted ? 1 / HEIGHT : 1);
+      const gap = shown.length > 5 ? 0.16 : 0.28;
+      const across = tabs + footprints.reduce((total, width) => total + width, 0) + gap * (shown.length - 1);
+      const playWidth = Math.min(w * 0.1134, h * 0.133, (w * 0.62) / across);
+      const half = (across * playWidth) / 2;
+      standing.push({
+        left: w / 2 - half,
+        right: w / 2 + half,
+        top: h * 0.532 - playWidth * HEIGHT * 0.5,
+        bottom: h * 0.532 + playWidth * HEIGHT * 0.62,
+      });
+    }
+    const waitingAt = ({ x, y }: { x: number; y: number }) => ({
+      left: w * x - waitingWidth / 2,
+      right: w * (x + Math.max(0, Math.min(3, waitingCount) - 1) * 0.034) + waitingWidth / 2,
       top: y - waitingWidth * HEIGHT * 0.45,
       bottom: y + waitingWidth * HEIGHT * 0.45,
     });
@@ -2784,15 +2854,19 @@ export class BattleTable {
             Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)),
         0,
       );
-    const waitingY = !waitingCount
-      ? h * 0.26
-      : [0.26, 0.34, 0.42, 0.5]
-          .map((share) => h * share)
-          .reduce((best, y) => (overlap(waitingAt(y)) < overlap(waitingAt(best)) ? y : best));
+    // Right of the middle first, going down the mat; with minions in two rows above and a full row of the player's
+    // cards below, the open mat left of the player's row (between it and the player's deck) is the nearest clear spot.
+    const waitingSpot = !waitingCount
+      ? { x: WAITING_X, y: h * 0.26 }
+      : [
+          ...[0.26, 0.34, 0.42, 0.5].map((share) => ({ x: WAITING_X, y: h * share })),
+          ...[0.5, 0.56].map((share) => ({ x: WAITING_LEFT_X, y: h * share })),
+        ].reduce((best, spot) => (overlap(waitingAt(spot)) < overlap(waitingAt(best)) ? spot : best));
+    const waitingY = waitingSpot.y;
     // A minion that comes out while they wait stands just below them.
     asideEnemies.forEach((card, i) => {
       const width = enemyCardWidth * 0.85;
-      poseEnemy(card, w * WAITING_X + width * (0.2 + i * 1.2), waitingY + h * 0.14, width);
+      poseEnemy(card, w * waitingSpot.x + width * (0.2 + i * 1.2), waitingY + h * 0.14, width);
     });
     let waiting = 0;
     // Where the revealed card stands on screen while it is held up, so a card being paid for keeps clear of it.
@@ -2850,7 +2924,7 @@ export class BattleTable {
       } else
         this.#pose(
           card.id,
-          w * (WAITING_X + (waiting++ % 3) * 0.034),
+          w * (waitingSpot.x + (waiting++ % 3) * 0.034),
           waitingY,
           waitingCardWidth(w, h),
           // Above anything it lands over, a token on a card included: it only waits there for a moment (Adam,
@@ -3688,18 +3762,20 @@ export class BattleTable {
                   ? 720
                   : kind === "draw"
                     ? 560
-                    : kind === "stash"
-                      ? 540
-                      : kind === "discard"
-                        ? 460
-                        : 310;
+                    : kind === "drone"
+                      ? DRONE_MS
+                      : kind === "stash"
+                        ? 540
+                        : kind === "discard"
+                          ? 460
+                          : 310;
         const progress = this.#reduced.matches ? 1 : THREE.MathUtils.clamp((now - started) / duration, 0, 1);
         const contact = Math.min(1, progress / 0.54);
         const t = readying
           ? THREE.MathUtils.smoothstep(progress, READY_TURN_START, READY_TURN_END)
           : kind === "place"
             ? contact ** 2
-            : kind === "flip" || kind === "turn"
+            : kind === "flip" || kind === "turn" || kind === "drone"
               ? progress * progress * (3 - 2 * progress)
               : // Leave fast and glide in. The curve never overshoots, so a drawn card never shows its back.
                 easeOutCubic(progress);
@@ -3728,6 +3804,16 @@ export class BattleTable {
           const rise = THREE.MathUtils.smoothstep(progress, 0, READY_TURN_START);
           const descent = THREE.MathUtils.smoothstep(progress, READY_TURN_END, 1);
           piece.root.position.y += (rise - descent) * (Math.max(0.58, piece.target.scale * 0.5) + liftOffset);
+        } else if (kind === "drone") {
+          // Off the player's deck and over the table, its back showing: it turns up only as it comes down in the row.
+          piece.root.position.y += Math.sin(Math.PI * progress) * 1.5;
+          piece.root.rotation.y = Math.PI * (1 - THREE.MathUtils.smoothstep(progress, 0.55, 0.94));
+          if (progress > 0.9 && !flight.puffed && !this.#reduced.matches) {
+            flight.puffed = true;
+            const at = piece.target.position.clone();
+            at.y += 0.05;
+            this.#burst(at, 0xffa64a, 14, 1.9, 0.5);
+          }
         } else piece.root.position.y += Math.sin(Math.PI * progress) * (kind === "discard" ? 0.95 : 0.46);
         // Turned facedown on the way into a deck or under a card.
         // Turned over before it lands, when it is going to slide under a card.

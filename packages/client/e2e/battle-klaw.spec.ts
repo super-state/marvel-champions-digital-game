@@ -89,14 +89,17 @@ test("the shelf's Klaw box deals Klaw, a reload keeps it, and New game goes back
 test("Underground Distribution turns over to Secret Rendezvous and brings in a minion", async ({ page }) => {
   test.setTimeout(180_000);
   await open(page, "/battle/?seed=7&scene=klawadvance");
-  expect(await look(page)).toContain("Underground Distribution (main scheme, threat 5/6)");
+  // Defense Network's crisis icon locks the main scheme's threat, and the table says so.
+  expect(await look(page)).toContain(
+    "Underground Distribution (main scheme, threat 5/6, locked: Crisis: no threat comes off the main scheme while Defense Network is in play)",
+  );
   // Every reply's "What happened" lines, in order: the table's own log keeps only the latest few.
   const feed = (await play(page, "End Turn")) + (await throughVillainPhase(page));
   expect(feed).toContain("Underground Distribution gains 1 threat");
   expect(feed).toContain("Underground Distribution is completed: the main scheme advances to Secret Rendezvous");
   expect(feed).toMatch(/enters play/);
   const after = await look(page);
-  expect(after).toMatch(/Secret Rendezvous \(main scheme, threat \d+\/8\)/);
+  expect(after).toMatch(/Secret Rendezvous \(main scheme, threat \d+\/8\b/);
   // The round in the corner is the new one only once its hero phase has come.
   await expect(page.locator("#round-label")).toHaveText("Round 2");
 });
