@@ -2546,12 +2546,14 @@ export class BattleTable {
     const screenAt = (x: number, elevation: number, z: number) =>
       (1 - this.#scratch.set(x, elevation, z).project(this.#camera).y) * this.#canvasHeight * 0.5 - this.#extension;
     // The player's piles are always full size. The discard pile stands taller than its well, a little more with
-    // every card, so its top card reaches up the screen towards the encounter deck above it.
+    // every card, so its top card reaches up the screen towards the encounter deck above it. Room is kept for it eight
+    // cards at a time, so the table moves at most once every eight discards rather than a little with each one.
     const playerPileWidth = Math.min(w * 0.125, h * 0.125);
     const playerPileScale = this.#point(pileX + playerPileWidth, pileY, 0.025).x - base.x;
+    const discardRoomFor = Math.ceil(state.discard.length / 8) * 8;
     const discardTop = screenAt(
       base.x,
-      0.025 + playerPileScale * (0.06 + Math.max(0, state.discard.length - 1) * 0.023),
+      0.025 + playerPileScale * (0.06 + Math.max(0, discardRoomFor - 1) * 0.023),
       base.z - (playerPileScale * HEIGHT) / 2,
     );
     // Extra room under each encounter pile for its count, found short once the table was fitted (below).
@@ -3324,7 +3326,7 @@ export class BattleTable {
         stageY(goal.position.x, goal.position.y + rise * goal.scale, goal.position.z - (goal.scale * HEIGHT) / 2);
       // The count's offset under its pile, its height and a little air (`placeLabels` in main.ts).
       const COUNT_ROOM = 4 + 22 + 5;
-      const discardStack = 0.012 + Math.max(0, state.discard.length - 1) * 0.023 + 0.025;
+      const discardStack = 0.012 + Math.max(0, discardRoomFor - 1) * 0.023 + 0.025;
       const deckStock = 0.018 * Math.min(7, Math.max(1, state.encounterCount * 0.25)) + 0.002;
       const short = {
         deck: nearEdge(encounterGoal) + COUNT_ROOM - farEdge(discardGoal, discardStack),
