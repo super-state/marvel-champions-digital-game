@@ -95,6 +95,10 @@ interface Flight {
   kind: "play" | "return" | "discard" | "draw" | "place" | "equip" | "flip" | "turn" | "tuck" | "stash";
   /** Set once the landing puff for this flight has been thrown. */
   puffed?: boolean;
+  /** Out of sight until it starts: a card coming onto the table in the campaign shelf's entrance (`enter`). */
+  hidden?: boolean;
+  /** Part of that entrance, start to landing. */
+  entrance?: boolean;
 }
 
 interface Spark {
@@ -120,6 +124,12 @@ interface Vapour {
 }
 
 const EVAPORATE_MS = 1250;
+/** The campaign shelf's entrance (`enter`): how high a piece starts above its place, and the gap between pieces. */
+const ENTER_DROP = 2.6;
+const ENTER_GAP_MS = 190;
+/** A landing ("place"): its length, and the share of it spent coming down before the settle. */
+const PLACE_MS = 440;
+const PLACE_CONTACT = 0.54;
 const VAPOUR_COLOR = 0xbfe4ff;
 const VAPOUR_MOTES = 30;
 
@@ -508,6 +518,8 @@ export class BattleTable {
   #matGoal: { x: number; z: number; width: number; depth: number } | null = null;
   /** Where the pile slots are easing to. */
   readonly #slotGoals = new Map<THREE.Object3D, { position: THREE.Vector3; scale: number }>();
+  /** Piles coming onto the table in the campaign shelf's entrance, and when each starts down (`enter`). */
+  readonly #slotEntrances = new Map<THREE.Object3D, number>();
   /** Jump the mat and the slots to their goals on the next frame (first layout, a resize). */
   #snapBoard = true;
   /** The resting pose of a hovered table card, for its footprint once the fit has placed it. */
@@ -672,6 +684,13 @@ export class BattleTable {
     return this.#paymentEdge + this.#extension;
   }
   /** True once every card in the hand has landed: none flying in, none still easing into place. */
+  /** The campaign shelf's entrance (`enter`) is still bringing pieces onto the table. */
+  get entering(): boolean {
+    if (this.#slotEntrances.size) return true;
+    for (const flight of this.#flights.values()) if (flight.entrance) return true;
+    return false;
+  }
+
   get handSettled(): boolean {
     return (this.#state?.hand ?? []).every((card) => {
       const piece = this.#pieces.get(card.id);
@@ -1528,8 +1547,57 @@ export class BattleTable {
     this.#sizzling.clear();
     this.#hostRest.clear();
     this.#drops.clear();
+    for (const slot of this.#slotEntrances.keys()) slot.visible = true;
+    this.#slotEntrances.clear();
     this.#state = null;
     this.#requestFrame();
+  }
+
+  /**
+   * The campaign shelf's way onto the table (`boxes/boxes.ts`): a game just dealt comes in piece by piece, with the
+   * table's own cards and its own landing, instead of all at once. Everything stays out of sight until `at` (a
+   * `performance.now()` time); then the villain, the other enemy cards (the main scheme), the encounter deck, the hero
+   * and the player's deck come down onto the mat one after another, and the opening hand is dealt from the deck.
+   * Reduced motion leaves the table as it is. Returns when the last card of the hand will have landed.
+   */
+  enter(at: number, gap = ENTER_GAP_MS): number {
+    const state = this.#state;
+    if (!state || this.#reduced.matches) return at;
+    const drop = (id: string, when: number) => {
+      const piece = this.#pieces.get(id);
+      if (!piece) return;
+      this.#apply(piece, 1);
+      piece.root.position.y += ENTER_DROP;
+      piece.root.position.z -= ENTER_DROP * 0.25;
+      this.#startFlight(id, "place", when);
+      Object.assign(this.#flights.get(id)!, { hidden: true, entrance: true });
+      piece.root.visible = false;
+    };
+    let when = at;
+    drop(state.villain.id, when);
+    for (const card of state.enemyCards)
+      if (card.id !== state.villain.id && !card.attachedTo) drop(card.id, (when += gap));
+    this.#slotEntrances.set(this.#encounterSlot, (when += gap));
+    this.#encounterSlot.visible = false;
+    drop(state.hero.id, (when += gap));
+    for (const card of state.inPlay) if (!card.attachedTo) drop(card.id, (when += gap));
+    this.#slotEntrances.set(this.#deckSlot, (when += gap));
+    this.#deckSlot.visible = false;
+    // The opening hand, dealt from the deck once it is down, the way a draw is dealt.
+    const deal = when + PLACE_MS * PLACE_CONTACT + 120;
+    state.hand.forEach((card, index) => {
+      const root = this.#pieces.get(card.id)?.root;
+      if (!root) return;
+      root.position.copy(this.#deckSlot.position);
+      root.position.y += this.#deckBack.position.z * this.#deckSlot.scale.x + 0.03;
+      root.scale.copy(this.#deckSlot.scale);
+      root.rotation.set(-Math.PI / 2, Math.PI, 0);
+      this.#startFlight(card.id, "draw", deal + index * 150);
+      Object.assign(this.#flights.get(card.id)!, { hidden: true, entrance: true });
+      root.visible = false;
+    });
+    this.#requestFrame();
+    return deal + Math.max(0, state.hand.length - 1) * 150 + 560;
   }
 
   /** Cards on their way facedown into a deck or under a card: they fly there, turning over, and are then gone. */
@@ -3396,6 +3464,29 @@ export class BattleTable {
       slot.scale.setScalar(slot.scale.x + (target.scale - slot.scale.x) * k);
       if (k < 1) easingBoard = true;
     }
+    // Piles coming down in the campaign shelf's entrance (`enter`): the same drop and settle as a card's landing.
+    for (const [slot, at] of this.#slotEntrances) {
+      easingBoard = true;
+      if (now < at && !this.#reduced.matches) {
+        slot.visible = false;
+        continue;
+      }
+      slot.visible = true;
+      const goal = this.#slotGoals.get(slot)?.position ?? slot.position;
+      const progress = this.#reduced.matches ? 1 : Math.min(1, (now - at) / PLACE_MS);
+      const contact = Math.min(1, progress / PLACE_CONTACT);
+      const settle = Math.max(0, (progress - PLACE_CONTACT) / (1 - PLACE_CONTACT));
+      slot.position.copy(goal);
+      slot.position.y += ENTER_DROP * (1 - contact ** 2) + Math.sin(Math.PI * settle) * (1 - settle) * 0.12;
+      slot.position.z -= ENTER_DROP * 0.25 * (1 - contact ** 2);
+      if (settle > 0 && slot.userData.entered !== at) {
+        slot.userData.entered = at;
+        const puff = goal.clone();
+        puff.y += 0.05;
+        this.#burst(puff, 0xd9e4ff, 12, 1.9, 0.5);
+      }
+      if (progress === 1) this.#slotEntrances.delete(slot);
+    }
     const light = this.#villainLight;
     const transitioning = Math.abs(light.value - this.#phaseTarget) > 0.001 && !this.#reduced.matches;
     light.value = transitioning ? THREE.MathUtils.damp(light.value, this.#phaseTarget, 3.4, dt) : this.#phaseTarget;
@@ -3537,6 +3628,16 @@ export class BattleTable {
         else moving = true;
         continue;
       }
+      if (flight?.hidden) {
+        // Still out of sight, waiting for its turn to come onto the table (`enter`).
+        if (now < flight.started && !this.#reduced.matches) {
+          piece.root.visible = false;
+          moving = true;
+          continue;
+        }
+        flight.hidden = false;
+        piece.root.visible = true;
+      }
       if (flight) {
         const { from, started, kind, liftOffset } = flight;
         const stashTo = kind === "stash" ? this.#stashing.get(id)?.to : undefined;
@@ -3551,7 +3652,7 @@ export class BattleTable {
                 ? EXHAUST_MS
                 : READY_MS
               : kind === "place"
-                ? 440
+                ? PLACE_MS
                 : kind === "tuck" || stashedUnder
                   ? 720
                   : kind === "draw"

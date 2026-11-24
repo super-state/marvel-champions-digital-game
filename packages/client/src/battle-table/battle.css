@@ -391,6 +391,12 @@ button:focus-visible {
 #anchors {
   pointer-events: none;
   overflow: hidden;
+  transition: opacity 0.35s ease-out;
+}
+/* The campaign shelf's entrance: the counts and health show once their pieces have landed. */
+#anchors[data-entering] {
+  opacity: 0;
+  transition: none;
 }
 #stage[data-resolving] #space {
   pointer-events: none;
