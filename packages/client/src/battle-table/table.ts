@@ -782,14 +782,17 @@ export class BattleTable {
     canvas.addEventListener("webglcontextrestored", this.#restoreContext);
   }
 
+  /** Its own back (an identity, the villain, a card that has turned over), not one of the deck backs it may share. */
+  #ownsBack(piece: Piece): boolean {
+    return piece.back.material !== this.#deckBack.material && piece.back.material !== this.#encounterBack.material;
+  }
+
   #dropPiece(id: string): void {
     const piece = this.#pieces.get(id);
     if (!piece) return;
     this.#scene.remove(piece.root);
     for (const token of piece.tokens.children) this.#drops.delete(token as THREE.Group);
-    // Its own back (an identity, the villain, a card that has turned over), never the deck backs it may share.
-    if (piece.back.material !== this.#deckBack.material && piece.back.material !== this.#encounterBack.material)
-      piece.back.material.dispose();
+    if (this.#ownsBack(piece)) piece.back.material.dispose();
     piece.aura?.material.dispose();
     piece.face.material.dispose();
     this.#pieces.delete(id);
@@ -1559,8 +1562,9 @@ export class BattleTable {
       const piece = this.#pieces.get(card.id);
       if (!piece) return;
       // A card with its own printed back (a villain, a double-sided card) keeps it: that material is its own.
-      if (!piece.card.reverseArt && piece.card.type !== "villain")
+      if (!this.#ownsBack(piece)) {
         piece.back.material = to === "encounterDeck" ? this.#encounterBack.material : this.#deckBack.material;
+      }
       this.#startFlight(card.id, "stash", start + index * step);
     });
   }
@@ -1864,7 +1868,7 @@ export class BattleTable {
   #releaseVapour({ piece, owned }: Vapour): void {
     this.#scene.remove(piece.root);
     for (const token of piece.tokens.children) this.#drops.delete(token as THREE.Group);
-    if (piece.card.reverseArt || piece.card.type === "villain") piece.back.material.dispose();
+    if (this.#ownsBack(piece)) piece.back.material.dispose();
     for (const material of owned) material.dispose();
     piece.aura?.material.dispose();
     piece.face.material.dispose();

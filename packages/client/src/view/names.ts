@@ -85,7 +85,7 @@ export function optionLabelOf(
   }
   // The main scheme is one card through all its stages: it goes by the stage it is on (Klaw's Secret Rendezvous),
   // where the option's own label keeps the card's first name (Underground Distribution).
-  if (option.ref.kind === "card" && option.ref.instanceId === state.mainScheme?.instanceId)
+  if (option.ref.kind === "card" && cardOf(state, option.ref.instanceId)?.type === "main_scheme")
     return faceUpName(state, option.ref.instanceId);
   return identityNameOf(state, option.ref.instanceId) ?? option.label;
 }

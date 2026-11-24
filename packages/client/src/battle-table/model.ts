@@ -298,7 +298,7 @@ function eitherOrTitle(state: GameState, pending: NonNullable<GameState["pending
   const { requirement } = pending.prompt;
   const parts = (["energy", "mental", "physical", "wild", "generic"] as const).flatMap((type) => {
     const n = requirement[type] ?? 0;
-    return n ? [`${n} ${type === "generic" ? "resource" : type}`] : [];
+    return n ? [`${n} ${type === "generic" ? (n === 1 ? "resource" : "resources") : type}`] : [];
   });
   return `Spend ${parts.join(", ")}, or ${otherwise}?`;
 }
@@ -392,8 +392,8 @@ const KLAW_GEAR_ACTIONS: ReadonlySet<string> = new Set([
 /** What a side scheme's printed icons do (RRG 1.8 "Acceleration Icon", "Crisis Icon", "Hazard Icon"). */
 const SCHEME_ICON_TEXT: Record<string, string> = {
   acceleration: "Acceleration icon: 1 more threat goes on the main scheme each villain phase while this is in play.",
-  crisis: "Crisis icon: no threat can be removed from the main scheme while this is in play.",
-  hazard: "Hazard icon: 1 more encounter card is dealt to the first player each villain phase while this is in play.",
+  crisis: "Crisis icon: player cards can't remove threat from the main scheme while this is in play.",
+  hazard: "Hazard icon: 1 more encounter card is dealt each villain phase while this is in play.",
 };
 
 /** The villains the table can deal, each a Core Set scenario played with Spider-Man's precon deck. */
@@ -637,7 +637,12 @@ export class BattleModel {
     let acceleration = this.#game.mainScheme.accelerationTokens;
     let round = this.#game.round;
     for (const e of events) {
-      if (e.type === "roundStarted") round = e.round;
+      if (e.type === "roundStarted") {
+        round = e.round;
+        // The engine starts the new round just after its hero phase: that phase belongs to it.
+        const heroPhase = [...this.#beats].reverse().find((beat) => beat.phase);
+        if (heroPhase?.phase === "hero" && (heroPhase.round ?? 0) < round) heroPhase.round = round;
+      }
       const before = this.#beats.length;
       if (e.type === "deckShuffled" && e.zone.kind === "deck") shuffledDeck = e.order.length;
       if (e.type === "abilityResolved") resolving = { card: e.instanceId, label: triggerLabel(e.abilityId) };
@@ -709,7 +714,8 @@ export class BattleModel {
             from,
             to: mainStageName,
             stage: stage?.stageNumber ?? e.stageIndex + 1,
-            threat: amount(stage?.startingThreat),
+            // The engine turns it over with no threat, then places the stage's starting threat on a beat of its own.
+            threat: 0,
             target: stage?.targetThreat ? amount(stage.targetThreat) : null,
           },
         });

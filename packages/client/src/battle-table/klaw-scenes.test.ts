@@ -150,6 +150,8 @@ describe("Klaw's dev scenes", () => {
     const battle = new BattleModel();
     battle.reset({ villain: "klaw", seed: 7, mulligan: true });
     const network = battle.snapshot().enemyCards.find((card) => card.name === "Defense Network")!;
-    expect(battle.cardFacts(network.id)).toContain("Crisis icon: no threat can be removed from the main scheme");
+    expect(battle.cardFacts(network.id)).toContain(
+      "Crisis icon: player cards can't remove threat from the main scheme",
+    );
   });
 });
