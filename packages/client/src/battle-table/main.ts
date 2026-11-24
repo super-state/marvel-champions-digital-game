@@ -15,6 +15,7 @@ import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, isVillainId, VILLAINS, type BattleCard, type VillainId } from "./model.js";
 import { answerRemote, createPlayer, type Player, type RemoteChannel } from "./play.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
+import { spreadPlates, type Obstacle, type Plate, type PlateShift } from "./plate-spread.js";
 import { eventLook, offerDoes, spotOf, waitsOnDock, type GlowTone, type Spot } from "./spotlight.js";
 import {
   BattleTable,
@@ -1546,7 +1547,17 @@ function updatePlateCutouts(ids: readonly string[], projected: ReturnType<Battle
     if (!anchor || !label?.isConnected || label.parentElement !== boardLabels || !label.childElementCount) return [];
     const width = label.offsetWidth;
     const height = label.offsetHeight;
-    return width && height ? [{ left: anchor.x - width / 2, top: anchor.bottom + 5, width, height }] : [];
+    const shift = plateShifts.get(id);
+    return width && height
+      ? [
+          {
+            left: anchor.x + (shift?.dx ?? 0) - width / 2,
+            top: anchor.bottom + PLATE_DROP + (shift?.dy ?? 0),
+            width,
+            height,
+          },
+        ]
+      : [];
   });
   while (plateCutouts.childElementCount > boxes.length) plateCutouts.lastElementChild!.remove();
   boxes.forEach((box, i) => {
@@ -1968,13 +1979,20 @@ function placeLabels() {
   const discard = table.discardAnchor();
   const deck = table.deckAnchor();
   const encounter = table.encounterAnchor();
-  encounterLabel.style.transform = `translate(${Math.round(encounter.x)}px,${Math.round(encounter.bottom + 4)}px)`;
+  const encounterAt = { x: encounter.x, top: encounter.bottom + 4 };
+  encounterLabel.style.transform = `translate(${Math.round(encounterAt.x)}px,${Math.round(encounterAt.top)}px)`;
   deckLabel.style.transform = `translate(${Math.round(deck.x)}px,${Math.round(deck.bottom + 5)}px)`;
   const encounterDiscard = table.encounterDiscardAnchor();
-  encounterPile.style.transform =
+  const encounterDiscardAt =
     discardOpen && viewingEncounterDiscard
-      ? ""
-      : `translate(${Math.round(Math.min(encounterDiscard.x, stage.clientWidth - encounterPile.offsetWidth / 2 - 2))}px,${Math.round(encounterDiscard.bottom + 4)}px)`;
+      ? null
+      : {
+          x: Math.min(encounterDiscard.x, stage.clientWidth - encounterPile.offsetWidth / 2 - 2),
+          top: encounterDiscard.bottom + 4,
+        };
+  encounterPile.style.transform = encounterDiscardAt
+    ? `translate(${Math.round(encounterDiscardAt.x)}px,${Math.round(encounterDiscardAt.top)}px)`
+    : "";
   pile.style.transform =
     discardOpen && !viewingEncounterDiscard
       ? ""
@@ -2117,6 +2135,7 @@ function placeLabels() {
     (gap, point, index) => (index ? Math.min(gap, point.x - hand[index - 1]!.x - 4) : gap),
     142,
   );
+  const placed: { anchor: (typeof projected)[number]; node: HTMLButtonElement; handCard: boolean }[] = [];
   for (const anchor of projected) {
     const node = labels.get(anchor.id);
     if (!node) continue;
@@ -2129,11 +2148,103 @@ function placeLabels() {
           ? Math.max(200, anchor.width * 1.3)
           : Math.max(104, anchor.width * 1.25);
     node.style.setProperty("--card-width", `${labelWidth}px`);
-    // A hand card wears its chip (Spend, Swap, Discard) low on its face; other cards' plates sit under them.
-    const y = handCard ? anchor.bottom - 44 : anchor.bottom + 5;
-    node.style.transform = `translate(${Math.round(anchor.x)}px,${Math.round(y)}px)`;
+    placed.push({ anchor, node, handCard });
+  }
+  // The piles' counts take part too. The encounter piles' stand at the end of the minions' row and ease aside under
+  // their pile (never further right than the screen's edge allows); the player's stay put and the plates beside make way.
+  const piles: PileCount[] = [
+    {
+      node: encounterLabel,
+      at: encounterAt,
+      left: encounter.left,
+      right: Math.min(encounter.right, stage.clientWidth - encounterLabel.offsetWidth / 2 - 2),
+    },
+    ...(encounterDiscardAt
+      ? [
+          {
+            node: encounterPile,
+            at: encounterDiscardAt,
+            left: encounterDiscard.left,
+            right: Math.min(encounterDiscard.right, stage.clientWidth - encounterPile.offsetWidth / 2 - 2),
+          },
+        ]
+      : []),
+    { node: deckLabel, at: { x: deck.x, top: deck.bottom + 5 }, pinned: true },
+    { node: pile, at: { x: discard.x, top: discard.bottom + 5 }, pinned: true },
+  ];
+  plateShifts = discardOpen ? new Map() : spreadTablePlates(placed, projected, piles);
+  for (const { node, at } of piles) {
+    const shift = plateShifts.get(node.id);
+    if (shift) node.style.transform = `translate(${Math.round(at.x + shift.dx)}px,${Math.round(at.top + shift.dy)}px)`;
+  }
+  for (const { anchor, node, handCard } of placed) {
+    // A hand card wears its chip (Spend, Swap, Discard) low on its face; other cards' plates sit under them, eased
+    // clear of their neighbours where the cards stand closer than the plates are wide (`plate-spread.ts`).
+    const shift = plateShifts.get(anchor.id);
+    const x = anchor.x + (shift?.dx ?? 0);
+    const y = handCard ? anchor.bottom - 44 : anchor.bottom + PLATE_DROP + (shift?.dy ?? 0);
+    node.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
   }
   if (spot) updatePlateCutouts(spot.plates ?? [], projected);
+}
+
+/** Where each plate under a card on the table moved to keep clear of its neighbours (`placeLabels`). */
+let plateShifts = new Map<string, PlateShift>();
+/** How far below its card a plate hangs. */
+const PLATE_DROP = 5;
+
+/** A pile's count, under the pile: between `left` and `right` if it may ease aside, `pinned` if it stays put. */
+interface PileCount {
+  node: HTMLElement;
+  at: { x: number; top: number };
+  left?: number;
+  right?: number;
+  pinned?: boolean;
+}
+
+/**
+ * The plates under the cards on the table that would overlap, and how far each moves to stand clear. Reads every
+ * plate's size before any is moved, so the page is laid out once.
+ */
+function spreadTablePlates(
+  placed: readonly { anchor: ReturnType<BattleTable["anchors"]>[number]; node: HTMLButtonElement; handCard: boolean }[],
+  projected: ReturnType<BattleTable["anchors"]>,
+  piles: readonly PileCount[],
+) {
+  const handIds = new Set(placed.filter((one) => one.handCard).map((one) => one.anchor.id));
+  const plates: Plate[] = placed.flatMap(({ anchor, node, handCard }) => {
+    if (handCard || node.parentElement !== boardLabels || !node.childElementCount || node.hasAttribute("data-tucked"))
+      return [];
+    const width = node.offsetWidth;
+    const height = node.offsetHeight;
+    if (!width || !height) return [];
+    return [
+      {
+        id: anchor.id,
+        x: anchor.x,
+        top: anchor.bottom + PLATE_DROP,
+        width,
+        height,
+        cardLeft: anchor.left,
+        cardRight: anchor.right,
+      },
+    ];
+  });
+  for (const { node, at, left = at.x, right = at.x, pinned = false } of piles) {
+    const width = node.offsetWidth;
+    const height = node.offsetHeight;
+    if (width && height)
+      plates.push({ id: node.id, ...at, width, height, cardLeft: left, cardRight: right, keepsLine: true, pinned });
+  }
+  if (plates.length < 2) return new Map<string, PlateShift>();
+  // What a plate stepping off its row must not land on: the other cards on the table and the encounter piles.
+  const box = ({ left, right, top, bottom }: Obstacle): Obstacle => ({ left, right, top, bottom });
+  const obstacles: Obstacle[] = [
+    ...projected.filter((card) => !handIds.has(card.id)).map((card) => ({ ...box(card), id: card.id })),
+    box(table!.encounterAnchor()),
+    ...(state.encounterDiscard.length ? [box(table!.encounterDiscardAnchor())] : []),
+  ];
+  return spreadPlates(plates, obstacles);
 }
 
 // ── Presenting what happened ─────────────────────────────────────────────────────────────────────────────────────
