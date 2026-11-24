@@ -2352,27 +2352,30 @@ export class BattleTable {
     const pileX = w * 0.5 + pileSpread;
     const pileY = h * 0.505;
     const base = this.#point(pileX, pileY, 0.025);
-    // The encounter deck and its discard pile are full size, like the player's, stacked down the right towards the
-    // player's discard pile with no big gap; they are the first to shrink when the villain's side fills, two or more
-    // minions or other enemies out (Adam, 2026-11-24). Shrunk, they keep that place down the right rather than going
-    // up to the top corner (Adam, 2026-11-24: "the encounter card sections can move down").
-    const enemiesOut = state.enemyCards.filter(
-      (card) => !card.attachedTo && card.type !== "main_scheme" && card.type !== "side_scheme",
-    ).length;
-    const fullPiles = enemiesOut < 2;
-    const encounterWidth = fullPiles ? Math.min(w * 0.125, h * 0.125) : Math.min(w * 0.088, h * 0.088);
-    // One pile's height on screen (a card lying on the mat, seen from the camera's angle) plus its label and a gap.
-    const pileStep = encounterWidth * 1.11 + h * 0.045;
-    const encounterDeckY = pileY - pileStep;
-    const encounterDiscardY = encounterDeckY - pileStep;
-    const encounterPile = (y: number) => {
+    // The encounter deck and its discard pile are full size, like the player's. Until anything has been discarded the
+    // deck stands level with the villain's row, in line with the minions; once there is a discard pile the deck steps
+    // down the right towards the player's discard pile and the discard pile stands above it (Adam, 2026-11-24: "I'd
+    // expect the encounter deck to be in line with the minions and the same size"). They shrink only when that gives
+    // the minions a row they would not otherwise have (worked out with the minions' row, below), and keep their place
+    // down the right rather than going up to the top corner.
+    const discarded = state.encounterDiscard.length > 0;
+    const pilesOf = (full: boolean) => {
+      const width = full ? Math.min(w * 0.125, h * 0.125) : Math.min(w * 0.088, h * 0.088);
+      // One pile's height on screen (a card lying on the mat, seen from the camera's angle) plus its label and a gap.
+      const step = width * 1.11 + h * 0.045;
+      const discardY = pileY - step * 2;
+      return { width, deckY: discarded ? pileY - step : h * 0.242, discardY };
+    };
+    let piles = pilesOf(true);
+    const encounterPile = (y: number, width = piles.width) => {
       const position = this.#point(pileX, y, 0.025);
-      const scale = this.#point(pileX + encounterWidth, y, 0.025).x - position.x;
+      const scale = this.#point(pileX + width, y, 0.025).x - position.x;
       // Align the piles on the table itself, accounting for the camera perspective.
       position.x = base.x;
       return { position, scale };
     };
-    const encounterGoal = encounterPile(encounterDeckY);
+    const encounterWidth = piles.width;
+    let encounterGoal = encounterPile(piles.deckY);
     this.#hoverFootprint = null;
     this.#hoverRest = null;
     this.#tucked.clear();
@@ -2489,11 +2492,15 @@ export class BattleTable {
       const left =
         bounds(state.villain, w * 0.5, h * 0.237, villainWidth, villainTabs).right +
         (villainBoosts ? boostWidth * (0.7 + (villainBoosts - 1) * 0.3) : 0);
-      // The row ends at the encounter piles, whichever reaches further in: the discard pile stands further back than
-      // the deck, so on screen its edge comes further in (Klaw's fourth Master of Evil slid under it).
-      const pileEdge = (goal: { position: THREE.Vector3; scale: number }) =>
-        this.#project(goal.position.x - goal.scale * 0.5, 0.025, goal.position.z).x;
-      const right = Math.min(pileEdge(encounterGoal), pileEdge(encounterPile(encounterDiscardY)));
+      const minionStep = schemeScale * (HEIGHT + 0.36);
+      // The row ends at the encounter piles' edge, taken as far back as a pile or a second row of minions stands: the
+      // further back, the further in that edge comes on screen (Klaw's fourth Master of Evil slid under the discard).
+      const rightOf = (of: typeof piles) => {
+        const deck = encounterPile(of.deckY, of.width);
+        const depths = [deck.position.z, schemeOrigin.z - minionStep / 2];
+        if (discarded) depths.push(encounterPile(of.discardY, of.width).position.z);
+        return Math.min(...depths.map((z) => this.#project(deck.position.x - deck.scale * 0.5, 0.025, z).x));
+      };
       const footprintOf = (card: TableCard) => {
         const tabs = state.enemyCards.filter((c) => c.attachedTo === card.id).length;
         return { tabs, footprint: (card.landscape ? HEIGHT : 1) + TAB * tabs };
@@ -2520,17 +2527,30 @@ export class BattleTable {
         ),
       );
       const villainLine = this.#point(w * 0.5, h * 0.237, 0).x;
-      const farthest = this.#project(
-        2 * villainLine - (encounterGoal.position.x + encounterGoal.scale * 0.5),
-        schemeElevation,
-        schemeOrigin.z,
-      ).x;
-      const overflow = rowEnemies.length > 1 && fullRoom(rowEnemies) > right - left;
       const lastOne = rowEnemies[rowEnemies.length - 1]!;
-      const toLeft =
-        overflow &&
-        fullRoom(rowEnemies.slice(0, -1)) <= right - left &&
-        schemesLeft - farthest >= enemyCardWidth * footprintOf(lastOne).footprint + rowGap * 1.5;
+      const oneRow = (of: typeof piles) => rowEnemies.length < 2 || fullRoom(rowEnemies) <= rightOf(of) - left;
+      const leftFits = (of: typeof piles) => {
+        const deck = encounterPile(of.deckY, of.width);
+        const farthest = this.#project(
+          2 * villainLine - (deck.position.x + deck.scale * 0.5),
+          schemeElevation,
+          schemeOrigin.z,
+        ).x;
+        return (
+          fullRoom(rowEnemies.slice(0, -1)) <= rightOf(of) - left &&
+          schemesLeft - farthest >= enemyCardWidth * footprintOf(lastOne).footprint + rowGap * 1.5
+        );
+      };
+      // The piles stay full size while the minions have a row of their own beside the villain, or one stands past the
+      // schemes; they shrink when that makes room for the row, or when the minions need two rows anyway.
+      const small = pilesOf(false);
+      if (!oneRow(piles) && (oneRow(small) || !leftFits(piles))) {
+        piles = small;
+        encounterGoal = encounterPile(piles.deckY);
+      }
+      const right = rightOf(piles);
+      const overflow = !oneRow(piles);
+      const toLeft = overflow && leftFits(piles);
       // More than that: a block of two rows, centred on the villain's middle like a block of schemes on his other side,
       // before any of them shrinks (Adam, 2026-11-24: "they should be almost the same as ... when we've got 4
       // schemes"). The rows are a minion's height apart, with room for its health below.
@@ -2538,7 +2558,6 @@ export class BattleTable {
       const inRow = toLeft ? rowEnemies.slice(0, -1) : rowEnemies;
       const near = twoRows ? inRow.slice(0, Math.ceil(inRow.length / 2)) : inRow;
       const far = twoRows ? inRow.slice(near.length) : [];
-      const minionStep = schemeScale * (HEIGHT + 0.36);
       const nearRow = twoRows ? screenY(schemeOrigin.z + minionStep / 2) : enemyRow;
       const upperRow = screenY(schemeOrigin.z - minionStep / 2);
       if (toLeft) {
@@ -2967,7 +2986,7 @@ export class BattleTable {
       position: deckCenter,
       scale: this.#point(deckX + Math.min(w * 0.125, h * 0.125), deckY, 0.025).x - deckCenter.x,
     };
-    const encounterDiscardGoal = encounterPile(encounterDiscardY);
+    const encounterDiscardGoal = encounterPile(piles.discardY);
     this.#encounterDiscardSlot.visible = state.encounterDiscard.length > 0;
     // The piles are part of the table too, the encounter discard pile even while it is empty, so a first discard
     // doesn't move everything (the first encounter card discarded once shrank and slid the whole board).
@@ -2990,6 +3009,11 @@ export class BattleTable {
     }
     for (const goal of [discardGoal, deckGoal, encounterGoal, encounterDiscardGoal])
       rest(goal.position, goal.scale, false);
+    // A discard pile stands taller than its well (each card a little above the last), so its top card reaches further
+    // up the screen: room is kept for that, so the mat's edge stays clear above it.
+    const stackRoom = (count: number, scale: number) => scale * Math.min(0.3, 0.05 + 0.012 * count);
+    rests[rests.length - 1]!.z0 -= stackRoom(state.encounterDiscard.length, encounterDiscardGoal.scale);
+    rests[rests.length - 4]!.z0 -= stackRoom(state.discard.length, discardGoal.scale);
     this.#fitTable(onBoard, rests, [
       [this.#discardSlot, discardGoal],
       [this.#deckSlot, deckGoal],
