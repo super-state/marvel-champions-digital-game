@@ -2937,7 +2937,12 @@ async function present(beats: Snapshot["beats"]) {
         ).onfinish = () => svg.remove();
       }
       // Scheming is called out on the card like an encounter card dealt or threat placed; an attack has its reticle.
-      if (beat.scheming) stampCard(beat.scheming, "Schemes");
+      // It also lifts and flashes, so every enemy taking its turn is seen to, even one that places no threat (Adam,
+      // 2026-11-24); an attacker rears up for its attack instead.
+      if (beat.scheming) {
+        stampCard(beat.scheming, "Schemes");
+        table?.activateEnemy(beat.scheming);
+      }
     }
     if (beat.stunnedAttempt) {
       // It rears up to attack and strains against the stun; it never aims at the hero.

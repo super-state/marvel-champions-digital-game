@@ -1209,7 +1209,8 @@ export class BattleTable {
     piece: Piece;
     start: number;
     lift: number;
-    activation?: { flashed: boolean };
+    /** `rises`: how far it comes up, in card widths (a When Revealed card 0.9, an enemy scheming less). */
+    activation?: { flashed: boolean; rises?: number };
     /** A card under an enemy, drawn out to the side to shine: no rise and no smoke. */
     aside?: boolean;
     /** A card just played (`shinePlayed`): no rise and no smoke, a stretch it is put back from each frame. */
@@ -1284,6 +1285,20 @@ export class BattleTable {
   activateWhenRevealed(id: string): void {
     this.pulseInterrupt(id);
     if (this.#interrupt?.piece === this.#pieces.get(id)) this.#interrupt!.activation = { flashed: false };
+  }
+
+  /**
+   * An enemy activating to scheme: it lifts off the mat, the light sweeps across it and it flashes, then settles, the
+   * same moment whatever threat it places (Adam, 2026-11-24: a minion scheming for 0 looked as if it had been missed).
+   * No smoke: nothing fires off it, it is just its turn.
+   */
+  activateEnemy(id: string): void {
+    const piece = this.#pieces.get(id);
+    if (!piece || this.#tucked.has(id)) return;
+    this.pulseInterrupt(id);
+    if (this.#interrupt?.piece !== piece) return;
+    this.#interruptPuff.removeFromParent();
+    this.#interrupt.activation = { flashed: false, rises: 0.35 };
   }
 
   /**
@@ -3985,7 +4000,7 @@ export class BattleTable {
       // A card standing beside the villain (a revealed card parked there) springs only a little, like one held up to
       // be read, rather than leaping far up off the row (Adam, 2026-11-23: "a little bit too high").
       const heldUp = pulse.piece.card.id === this.#revealing || this.#parked.has(pulse.piece.card.id);
-      const rises = pulse.activation ? (heldUp ? 0.12 : 0.9) : 0.12;
+      const rises = pulse.activation ? (heldUp ? 0.12 : (pulse.activation.rises ?? 0.9)) : 0.12;
       pulse.lift = this.#reduced.matches || pulse.shine || pulse.aside ? 0 : pulse.piece.root.scale.x * rises * rise;
       if (pulse.shine && !this.#reduced.matches) {
         // Up a touch along its length and back, easing out, as the light crosses it.
