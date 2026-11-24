@@ -4398,7 +4398,7 @@ const pad = startController({
   useAction: useCardAction,
 });
 // ── The campaign shelf: the table's front door ────────────────────────────────────────────────────────────────────
-// The page opens on the campaign shelf (`boxes/boxes.ts`), laid over the table. Play there deals the game here, under
+// The page opens on the campaign shelf (`room/`), laid over the table. Play there deals the game here, under
 // it, then the shelf moves every piece onto the table and fades away. An address that sets a game up (the browser
 // tests, scenes, the play hook, the sound studio) goes straight to the table, as does a reload during a game: the dev
 // server reloads the page on every change, and that should land back at the table, not the shelf.
@@ -4442,7 +4442,7 @@ async function showShelf() {
       location.reload();
       return;
     }
-    const { openShelf } = await import("./boxes/boxes.js");
+    const { openShelf } = await import("./room/index.js");
     shelfDrawn();
     await openShelf({
       lock: lockReason,
