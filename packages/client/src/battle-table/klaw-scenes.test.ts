@@ -101,4 +101,48 @@ describe("Klaw's dev scenes", () => {
         "Discard it: spend energy, mental, physical",
       ]);
   });
+
+  test("klawfinish: Klaw (I) falls, The “Immortal” Klaw is thwarted away, and Klaw (II) is beaten in one turn", () => {
+    const battle = new BattleModel();
+    battle.reset({ villain: "klaw", seed: 7, arrange: arrangeScene("klawfinish")! });
+    const view = () => battle.snapshot();
+    const card = (name: string) => {
+      const found = [...view().hand, ...view().inPlay, ...view().enemyCards, view().villain].find(
+        (c) => c.name === name,
+      );
+      if (!found) throw Error(`no ${name}`);
+      return found;
+    };
+    /** Pick a hand card, choose its target if asked, and pay with the named sources (labels start with these). */
+    const play = (name: string, pay: string[], target?: string) => {
+      expect(battle.pick(card(name).id), `pick ${name}`).toBe(true);
+      for (const label of pay) {
+        const source = view().payment!.sources.find((s) => s.label.startsWith(label) && !s.selected && s.available);
+        expect(source, `${label} in ${JSON.stringify(view().payment!.sources.map((s) => s.label))}`).toBeDefined();
+        battle.toggle(source!.id);
+      }
+      expect(battle.pay(), `pay ${name}`).toBe(true);
+      if (target && view().choice) battle.choose(view().choice!.options.find((o) => o.label === target)!.id);
+    };
+    const attack = (who: string) => {
+      const id = who === "Spider-Man" ? view().hero.id : card(who).id;
+      expect(who === "Spider-Man" ? battle.heroAction("basicAttack") : battle.fieldAction(id, "basicAttack")).toBe(
+        true,
+      );
+      if (view().choice) battle.choose(view().villain.id);
+    };
+
+    expect(view().villainHp).toBe(1);
+    attack("Spider-Man");
+    expect(view().villainHp).toBe(28);
+    play("For Justice!", ["Genius"], 'The "Immortal" Klaw');
+    expect(view().enemyCards.some((c) => c.name === 'The "Immortal" Klaw')).toBe(false);
+    expect(view().villainHp).toBe(18);
+    play("Swinging Web Kick", ["Energy", "Web-Shooter"], "Klaw");
+    expect(view().villainHp).toBe(10);
+    play("Swinging Web Kick", ["Strength", "Web-Shooter"], "Klaw");
+    expect(view().villainHp).toBe(2);
+    attack("Daredevil");
+    expect(view().outcome).toMatchObject({ result: "win" });
+  });
 });

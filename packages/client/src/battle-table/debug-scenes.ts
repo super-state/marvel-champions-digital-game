@@ -402,6 +402,25 @@ const SCENES: Record<string, Scene> = {
     hero: { form: "hero" },
     encounterTop: ["01186", "01187", "01122", "01124", "01188"],
   },
+  /**
+   * The finish against Klaw: Klaw (I) one hit from his second stage, with enough on the table for the whole of Klaw (II)
+   * in one turn. Attack him to bring in Klaw (II) and The "Immortal" Klaw; For Justice! (paid with Genius) thwarts it
+   * away and takes his +10 hit points; two Swinging Web Kicks (Energy, Strength, both Web-Shooters) and Daredevil and
+   * Jessica Jones attacking finish his 18 for the win.
+   */
+  klawfinish: {
+    scenario: "klaw",
+    clearMinions: true,
+    hero: { form: "hero" },
+    villain: { damage: 11 },
+    play: [
+      { code: "01058" },
+      { code: "01059" },
+      { code: "01008", counters: { web: 3 } },
+      { code: "01008", counters: { web: 3 } },
+    ],
+    hand: ["01005", "01005", "01060", "01089", "01090", "01088"],
+  },
   /** Nick Fury in hand with the resources to pay for him: his "Choose one" waits in the dock, the table blurred behind. */
   fury: {
     hero: { form: "hero" },
