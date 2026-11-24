@@ -1579,7 +1579,7 @@ export class BattleTable {
   }
 
   /**
-   * The campaign shelf's way onto the table (`boxes/boxes.ts`): a game just dealt comes in piece by piece, with the
+   * The campaign shelf's way onto the table (`room/`): a game just dealt comes in piece by piece, with the
    * table's own cards and its own landing, instead of all at once. Everything stays out of sight until `at` (a
    * `performance.now()` time); then the villain, the other enemy cards (the main scheme), the encounter deck, the hero
    * and the player's deck come down onto the mat one after another, and the opening hand is dealt from the deck.
