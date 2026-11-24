@@ -14,6 +14,7 @@ import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, DRONE_NAME, isVillainId, VILLAINS, type BattleCard, type VillainId } from "./model.js";
 import { answerRemote, createPlayer, type Player, type RemoteChannel } from "./play.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
+import { gameOnTable } from "./record/facts.js";
 import {
   addRecordButton,
   finishGame,
@@ -1338,14 +1339,14 @@ function showOutcome(outcome: Snapshot["outcome"]) {
         ? "Knocked out"
         : "Defeat";
   element("game-over-kicker").textContent = `${state.hero.name} vs. ${state.villain.name}`;
-  // The test site keeps the player's record (test-site/player.ts): this ending, once.
-  void finishGame(gameSaved, {
-    result: outcome.result === "win" ? "win" : "loss",
-    reason: outcome.reason,
-    rounds: state.round,
-    hero: "Spider-Man",
-    deck: ["core-spider-man-justice"],
-  });
+  // The record keeps this ending, once (test-site/player.ts, record/): the hero, deck and facts read from the game.
+  if (gameSaved)
+    void finishGame(gameSaved, {
+      result: outcome.result === "win" ? "win" : "loss",
+      reason: outcome.reason,
+      rounds: state.round,
+      ...gameOnTable(model.game, model.events, gameSaved.undone),
+    });
   element("game-over-title").textContent = won ? "Victory" : "Defeat";
   element("game-over-detail").textContent = detail;
   gameOver.toggleAttribute("data-victory", won);
@@ -3885,6 +3886,7 @@ document.addEventListener(
 );
 undoButton.onclick = () => {
   if (undoButton.disabled || presenting || flying || discarding || !model.undo()) return;
+  if (gameSaved) gameSaved.undone = true;
   state = model.snapshot();
   presented = state.beats;
   const view = moveViews.get(state.beats);

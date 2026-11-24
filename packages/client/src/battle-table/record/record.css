@@ -1,0 +1,97 @@
+/*
+ * The record (record/): the "Achievement unlocked" pop-up and the Record sheet. Built on design.css's tokens, like
+ * the test site's player dialogs (test-site/player.css), whose sheet and tables the Record sheet shares.
+ */
+.achievement-popup {
+  position: fixed;
+  z-index: 50;
+  top: max(16px, env(safe-area-inset-top));
+  left: 50%;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  align-items: start;
+  width: min(360px, calc(100vw - 32px));
+  padding: 12px 16px 12px 12px;
+  border: 1px solid var(--gold-lo);
+  border-radius: 14px;
+  background: var(--glass, var(--bg-2));
+  color: var(--text);
+  text-align: left;
+  box-shadow:
+    var(--shadow-2),
+    0 0 28px #f5c35b33;
+  cursor: pointer;
+  transform: translateX(-50%);
+  animation: achievement-in 320ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+.achievement-popup:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+.achievement-popup .eyebrow {
+  grid-column: 2;
+  margin: 2px 0 6px;
+  color: var(--gold);
+}
+.achievement-popup-badge {
+  grid-row: 1 / span 2;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, var(--gold-hi) 0 18%, transparent 19%),
+    radial-gradient(circle, var(--gold) 0 58%, var(--gold-lo) 59% 100%);
+  box-shadow:
+    0 0 0 2px #0006,
+    0 0 16px #f5c35b66;
+}
+.achievement-popup-list {
+  grid-column: 2;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.achievement-popup-list li {
+  display: grid;
+  gap: 1px;
+}
+.achievement-popup-list b {
+  font: 800 15px/1.2 var(--font-ui);
+}
+.achievement-popup-list span {
+  color: var(--text-2);
+  font: 500 12px/1.35 var(--font-ui);
+}
+@keyframes achievement-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -14px) scale(0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .achievement-popup {
+    animation: none;
+  }
+}
+
+/* The Record sheet: achievements as plain rows, earned ones lit. */
+.record-achievements td:first-child {
+  width: 22px;
+  color: var(--text-3);
+  text-align: center;
+}
+.record-achievements tr.earned td:first-child {
+  color: var(--gold);
+}
+.record-achievements tr:not(.earned) b {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.record-achievements small {
+  display: block;
+  color: var(--text-3);
+  font-size: 12px;
+}

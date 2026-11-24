@@ -13,9 +13,15 @@
  * - Adam's own page, `/admin` (in through `/admin/<ADMIN_KEY>`, a second Pages secret), lists every player with their
  *   record and link, adds a player and switches a link off or on. Admin has every villain open.
  *
+ * - Each game also keeps its facts (difficulty, modules, how the hero stood at the end, allies, Undo, the last blow:
+ *   `record/game.ts`) as one block of JSON in the `facts` column, added to the live table by `addFactsColumn` at start.
+ *   A game saved before the column has none and counts for what it can.
+ *
  * Everything lives in the Pages project's D1 database (binding `DB`, created by `pnpm table:ship`). Without it the
  * table still plays: nothing is saved and nothing is locked.
  */
+
+import { factsFromText, readFacts, type FinishedGame, type GameFacts } from "../record/game.js";
 
 /** The part of Cloudflare D1 this uses (so tests can run it on node:sqlite). */
 export interface D1Like {
@@ -58,6 +64,8 @@ export interface GameRow {
   deck: string;
   started_at: number;
   ended_at: number;
+  /** The game's facts as JSON (`GameFacts`); null for a game saved before they were kept. */
+  facts?: string | null;
 }
 
 const SCHEMA = [
@@ -85,13 +93,40 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS games_by_end ON games (ended_at)`,
 ];
 
+/** Whether `games` has the `facts` column; false when the database won't say (then adding it settles it). */
+async function hasFactsColumn(db: D1Like): Promise<boolean> {
+  try {
+    return (await db.prepare("PRAGMA table_info(games)").all<{ name: string }>()).results.some(
+      (c) => c.name === "facts",
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Adds the `facts` column to a `games` table made before it (the live one, 2026-11-24). `SCHEMA` only creates a table
+ * that is missing, so the column is added by this step rather than in the table's definition. Safe to run at every
+ * start, on a table with or without the column: it looks first, and a second worker adding it at the same moment
+ * ("duplicate column") is fine too.
+ */
+export async function addFactsColumn(db: D1Like): Promise<void> {
+  if (await hasFactsColumn(db)) return;
+  try {
+    await db.prepare("ALTER TABLE games ADD COLUMN facts TEXT").run();
+  } catch (error) {
+    if (!/duplicate column/i.test(String(error)) && !(await hasFactsColumn(db))) throw error;
+  }
+}
+
 const ready = new WeakMap<D1Like, Promise<void>>();
-/** Makes the tables once per database per running worker. */
+/** Makes the tables (and adds any column they gained since) once per database per running worker. */
 export function ensureSchema(db: D1Like): Promise<void> {
   let done = ready.get(db);
   if (!done) {
     done = (async () => {
       for (const sql of SCHEMA) await db.prepare(sql).run();
+      await addFactsColumn(db);
     })();
     done.catch(() => ready.delete(db));
     ready.set(db, done);
@@ -167,6 +202,8 @@ export interface GameReport {
   version: string;
   deck: string[];
   startedAt: number;
+  /** Null from a page made before the facts were kept, or facts that don't read right: the game still saves. */
+  facts: GameFacts | null;
 }
 
 const short = (v: unknown, max: number) => typeof v === "string" && v.length > 0 && v.length <= max;
@@ -191,6 +228,7 @@ export function parseGameReport(body: unknown): GameReport | null {
     version: short(b.version, 20) ? (b.version as string) : "dev",
     deck,
     startedAt,
+    facts: readFacts(b.facts),
   };
 }
 
@@ -199,10 +237,11 @@ export async function saveGame(db: D1Like, playerId: string, game: GameReport, n
   await ensureSchema(db);
   await db
     .prepare(
-      `INSERT INTO games (player_id, game_id, hero, villain, result, reason, rounds, version, deck, started_at, ended_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO games (player_id, game_id, hero, villain, result, reason, rounds, version, deck, started_at, ended_at, facts)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (player_id, game_id) DO UPDATE SET
-         result = excluded.result, reason = excluded.reason, rounds = excluded.rounds, ended_at = excluded.ended_at`,
+         result = excluded.result, reason = excluded.reason, rounds = excluded.rounds, ended_at = excluded.ended_at,
+         facts = excluded.facts`,
     )
     .bind(
       playerId,
@@ -216,6 +255,7 @@ export async function saveGame(db: D1Like, playerId: string, game: GameReport, n
       JSON.stringify(game.deck),
       Math.min(game.startedAt, now),
       now,
+      game.facts ? JSON.stringify(game.facts) : null,
     )
     .run();
 }
@@ -230,6 +270,30 @@ export async function gamesOf(db: D1Like, playerId: string): Promise<GameRow[]> 
 export async function allGames(db: D1Like): Promise<GameRow[]> {
   await ensureSchema(db);
   return (await db.prepare("SELECT * FROM games ORDER BY ended_at DESC").all<GameRow>()).results;
+}
+
+/** A saved game in the record's own shape (`record/game.ts`), the same as this browser's storage keeps. */
+export function finishedGameOf(row: GameRow): FinishedGame {
+  let deck: string[] = [];
+  try {
+    const parsed: unknown = JSON.parse(row.deck);
+    if (Array.isArray(parsed)) deck = parsed.filter((c): c is string => typeof c === "string");
+  } catch {
+    // An unreadable deck reads as none.
+  }
+  return {
+    id: row.game_id,
+    hero: row.hero,
+    villain: row.villain,
+    result: row.result,
+    reason: row.reason,
+    rounds: row.rounds,
+    version: row.version,
+    deck,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    facts: factsFromText(row.facts),
+  };
 }
 
 /** Which villains are open, from the games won: each one opens when the one before it has been beaten. */

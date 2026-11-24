@@ -2,7 +2,9 @@ import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { handleTableSiteRequest, INVITE_COOKIE, type TableSiteEnv } from "./gate.js";
 import {
+  addFactsColumn,
   ADMIN_COOKIE,
+  ensureSchema,
   PLAYER_COOKIE,
   recordOf,
   unlockedFrom,
@@ -12,8 +14,7 @@ import {
 } from "./players.js";
 
 /** Cloudflare D1's statement API over node:sqlite, so the real SQL runs in the tests. */
-function sqliteD1(): D1Like {
-  const db = new DatabaseSync(":memory:");
+function sqliteD1(db = new DatabaseSync(":memory:")): D1Like {
   const statement = (sql: string, values: unknown[] = []): D1Statement => ({
     bind: (...v) => statement(sql, v),
     first: async <T>() => (db.prepare(sql).get(...(values as never[])) as T | undefined) ?? null,
@@ -249,5 +250,85 @@ describe("a player's record", () => {
   it("never skips a villain in the order", () => {
     expect(unlockedFrom([row("klaw", "win")])).toEqual(["rhino"]);
     expect(unlockedFrom([])).toEqual(["rhino"]);
+  });
+});
+
+const FACTS = {
+  v: 1,
+  difficulty: "standard",
+  modules: ["bomb_scare"],
+  heroId: "01001a",
+  aspects: ["justice"],
+  deckSize: 40,
+  starterDeck: "core-spider-man-justice",
+  heroHp: 4,
+  form: "hero",
+  alliesPlayed: 2,
+  undo: false,
+  lastBlow: { cardId: "01001a", name: "Spider-Man" },
+};
+
+describe("the facts column", () => {
+  /** The live `games` table as it was made before the facts (2026-11-24), with a game in it. */
+  function oldShape() {
+    const raw = new DatabaseSync(":memory:");
+    raw.exec(`CREATE TABLE games (
+      player_id TEXT NOT NULL, game_id TEXT NOT NULL, hero TEXT NOT NULL, villain TEXT NOT NULL, result TEXT NOT NULL,
+      reason TEXT NOT NULL, rounds INTEGER NOT NULL, version TEXT NOT NULL, deck TEXT NOT NULL,
+      started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL, PRIMARY KEY (player_id, game_id))`);
+    raw.exec(`INSERT INTO games VALUES ('p1', 'g1', 'Spider-Man', 'rhino', 'win', 'villainDefeated', 6, '0.2.0',
+      '["core-spider-man-justice"]', 1000, 2000)`);
+    return raw;
+  }
+  const columns = (raw: DatabaseSync) =>
+    (raw.prepare("PRAGMA table_info(games)").all() as { name: string }[]).map((c) => c.name);
+
+  it("is added to a table made before it, and adding it again does nothing", async () => {
+    const raw = oldShape();
+    const db = sqliteD1(raw);
+    await addFactsColumn(db);
+    await addFactsColumn(db);
+    expect(columns(raw).filter((c) => c === "facts")).toHaveLength(1);
+    // The game saved before it is still there, with no facts.
+    expect(raw.prepare("SELECT game_id, facts FROM games").all()).toEqual([{ game_id: "g1", facts: null }]);
+  });
+
+  it("is added at start by each worker, on an old table and on one that has it already", async () => {
+    const raw = oldShape();
+    await ensureSchema(sqliteD1(raw));
+    // A second worker (its own connection object) starting on the table that now has the column.
+    await ensureSchema(sqliteD1(raw));
+    expect(columns(raw)).toContain("facts");
+    const fresh = new DatabaseSync(":memory:");
+    await ensureSchema(sqliteD1(fresh));
+    await ensureSchema(sqliteD1(fresh));
+    expect(columns(fresh).filter((c) => c === "facts")).toHaveLength(1);
+  });
+
+  it("keeps a game's facts, replaces them when the ending is played out again, and hands them back", async () => {
+    const env = site();
+    const { cookie } = await newPlayer(env);
+    const first = game("rhino", "loss", { facts: { ...FACTS, heroHp: 0, form: "alterEgo" } });
+    await post(env, "/api/games", cookie, first);
+    await post(env, "/api/games", cookie, { ...first, result: "win", reason: "villainDefeated", facts: FACTS });
+    const body = (await (await call(env, "/api/games", cookie)).json()) as { games: Record<string, unknown>[] };
+    expect(body.games).toHaveLength(1);
+    expect(body.games[0]).toMatchObject({ id: first.id, villain: "rhino", result: "win", facts: FACTS });
+    expect(body.games[0]!.deck).toEqual(["Web-Shooter", "Black Cat"]);
+  });
+
+  it("still saves a game from a page made before the facts, and one whose facts don't read right, without them", async () => {
+    const env = site();
+    const { cookie } = await newPlayer(env);
+    expect((await post(env, "/api/games", cookie, game("rhino", "win"))).status).toBe(200);
+    const odd = game("rhino", "loss", { facts: { ...FACTS, heroHp: "lots" } });
+    expect((await post(env, "/api/games", cookie, odd)).status).toBe(200);
+    const body = (await (await call(env, "/api/games", cookie)).json()) as { games: { facts: unknown }[] };
+    expect(body.games.map((g) => g.facts)).toEqual([null, null]);
+  });
+
+  it("lists games only for a player who is signed in", async () => {
+    const env = site();
+    expect((await call(env, "/api/games", invite)).status).toBe(403);
   });
 });
