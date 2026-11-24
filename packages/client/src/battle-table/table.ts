@@ -2301,7 +2301,18 @@ export class BattleTable {
     const pileX = w * 0.5 + pileSpread;
     const pileY = h * 0.505;
     const base = this.#point(pileX, pileY, 0.025);
-    const encounterWidth = Math.min(w * 0.088, h * 0.088);
+    // The encounter deck and its discard pile are full size, like the player's, stacked down the right towards the
+    // player's discard pile with no big gap; they are the first to shrink (and move back up) when the villain's side
+    // fills, two or more minions or other enemies out (Adam, 2026-11-24).
+    const enemiesOut = state.enemyCards.filter(
+      (card) => !card.attachedTo && card.type !== "main_scheme" && card.type !== "side_scheme",
+    ).length;
+    const fullPiles = enemiesOut < 2;
+    const encounterWidth = fullPiles ? Math.min(w * 0.125, h * 0.125) : Math.min(w * 0.088, h * 0.088);
+    // One pile's height on screen (a card lying on the mat, seen from the camera's angle) plus its label and a gap.
+    const pileStep = encounterWidth * 1.11 + h * 0.045;
+    const encounterDeckY = fullPiles ? pileY - pileStep : h * 0.23;
+    const encounterDiscardY = fullPiles ? encounterDeckY - pileStep : h * 0.102;
     const encounterPile = (y: number) => {
       const position = this.#point(pileX, y, 0.025);
       const scale = this.#point(pileX + encounterWidth, y, 0.025).x - position.x;
@@ -2309,7 +2320,7 @@ export class BattleTable {
       position.x = base.x;
       return { position, scale };
     };
-    const encounterGoal = encounterPile(h * 0.23);
+    const encounterGoal = encounterPile(encounterDeckY);
     this.#hoverFootprint = null;
     this.#hoverRest = null;
     this.#tucked.clear();
@@ -2853,7 +2864,7 @@ export class BattleTable {
       position: deckCenter,
       scale: this.#point(deckX + Math.min(w * 0.125, h * 0.125), deckY, 0.025).x - deckCenter.x,
     };
-    const encounterDiscardGoal = encounterPile(h * 0.102);
+    const encounterDiscardGoal = encounterPile(encounterDiscardY);
     this.#encounterDiscardSlot.visible = state.encounterDiscard.length > 0;
     // The piles are part of the table too, the encounter discard pile even while it is empty, so a first discard
     // doesn't move everything (the first encounter card discarded once shrank and slid the whole board).
