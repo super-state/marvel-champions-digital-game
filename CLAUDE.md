@@ -18,6 +18,11 @@ The 3D table still borrows about 255 files from the old 2D game (mostly `package
 can't be deleted yet. Avoid adding new imports from it: each one is something to untangle later. Game state lives only
 in the engine; the 3D table shows it and sends the player's choices back, it never decides an outcome itself.
 
+Where it is heading: [docs/project/room-plan.md](docs/project/room-plan.md) is the plan for the room (title screen and
+menus as places in one room), Campaign and Free Play, the other four Core Set heroes, deck building, achievements and
+stats, with the order and the version each lands in. Read it before building any of those, and keep it true as they
+land.
+
 ## Run, test, push
 
 - `pnpm battle` starts the dev server and opens the 3D table. In the Claude app, start the `battle-table` preview and
