@@ -25,9 +25,14 @@
  *   node packages/sync-worker/node_modules/wrangler/bin/wrangler.js pages secret put INVITE_KEY
  *     --project-name champions-table   (run from a folder outside the repo)
  * A Pages address, unlike a Worker's workers.dev one, carries no account name.
+ *
+ * Players and their games (src/battle-table/test-site/players.ts) live in the D1 database `champions-table-players`.
+ * Each ship makes it if it's missing and binds it to the Pages project as DB: the deploy runs from a folder holding a
+ * Pages wrangler.json with that binding (Pages takes a config file's bindings as the project's; its secrets stay).
+ * Adam's players page needs the second secret ADMIN_KEY (`/admin/<ADMIN_KEY>`), put the same way as INVITE_KEY.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -72,6 +77,49 @@ if (existing && !redeploy) fail(`${tag} is already shipped: bump table-version.j
 if (existing && git("rev-list", "-n", "1", tag) !== head)
   fail(`${tag} points at another commit: bump the version instead`);
 
+// The lock goes in as `_worker.js` (Pages' "advanced mode"): every page, script and card scan passes through it.
+// Wrangler runs from a folder with no wrangler config of its own (packages/sync-worker has one, which newer
+// wranglers pick up and try to deploy instead), using the sync Worker's pinned copy.
+const wrangler = path.join(root, "packages/sync-worker/node_modules/wrangler/bin/wrangler.js");
+const scratch = mkdtempSync(path.join(tmpdir(), "ship-table-"));
+const wranglerRun = (...args) => run("node", [wrangler, ...args], {}, scratch);
+// The players' database: made the first time, then the same one every ship.
+const DB_NAME = "champions-table-players";
+const listDatabases = () =>
+  JSON.parse(execFileSync("node", [wrangler, "d1", "list", "--json"], { cwd: scratch, encoding: "utf8" }));
+let database = listDatabases().find((d) => d.name === DB_NAME);
+if (!database) {
+  console.log(`ship-table: making the players' database ${DB_NAME}`);
+  wranglerRun("d1", "create", DB_NAME);
+  database = listDatabases().find((d) => d.name === DB_NAME);
+}
+if (!database?.uuid) fail(`couldn't find or make the D1 database ${DB_NAME}`);
+// Adam's players page needs its own key; the table works without it, so this only warns.
+const secrets = execFileSync("node", [wrangler, "pages", "secret", "list", "--project-name", project], {
+  cwd: scratch,
+  encoding: "utf8",
+});
+if (!/\bADMIN_KEY\b/.test(secrets))
+  console.warn("ship-table: ADMIN_KEY isn't set, so the players page (/admin) can't be opened yet");
+const pagesDir = path.join(scratch, "pages");
+mkdirSync(pagesDir);
+writeFileSync(
+  path.join(pagesDir, "wrangler.json"),
+  JSON.stringify(
+    {
+      name: project,
+      pages_build_output_dir: dist,
+      compatibility_date: JSON.parse(
+        readFileSync(config, "utf8")
+          .replace(/^\s*\/\/.*$/gm, "")
+          .replace(/,(\s*[}\]])/g, "$1"),
+      ).compatibility_date,
+      d1_databases: [{ binding: "DB", database_name: DB_NAME, database_id: database.uuid }],
+    },
+    null,
+    2,
+  ),
+);
 if (!redeploy) {
   // Every browser test, on exactly this commit; a pass is remembered, so shipping again after `table:check` is quick.
   console.log(`ship-table: the release check on ${head.slice(0, 9)} (type check, unit tests, every browser test)`);
@@ -87,26 +135,27 @@ const scans = readdirSync(path.join(dist, "card-art/bundles/cards")).filter((f) 
 if (scans < 1000) fail(`the build carries only ${scans} card scans: run \`pnpm assets:fetch\` first`);
 
 console.log(`ship-table: deploying ${tag}`);
-// The lock goes in as `_worker.js` (Pages' "advanced mode"): every page, script and card scan passes through it.
-// Wrangler runs from a folder with no wrangler config of its own (packages/sync-worker has one, which newer
-// wranglers pick up and try to deploy instead), using the sync Worker's pinned copy.
-const wrangler = path.join(root, "packages/sync-worker/node_modules/wrangler/bin/wrangler.js");
-const scratch = mkdtempSync(path.join(tmpdir(), "ship-table-"));
-const wranglerRun = (...args) => run("node", [wrangler, ...args], {}, scratch);
 wranglerRun("deploy", "--dry-run", "--outdir", path.join(scratch, "bundle"), "--config", config);
 copyFileSync(path.join(scratch, "bundle", "worker.js"), path.join(dist, "_worker.js"));
-wranglerRun(
-  "pages",
-  "deploy",
-  dist,
-  "--project-name",
-  project,
-  "--branch",
-  "main",
-  "--commit-hash",
-  head,
-  "--commit-message",
-  tag,
+
+run(
+  "node",
+  [
+    wrangler,
+    "pages",
+    "deploy",
+    dist,
+    "--project-name",
+    project,
+    "--branch",
+    "main",
+    "--commit-hash",
+    head,
+    "--commit-message",
+    tag,
+  ],
+  {},
+  pagesDir,
 );
 rmSync(scratch, { recursive: true, force: true });
 

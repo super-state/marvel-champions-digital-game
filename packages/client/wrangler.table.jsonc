@@ -17,6 +17,10 @@
     "html_handling": "auto-trailing-slash",
     "run_worker_first": true,
   },
+  // The players and their games (src/battle-table/test-site/players.ts). Locally (`wrangler dev`) a throwaway SQLite
+  // file; on the site, the D1 database of that name, which `table:ship` creates if it's missing and binds to the Pages
+  // project as DB (the id below is only a placeholder for local runs).
+  "d1_databases": [{ "binding": "DB", "database_name": "champions-table-players", "database_id": "local-only" }],
   "workers_dev": false,
   "preview_urls": false,
 }
