@@ -214,7 +214,7 @@ function beatIds(b: BattleBeat): [string, string][] {
     ["turned.id", b.turned?.id],
     ["encounterDeal", b.encounterDeal],
     ["defeatedCard", b.defeatedCard],
-    ["droneIn.id", b.droneIn?.id],
+    ["droneIn.card", b.droneIn?.card.id],
     ["reveal.id", b.reveal?.id],
     ["reveal.boost.enemy", b.reveal?.boost?.enemy],
     ["activate.card", b.activate?.card],
@@ -432,7 +432,7 @@ function playGame(seed: number, policy: Policy, villain: VillainId = "rhino"): G
     }
     if (dronesBefore) {
       for (const id of facedown)
-        if (!dronesBefore.has(id) && !s.beats.some((b) => b.droneIn?.id === id))
+        if (!dronesBefore.has(id) && !s.beats.some((b) => b.droneIn?.card.id === id))
           fail(
             "drone-unseen",
             "in",

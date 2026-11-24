@@ -66,6 +66,30 @@ const DRONE_FACTS =
   "A card from your deck, facedown: nobody may look at it. No text and no keywords of its own. " +
   "When it is defeated, the card goes faceup to your discard pile.";
 
+/** A Drone as it comes into play: the Drone picture, 1 hit point, nothing on it yet. */
+function droneCard(id: string): BattleCard {
+  return {
+    id,
+    attachedTo: null,
+    showAsFullCard: false,
+    markers: [],
+    name: DRONE_NAME,
+    hp: DRONE_BASE.hp,
+    reverseArt: null,
+    threatTarget: null,
+    threat: null,
+    exhausted: false,
+    landscape: false,
+    art: standInArt({ kind: "ultronDrone", atk: DRONE_BASE.atk }).url,
+    type: "minion",
+    playable: false,
+    requiresHeroForm: false,
+    cost: null,
+    reason: null,
+    drone: true,
+  };
+}
+
 /** The type a card in play shows as: a facedown Drone is a minion, whatever the card underneath is. */
 function shownType(state: GameState, id: InstanceId): string | undefined {
   return isFacedownMinion(state, id) ? "minion" : cardOf(state, id)?.type;
@@ -222,7 +246,7 @@ export interface BattleBeat {
    * leaves that pile on its own beat, with the card whose ability did it when one did (Ultron, a main scheme stage,
    * Android Efficiency). `deckCount`: the cards left in the deck once it has gone.
    */
-  droneIn?: { id: string; from: "deck" | "discard"; source: string | null; deckCount: number };
+  droneIn?: { card: BattleCard; from: "deck" | "discard"; source: string | null; deckCount: number };
   defeat?: string;
   defeatedCard?: string;
   /**
@@ -820,7 +844,7 @@ export class BattleModel {
               ? "The top card of your discard pile goes into play facedown as a Drone minion"
               : "The top card of your deck goes into play facedown as a Drone minion",
           droneIn: {
-            id: e.instanceId,
+            card: droneCard(e.instanceId),
             from: e.from === "discard" ? "discard" : "deck",
             source: source && source !== e.instanceId ? source : null,
             deckCount: Math.max(0, deckLeft),
@@ -1318,9 +1342,7 @@ export class BattleModel {
     const state = this.#game;
     const instance = getInstance(state, id);
     return {
-      id,
-      attachedTo: null,
-      showAsFullCard: false,
+      ...droneCard(id),
       markers: [
         ...Object.entries(instance?.statuses ?? {}).map(([name, count]) => ({ name, count })),
         { name: "damage", count: instance?.damage ?? 0 },
@@ -1329,20 +1351,8 @@ export class BattleModel {
       ]
         .filter((m) => m.count > 0)
         .concat(statModifiers(state, id)),
-      name: DRONE_NAME,
       hp: Math.max(0, remainingHitPoints(state, id, CORE_DEPS) ?? 0),
-      reverseArt: null,
-      threatTarget: null,
-      threat: null,
       exhausted: instance?.exhausted ?? false,
-      landscape: false,
-      art: standInArt({ kind: "ultronDrone", atk: DRONE_BASE.atk }).url,
-      type: "minion",
-      playable: false,
-      requiresHeroForm: false,
-      cost: null,
-      reason: null,
-      drone: true,
     };
   }
 
