@@ -209,7 +209,6 @@ const ATTACHMENT_TURN = 0.07;
 const SIZZLE_MS = 620;
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 /** Scratch vectors for a boost card's path under its enemy. */
-const TUCK_OFFSET = new THREE.Vector3();
 const TUCK_LANDING = new THREE.Vector3();
 /** Scratch angle for a tucked card turning with its hovered host. */
 const TUCK_EULER = new THREE.Euler();
@@ -2369,8 +2368,9 @@ export class BattleTable {
     const pileY = h * 0.505;
     const base = this.#point(pileX, pileY, 0.025);
     // The encounter deck and its discard pile are full size, like the player's, stacked down the right towards the
-    // player's discard pile with no big gap; they are the first to shrink (and move back up) when the villain's side
-    // fills, two or more minions or other enemies out (Adam, 2026-11-24).
+    // player's discard pile with no big gap; they are the first to shrink when the villain's side fills, two or more
+    // minions or other enemies out (Adam, 2026-11-24). Shrunk, they keep that place down the right rather than going
+    // up to the top corner (Adam, 2026-11-24: "the encounter card sections can move down").
     const enemiesOut = state.enemyCards.filter(
       (card) => !card.attachedTo && card.type !== "main_scheme" && card.type !== "side_scheme",
     ).length;
@@ -2378,8 +2378,8 @@ export class BattleTable {
     const encounterWidth = fullPiles ? Math.min(w * 0.125, h * 0.125) : Math.min(w * 0.088, h * 0.088);
     // One pile's height on screen (a card lying on the mat, seen from the camera's angle) plus its label and a gap.
     const pileStep = encounterWidth * 1.11 + h * 0.045;
-    const encounterDeckY = fullPiles ? pileY - pileStep : h * 0.23;
-    const encounterDiscardY = fullPiles ? encounterDeckY - pileStep : h * 0.102;
+    const encounterDeckY = pileY - pileStep;
+    const encounterDiscardY = encounterDeckY - pileStep;
     const encounterPile = (y: number) => {
       const position = this.#point(pileX, y, 0.025);
       const scale = this.#point(pileX + encounterWidth, y, 0.025).x - position.x;
@@ -2504,11 +2504,11 @@ export class BattleTable {
       const left =
         bounds(state.villain, w * 0.5, h * 0.237, villainWidth, villainTabs).right +
         (villainBoosts ? boostWidth * (0.7 + (villainBoosts - 1) * 0.3) : 0);
-      const right = this.#project(
-        encounterGoal.position.x - encounterGoal.scale * 0.5,
-        0.025,
-        encounterGoal.position.z,
-      ).x;
+      // The row ends at the encounter piles, whichever reaches further in: the discard pile stands further back than
+      // the deck, so on screen its edge comes further in (Klaw's fourth Master of Evil slid under it).
+      const pileEdge = (goal: { position: THREE.Vector3; scale: number }) =>
+        this.#project(goal.position.x - goal.scale * 0.5, 0.025, goal.position.z).x;
+      const right = Math.min(pileEdge(encounterGoal), pileEdge(encounterPile(encounterDiscardY)));
       const footprintOf = (card: TableCard) => {
         const tabs = state.enemyCards.filter((c) => c.attachedTo === card.id).length;
         return { tabs, footprint: (card.landscape ? HEIGHT : 1) + TAB * tabs };
@@ -2516,23 +2516,53 @@ export class BattleTable {
       const fullRoom = (cards: readonly TableCard[]) =>
         cards.reduce((total, card) => total + enemyCardWidth * footprintOf(card).footprint, 0) +
         rowGap * (cards.length + 1);
-      // Too many for one row at full size: they fill a second row above it, level with the schemes' second row on
-      // the villain's other side, before any of them shrinks (Adam, 2026-11-23: "use the space above as well ...
-      // like we do for schemes").
-      const twoRows = rowEnemies.length > 1 && fullRoom(rowEnemies) > right - left;
-      const near = twoRows ? rowEnemies.slice(0, Math.ceil(rowEnemies.length / 2)) : rowEnemies;
-      const far = twoRows ? rowEnemies.slice(near.length) : [];
-      const upper = schemeOrigin.clone();
-      upper.z -= schemeStep;
-      const upperRow = (1 - upper.project(this.#camera).y) * this.#canvasHeight * 0.5 - this.#extension;
-      // The upper row stands level with the encounter discard pile, which is further back than the deck: it ends at
-      // that pile's edge (Klaw's four Masters of Evil slid the last one under it).
-      const discardPile = encounterPile(encounterDiscardY);
-      const upperRight = Math.min(
-        right,
-        this.#project(discardPile.position.x - discardPile.scale * 0.5, 0.025, discardPile.position.z).x,
+      const screenY = (z: number) =>
+        (1 - this.#scratch.set(schemeOrigin.x, schemeElevation, z).project(this.#camera).y) * this.#canvasHeight * 0.5 -
+        this.#extension;
+      // One too many for the row at full size: it stands on the villain's other side instead, past the schemes, where
+      // the mat is free, so the minions stay one row (Adam, 2026-11-24: "don't be afraid to use the other side ...
+      // like a real player would on the table"). The table reaches as far left as the encounter piles reach right, so
+      // a card there never makes it smaller.
+      const schemesLeft = Math.min(
+        ...Array.from(
+          { length: schemeRows },
+          (_, row) =>
+            this.#project(
+              schemeOrigin.x - (schemeColumns - 1) * schemeColumn - (schemeScale * HEIGHT) / 2,
+              schemeElevation,
+              schemeOrigin.z + schemeDrop - row * schemeStep,
+            ).x,
+        ),
       );
-      const layRow = (row: readonly TableCard[], rowY: number, right: number) => {
+      const villainLine = this.#point(w * 0.5, h * 0.237, 0).x;
+      const farthest = this.#project(
+        2 * villainLine - (encounterGoal.position.x + encounterGoal.scale * 0.5),
+        schemeElevation,
+        schemeOrigin.z,
+      ).x;
+      const overflow = rowEnemies.length > 1 && fullRoom(rowEnemies) > right - left;
+      const lastOne = rowEnemies[rowEnemies.length - 1]!;
+      const toLeft =
+        overflow &&
+        fullRoom(rowEnemies.slice(0, -1)) <= right - left &&
+        schemesLeft - farthest >= enemyCardWidth * footprintOf(lastOne).footprint + rowGap * 1.5;
+      // More than that: a block of two rows, centred on the villain's middle like a block of schemes on his other side,
+      // before any of them shrinks (Adam, 2026-11-24: "they should be almost the same as ... when we've got 4
+      // schemes"). The rows are a minion's height apart, with room for its health below.
+      const twoRows = overflow && !toLeft;
+      const inRow = toLeft ? rowEnemies.slice(0, -1) : rowEnemies;
+      const near = twoRows ? inRow.slice(0, Math.ceil(inRow.length / 2)) : inRow;
+      const far = twoRows ? inRow.slice(near.length) : [];
+      const minionStep = schemeScale * (HEIGHT + 0.36);
+      const nearRow = twoRows ? screenY(schemeOrigin.z + minionStep / 2) : enemyRow;
+      const upperRow = screenY(schemeOrigin.z - minionStep / 2);
+      if (toLeft) {
+        const { tabs, footprint } = footprintOf(lastOne);
+        const x = schemesLeft - rowGap - (enemyCardWidth * footprint) / 2 + (enemyCardWidth * TAB * tabs) / 2;
+        const { left: cardLeft, right: cardRight } = bounds(lastOne, x, enemyRow, enemyCardWidth, tabs);
+        poseEnemy(lastOne, x - ((cardLeft + cardRight) / 2 - x), enemyRow, enemyCardWidth);
+      }
+      const layRow = (row: readonly TableCard[], rowY: number) => {
         // Each minion takes a card-sized slot from the villain outwards; room to spare is left at the far end.
         const slotWidth = Math.min((right - left) / row.length, enemyCardWidth * 1.5);
         const sized = row.map((card) => {
@@ -2560,8 +2590,8 @@ export class BattleTable {
           poseEnemy(card, x - perspectiveOffset, rowY, width);
         });
       };
-      layRow(near, enemyRow, right);
-      if (far.length) layRow(far, upperRow, upperRight);
+      layRow(near, nearRow);
+      if (far.length) layRow(far, upperRow);
     }
     // Encounter cards dealt facedown before the villain phase lie right of the middle, on the open mat. Where cards in
     // play already stand there (a row of minions), they lie in the first clear spot further down instead, never on
@@ -2663,7 +2693,9 @@ export class BattleTable {
           w * (WAITING_X + (waiting++ % 3) * 0.034),
           waitingY,
           waitingCardWidth(w, h),
-          0.07 + waiting * 0.045,
+          // Above anything it lands over, a token on a card included: it only waits there for a moment (Adam,
+          // 2026-11-24: it went under a player card's token).
+          0.42 + waiting * 0.045,
           flat,
         );
     }
@@ -3185,6 +3217,8 @@ export class BattleTable {
       [Math.max(target.position.x, host.position.x + sideX), target.position.z],
       [target.position.x, Math.min(target.position.z, host.position.z - sideZ)],
     ];
+    // A card going under the right-hand edge (a boost card) tries the right side first.
+    if (target.position.x > host.position.x) [spots[0], spots[2]] = [spots[2]!, spots[0]!];
     let best = spots[0]!;
     let least = Infinity;
     for (const spot of spots) {
@@ -3479,10 +3513,9 @@ export class BattleTable {
           // Arc over whatever stands between (a minion), land on the table just past the edge it goes under, then
           // slide in flat: it passes under that card, never over it and down through it.
           const { fly, hop, slide } = tuckPath(progress);
-          const out = TUCK_OFFSET.copy(piece.target.position).sub(hostPiece.target.position).setY(0);
-          if (out.lengthSq() < 1e-6) out.set(1, 0, 0);
-          out.setLength(piece.target.scale * 0.85);
-          const landing = TUCK_LANDING.copy(piece.target.position).add(out);
+          // Beside the edge it goes under if that is clear, else another clear side: a minion right of the villain
+          // had the boost card land on it, drop under it and slide on (Adam, 2026-11-24).
+          const landing = this.#clearLanding(piece, underHost!, TUCK_LANDING);
           if (slide > 0) piece.root.position.lerpVectors(landing, piece.target.position, slide);
           else {
             piece.root.position.lerpVectors(from.position, landing, fly);
