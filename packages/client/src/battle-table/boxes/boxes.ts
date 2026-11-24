@@ -102,7 +102,8 @@ const CARD_H = 1.43;
 
 const OPEN_AT = new THREE.Vector3(0.45, 0, 0.35);
 const LID_REST = new THREE.Vector3(W + 0.45, -(D - LID_DROP), 0.25);
-const CARD_END = new THREE.Vector3(-2.55, 2.55, 1.85);
+// Out to the left of the open tray, near enough to read as part of the box (Adam, 2026-11-24: it sat too far left).
+const CARD_END = new THREE.Vector3(-1.9, 2.55, 1.85);
 const CARD_END_SCALE = 1.5;
 const SHELF_X = [-3.4, 0, 3.4];
 const SHELF_YAW = [-0.3, 0.26, 0.3];
