@@ -100,6 +100,9 @@ function arrive() {
   root.setAttribute("aria-label", here === "title" ? "Marvel Champions" : place.label);
   showPanel(here);
   place.enter();
+  // The keyboard (and a pad) starts on the place's first button, unless the place chose one.
+  if (!place.panel.contains(document.activeElement))
+    place.panel.querySelector<HTMLElement>("button:not([hidden])")?.focus({ preventScroll: true });
 }
 
 /** One step back towards the doorway: the place puts something away first if it has something out. */
