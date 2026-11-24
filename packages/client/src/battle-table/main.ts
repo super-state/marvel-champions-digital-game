@@ -1549,7 +1549,14 @@ function updatePlateCutouts(ids: readonly string[], projected: ReturnType<Battle
     const height = label.offsetHeight;
     const shift = plateShifts.get(id);
     return width && height
-      ? [{ left: anchor.x + (shift?.dx ?? 0) - width / 2, top: anchor.bottom + 5 + (shift?.dy ?? 0), width, height }]
+      ? [
+          {
+            left: anchor.x + (shift?.dx ?? 0) - width / 2,
+            top: anchor.bottom + PLATE_DROP + (shift?.dy ?? 0),
+            width,
+            height,
+          },
+        ]
       : [];
   });
   while (plateCutouts.childElementCount > boxes.length) plateCutouts.lastElementChild!.remove();
@@ -2175,7 +2182,7 @@ function placeLabels() {
     // clear of their neighbours where the cards stand closer than the plates are wide (`plate-spread.ts`).
     const shift = plateShifts.get(anchor.id);
     const x = anchor.x + (shift?.dx ?? 0);
-    const y = handCard ? anchor.bottom - 44 : anchor.bottom + 5 + (shift?.dy ?? 0);
+    const y = handCard ? anchor.bottom - 44 : anchor.bottom + PLATE_DROP + (shift?.dy ?? 0);
     node.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
   }
   if (spot) updatePlateCutouts(spot.plates ?? [], projected);
@@ -2183,6 +2190,8 @@ function placeLabels() {
 
 /** Where each plate under a card on the table moved to keep clear of its neighbours (`placeLabels`). */
 let plateShifts = new Map<string, PlateShift>();
+/** How far below its card a plate hangs. */
+const PLATE_DROP = 5;
 
 /** A pile's count, under the pile: between `left` and `right` if it may ease aside, `pinned` if it stays put. */
 interface PileCount {
@@ -2213,7 +2222,7 @@ function spreadTablePlates(
       {
         id: anchor.id,
         x: anchor.x,
-        top: anchor.bottom + 5,
+        top: anchor.bottom + PLATE_DROP,
         width,
         height,
         cardLeft: anchor.left,

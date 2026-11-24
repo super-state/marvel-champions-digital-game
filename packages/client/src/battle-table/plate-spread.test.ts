@@ -38,7 +38,7 @@ function check(plates: readonly Plate[], shifts: ReturnType<typeof spreadPlates>
 
 // Klaw's crowded table (`?scene=klawcrowd&seed=7`), measured in the page: Klaw, the near row of minions, the far row,
 // and the encounter piles' counts at the end of the row.
-const klawSe = [
+const klawSe: Plate[] = [
   plate("klaw", 188, 144, 157, 218),
   plate("m1", 227, 145, 220, 234),
   plate("m2", 245, 145, 237, 252),
@@ -125,5 +125,69 @@ describe("spreadPlates", () => {
     const forward = spreadPlates(klawSe);
     const backward = spreadPlates([...klawSe].reverse());
     expect(backward).toEqual(forward);
+  });
+
+  test("a badge slides sideways rather than stepping down when only it can make way", () => {
+    // a's card is too narrow to move it; b's is wide enough to slide clear.
+    const plates = [plate("a", 100, 100, 98, 102), plate("b", 125, 100, 115, 160)];
+    const shifts = spreadPlates(plates);
+    expect(check(plates, shifts)).toEqual({ overlaps: [], strays: [] });
+    expect([...shifts.values()].every(({ dy }) => dy === 0)).toBe(true);
+    expect(shifts.get("b")!.dx).toBeGreaterThan(0);
+  });
+
+  test("a badge exactly a gap clear on its line, in fractions of a pixel, stays on that line", () => {
+    // Fractional positions from the page, where two badges on the second line end up exactly PLATE_GAP apart.
+    const plates = [
+      plate("m0", 152.29935371889704, 145, 128.799, 175.799, 29),
+      plate("m1", 109.82108206945522, 145, 103.821, 115.821, 35),
+      plate("m2", 116.94050142399058, 145, 105.441, 128.441, 31),
+      plate("m3", 132.29493065378392, 145, 120.295, 144.295, 31),
+    ];
+    const shifts = spreadPlates(plates);
+    expect(check(plates, shifts)).toEqual({ overlaps: [], strays: [] });
+    expect(Math.max(...[...shifts.values()].map(({ dy }) => dy))).toBe(15 + PLATE_GAP);
+  });
+
+  test("a pile's count that starts outside its pile's edges doesn't push clear badges off the row", () => {
+    const plates = [
+      plate("m1", 100, 100, 90, 110),
+      plate("m2", 200, 100, 190, 210),
+      { ...plate("pile", 330, 100, 300, 320, 40, 22), keepsLine: true },
+    ];
+    expect(spreadPlates(plates).size).toBe(0);
+  });
+
+  test("two pinned counts that overlap each other stay put, and leave a badge clear of them alone", () => {
+    const plates = [
+      { ...plate("deck", 60, 100, 60, 60, 54, 22), keepsLine: true, pinned: true },
+      { ...plate("discard", 100, 100, 100, 100, 54, 22), keepsLine: true, pinned: true },
+      plate("hero", 250, 100, 230, 270),
+    ];
+    expect(spreadPlates(plates).size).toBe(0);
+  });
+
+  test("a badge stepping off its row keeps clear of the next row's badges", () => {
+    // Four badges a far row can't hold, stepping down towards the near row's badges right below.
+    const plates = [
+      plate("f0", 229.65, 106, 222.6, 236.69),
+      plate("f1", 253.87, 106, 249.21, 258.52),
+      plate("f2", 208.9, 106, 203.18, 214.61),
+      plate("f3", 256.72, 106, 249.61, 263.84),
+      plate("n0", 213.74, 145, 205, 222),
+      plate("n1", 200.84, 145, 192, 209),
+      plate("n2", 210.11, 145, 203, 217),
+      plate("n3", 226.77, 145, 219, 234),
+    ];
+    const shifts = spreadPlates(plates);
+    expect(check(plates, shifts).overlaps).toEqual([]);
+  });
+
+  test("a badge clear of everything in a crowded row stays where it is", () => {
+    const row = klawSe.filter((p) => p.top === 145 || p.keepsLine);
+    const lone = plate("lone", 40, 145, 25, 55);
+    const shifts = spreadPlates([...row, lone]);
+    expect(shifts.has("lone")).toBe(false);
+    expect(check([...row, lone], shifts)).toEqual({ overlaps: [], strays: [] });
   });
 });
