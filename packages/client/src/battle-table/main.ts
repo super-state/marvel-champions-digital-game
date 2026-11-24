@@ -1964,6 +1964,8 @@ function centerDecisionInViewport() {
 
 function placeLabels() {
   if (!table) return;
+  // While the table brings its pieces in from the campaign shelf, their counts and health wait to show with them.
+  anchors.toggleAttribute("data-entering", table.entering);
   // Intersect the cutouts so even overlapping hand cards hide the label beneath them.
   const clips = table.foregroundCardClips([readingCard, heldEncounter, revealFocus]);
   while (labelClips.length < clips.length) {
@@ -4312,7 +4314,6 @@ async function showShelf() {
         start();
       },
       table: () => table ?? null,
-      state: () => state,
       shown: () => {
         shelfUp = false;
         tableInert(false);

@@ -14,7 +14,7 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { TokenKit } from "../tokens3d.js";
 import { matPrint, type BattleTable } from "../table.js";
-import type { BattleCard, VillainId } from "../model.js";
+import type { VillainId } from "../model.js";
 import "../design.css";
 import "./boxes.css";
 
@@ -1191,6 +1191,8 @@ function pose(time: number, dt: number) {
     box.card.quaternion.slerpQuaternions(scratch.quat, scratch.endQuat, travel);
     box.card.scale.setScalar(lerp(1, CARD_END_SCALE, travel));
     if (index === chosen && travel >= 1) box.card.rotation.z += Math.sin(time * 1.1) * 0.02;
+    // Play: it rises up out of view as the box clears; the table brings in its own villain card from above.
+    if (index === chosen && outro) box.card.position.y += 9 * span(outro.u, 0.05, 0.75);
   }
 }
 
@@ -1212,39 +1214,23 @@ function placeHoverTag() {
 }
 
 // ---------- Play: from the box onto the game table ----------
-// Play deals the game on the table underneath, unseen, and reads where it put the mat and every card on the screen.
-// Here the box clears away, the camera swings round to the table's own angle, the mat rolls out to exactly where the
-// table has it, and each piece lands on exactly its spot, one at a time, before the hand is dealt from the deck. The
-// room dims, then the shelf fades away over the real table, already asking about the mulligan.
+// Play deals the game on the table underneath, out of sight. Here the box clears away and the villain card lifts up out
+// of view, the camera swings round to the table's own angle, and the table's own mat rolls out across the wooden
+// table to exactly where the table has it. Then the room fades into the table's colour, and the table itself brings
+// its pieces in, its own 3D cards landing one at a time (`BattleTable.enter`), then deals the hand and asks about the
+// mulligan. Nothing is drawn twice, so there is no moment where a stand-in is swapped for the real card.
 
 const CAM_GAME = { pos: new THREE.Vector3(0, 10.8, 8.3), at: new THREE.Vector3(0, 0, 0.4) };
-/** Levels in this scene: the mat, the shadows on it, the cards on it, the held hand, and pieces waiting to land. */
 const MAT_Y = 0.01;
-const SHADOW_Y = 0.016;
-const TABLE_Y = 0.022;
-const HAND_Y = 2.2;
-const HOVER = 1.5;
-/**
- * The outro, in seconds. The villain's pieces lift out of the box and hover over their spots while the box clears and
- * the mat rolls out under them; then they land one at a time (villain, scheme, encounter deck), the player's hero and
- * deck come in from their side and land, the hand is dealt, and the real table fades in.
- */
+/** The outro, in seconds from Play. */
 const TARGETS_AT = 0.3;
-const MAT_AT = 0.85;
-const MAT_LENGTH = 1.15;
-const LANDS = { villain: 2.05, scheme: 2.6, encounter: 3.1, hero: 3.6, deck: 3.95 };
-const DROP = 0.42;
-const SETTLE = 0.28;
-const HAND_AT = 4.6;
-const FADE_AT = 5.75;
-const FADE_LENGTH = 0.6;
+const MAT_AT = 0.5;
+const MAT_LENGTH = 0.9;
+const FADE_AT = 1.45;
+const FADE_LENGTH = 0.45;
+/** The table's first piece starts down as the room has all but faded. */
+const ENTER_AT = FADE_AT + FADE_LENGTH * 0.7;
 
-interface Rect {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
 type Quad = [THREE.Vector2, THREE.Vector2, THREE.Vector2, THREE.Vector2];
 type Corners = THREE.Vector3[];
 /** What the shelf reads of the table page it lies over (`main.ts`). */
@@ -1252,46 +1238,18 @@ export interface ShelfHost {
   /** Deals a new game against this villain on the table under the shelf. */
   deal(villain: VillainId): void;
   /** The table, once a game has been dealt on it. */
-  table(): Pick<BattleTable, "cardOutline" | "matOutline" | "encounterAnchor" | "deckAnchor" | "handSettled"> | null;
-  /** The game on the table: where its villain, scheme, hero and hand are. */
-  state(): { villain: BattleCard; hero: BattleCard; hand: readonly BattleCard[]; enemyCards: readonly BattleCard[] };
+  table(): Pick<BattleTable, "matOutline" | "enter"> | null;
   /** The shelf has faded away: the table is the page. */
   shown(): void;
-}
-
-/**
- * One leg of a card's trip. `from` and `to` are its four corners (top left, top right, bottom right, bottom left),
- * or functions read when the leg begins (where the card is then; where the table has it then). A travel leg arcs; a
- * landing leg drops straight down onto the spot, squaring up as it comes, then settles with a little bounce.
- */
-interface Leg {
-  from: Corners | (() => Corners);
-  to: Corners | (() => Corners);
-  start: number;
-  length: number;
-  arc: number;
-  land: boolean;
-  /** Turned this much (radians, about the vertical) while it waits to land; square once down. */
-  twist: number;
-  /** Hidden when the leg begins: the box's own copy of the piece. */
-  takes?: THREE.Object3D | undefined;
-}
-interface Flyer {
-  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
-  shadow: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null;
-  legs: Leg[];
-  bob: number;
 }
 
 let host: ShelfHost | null = null;
 let pressPlay = false;
 let outro: {
   u: number;
-  flyers: Flyer[];
   launched: boolean;
-  hand: boolean;
   done: boolean;
-  /** `&hold=1.8`: stop the outro there (for screenshots). */
+  /** `&hold=1.2`: stop the shelf's part there (for screenshots). */
   hold: number;
 } | null = null;
 let stopped = false;
@@ -1299,13 +1257,11 @@ let stopped = false;
 function beginPlay(villain: VillainId) {
   if (outro || !host) return;
   opened.hidden = true;
-  // The game is dealt now, under the shelf: its cards are where they will be by the time they are read.
+  // The game is dealt now, under the shelf, and waits out of sight until the table brings it in.
   host.deal(villain);
   outro = {
     u: 0,
-    flyers: [],
     launched: false,
-    hand: false,
     done: false,
     hold: Number(new URLSearchParams(location.search).get("hold") ?? Infinity),
   };
@@ -1322,18 +1278,9 @@ function cornersOf(outline: readonly string[], dx: number, dy: number): Quad | n
   return [pick((p) => -(p.x + p.y)), pick((p) => p.x - p.y), pick((p) => p.x + p.y), pick((p) => p.y - p.x)];
 }
 
-function rectCorners(r: Rect, dx: number, dy: number): Quad {
-  return [
-    new THREE.Vector2(r.left + dx, r.top + dy),
-    new THREE.Vector2(r.right + dx, r.top + dy),
-    new THREE.Vector2(r.right + dx, r.bottom + dy),
-    new THREE.Vector2(r.left + dx, r.bottom + dy),
-  ];
-}
-
 const gameCamera = new THREE.PerspectiveCamera();
 const plane = new THREE.Plane();
-/** Where on the level `y` the screen point lands, seen from the game camera: so the card covers those pixels. */
+/** Where on the level `y` the screen point lands, seen from the game camera: so the mat covers those pixels. */
 function onLevel(point: THREE.Vector2, y: number): THREE.Vector3 {
   raycaster.setFromCamera(
     new THREE.Vector2((point.x / innerWidth) * 2 - 1, -(point.y / innerHeight) * 2 + 1),
@@ -1343,36 +1290,6 @@ function onLevel(point: THREE.Vector2, y: number): THREE.Vector3 {
   return raycaster.ray.intersectPlane(plane, new THREE.Vector3()) ?? new THREE.Vector3(0, y, 0);
 }
 const quadOnLevel = (quad: Quad, y: number): Corners => quad.map((p) => onLevel(p, y));
-const raised = (corners: Corners, by: number): Corners => corners.map((p) => p.clone().setY(p.y + by));
-
-function cornersOfMesh(mesh: THREE.Object3D, w: number, h: number, local: (x: number, y: number) => THREE.Vector3) {
-  mesh.updateMatrixWorld(true);
-  return [local(-w / 2, h / 2), local(w / 2, h / 2), local(w / 2, -h / 2), local(-w / 2, -h / 2)].map((p) =>
-    p.applyMatrix4(mesh.matrixWorld),
-  );
-}
-
-const pictures = new Map<string, THREE.Texture>();
-async function picture(url: string): Promise<THREE.Texture | null> {
-  if (!pictures.has(url)) {
-    const image = await loadImage(url);
-    if (!image) return null;
-    pictures.set(url, texture(image));
-  }
-  return pictures.get(url)!;
-}
-
-function quadMesh(material: THREE.MeshBasicMaterial) {
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(12), 3));
-  geometry.setAttribute("uv", new THREE.BufferAttribute(new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]), 2));
-  geometry.setIndex([0, 3, 1, 1, 3, 2]);
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.frustumCulled = false;
-  mesh.visible = false;
-  scene.add(mesh);
-  return mesh;
-}
 
 function setCorners(mesh: THREE.Mesh, corners: readonly THREE.Vector3[]) {
   const position = mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -1380,142 +1297,35 @@ function setCorners(mesh: THREE.Mesh, corners: readonly THREE.Vector3[]) {
   position.needsUpdate = true;
 }
 
-/** A soft dark patch: the shadow a card casts as it comes down. */
-let shadowMap: THREE.Texture | null = null;
-function softShadow(): THREE.Texture {
-  if (shadowMap) return shadowMap;
-  const [cv, g] = canvas(128, 160);
-  g.filter = "blur(10px)";
-  g.fillStyle = "#000";
-  g.fillRect(24, 24, 80, 112);
-  return (shadowMap = texture(cv));
-}
-
-function flyer(map: THREE.Texture | null, legs: Leg[], shadow: boolean) {
-  // Unlit and untouched by the room's exposure, like the table draws its cards: they stay bright as the room dims.
-  const mesh = quadMesh(
-    new THREE.MeshBasicMaterial({ map, color: map ? 0xffffff : 0x223242, side: THREE.DoubleSide, toneMapped: false }),
-  );
-  mesh.renderOrder = 2;
-  const shade = shadow
-    ? quadMesh(
-        new THREE.MeshBasicMaterial({
-          map: softShadow(),
-          color: 0x000000,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          toneMapped: false,
-        }),
-      )
-    : null;
-  if (shade) shade.renderOrder = 1;
-  const f: Flyer = { mesh, shadow: shade, legs, bob: Math.random() * Math.PI * 2 };
-  outro!.flyers.push(f);
-  return f;
-}
-
-const centre = (corners: Corners) =>
-  corners.reduce((sum, p) => sum.add(p), new THREE.Vector3()).multiplyScalar(1 / corners.length);
-
-/** Corners turned `angle` about the vertical through their middle, and lifted by `lift`. */
-function turned(corners: Corners, angle: number, lift: number): Corners {
-  const mid = centre(corners);
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return corners.map((p) => {
-    const x = p.x - mid.x;
-    const z = p.z - mid.z;
-    return new THREE.Vector3(mid.x + x * cos - z * sin, p.y + lift, mid.z + x * sin + z * cos);
-  });
-}
-
-function placeFlyer(f: Flyer, u: number) {
-  const first = f.legs[0]!;
-  if (u < first.start) {
-    f.mesh.visible = false;
-    if (f.shadow) f.shadow.visible = false;
-    return;
-  }
-  // The leg under way, or the last one begun.
-  let leg = first;
-  for (const l of f.legs) if (u >= l.start) leg = l;
-  if (typeof leg.from === "function") {
-    leg.from = leg.from();
-    if (leg.takes) leg.takes.visible = false;
-  }
-  if (typeof leg.to === "function") leg.to = leg.to();
-  const next = f.legs[f.legs.indexOf(leg) + 1];
-  const from = leg.from;
-  const to = leg.to;
-  const t = clamp01((u - leg.start) / leg.length);
-  let corners: Corners;
-  let height: number;
-  if (leg.land) {
-    // Straight down, quickening, squaring up as it comes; then a small bounce as it settles.
-    const k = t * t;
-    const after = u - (leg.start + leg.length);
-    const bounce = after > 0 && after < SETTLE ? Math.sin((Math.PI * after) / SETTLE) * 0.06 * (1 - after / SETTLE) : 0;
-    const bob = Math.sin(u * 2.2 + f.bob) * 0.05 * (1 - t);
-    corners = turned(
-      from.map((p, i) => p.clone().lerp(to[i]!, k)),
-      leg.twist * (1 - ease(t)),
-      bounce + bob,
-    );
-    height = (centre(from).y - centre(to).y) * (1 - k) + bounce + bob;
-  } else {
-    const k = ease(t);
-    const waiting = t >= 1 && !!next?.land;
-    const bob = waiting ? Math.sin(u * 2.2 + f.bob) * 0.05 : 0;
-    corners = turned(
-      from.map((p, i) => p.clone().lerp(to[i]!, k)),
-      (next?.twist ?? 0) * k,
-      Math.sin(Math.PI * k) * leg.arc + bob,
-    );
-    height = next?.land ? (centre(to).y - TABLE_Y) * k + bob : HOVER;
-  }
-  setCorners(f.mesh, corners);
-  f.mesh.visible = true;
-  if (f.shadow) {
-    // The shadow sharpens and darkens under the card as it nears the mat.
-    const near = clamp01(1 - height / HOVER);
-    const spread = 1 + 0.25 * (1 - near);
-    const mid = centre(corners);
-    setCorners(
-      f.shadow,
-      corners.map(
-        (p) =>
-          new THREE.Vector3(
-            mid.x + (p.x - mid.x) * spread + height * 0.18,
-            SHADOW_Y,
-            mid.z + (p.z - mid.z) * spread + height * 0.12,
-          ),
-      ),
-    );
-    f.shadow.material.opacity = 0.55 * near * near;
-    f.shadow.visible = u >= MAT_AT;
-  }
-}
-
 // ---------- the mat, rolling out ----------
 
 let mat: {
-  flat: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  flat: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
   roll: THREE.Mesh;
   far: [THREE.Vector3, THREE.Vector3];
   near: [THREE.Vector3, THREE.Vector3];
 } | null = null;
 
 function buildMat(corners: Corners) {
-  // The table's own mat print, so the hand-over shows the same mat.
+  // The table's own mat print, lying in this room's light like the cloth it is, so it reads as a mat on the wood.
   const { texture: print, reshape } = matPrint(() => {});
   reshape(corners[0]!.distanceTo(corners[1]!) / corners[0]!.distanceTo(corners[3]!));
   print.anisotropy = maxAnisotropy;
-  const flat = quadMesh(new THREE.MeshBasicMaterial({ map: print, side: THREE.DoubleSide, toneMapped: false }));
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(12), 3));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), 3));
+  geometry.setAttribute("uv", new THREE.BufferAttribute(new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]), 2));
+  geometry.setIndex([0, 3, 1, 1, 3, 2]);
+  const flat = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ map: print, roughness: 0.96 }));
+  flat.frustumCulled = false;
+  flat.visible = false;
+  flat.receiveShadow = true;
+  scene.add(flat);
   const roll = new THREE.Mesh(
     new THREE.CylinderGeometry(1, 1, 1, 36, 1),
-    new THREE.MeshBasicMaterial({ color: 0x101a26, toneMapped: false }),
+    new THREE.MeshStandardMaterial({ color: 0x152032, roughness: 0.8 }),
   );
+  roll.castShadow = true;
   roll.frustumCulled = false;
   roll.visible = false;
   scene.add(roll);
@@ -1545,205 +1355,36 @@ function placeMat(u: number) {
   mat.roll.visible = u >= MAT_AT && r < 0.995;
 }
 
-/** The table canvas's offset on the page: the table reports its spots in canvas pixels. */
+/** The table canvas's offset on the page: the table reports its mat in canvas pixels. */
 const canvasRect = () => document.querySelector("#space canvas")?.getBoundingClientRect();
 
-/** Once the table underneath has drawn its cards: plan every piece's trip, from the box (and from the player's side). */
-async function launch(host: ShelfHost, box: Box) {
-  const table = host.table()!;
-  const state = host.state();
+/** Once the table underneath has its game: lay the mat where the table has it, and book the table's entrance. */
+function launch(table: NonNullable<ReturnType<ShelfHost["table"]>>, u: number) {
   const rect = canvasRect();
-  const dx = rect?.left ?? 0;
-  const dy = rect?.top ?? 0;
   gameCamera.copy(camera);
   gameCamera.position.copy(CAM_GAME.pos);
   gameCamera.lookAt(CAM_GAME.at);
   gameCamera.updateMatrixWorld();
-  const spot = (id: string) => () => {
-    const quad = cornersOf(table.cardOutline(id), dx, dy);
-    return quad ? quadOnLevel(quad, TABLE_Y) : [];
-  };
-  const encounterSpot = () => quadOnLevel(rectCorners(table.encounterAnchor(), dx, dy), TABLE_Y);
-  const deckSpot = () => quadOnLevel(rectCorners(table.deckAnchor(), dx, dy), TABLE_Y);
-  const fromBelow = (corners: Corners) => corners.map((p) => p.clone().setZ(p.z + 9));
-
-  const matQuad = cornersOf(table.matOutline(), dx, dy);
+  const matQuad = cornersOf(table.matOutline(), rect?.left ?? 0, rect?.top ?? 0);
   if (matQuad) buildMat(quadOnLevel(matQuad, MAT_Y));
-  // Just below the middle of the view (the hover height lifts them back up the screen a little).
-  const waitZ = CAM_GAME.at.z + 1.5;
-
-  const scheme = state.enemyCards.find((card) => card.landscape && card.id !== state.villain.id);
-  const [villainArt, schemeArt, heroArt, encounterBack, playerBack] = await Promise.all([
-    picture(state.villain.art),
-    scheme ? picture(scheme.art) : null,
-    picture(state.hero.art),
-    picture(`${CARDS}marvel-encounter-back.webp`),
-    picture(`${CARDS}marvel-player-back.webp`),
-  ]);
-
-  // The villain's pieces: out of the box to hover over their spots, then down one at a time.
-  const lifted = (
-    art: THREE.Texture | null,
-    from: () => Corners,
-    to: () => Corners,
-    out: number,
-    lands: number,
-    twist: number,
-    takes?: THREE.Object3D,
-  ) => {
-    const target = to();
-    if (target.length < 4) return;
-    // Waiting in a row over the middle of the mat, where they can be seen, at about the height of a hand.
-    const mid = centre(target);
-    const wait = target.map((p) => p.clone().add(new THREE.Vector3(0, HOVER, waitZ - mid.z)));
-    const settled = () => {
-      const now = to();
-      return now.length === 4 ? now : target;
-    };
-    flyer(
-      art,
-      [
-        { from, to: wait, start: out, length: 0.95, arc: 0.6, land: false, twist: 0, takes },
-        { from: wait, to: settled, start: lands, length: DROP, arc: 0, land: true, twist },
-      ],
-      true,
-    );
-  };
-  lifted(
-    villainArt,
-    () => cornersOfMesh(box.card, CARD_W, CARD_H, (x, y) => new THREE.Vector3(x, y, 0)),
-    spot(state.villain.id),
-    TARGETS_AT,
-    LANDS.villain,
-    0.12,
-    box.card,
-  );
-  if (scheme)
-    lifted(
-      schemeArt,
-      () => cornersOfMesh(box.guide, GUIDE_W, GUIDE_H, (x, y) => new THREE.Vector3(x, 0.02, -y)),
-      spot(scheme.id),
-      TARGETS_AT + 0.08,
-      LANDS.scheme,
-      -0.1,
-    );
-  lifted(
-    encounterBack,
-    () => cornersOfMesh(box.deck, CARD_W, CARD_H, (x, y) => new THREE.Vector3(x, 0.13, -y)),
-    encounterSpot,
-    TARGETS_AT + 0.16,
-    LANDS.encounter,
-    0.14,
-    box.deck,
-  );
-
-  // The player's own hero and deck come in from their side of the table and land.
-  const hero = spot(state.hero.id)();
-  if (hero.length === 4)
-    flyer(
-      heroArt,
-      [
-        {
-          from: fromBelow(raised(hero, 1.2)),
-          to: raised(hero, 1.2),
-          start: LANDS.hero - 0.5,
-          length: 0.5,
-          arc: 0,
-          land: false,
-          twist: 0,
-        },
-        {
-          from: raised(hero, 1.2),
-          to: spot(state.hero.id),
-          start: LANDS.hero,
-          length: DROP * 0.8,
-          arc: 0,
-          land: true,
-          twist: -0.08,
-        },
-      ],
-      true,
-    );
-  const deck = deckSpot();
-  flyer(
-    playerBack,
-    [
-      {
-        from: fromBelow(raised(deck, 1.2)),
-        to: raised(deck, 1.2),
-        start: LANDS.deck - 0.5,
-        length: 0.5,
-        arc: 0,
-        land: false,
-        twist: 0,
-      },
-      { from: raised(deck, 1.2), to: deckSpot, start: LANDS.deck, length: DROP * 0.8, arc: 0, land: true, twist: 0.1 },
-    ],
-    true,
-  );
-  deckLanding = deck;
+  table.enter(performance.now() + (ENTER_AT - u) * 1000);
 }
 
-/** The opening hand, dealt one by one from the player's deck into the hand the table holds up. */
-async function dealHand(host: ShelfHost, deck: Corners) {
-  const table = host.table()!;
-  const state = host.state();
-  const rect = canvasRect();
-  const dx = rect?.left ?? 0;
-  const dy = rect?.top ?? 0;
-  const arts = await Promise.all(state.hand.map((card) => picture(card.art)));
-  state.hand.forEach((card, i) => {
-    const quad = cornersOf(table.cardOutline(card.id), dx, dy);
-    if (quad)
-      flyer(
-        arts[i] ?? null,
-        [
-          {
-            from: deck,
-            to: quadOnLevel(quad, HAND_Y),
-            start: HAND_AT + i * 0.11,
-            length: 0.55,
-            arc: 0.5,
-            land: false,
-            twist: 0,
-          },
-        ],
-        false,
-      );
-  });
-}
-
-let launching = false;
 function stepOutro(dt: number) {
-  if (!outro || !host || outro.done || launching) return;
-  const table = host.table();
-  const box = boxes[chosen]!;
-  // Wait for the table to have drawn its cards, then for its hand to be dealt, before going past each point.
+  if (!outro || !host || outro.done) return;
   if (outro.u >= TARGETS_AT && !outro.launched) {
+    const table = host.table();
     if (!table) return;
     outro.launched = true;
-    launching = true;
-    void launch(host, box).then(() => (launching = false));
-    return;
-  }
-  if (outro.u >= HAND_AT - 0.05 && !outro.hand) {
-    if (!table?.handSettled || !deckLanding) return;
-    outro.hand = true;
-    launching = true;
-    void dealHand(host, deckLanding).then(() => (launching = false));
-    return;
+    launch(table, outro.u);
   }
   outro.u = Math.min(outro.u + dt, outro.hold, FADE_AT + FADE_LENGTH);
   placeMat(outro.u);
-  for (const f of outro.flyers) placeFlyer(f, outro.u);
-  // The room dims as the mat rolls out; the mat and the cards, unlit, stay bright.
-  renderer.toneMappingExposure = lerp(1.05, 0.12, span(outro.u, MAT_AT, MAT_LENGTH));
   head.style.opacity = String(1 - span(outro.u, 0, 0.4));
-  // The shelf fades away over the real table, which has every card where the shelf just laid it.
+  // The room fades into the table's own colour, leaving the mat where the table's mat already lies.
   root.style.opacity = String(1 - span(outro.u, FADE_AT, FADE_LENGTH));
   if (outro.u >= FADE_AT + FADE_LENGTH) finishOutro();
 }
-let deckLanding: Corners | null = null;
 
 /** The table is in front: hand it the page. The shelf keeps its room, ready for the next New game. */
 function finishOutro() {
@@ -1761,13 +1402,6 @@ function finishOutro() {
 
 /** Back to the room as it first stands: every box on the shelf, nothing in flight. */
 function reset() {
-  for (const f of outro?.flyers ?? [])
-    for (const mesh of [f.mesh, f.shadow]) {
-      if (!mesh) continue;
-      scene.remove(mesh);
-      mesh.geometry.dispose();
-      mesh.material.dispose();
-    }
   if (mat) {
     scene.remove(mat.flat, mat.roll);
     mat.flat.geometry.dispose();
@@ -1778,16 +1412,9 @@ function reset() {
     mat = null;
   }
   outro = null;
-  deckLanding = null;
-  launching = false;
-  for (const box of boxes) {
-    box.card.visible = true;
-    box.deck.visible = true;
-  }
   chosen = -1;
   s = target = 0;
   hovered = -1;
-  renderer.toneMappingExposure = 1.05;
   head.style.opacity = "";
   hint.textContent = "Pick a box to open it";
   hint.hidden = false;
