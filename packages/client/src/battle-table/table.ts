@@ -1392,6 +1392,8 @@ export class BattleTable {
   }
 
   #revealHeld = false;
+  /** The picks on offer when the revealed card came up (see revealEncounter). */
+  #revealStartTargets = "";
   /** The revealed card waits to be read before Continue: it stands full size in the middle of the table. */
   /** Cards turned up off the top of the player's deck (Black Cat's discard), standing in a row in the middle. */
   #deckReveal: TableCard[] = [];
@@ -1612,6 +1614,9 @@ export class BattleTable {
   revealEncounter(card: { id: string; name: string; art: string; landscape: boolean }): void {
     if (!this.#state) return;
     if (!this.#encounters.has(card.id)) this.dealEncounter(card.id);
+    // The picks already on offer as it comes up (the player's attack targets, when Rhino's second stage brings in
+    // Breakin' & Takin' mid-attack) are not its question: it steps aside only for picks that come after it.
+    if (this.#revealing !== card.id) this.#revealStartTargets = (this.#state?.targets ?? []).join(",");
     this.#revealing = card.id;
     this.#encounters.set(card.id, { ...this.#encounters.get(card.id)!, ...card, type: "revealed" });
     this.setCards(this.#state);
@@ -2845,8 +2850,16 @@ export class BattleTable {
         ? [Math.min(spots[3]![0], w - stagedHalf - 8), spots[3]![1]]
         : spots[2]!;
       // The same screen and the same revealed card: it stays where it went, unless it now covers a card to pick.
-      const key = `${w}x${h}|${revealRect ? `${revealRect.x},${revealRect.y}` : ""}|${rowY}|${first}`;
-      const kept = held.spot && held.key === key && !covers(held.spot[0], held.spot[1]) ? held.spot : null;
+      // A revealed card coming up moves it beside that card; that card going away (cancelled by the card waiting here,
+      // Enhanced Spider-Sense) leaves it where it is, so it flies from there to its discard pile rather than back
+      // across the table first (Adam, 2026-11-24).
+      const reveal = revealRect ? `${revealRect.x},${revealRect.y}` : "";
+      const key = `${w}x${h}|${rowY}|${first}|${reveal}`;
+      const sameScreen = held.key.slice(0, held.key.lastIndexOf("|")) === key.slice(0, key.lastIndexOf("|"));
+      const kept =
+        held.spot && sameScreen && (held.key === key || !reveal) && !covers(held.spot[0], held.spot[1])
+          ? held.spot
+          : null;
       const [x, y] =
         kept ??
         spots.find(([sx, sy], i) => (i !== 1 || sx > playWidth * 0.7) && onScreen(sx) && !covers(sx, sy)) ??
@@ -2900,7 +2913,9 @@ export class BattleTable {
     // stood off to the left for the cards the player could pick before it came up (Adam, 2026-11-23). But always when
     // the revealed card itself asks for the pick (Caught Off Guard: "discard an upgrade or support"), so every card to
     // choose from shows clear of it (Adam, 2026-11-23: "you have to always be able to see what you're choosing").
-    const asking = !this.#revealHeld || this.#actor === revealPose?.id;
+    // The revealed card asking itself (Caught Off Guard, marked as the actor), or a question that came up after it
+    // did; never the picks left over from before it (Adam, 2026-11-24: Breakin' & Takin' kept going left).
+    const asking = this.#actor === revealPose?.id || state.targets.join(",") !== this.#revealStartTargets;
     if (revealPose && revealRect && state.targets.length && asking) {
       const key = `${revealPose.id}|${state.targets.join(",")}|${w}x${h}|${this.#question}|${this.#hand.sunk}`;
       const reveal = revealRect as { x: number; y: number; halfWidth: number; halfHeight: number };
