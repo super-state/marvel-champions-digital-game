@@ -409,6 +409,9 @@ const SPLIT_FROM_BLOCK: SoundManifest["sounds"] = {
   ability: [1, 2, 3].map((n) => ({ file: `block-${n}.mp3`, rate: 1.3 })),
   cancel: [{ file: "block-1.mp3", rate: 0.75 }],
   vanish: [{ file: "block-2.mp3", rate: 0.8 }],
+  // The pointer coming onto a card: the pick sound, small, high and quiet, until the studio gives them their own.
+  "hover-hand": [1, 2].map((n) => ({ file: `select-${n}.mp3`, rate: 1.6, gainDb: -16 })),
+  "hover-table": [1, 2].map((n) => ({ file: `select-${n}.mp3`, rate: 1.25, gainDb: -18 })),
   // A card settling in the hand: the landing tap, lighter and higher, until the studio gives it a sound of its own.
   "draw-land": [1, 2, 3].map((n) => ({ file: `place-${n}.mp3`, rate: 1.4, gainDb: -9 })),
 };

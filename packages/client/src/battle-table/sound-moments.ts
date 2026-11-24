@@ -158,6 +158,20 @@ export const SOUND_MOMENTS = [
   { name: "lose", label: "Defeat", group: "Phases", about: "The defeat screen.", demo: true },
   { name: "select", label: "Pick / select", group: "Buttons", about: "A target or resource picked.", demo: true },
   {
+    name: "hover-hand",
+    label: "Hover a hand card",
+    group: "Buttons",
+    about: "The pointer coming onto a card in the hand. Starts as a soft tick: drop a file on it to change it.",
+    demo: false,
+  },
+  {
+    name: "hover-table",
+    label: "Hover a table card",
+    group: "Buttons",
+    about: "The pointer coming onto a card on the table. Starts as a soft tick: drop a file on it to change it.",
+    demo: false,
+  },
+  {
     name: "confirm",
     label: "Confirm",
     group: "Buttons",
