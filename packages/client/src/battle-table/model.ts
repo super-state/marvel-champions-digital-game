@@ -22,7 +22,7 @@ import {
   type ResourceType,
   type TriggerEvent,
 } from "@mc/engine";
-import { artFor, CARD_BACKS } from "../art/art-source.js";
+import { artFor, CARD_BACKS, standInArt } from "../art/art-source.js";
 import { abilityLabelOf, abilityShortLabelOf } from "../view/ability-label.js";
 import {
   countersOf,
@@ -37,10 +37,48 @@ import { plainRulesTextOf } from "../view/card-search-document.js";
 import { missLineOf } from "./deck-reveal.js";
 import { choiceSourcePanelOf } from "../view/choice-source-panel.js";
 import { choiceSourceOf, promptTitleOf } from "../view/choice-source.js";
-import { faceUpName, optionLabelOf, shortIdentityNameOf } from "../view/names.js";
+import {
+  faceUpName as printedNameOf,
+  optionLabelOf as printedOptionLabelOf,
+  shortIdentityNameOf,
+} from "../view/names.js";
 import { beginPayment, paymentView, togglePayment, type PaymentState } from "../view/payment-model.js";
 
 import { paymentSheetView } from "../view/payment-sheet.js";
+
+/**
+ * A player's card in play facedown as a minion: an Ultron Drone ("put the top card of your deck into play facedown,
+ * engaged with you as a Drone minion", Ultron Drones 01140). The table shows a Drone and never the card underneath: no
+ * name, type, text, cost or picture of it reaches a snapshot, a beat or a label while it is facedown.
+ * Engine interpretation (no official source): a facedown Drone's face is hidden from every player, its owner included;
+ * RRG 1.8 "Look, Looked-At" p. 27; ruling 29 Nov 2023 #118 ("you could look at the drones you defeated").
+ */
+export function isFacedownMinion(state: GameState, id: InstanceId): boolean {
+  return getInstance(state, id)?.facedownAs?.kind === "minion";
+}
+
+/** What a facedown minion is called on the table. */
+export const DRONE_NAME = "Drone";
+/** A facedown Drone's base stats while Ultron Drones is in play (01140): what the Drone picture prints. */
+const DRONE_BASE = { sch: 1, atk: 1, hp: 1 } as const;
+/** What the play hook reads on a Drone in place of the hidden card's text. */
+const DRONE_FACTS =
+  "A card from your deck, facedown: nobody may look at it. No text and no keywords of its own. " +
+  "When it is defeated, the card goes faceup to your discard pile.";
+
+/** The type a card in play shows as: a facedown Drone is a minion, whatever the card underneath is. */
+function shownType(state: GameState, id: InstanceId): string | undefined {
+  return isFacedownMinion(state, id) ? "minion" : cardOf(state, id)?.type;
+}
+
+function faceUpName(state: GameState, id: InstanceId): string {
+  return isFacedownMinion(state, id) ? DRONE_NAME : printedNameOf(state, id);
+}
+
+const optionLabelOf: typeof printedOptionLabelOf = (state, option) =>
+  state && option.ref.kind === "card" && option.ref.instanceId && isFacedownMinion(state, option.ref.instanceId)
+    ? DRONE_NAME
+    : printedOptionLabelOf(state, option);
 
 export interface BattleCard {
   attachedTo?: string | null;
@@ -62,6 +100,8 @@ export interface BattleCard {
   reason: string | null;
   /** A card lying facedown under another (Highway Robbery's stolen card): that card. */
   under?: string;
+  /** A player's card in play facedown as a Drone minion: shown by the Drone picture, never by its own face. */
+  drone?: true;
 }
 
 export interface BattlePayment {
@@ -177,8 +217,19 @@ export interface BattleBeat {
    * putting that minion into play): it comes onto the table on its own beat.
    */
   entersPlay?: string;
+  /**
+   * A card off the top of the player's deck (or their discard pile) put into play facedown as a Drone minion: it
+   * leaves that pile on its own beat, with the card whose ability did it when one did (Ultron, a main scheme stage,
+   * Android Efficiency). `deckCount`: the cards left in the deck once it has gone.
+   */
+  droneIn?: { id: string; from: "deck" | "discard"; source: string | null; deckCount: number };
   defeat?: string;
   defeatedCard?: string;
+  /**
+   * With `defeatedCard`: it was a facedown Drone, and this is the card it turns out to be as it goes faceup to its
+   * owner's discard pile (RRG 1.8 "Discard" p. 16; ruling 26 Jan 2026 #5: the facedown side is not in play).
+   */
+  droneWas?: string;
   /** A card in play discarded without being defeated: an attachment used up, a support Caught Off Guard took. */
   leftPlay?: string;
   /** With `leftPlay`: the card is removed from the game, so it evaporates off the table instead of going to a pile. */
@@ -311,6 +362,14 @@ function eitherOrTitle(state: GameState, pending: NonNullable<GameState["pending
 function statModifiers(state: GameState, id: InstanceId) {
   const profile = characterProfile(state, id, CORE_DEPS);
   if (!profile) return [];
+  // A facedown Drone has no printed numbers of its own: what it gains (Upgraded Drones, Ultron III) is counted from
+  // the 1 SCH, 1 ATK and 1 hit point Ultron Drones gives it, which is what its picture prints.
+  if (isFacedownMinion(state, id))
+    return [
+      { name: "SCH", count: (profile.sch ?? DRONE_BASE.sch) - DRONE_BASE.sch },
+      { name: "ATK", count: (profile.atk ?? DRONE_BASE.atk) - DRONE_BASE.atk },
+      { name: "HP", count: profile.maxHp - DRONE_BASE.hp },
+    ].filter((modifier) => modifier.count !== 0);
   const printed = printedStatsOf(state, id);
   const modifiers = profileStatTiles(profile, printed, ["thw", "atk", "def", "sch", "rec"], undefined, undefined)
     .filter((tile) => tile.bonus !== 0)
@@ -405,6 +464,7 @@ const SCHEME_ICON_TEXT: Record<string, string> = {
 export const VILLAINS = [
   { id: "rhino", name: "Rhino" },
   { id: "klaw", name: "Klaw" },
+  { id: "ultron", name: "Ultron" },
 ] as const;
 export type VillainId = (typeof VILLAINS)[number]["id"];
 
@@ -566,7 +626,14 @@ export class BattleModel {
     }
     const drawn = events.flatMap((event) => (event.type === "cardDrawn" ? [event.instanceId] : []));
     let enemy = this.#game.step.phase === "villain";
-    const name = (id: InstanceId) => shortIdentityNameOf(result.state, id) ?? faceUpName(result.state, id);
+    // Facedown Drones, from before this move or put into play during it: each is "Drone" in every line until it is
+    // defeated, even when it is already faceup in the discard pile by the end of the move (it attacks, then dies to
+    // the answer, all in one villain phase).
+    const drones = new Set<string>(
+      this.#game.players.flatMap((seat) => seat.playArea.filter((id) => isFacedownMinion(this.#game, id))),
+    );
+    const name = (id: InstanceId) =>
+      drones.has(id) ? DRONE_NAME : (shortIdentityNameOf(result.state, id) ?? faceUpName(result.state, id));
     // The main scheme is one card through all its stages: until it advances in these events, it is still called by
     // the stage it was on (the threat that completes Underground Distribution goes on Underground Distribution).
     const mainId = this.#game.mainScheme.instanceId;
@@ -641,6 +708,8 @@ export class BattleModel {
     let heldAim: { attacker: string; activity: string; beat: BattleBeat } | null = null;
     let acceleration = this.#game.mainScheme.accelerationTokens;
     let round = this.#game.round;
+    // The cards in the player's deck as these events go by, for the count a Drone leaves behind.
+    let deckLeft = this.#game.players[0]!.deck.length;
     for (const e of events) {
       if (e.type === "roundStarted") {
         round = e.round;
@@ -649,7 +718,9 @@ export class BattleModel {
         if (heroPhase?.phase === "hero" && (heroPhase.round ?? 0) < round) heroPhase.round = round;
       }
       const before = this.#beats.length;
-      if (e.type === "deckShuffled" && e.zone.kind === "deck") shuffledDeck = e.order.length;
+      if (e.type === "deckShuffled" && e.zone.kind === "deck") shuffledDeck = deckLeft = e.order.length;
+      else if (e.type === "cardDrawn") deckLeft--;
+      else if (e.type === "cardMoved" && e.from.kind === "deck" && e.to.kind !== "playArea") deckLeft--;
       if (e.type === "abilityResolved") resolving = { card: e.instanceId, label: triggerLabel(e.abilityId) };
       // Only the ability that resolved last owns what follows; a move into play or a new step ends its say.
       else if (e.type === "stepChanged" || e.type === "cardPlayed") resolving = null;
@@ -737,6 +808,24 @@ export class BattleModel {
           text: `${name(e.instanceId)} enters play`,
           entersPlay: e.instanceId,
         });
+      } else if (e.type === "cardPutIntoPlayFacedown" && e.as === "minion") {
+        drones.add(e.instanceId);
+        const source = resolving?.card ?? askedBy;
+        deckLeft -= e.from === "discard" ? 0 : 1;
+        this.#beats.push({
+          enemy,
+          actor: e.instanceId,
+          text:
+            e.from === "discard"
+              ? "The top card of your discard pile goes into play facedown as a Drone minion"
+              : "The top card of your deck goes into play facedown as a Drone minion",
+          droneIn: {
+            id: e.instanceId,
+            from: e.from === "discard" ? "discard" : "deck",
+            source: source && source !== e.instanceId ? source : null,
+            deckCount: Math.max(0, deckLeft),
+          },
+        });
       } else if (e.type === "villainFlipped") {
         this.#beats.push({
           enemy,
@@ -745,8 +834,20 @@ export class BattleModel {
           text: `${name(e.instanceId)} · Side ${e.to.toUpperCase()}`,
         });
       } else if (e.type === "characterDefeated" || e.type === "schemeDefeated") {
-        const type = cardOf(result.state, e.instanceId)?.type ?? cardOf(this.#game, e.instanceId)?.type;
-        if (type === "villain" && e.type === "characterDefeated") {
+        const drone = e.type === "characterDefeated" && e.facedownAs?.kind === "minion";
+        const type = drone
+          ? "minion"
+          : (cardOf(result.state, e.instanceId)?.type ?? cardOf(this.#game, e.instanceId)?.type);
+        if (drone) {
+          // The Drone is defeated and the card under it is known at last, on its way to its owner's discard pile.
+          drones.delete(e.instanceId);
+          this.#beats.push({
+            enemy,
+            defeatedCard: e.instanceId,
+            text: "",
+            droneWas: cardOf(result.state, e.instanceId)?.name ?? "a card",
+          });
+        } else if (type === "villain" && e.type === "characterDefeated") {
           const defeat = `${name(e.instanceId)} defeated`;
           this.#beats.push({ enemy, actor: e.instanceId, text: defeat, defeat });
         } else if (e.type === "schemeDefeated" || type === "minion" || type === "ally") {
@@ -811,7 +912,7 @@ export class BattleModel {
           this.#beats.push({
             enemy,
             actor: e.instanceId,
-            text: `${faceUpName(this.#game, e.instanceId)} ${e.to.kind === "removedFromGame" ? "is removed from the game" : "is discarded"}`,
+            text: `${drones.has(e.instanceId) ? DRONE_NAME : faceUpName(this.#game, e.instanceId)} ${e.to.kind === "removedFromGame" ? "is removed from the game" : "is discarded"}`,
             leftPlay: e.instanceId,
             ...(e.to.kind === "removedFromGame" ? { removedFromGame: true } : {}),
           });
@@ -941,7 +1042,7 @@ export class BattleModel {
         // him into play, but waits for the rest of Shadow (Highway Robbery, the shuffle) to resolve first. Aimed at
         // once, Spider-Man would sit under the reticle through all of that with no attack in sight.
         const attacker = e.event.enemyInstanceId;
-        const card = cardOf(result.state, attacker);
+        const card = drones.has(attacker) ? undefined : cardOf(result.state, attacker);
         const quickstrike = !!card && /\bQuickstrike\b/i.test(plainRulesTextOf(card));
         this.#effectAttack = { enemy: attacker, activity: this.#villainActivity };
         heldAim = {
@@ -1000,7 +1101,8 @@ export class BattleModel {
       ) {
         const tough = e.type === "damagePrevented";
         const sourceId = tough ? (e.attackSourceInstanceId ?? null) : e.sourceInstanceId;
-        const source = sourceId && cardOf(result.state, sourceId);
+        // A Drone's damage is the Drone's: the card under it (an attack event, say) has no say in whose it is.
+        const source = sourceId && !drones.has(sourceId) ? cardOf(result.state, sourceId) : undefined;
         const attacker =
           source?.type === "event" &&
           source.abilities.some((ref) => CORE_DEPS.abilities[ref.id]?.label?.includes("attack"))
@@ -1177,7 +1279,7 @@ export class BattleModel {
         ...s.players.flatMap((p) => [p.identity.instanceId, ...p.playArea]),
         ...s.villainArea,
         ...s.villains.map((v) => v.instanceId),
-      ].filter((id) => ["hero_identity", "ally", "villain", "minion"].includes(cardOf(s, id)?.type ?? ""));
+      ].filter((id) => ["hero_identity", "ally", "villain", "minion"].includes(shownType(s, id) ?? ""));
     const previous = new Set(characters(this.#game));
     const heroPhase = this.#beats.findIndex((b) => b.phase === "hero");
     let modifierIndex = heroPhase === -1 ? this.#beats.length : heroPhase;
@@ -1211,8 +1313,42 @@ export class BattleModel {
     };
   }
 
+  /** A facedown Drone: a minion with the Drone picture, and nothing of the card under it. */
+  #drone(id: InstanceId): BattleCard {
+    const state = this.#game;
+    const instance = getInstance(state, id);
+    return {
+      id,
+      attachedTo: null,
+      showAsFullCard: false,
+      markers: [
+        ...Object.entries(instance?.statuses ?? {}).map(([name, count]) => ({ name, count })),
+        { name: "damage", count: instance?.damage ?? 0 },
+        { name: "threat", count: instance?.threat ?? 0 },
+        ...countersOf(state, id),
+      ]
+        .filter((m) => m.count > 0)
+        .concat(statModifiers(state, id)),
+      name: DRONE_NAME,
+      hp: Math.max(0, remainingHitPoints(state, id, CORE_DEPS) ?? 0),
+      reverseArt: null,
+      threatTarget: null,
+      threat: null,
+      exhausted: instance?.exhausted ?? false,
+      landscape: false,
+      art: standInArt({ kind: "ultronDrone", atk: DRONE_BASE.atk }).url,
+      type: "minion",
+      playable: false,
+      requiresHeroForm: false,
+      cost: null,
+      reason: null,
+      drone: true,
+    };
+  }
+
   #card(id: InstanceId): BattleCard {
     const state = this.#game;
+    if (isFacedownMinion(state, id)) return this.#drone(id);
     const viewer = state.players[0]!.playerId;
     const card = cardOf(state, id);
     const action = this.#plays.get(id);
@@ -1482,7 +1618,7 @@ export class BattleModel {
     const attached = getInstance(state, player.identity.instanceId)?.attachments ?? [];
     const hostile = player.playArea.filter((id) =>
       ["minion", "attachment", "side_scheme", "environment", "obligation", "treachery"].includes(
-        cardOf(state, id)?.type ?? "",
+        shownType(state, id) ?? "",
       ),
     );
     const enemyIds = new Set([
@@ -1667,7 +1803,7 @@ export class BattleModel {
       ({ action }) =>
         (action.kind === "basicAttack" || action.kind === "basicThwart") &&
         action.instanceId === id &&
-        cardOf(this.#game, action.instanceId)?.type === "ally",
+        shownType(this.#game, action.instanceId) === "ally",
     );
   }
 
@@ -1677,6 +1813,10 @@ export class BattleModel {
    */
   cardFacts(id: string): string {
     const state = this.#game;
+    if (isFacedownMinion(state, id as InstanceId)) {
+      const profile = characterProfile(state, id as InstanceId, CORE_DEPS);
+      return `SCH ${profile?.sch ?? DRONE_BASE.sch} ATK ${profile?.atk ?? DRONE_BASE.atk} · ${DRONE_FACTS}`;
+    }
     const card = cardOf(state, id as InstanceId);
     if (!card) return "";
     const identity = state.players[0]!.identity;
