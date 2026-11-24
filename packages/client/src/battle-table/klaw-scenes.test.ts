@@ -82,7 +82,7 @@ describe("Klaw's dev scenes", () => {
     const battle = new BattleModel();
     battle.reset({ villain: "klaw", seed: 7, arrange: arrangeScene("klawsonic")! });
     expect(battle.endTurn()).toBe(true);
-    for (let i = 0; i < 6 && !/^Spend/.test(battle.snapshot().choice?.prompt ?? ""); i++) {
+    for (let i = 0; i < 6 && !(battle.snapshot().choice?.prompt ?? "").startsWith("Spend"); i++) {
       const options = battle.snapshot().choice?.options ?? [];
       battle.choose(options.at(-1)?.id ?? null);
     }
