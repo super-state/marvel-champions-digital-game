@@ -125,6 +125,12 @@ const SCENES: Record<string, Scene> = {
     schemes: [{ code: "01107", threat: 3 }],
     minions: [{ code: "01110" }, { code: "01102" }, { code: "01103" }],
   },
+  /** The same later on, with encounter cards discarded: the deck steps down the right, the discard pile above it. */
+  minions3discard: {
+    schemes: [{ code: "01107", threat: 3 }],
+    minions: [{ code: "01110" }, { code: "01102" }, { code: "01103" }],
+    encounterLeft: 12,
+  },
   /** Five minions and two side schemes: no room left of the schemes, so a block of two rows. */
   minions5: {
     schemes: [
