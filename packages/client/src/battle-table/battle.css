@@ -422,6 +422,10 @@ button:focus-visible {
   min-height: 0;
   padding: var(--preview-padding);
   display: grid;
+  /* One row exactly the reader's height, so the picture's max-height holds: on a short window (a 13" MacBook in
+     Safari, 720 high) a card as wide as the panel is taller than the room above the log, and it ran off the top. */
+  grid-template-rows: minmax(0, 1fr);
+  align-items: center;
   align-content: center;
   justify-items: center;
   background: radial-gradient(ellipse at center, #2c3a44 0%, #1a252e 52%, var(--bg-2) 82%);
@@ -1185,6 +1189,7 @@ button:focus-visible {
   inset: 0;
   z-index: 2;
   background: rgb(3 8 13 / 22%);
+  -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
   pointer-events: none;
   opacity: 0;

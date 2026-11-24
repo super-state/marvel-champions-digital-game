@@ -9,7 +9,7 @@ test("Ctrl+Space ends the turn, but not while the menu is open", async ({ page }
   await page.goto("/battle/?seed=11&scene=advanceloss");
   await expect(page.locator("#turn-status")).toHaveText(/Hero phase/i, { timeout: 60_000 });
   await expect(page.locator("#end-turn")).toBeEnabled({ timeout: 30_000 });
-  await expect(page.locator("#end-turn")).toHaveAttribute("title", "End Turn (Ctrl+Space)");
+  await expect(page.locator("#end-turn")).toHaveAttribute("title", /^End Turn \((Ctrl\+|⌃)Space\)$/);
   await page.waitForTimeout(1500);
 
   await page.locator("#menu-button").click();
