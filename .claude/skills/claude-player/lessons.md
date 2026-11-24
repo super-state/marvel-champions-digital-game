@@ -57,6 +57,24 @@ cards work in one form only, what each status does and the hand limit.
 - **Cards that earned their place:** For Justice!, Surveillance Team, Daredevil, Mockingbird, Nick Fury (draw 3 in
   round 1), Black Cat, Jessica Jones, Avengers Mansion, Spider-Tracer, Backflip, Enhanced Spider-Sense. `seen 5×`
 
+### Spider-Man vs Klaw (core set, same deck) — 0 wins, 2 losses (the win path checked from the `klawfinish` scene)
+
+- **The threat clock is two stages: 6 then 8, with Klaw scheming 2 + a boost.** As Peter, one villain phase adds
+  4-6, and the stage flip brings a minion. Both losses ended at the scheme or on a Peter who could not hide any more.
+  Stay Spider-Man whenever Klaw is stunned (his attack is wasted) and thwart every turn. `seen 2×`
+- **Defense Network is a crisis: no thwart reaches the main scheme until it is gone.** Clear it in the first two
+  rounds (Daredevil 2 + a basic). `seen 1×`
+- **Minions pile up: Klaw's deck is mostly minions.** Weapons Runner arrives from boosts, Masters of Mayhem makes
+  every Master of Evil attack again, two Armored Guards (Guard + Toughness) can lock Klaw away. Kill minions as
+  they land; Spider-Tracer + Interrogation Room on the kill is 4 threat. `seen 2×`
+- **Pay Sonic Converter off the turn it lands** (energy + mental + physical, the move "Sonic Converter: Discard it").
+  Its stun on every damaging Klaw attack cost Spider-Man three turns of attacks in game 2. `seen 1×`
+- **Never let a script answer defend questions.** An auto-driver that declined every defend left Spider-Man on 1 HP
+  in round 3 of game 1. Allies are blockers: they ready at the end of your turn, so attack with them, then block.
+  `seen 1×`
+- **Klaw (II) is 18 + 10 while The "Immortal" Klaw stands:** thwarting its 3 threat is cheaper than 10 damage.
+  `seen 1×` (scene)
+
 ### Driving the hook
 
 - Pick moves from `moves()` labels only; a look's text starts with the move just made. `seen 1×`
@@ -70,6 +88,8 @@ cards work in one form only, what each status does and the hand limit.
 
 ## Try next
 
+- Against Klaw: an opening that keeps Peter safe while Defense Network and the first minion go (Daredevil, Jessica
+  Jones), then Spider-Man for good once allies can block; save both Kicks for Klaw (II).
 - Keep the shape (allies, Kicks for stage 2, stay Spider-Man); try Webbed Up on Rhino the turn before stage 1
   falls, so its stun carries into stage 2 (it did in game 9) and covers the first turn there.
 - Save Enhanced Spider-Sense for Hard to Keep Down (cancelled it in stage 1 in game 9; worked).
@@ -77,6 +97,12 @@ cards work in one form only, what each status does and the hand limit.
 
 ## Recent games
 
+- 2026-11-24 · Spider-Man (Justice) vs Klaw · lost in round 8, Secret Rendezvous 8/8 · Klaw (I) worn to 5 by round 2,
+  but Sonic Converter's stuns and five minions (two Armored Guards) kept Spider-Man off him. The win was checked
+  from the `klawfinish` scene instead.
+- 2026-11-24 · Spider-Man (Justice) vs Klaw · lost in round 9, Peter defeated by Masters of Mayhem · a driver script
+  declined every defend in round 2 and left Spider-Man on 1 HP; held the scheme with Spider-Tracer, Interrogation
+  Room and Surveillance Team for six rounds.
 - 2026-11-24 · Spider-Man (Justice) vs Rhino · **won** in round 8 · Black Cat and Jessica wore stage 1 down while
   both Kicks waited; Webbed Up's stun carried into stage 2; Kick on arrival, Black Cat blocked Stampede, Kick to
   finish. First game in Adam's single "Marvel Champions" Games tab.
@@ -97,7 +123,3 @@ cards work in one form only, what each status does and the hand limit.
   Web Kick + Daredevil + Mockingbird was exactly his 11 HP and Toughness.
 - 2026-11-23 · Spider-Man (Justice) vs Rhino · lost in round 10, The Break-In! 2 → 7 as Peter · Rhino on 7, then
   Toughness, a Guard minion and Vulture in one phase.
-- 2026-11-23 · Spider-Man (Justice) vs Rhino · lost in round 7, The Break-In! 1 → 7 in one phase · stunned on 2 HP,
-  hid as Peter.
-- 2026-11-23 · Spider-Man (Justice) vs Rhino · lost in round 5, The Break-In! reached 7/7 · three minions scheming
-  while Peter healed.
