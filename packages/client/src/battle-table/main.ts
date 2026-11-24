@@ -696,6 +696,23 @@ function choiceView(choice: Choice): DockView {
       },
     };
   }
+  if (choice.discardFromHand && choice.canCancel) {
+    // A card's cost that discards from the hand (Alpha Flight Station): named by the card, and it can be called off.
+    return {
+      tone: "hero",
+      asking: true,
+      eyebrow: { text: choice.sourceTitle ?? "Cost", icon: "discard", tone: "hero" },
+      title: choice.prompt,
+      primary: {
+        label: n ? `Discard ${n}` : `Pick ${choice.min}`,
+        icon: "discard",
+        disabled: n < choice.min || n > choice.max || discarding,
+        attention: n >= choice.min,
+        onClick: confirmChoice,
+      },
+      secondary: { label: "Cancel", onClick: cancel },
+    };
+  }
   if (choice.discardFromHand) {
     const forced = choice.min > 0;
     return {
@@ -1129,6 +1146,8 @@ function cancel() {
   // A reaction called off goes with its question: what it was about plays out as if passed.
   reacting = null;
   paymentCalledOff = !!state.payment;
+  // A cost's hand discard called off (Alpha Flight Station): the cards picked for it go back to being just cards.
+  choicePicks.clear();
   model.cancel();
   staged = null;
   flying = false;

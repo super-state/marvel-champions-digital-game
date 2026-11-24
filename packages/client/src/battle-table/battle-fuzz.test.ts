@@ -14,7 +14,7 @@
 import { writeFileSync } from "node:fs";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import * as engine from "@mc/engine";
-import { BattleModel, type BattleBeat, type BattleSnapshot, type VillainId } from "./model.js";
+import { BattleModel, HEROES, type BattleBeat, type BattleSnapshot, type HeroId, type VillainId } from "./model.js";
 
 type Snap = BattleSnapshot;
 type Choice = NonNullable<Snap["choice"]>;
@@ -39,6 +39,13 @@ const ULTRON_SEEDS: readonly number[] = Array.from(
   { length: Number(process.env.ULTRON_FUZZ_GAMES ?? 10) },
   (_, i) => 3000 + i * 43,
 );
+
+/** Captain Marvel's deals, against each villain in turn (CAPTAIN_MARVEL_FUZZ_GAMES=250 for the deep run). */
+const CAPTAIN_MARVEL_SEEDS: readonly number[] = Array.from(
+  { length: Number(process.env.CAPTAIN_MARVEL_FUZZ_GAMES ?? 9) },
+  (_, i) => 4000 + i * 47,
+);
+const VILLAIN_ROTA: readonly VillainId[] = ["rhino", "klaw", "ultron"];
 
 /**
  * Failure kinds already reported and reproduced below as test.fails(...). The broad loop records these instead of
@@ -237,7 +244,7 @@ interface Gesture {
   run: () => boolean;
 }
 
-function playGame(seed: number, policy: Policy, villain: VillainId = "rhino"): GameResult {
+function playGame(seed: number, policy: Policy, villain: VillainId = "rhino", hero: HeroId = "spider-man"): GameResult {
   const started = performance.now();
   const rnd = mulberry(seed * 7919 + POLICIES.indexOf(policy) * 104729 + 13);
   const chance = (p: number) => rnd() < p;
@@ -295,7 +302,7 @@ function playGame(seed: number, policy: Policy, villain: VillainId = "rhino"): G
   };
 
   let firstHand = "";
-  const reset = guard("reset()", () => model.reset({ villain }));
+  const reset = guard("reset()", () => model.reset({ hero, villain }));
   if (!reset.ok) return result("aborted");
   firstHand = model
     .snapshot()
@@ -421,7 +428,21 @@ function playGame(seed: number, policy: Policy, villain: VillainId = "rhino"): G
         fail("drone-leak", "card", `Drone ${id} shows as ${JSON.stringify({ ...shown, art: undefined })}`);
       else if (!/stand-ins\//.test(shown.art)) fail("drone-leak", "art", `Drone ${id} shows art ${shown.art}`);
       const hidden = engine.cardOf(st, id as engine.InstanceId)?.name;
-      if (hidden && !visibleNames.has(hidden) && told.includes(JSON.stringify(hidden).slice(1, -1)))
+      // A copy of the card named as it was discarded faceup earlier in the move (Invasive AI's discard), shuffled back
+      // in with the discard pile when the deck ran out: the discard was public, and which Drone is which is not told.
+      const milled = s.beats.some((b) =>
+        b.milled?.some((other) => engine.cardOf(st, other as engine.InstanceId)?.name === hidden),
+      );
+      const toldNow = milled ? JSON.stringify([s.choice, s.enemyCards, s.inPlay, s.payment]) : told;
+      // The whole name, not part of a longer title ("Energy" inside "Energy Channel" is not Energy).
+      const named =
+        !!hidden &&
+        new RegExp(
+          `(?<![\\w-])${JSON.stringify(hidden)
+            .slice(1, -1)
+            .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-]| [A-Z])`,
+        ).test(toldNow);
+      if (hidden && !visibleNames.has(hidden) && named)
         fail(
           "drone-leak",
           "name",
@@ -711,7 +732,7 @@ function playGame(seed: number, policy: Policy, villain: VillainId = "rhino"): G
     }
     if (s.turn === "player") {
       for (const a of s.heroActions) {
-        const peterToHero = a.kind === "changeForm" && /Spider-Man/.test(a.label);
+        const peterToHero = a.kind === "changeForm" && HEROES.some((hero) => a.label === `Change to ${hero.name}`);
         out.push({
           desc: `hero ${a.kind}`,
           weight:
@@ -768,11 +789,13 @@ function playGame(seed: number, policy: Policy, villain: VillainId = "rhino"): G
             },
           });
       }
-      if (model.fieldActions(s.hero.id).length)
-        note(
+      // The hero's menu shows `heroActions`: the identity's own abilities (Rechannel, Commander) must be among them.
+      const missing = model.fieldActions(s.hero.id).filter((a) => !s.heroActions.some((h) => h.kind === a.kind));
+      if (missing.length)
+        fail(
           "hero-field-actions-unreachable",
-          "hero",
-          "fieldActions(hero) is non-empty but the hero menu only shows heroActions (main.ts 1371)",
+          missing.map((a) => a.kind).join(","),
+          `fieldActions(hero) has ${missing.map((a) => a.label).join(", ")} that the hero menu (heroActions) leaves out`,
         );
     }
     if (s.canEndTurn)
@@ -966,6 +989,21 @@ test.each(
   "fuzz game against Ultron, seed $seed ($policy)",
   ({ seed, policy }) => {
     const game = playGame(seed, policy, "ultron");
+    results.push(game);
+  },
+  60_000,
+);
+
+test.each(
+  CAPTAIN_MARVEL_SEEDS.map((seed, i) => ({
+    seed,
+    policy: POLICIES[i % POLICIES.length]!,
+    villain: VILLAIN_ROTA[i % VILLAIN_ROTA.length]!,
+  })).filter((g) => !process.env.FUZZ_ONLY || String(g.seed) === process.env.FUZZ_ONLY),
+)(
+  "fuzz game as Captain Marvel against $villain, seed $seed ($policy)",
+  ({ seed, policy, villain }) => {
+    const game = playGame(seed, policy, villain, "captain-marvel");
     results.push(game);
   },
   60_000,
