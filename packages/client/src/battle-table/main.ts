@@ -3431,8 +3431,13 @@ function paintVillainChoice() {
     button.setAttribute("aria-pressed", String(button.dataset.villain === villainChoice));
   // New game says who it deals, and stands out when that isn't the villain already on the table.
   restart.textContent = `New game vs. ${villainName(villainChoice)}`;
-  restart.classList.toggle("btn-primary", villainChoice !== villainDealt);
-  restart.classList.toggle("btn-secondary", villainChoice === villainDealt);
+  const switching = villainChoice !== villainDealt;
+  restart.classList.toggle("btn-primary", switching);
+  restart.classList.toggle("btn-secondary", !switching);
+  // One gold button: Resume steps back while New game would deal someone else.
+  const resume = element<HTMLButtonElement>("menu-resume");
+  resume.classList.toggle("btn-primary", !switching);
+  resume.classList.toggle("btn-secondary", switching);
 }
 
 function setVillainChoice(villain: VillainId) {
