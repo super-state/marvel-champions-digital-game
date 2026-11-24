@@ -14,9 +14,6 @@ cards work in one form only, what each status does and the hand limit.
   = 18 against his 15. Game 9 won in round 8: stage 1 was worn down by basics and allies (Black Cat, Jessica), the
   Kicks went only into stage 2 (one the turn it arrived, one the next). Game 4 won the same way with fewer cards.
   The allies do double work: damage, and blocking the attacks that would stun or kill Spider-Man. `seen 3×`
-- **Kick the second stage the turn it arrives if the hand would be full.** Holding two Kicks plus three resources
-  leaves a full hand and no draw, so next turn only one Kick is payable. Kicking once at once and drawing three found
-  the finishing resources (game 9). `seen 1×`
 - **Let an ally take Stampede.** Its stun on Spider-Man would cancel the finishing Kick; Black Cat blocked it the
   phase before the win (game 9), as Jessica did in game 7. `seen 2×`
 - **The last 7 HP of Rhino's second stage is where losses happen.** Games 3-6 all had Rhino's second stage on 7 by
@@ -50,8 +47,8 @@ cards work in one form only, what each status does and the hand limit.
   (overkill). `seen 5×`
 - **Stuns buy whole phases.** Webbed Up, and Mockingbird's entry stun (played as Peter it still waits for
   Rhino's next attack). `seen 4×`
-- **Tenacity readies Spider-Man for a second action**, and everyone readies at the end of your turn anyway, so
-  attack with all, then block with all. `seen 2×`
+- **Everyone readies at the end of your turn**, so attack with all, then block with all. But a Spider-Man who
+  defends stays exhausted through his next turn: block with allies or Backflip when his action is needed. `seen 3×`
 - **Kill minions as they arrive,** a Guard minion first. Order minion activations so Spider-Man defends the
   biggest. `seen 4×`
 - **Cards that earned their place:** For Justice!, Surveillance Team, Daredevil, Mockingbird, Nick Fury (draw 3 in
@@ -75,6 +72,25 @@ cards work in one form only, what each status does and the hand limit.
 - **Klaw (II) is 18 + 10 while The "Immortal" Klaw stands:** thwarting its 3 threat is cheaper than 10 damage.
   `seen 1×` (scene)
 
+### Spider-Man vs Ultron (core set, same deck) — 0 wins, 1 loss
+
+- **Drones are the whole fight, and they snowball.** Each is a card off your deck with 1 SCH, 1 ATK, 1 hit point.
+  By round 3: four Drones, an Advanced Ultron Drone (Guard, 4 hit points, a new Drone when it dies) and two side
+  schemes with hazard icons, so three encounter cards a phase. Kill every Drone the turn it lands. `seen 1×`
+- **Interrogation Room is the card of the matchup:** every Drone broken is 1 threat off a scheme. Get it down in
+  round 1 or 2, with allies to do the breaking. Spider-Tracer on a Drone is 3 threat for 1 damage. `seen 1×`
+- **Never go Peter with more than two Drones out.** Every Drone schemes: six of them filled Countdown to Oblivion
+  from 0 to 5 in one phase. That last stage's threat can't be removed, so Assault on NORAD (10) is the real clock;
+  For Justice! belongs on NORAD. `seen 1×`
+- **Upgraded Drones doubles the damage** (+1 ATK, +1 hit point each): pay it off the turn it lands (energy, mental,
+  physical; a Web-Shooter's wild covers the missing one). A second copy came two rounds later. `seen 1×`
+- **Ultron's and NORAD's "threat or a Drone":** a Drone costs a deck card and 1 health a round until it is broken;
+  threat is cheaper while NORAD is under about 5 and Spider-Man is under 6. `seen 1×`
+- **Invasive AI and Ultron's Imperative carry hazard icons** (one more encounter card each, every phase): clear
+  the first the turn it lands. Invasive AI also threw Nick Fury, Surveillance Team and Strength off the deck. `seen 1×`
+- **The deck runs dry by round 6** (Drones, Invasive AI, Avengers Mansion): the reshuffle is one more encounter card.
+  `seen 1×`
+
 ### Driving the hook
 
 - Pick moves from `moves()` labels only; a look's text starts with the move just made. `seen 1×`
@@ -84,7 +100,10 @@ cards work in one form only, what each status does and the hand limit.
   happened" lines (game 7's losing phase can't be told card by card because a script kept only first lines). `seen 2×`
 - Remote play (curl): a move's words with an em dash or other non-ASCII letters get mangled by the Windows shell;
   match on plain ASCII words ("Pay with Web-Shooter"). `seen 1×`
-- An action ability that costs resources (Tenacity) ends with a "Use" move after paying, not "Play". `seen 1×`
+- An action ability that costs resources (Tenacity, paying Upgraded Drones off) ends with a "Use" move after
+  paying, not "Play". `seen 2×`
+- Read the whole hand before a villain phase: two Backflips sat unread while Drones hit for 1 each (Ultron game).
+  `seen 1×`
 
 ## Try next
 
@@ -93,10 +112,16 @@ cards work in one form only, what each status does and the hand limit.
 - Keep the shape (allies, Kicks for stage 2, stay Spider-Man); try Webbed Up on Rhino the turn before stage 1
   falls, so its stun carries into stage 2 (it did in game 9) and covers the first turn there.
 - Save Enhanced Spider-Sense for Hard to Keep Down (cancelled it in stage 1 in game 9; worked).
-- Try a different villain or hero next, now that Spider-Man vs Rhino wins two in a row.
+- Against Ultron: mulligan for Interrogation Room and an ally; break the setup Drone in round 1; keep allies above
+  1 hit point before they attack or thwart (the move now says what it costs them); stay Spider-Man from round 2 and
+  block with allies and Backflip; pay Upgraded Drones off at once; save both Kicks for Ultron (II).
 
 ## Recent games
 
+- 2026-11-24 · Spider-Man (Justice) vs Ultron · lost in round 6, Countdown to Oblivion 5/5 · Jessica Jones was
+  lost to her own thwart in round 2, so nothing blocked; by round 3 four Drones, an Advanced Ultron Drone and two
+  hazard schemes were out; hiding as Peter with six Drones let them fill the last stage in one phase. First game
+  against Ultron, played while building him.
 - 2026-11-24 · Spider-Man (Justice) vs Klaw · lost in round 8, Secret Rendezvous 8/8 · Klaw (I) worn to 5 by round 2,
   but Sonic Converter's stuns and five minions (two Armored Guards) kept Spider-Man off him. The win was checked
   from the `klawfinish` scene instead.

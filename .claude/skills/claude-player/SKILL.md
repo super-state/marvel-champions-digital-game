@@ -20,15 +20,20 @@ Two files, both next to this one:
    folder, `git worktree add --detach ../mc-wt-play HEAD`, `pnpm install` in it, then start its dev server in the
    background on a port of its own: `pnpm --filter @mc/client exec vite --port 5240 --strictPort`. Card pictures
    come from the main folder's scans (they aren't in git; a copy's dev server falls back to them). Afterwards stop
-   that server and remove the copy (`git worktree remove --force ../mc-wt-play`).
+   that server and remove the copy (`git worktree remove --force ../mc-wt-play`). When you are building the thing you
+   are about to play, your own working copy's server does instead: commit first and edit nothing mid-game (an edit
+   reloads the page and the game is gone).
 3. **Show it in Surf's game mode, never a plain tab:** `surf_game_open` with name **"Marvel Champions"** and url
    `http://localhost:5240/battle/?remote` (load the tool with ToolSearch; call it again if it says the page didn't
    load because the server wasn't up yet). **One game, one tab** (Adam, 2026-11-23): always the name "Marvel
    Champions", never a second name such as "Marvel Champions (Claude plays)", so Surf moves the one tab to your table
    instead of opening another. Tell Adam first if he is mid-game in it. After the game, put his table back:
    `surf_game_open` name "Marvel Champions", url `http://localhost:5173/battle/`. `?remote` makes the page take moves
-   from the dev server; `&seed=N` deals a fixed game; `&villain=klaw` (or `rhino`) picks the villain, as the game
-   menu's Villain choice does.
+   from the dev server; `&seed=N` deals a fixed game; `&villain=ultron` (or `klaw`, `rhino`) picks the villain, as
+   the campaign shelf's box does. Before pointing his tab back, check his table still answers
+   (`curl -s -o /dev/null -w "%{http_code}" localhost:5173/battle/`): a dev server started by a session stops when that
+   session is archived, and his table was down for that reason on 2026-11-24. Start it again from the main folder,
+   detached from your own session, if it is.
 4. **Drive it from the terminal** (the browser tools can't reach the Games bubble): each call below is a plain
    request to the dev server, which the page answers through its play hook. Start with `call=wait`.
 5. **The game must stay on show.** A hidden tab is frozen by the browser (its animations stop, so moves hang on
