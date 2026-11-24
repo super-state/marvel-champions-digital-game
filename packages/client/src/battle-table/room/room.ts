@@ -5,7 +5,7 @@
  */
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { camera } from "./camera.js";
+import { camera, FOG_FAR, FOG_NEAR } from "./camera.js";
 import { canvas, setAnisotropy, texture } from "./canvas.js";
 import "../design.css";
 import "./room.css";
@@ -17,40 +17,24 @@ renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 setAnisotropy(Math.min(8, renderer.capabilities.getMaxAnisotropy()));
-// The shelf's own layer over the table page: the room, its headings, and the opened box's card.
+// The room's own layer over the table page: the picture, a dark veil for fades, and each place's buttons and words.
 export const root = document.createElement("div");
 root.id = "shelf";
 root.className = "shelf";
 root.setAttribute("role", "dialog");
-root.setAttribute("aria-label", "Choose your campaign");
+root.setAttribute("aria-label", "Marvel Champions");
 root.hidden = true;
 root.tabIndex = -1;
 root.innerHTML = `
   <div class="shelf-stage"></div>
-  <header class="shelf-head">
-    <p class="eyebrow">Marvel Champions</p>
-    <h1>Choose your campaign</h1>
-  </header>
-  <div class="shelf-picks visually-hidden" role="group" aria-label="Campaigns"></div>
-  <p class="shelf-hover-tag" hidden></p>
-  <p class="shelf-hint">Pick a box to open it</p>
-  <section class="shelf-opened" hidden>
-    <p class="eyebrow shelf-kicker"></p>
-    <h2 class="shelf-title"></h2>
-    <p class="shelf-blurb"></p>
-    <div class="shelf-buttons">
-      <button type="button" class="btn btn-primary" id="shelf-play">Play</button>
-      <button type="button" class="btn btn-secondary" id="shelf-back">Back to the shelf</button>
-    </div>
-  </section>
+  <div class="room-fade" aria-hidden="true"></div>
+  <div class="room-panels"></div>
   <p class="shelf-toast" role="status" hidden></p>`;
 document.body.append(root);
 root.querySelector(".shelf-stage")!.append(renderer.domElement);
 
 export const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0d0a08);
-export const FOG_NEAR = 13;
-export const FOG_FAR = 26;
 scene.fog = new THREE.Fog(0x0d0a08, FOG_NEAR, FOG_FAR);
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -112,14 +96,26 @@ function blurPass(from: THREE.WebGLRenderTarget, to: THREE.WebGLRenderTarget, x:
   renderer.render(backdrop.scene, backdrop.camera);
 }
 
-export function renderFrame() {
+/**
+ * Draws a frame. `blur` is how soft the back wall and the shelf are: 1 is the shelf's own depth of field (drawn small,
+ * blurred and laid behind the table); near 0 the whole room is drawn sharp in one pass, as the doorway sees it.
+ */
+export function renderFrame(blur = 1) {
+  if (blur < 0.04) {
+    renderer.setRenderTarget(null);
+    camera.layers.set(0);
+    camera.layers.enable(BACKDROP);
+    scene.background = backdropColour;
+    renderer.render(scene, camera);
+    return;
+  }
   camera.layers.set(BACKDROP);
   scene.background = backdropColour;
   renderer.setRenderTarget(backdrop.a);
   renderer.render(scene, camera);
   for (let i = 0; i < 2; i++) {
-    blurPass(backdrop.a, backdrop.b, 1.6, 0);
-    blurPass(backdrop.b, backdrop.a, 0, 1.6);
+    blurPass(backdrop.a, backdrop.b, 1.6 * blur, 0);
+    blurPass(backdrop.b, backdrop.a, 0, 1.6 * blur);
   }
   renderer.setRenderTarget(null);
   camera.layers.set(0);
@@ -127,8 +123,29 @@ export function renderFrame() {
   renderer.render(scene, camera);
 }
 
+/**
+ * The room's size, in the boxes' units (a box is 2.4 wide, about 30 cm: one unit is about 12 cm). The table top is at
+ * y = 0, as it always was; everything else stands round it.
+ */
+export const ROOM = {
+  /** The side walls stand at x = -HALF_WIDTH and +HALF_WIDTH. */
+  HALF_WIDTH: 19,
+  BACK: -9.9,
+  /** The floor runs on past the doorway, so a phone's camera, standing further back, still sees floor. */
+  FRONT: 46,
+  FLOOR: -6.2,
+  TABLE_WIDTH: 24,
+  TABLE_DEPTH: 15,
+  TABLE_Z: 2.4,
+  /** The top of the cube shelf on the back wall. */
+  SHELF_TOP: 3.88,
+};
+
+let tableWood: THREE.Texture | null = null;
+
 function buildTable() {
   const wood = texture(woodPrint());
+  tableWood = wood;
   wood.wrapS = wood.wrapT = THREE.RepeatWrapping;
   // Whole repeats only: a fraction would cut a board in half at the table's edge.
   wood.repeat.set(2, 1);
@@ -140,10 +157,22 @@ function buildTable() {
     clearcoatRoughness: 0.35,
   });
   const side = new THREE.MeshStandardMaterial({ color: 0x24150b, roughness: 0.7 });
-  const table = new THREE.Mesh(new THREE.BoxGeometry(30, 0.5, 15), [side, side, top, side, side, side]);
-  table.position.set(0, -0.25, 2.4);
+  const { TABLE_WIDTH: tw, TABLE_DEPTH: td, TABLE_Z: tz, FLOOR: floor } = ROOM;
+  const table = new THREE.Mesh(new THREE.BoxGeometry(tw, 0.5, td), [side, side, top, side, side, side]);
+  table.position.set(0, -0.25, tz);
   table.receiveShadow = true;
   scene.add(table);
+  // The apron under the top, and four square legs down to the floor.
+  const apron = new THREE.Mesh(new THREE.BoxGeometry(tw - 1.2, 0.9, td - 1.2), side);
+  apron.position.set(0, -0.95, tz);
+  scene.add(apron);
+  const legHeight = -0.5 - floor;
+  for (const x of [-1, 1])
+    for (const z of [-1, 1]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.85, legHeight, 0.85), side);
+      leg.position.set(x * (tw / 2 - 1), floor + legHeight / 2, tz + z * (td / 2 - 1));
+      scene.add(leg);
+    }
 
   const wall = new THREE.Mesh(
     new THREE.PlaneGeometry(60, 30),
@@ -325,9 +354,124 @@ function buildShelf() {
   scene.add(shelf);
 }
 
-/** Builds the room around the places: the table, the wall and the shelf, lit. */
+/** A rug under the table: a deep red field with a border, our own simple pattern. */
+function rugPrint(): HTMLCanvasElement {
+  const [cv, g] = canvas(512, 384);
+  g.fillStyle = "#3a1512";
+  g.fillRect(0, 0, 512, 384);
+  g.strokeStyle = "#b9893f";
+  g.lineWidth = 6;
+  g.strokeRect(18, 18, 476, 348);
+  g.strokeStyle = "#6b2a1f";
+  g.lineWidth = 14;
+  g.strokeRect(36, 36, 440, 312);
+  g.fillStyle = "#471a15";
+  for (let i = 0; i < 9; i++) {
+    g.save();
+    g.translate(256, 192);
+    g.rotate((i * Math.PI) / 4.5);
+    g.fillRect(-6, -110, 12, 220);
+    g.restore();
+  }
+  return cv;
+}
+
+/**
+ * The rest of the room round the table: the floor and a rug, the side walls panelled to a dado rail, a sideboard under
+ * the cube shelf, and the lamp hanging over the table. The floor, the sideboard and the back wall's panelling are with
+ * the shelf on the soft layer, so the shelf's depth of field takes them too; the side walls stand in front of them.
+ */
+function buildWalls() {
+  const { HALF_WIDTH: half, BACK: back, FRONT: front, FLOOR: floor } = ROOM;
+  const soft = (o: THREE.Object3D) => {
+    o.traverse((child) => child.layers.set(BACKDROP));
+    scene.add(o);
+  };
+  const boards = tableWood!.clone();
+  boards.repeat.set(5, 6);
+  boards.needsUpdate = true;
+  const floorMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(half * 2, front - back),
+    new THREE.MeshStandardMaterial({ map: boards, color: 0x5d4636, roughness: 0.8 }),
+  );
+  floorMesh.rotation.x = -Math.PI / 2;
+  floorMesh.position.set(0, floor, (front + back) / 2);
+  floorMesh.receiveShadow = true;
+  soft(floorMesh);
+  const rug = new THREE.Mesh(
+    new THREE.PlaneGeometry(30, 21),
+    new THREE.MeshStandardMaterial({ map: texture(rugPrint()), roughness: 0.95 }),
+  );
+  rug.rotation.x = -Math.PI / 2;
+  rug.position.set(0, floor + 0.02, ROOM.TABLE_Z);
+  rug.receiveShadow = true;
+  soft(rug);
+
+  const plaster = new THREE.MeshStandardMaterial({ color: 0x2a1f18, roughness: 0.95 });
+  const panel = new THREE.MeshStandardMaterial({ color: 0x1c130d, roughness: 0.8 });
+  const rail = new THREE.MeshStandardMaterial({ color: 0x3b2a1e, roughness: 0.6 });
+  for (const side of [-1, 1]) {
+    // One-sided, facing in: a camera standing back past the doorway sees through them.
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(front - back, 30), plaster);
+    wall.rotation.y = -side * (Math.PI / 2);
+    wall.position.set(side * half, 4, (front + back) / 2);
+    const wainscot = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4.6, front - back), panel);
+    wainscot.position.set(side * (half - 0.1), floor + 2.3, (front + back) / 2);
+    const dado = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.3, front - back), rail);
+    dado.position.set(side * (half - 0.17), floor + 4.7, (front + back) / 2);
+    scene.add(wall, wainscot, dado);
+  }
+  const backPanel = new THREE.Mesh(new THREE.BoxGeometry(half * 2, 4.6, 0.2), panel);
+  backPanel.position.set(0, floor + 2.3, back + 0.1);
+  const backDado = new THREE.Mesh(new THREE.BoxGeometry(half * 2, 0.3, 0.34), rail);
+  backDado.position.set(0, floor + 4.7, back + 0.17);
+  soft(backPanel);
+  soft(backDado);
+
+  // The sideboard the cube shelf stands on.
+  const wood = new THREE.MeshStandardMaterial({ color: 0x2e2016, roughness: 0.65 });
+  const sideboard = new THREE.Group();
+  const height = -1.1 - floor;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(10.6, height, 1.9), wood);
+  body.position.y = height / 2;
+  sideboard.add(body);
+  for (let i = 0; i < 4; i++) {
+    const door = new THREE.Mesh(new THREE.BoxGeometry(2.4, height - 0.9, 0.06), rail);
+    door.position.set(-3.75 + i * 2.5, height / 2, 0.96);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), rail);
+    knob.position.set(-3.75 + i * 2.5 + (i % 2 ? -0.95 : 0.95), height / 2 + 0.6, 1.02);
+    sideboard.add(door, knob);
+  }
+  sideboard.position.set(0, floor, -8.7);
+  soft(sideboard);
+
+  // The lamp over the table: a shade on a long cord, glowing underneath.
+  const lamp = new THREE.Group();
+  const shade = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.9, 2.3, 1.5, 32, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0x1f3a2c, roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide }),
+  );
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffe2b0 }));
+  bulb.position.y = -0.35;
+  const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 14, 6), rail);
+  cord.position.y = 7.7;
+  lamp.add(shade, bulb, cord);
+  lamp.position.set(0, 13.5, ROOM.TABLE_Z - 1);
+  scene.add(lamp);
+
+  // Dim warm light on the two side walls, where the bench and the cabinet stand.
+  for (const side of [-1, 1]) {
+    const glow = new THREE.SpotLight(0xffc98a, 420, 0, 0.8, 0.8, 2);
+    glow.position.set(side * (half - 6), 13, -1);
+    glow.target.position.set(side * (half - 1), -2, -1);
+    scene.add(glow, glow.target);
+  }
+}
+
+/** Builds the room round the places: the table, the walls and the shelf, lit. */
 export function buildRoom() {
   buildTable();
+  buildWalls();
   buildShelf();
   // Lights shine on both layers: the sharp table and the soft backdrop.
   scene.traverse((o) => {
@@ -344,6 +488,16 @@ export function resize() {
   camera.updateProjectionMatrix();
 }
 addEventListener("resize", resize);
+
+const toast = root.querySelector<HTMLElement>(".shelf-toast")!;
+let toastTimer = 0;
+/** A short line at the top of the room, gone after a moment ("Free Play is coming soon"). */
+export function say(text: string) {
+  toast.textContent = text;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => (toast.hidden = true), 2600);
+}
 
 /** One of the room's own elements. */
 export const el = <T extends HTMLElement>(selector: string) => root.querySelector(selector) as T;

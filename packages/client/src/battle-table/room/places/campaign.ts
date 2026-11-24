@@ -5,10 +5,11 @@
  */
 import * as THREE from "three";
 import { tokens, texture, loadImage } from "../canvas.js";
-import { aimShelfCamera, camera } from "../camera.js";
+import { camera, shelfPose, type Pose } from "../camera.js";
 import { lerp, span } from "../motion.js";
-import { el, FOG_FAR, FOG_NEAR, pointer, raycaster, renderer, root, scene } from "../room.js";
+import { pointer, raycaster, renderer, say, scene } from "../room.js";
 import { beginPlay, play, resetPlay } from "./campaign-play.js";
+import { makePanel, type Place } from "./place.js";
 import {
   bandPrint,
   CAMPAIGNS,
@@ -232,12 +233,35 @@ interface Backs {
 
 // ---------- the page ----------
 
+const panel = makePanel(
+  "campaign",
+  "room-campaign",
+  `<header class="shelf-head">
+    <p class="eyebrow">Marvel Champions</p>
+    <h1>Choose your campaign</h1>
+  </header>
+  <div class="shelf-picks" role="group" aria-label="Campaigns"></div>
+  <p class="shelf-hover-tag" hidden></p>
+  <p class="shelf-hint">Pick a box to open it</p>
+  <button type="button" class="btn btn-secondary room-back shelf-leave">Back</button>
+  <section class="shelf-opened" hidden>
+    <p class="eyebrow shelf-kicker"></p>
+    <h2 class="shelf-title"></h2>
+    <p class="shelf-blurb"></p>
+    <div class="shelf-buttons">
+      <button type="button" class="btn btn-primary" id="shelf-play">Play</button>
+      <button type="button" class="btn btn-secondary" id="shelf-back">Back to the shelf</button>
+    </div>
+  </section>`,
+);
+const el = <T extends HTMLElement>(selector: string) => panel.querySelector(selector) as T;
 const head = el<HTMLElement>(".shelf-head");
 const hoverTag = el<HTMLParagraphElement>(".shelf-hover-tag");
 const hint = el<HTMLParagraphElement>(".shelf-hint");
 const opened = el<HTMLElement>(".shelf-opened");
-const toast = el<HTMLParagraphElement>(".shelf-toast");
 const playButton = el<HTMLButtonElement>("#shelf-play");
+const picks = el<HTMLElement>(".shelf-picks");
+const leave = el<HTMLButtonElement>(".shelf-leave");
 
 let boxes: Box[] = [];
 /** The open box, or -1 on the shelf. */
@@ -248,14 +272,8 @@ let queued = -1;
 let s = 0;
 let target = 0;
 let hovered = -1;
-let toastTimer = 0;
-
-function say(text: string) {
-  toast.textContent = text;
-  toast.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (toast.hidden = true), 2600);
-}
+/** The camera is here, standing still: the boxes answer the pointer. */
+let active = false;
 
 function choose(index: number) {
   const box = boxes[index]!;
@@ -271,6 +289,7 @@ function choose(index: number) {
   hovered = -1;
   hoverTag.hidden = true;
   hint.hidden = true;
+  leave.hidden = true;
   renderer.domElement.style.cursor = "default";
 }
 
@@ -279,7 +298,7 @@ function close() {
   target = 0;
   opened.hidden = true;
   // The keyboard goes back to the box it opened.
-  el<HTMLElement>(".shelf-picks").querySelectorAll("button")[chosen]?.focus({ preventScroll: true });
+  picks.querySelectorAll("button")[chosen]?.focus({ preventScroll: true });
 }
 
 function showOpened(c: Campaign) {
@@ -311,32 +330,20 @@ function pickAt(x: number, y: number): number {
 }
 
 renderer.domElement.addEventListener("pointermove", (event) => {
-  if (chosen >= 0) return;
+  if (!active || chosen >= 0) return;
   hovered = pickAt(event.clientX, event.clientY);
   renderer.domElement.style.cursor =
     hovered < 0 ? "default" : boxes[hovered]!.campaign.open ? "pointer" : "not-allowed";
 });
-renderer.domElement.addEventListener("pointerleave", () => (hovered = -1));
+renderer.domElement.addEventListener("pointerleave", () => {
+  if (active) hovered = -1;
+});
 renderer.domElement.addEventListener("click", (event) => {
-  if (chosen >= 0) return;
+  if (!active || chosen >= 0) return;
   const index = pickAt(event.clientX, event.clientY);
   if (index >= 0) choose(index);
 });
 el("#shelf-back").addEventListener("click", close);
-// While the shelf is up, keys are the shelf's: none reach the table's own (Enter for End Turn, Escape for its menu,
-// Ctrl+Z) on the page underneath. Listening on the window in the capture phase runs before every one of those.
-addEventListener(
-  "keydown",
-  (event) => {
-    if (root.hidden) return;
-    event.stopPropagation();
-    if (event.key === "Escape" && chosen >= 0) {
-      event.preventDefault();
-      close();
-    }
-  },
-  { capture: true },
-);
 
 const scratch = {
   pos: new THREE.Vector3(),
@@ -347,15 +354,16 @@ const scratch = {
   look: new THREE.Object3D(),
 };
 
-export function pose(time: number, dt: number) {
+/** Where the camera stands for the shelf now: further in as a box opens, round to the game's angle as Play runs. */
+function view(out: Pose) {
   const outro = play.outro;
-  // Play: the camera swings round to the game table's own angle.
   const toGame = outro ? span(outro.u, 0, 1.2) : 0;
-  const extra = aimShelfCamera(span(s, 0.15, 1.2), toGame, pointer.x);
-  const fog = scene.fog as THREE.Fog;
-  fog.near = FOG_NEAR + extra;
-  fog.far = FOG_FAR + extra;
+  shelfPose(out, span(s, 0.15, 1.2), toGame, active ? pointer.x : -9, camera.aspect);
+}
 
+/** Stands each box where it is in its opening (and the others where they have been cleared to). */
+function pose(time: number, dt: number) {
+  const outro = play.outro;
   const moved = span(s, 0, 0.9);
   const others = span(s, 0, 0.8);
   for (const box of boxes) {
@@ -422,7 +430,7 @@ export function pose(time: number, dt: number) {
   }
 }
 
-export function placeHoverTag() {
+function placeHoverTag() {
   if (hovered < 0 || chosen >= 0) {
     hoverTag.hidden = true;
     return;
@@ -431,7 +439,9 @@ export function placeHoverTag() {
   const top = new THREE.Vector3(0, 0, -H / 2).applyMatrix4(box.group.matrixWorld);
   top.y += 0.25;
   top.project(camera);
-  hoverTag.style.left = `${((top.x + 1) / 2) * innerWidth}px`;
+  // Kept on the screen: a box at the edge of a phone's view would push its tag off it.
+  const half = hoverTag.offsetWidth / 2 + 8;
+  hoverTag.style.left = `${Math.min(innerWidth - half, Math.max(half, ((top.x + 1) / 2) * innerWidth))}px`;
   hoverTag.style.top = `${((1 - top.y) / 2) * innerHeight}px`;
   hoverTag.textContent = box.campaign.open
     ? `Campaign ${box.campaign.number} · ${box.campaign.name}`
@@ -448,13 +458,13 @@ export function reset() {
   head.style.opacity = "";
   hint.textContent = "Pick a box to open it";
   hint.hidden = false;
+  leave.hidden = false;
   opened.hidden = true;
-  toast.hidden = true;
   hoverTag.hidden = true;
   renderer.domElement.style.cursor = "default";
 }
 
-export async function build() {
+async function build() {
   // The player's locks seal a box the same way coming soon does, saying what opens it. Drawn once: main.ts starts the
   // page again when a villain unlocks, so the box is drawn open.
   const campaigns = CAMPAIGNS.map((c) => {
@@ -473,7 +483,6 @@ export async function build() {
   };
   boxes = campaigns.map((c, i) => buildBox(c, i, arts[i] ?? null, backs));
   // The boxes from the keyboard (and for screen readers): a button each, which lifts its box while it has the focus.
-  const picks = el<HTMLElement>(".shelf-picks");
   campaigns.forEach((c, i) => {
     const name = `${c.name[0]}${c.name.slice(1).toLowerCase()}`;
     const button = document.createElement("button");
@@ -498,7 +507,7 @@ export async function build() {
 }
 
 /** Moves the opening on by `dt` seconds towards where it is headed. */
-export function step(dt: number) {
+function advance(dt: number) {
   if (s === target) return;
   const speed = target > s ? 1 : 1.7;
   s = target > s ? Math.min(target, s + dt * speed) : Math.max(target, s - dt * speed);
@@ -506,6 +515,7 @@ export function step(dt: number) {
   if (s === 0 && chosen >= 0) {
     chosen = -1;
     hint.hidden = false;
+    leave.hidden = false;
     if (queued >= 0) {
       const next = queued;
       queued = -1;
@@ -526,7 +536,83 @@ export function openFromAddress() {
     chosen = preset;
     s = target = Math.min(OPENED, Math.max(0, at));
     hint.hidden = true;
+    leave.hidden = true;
     play.pressPlay = params.has("play");
     if (s === OPENED) showOpened(boxes[preset]!.campaign);
   }
 }
+
+/**
+ * The keyboard's (and a pad's) way to the boxes, and a screen reader's: a see-through button over each box, which
+ * lifts its box while it has the focus. The pointer passes through them to the room, which picks boxes itself.
+ */
+function placePicks() {
+  const buttons = picks.querySelectorAll<HTMLElement>("button");
+  const corner = new THREE.Vector3();
+  boxes.forEach((box, i) => {
+    const button = buttons[i];
+    if (!button) return;
+    let left = Infinity;
+    let right = -Infinity;
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (const x of [-W / 2, W / 2])
+      for (const y of [0, D])
+        for (const z of [-H / 2, H / 2]) {
+          corner.set(x, y, z).applyMatrix4(box.group.matrixWorld).project(camera);
+          const px = ((corner.x + 1) / 2) * innerWidth;
+          const py = ((1 - corner.y) / 2) * innerHeight;
+          left = Math.min(left, px);
+          right = Math.max(right, px);
+          top = Math.min(top, py);
+          bottom = Math.max(bottom, py);
+        }
+    button.style.left = `${left}px`;
+    button.style.top = `${top}px`;
+    button.style.width = `${Math.max(1, right - left)}px`;
+    button.style.height = `${Math.max(1, bottom - top)}px`;
+  });
+}
+
+let built: Promise<void> | null = null;
+
+export const campaignPlace: Place = {
+  id: "campaign",
+  label: "Campaign",
+  line: "Rhino, then Klaw, then Ultron",
+  panel,
+  ready: () => true,
+  view,
+  build: () => (built ??= build()),
+  enter() {
+    active = true;
+    if (chosen >= 0 && s === OPENED) playButton.focus({ preventScroll: true });
+    else picks.querySelector("button")?.focus({ preventScroll: true });
+  },
+  leave() {
+    active = false;
+    hovered = -1;
+    hoverTag.hidden = true;
+    renderer.domElement.style.cursor = "default";
+  },
+  back() {
+    // An open box (or one opening) goes back on the shelf first.
+    if (chosen >= 0 && target > 0) {
+      close();
+      return true;
+    }
+    return false;
+  },
+  step(dt, time) {
+    if (!built) return;
+    advance(dt);
+    pose(time, dt);
+    if (active) {
+      placeHoverTag();
+      placePicks();
+    }
+  },
+};
+
+/** Whether the boxes have been built (they stand on the table, seen from the doorway too). */
+export const boxesBuilt = () => boxes.length > 0;
