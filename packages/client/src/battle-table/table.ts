@@ -2691,13 +2691,13 @@ export class BattleTable {
         const { left: cardLeft, right: cardRight } = bounds(lastOne, x, enemyRow, enemyCardWidth, tabs);
         poseEnemy(lastOne, x - ((cardLeft + cardRight) / 2 - x), enemyRow, enemyCardWidth);
       }
-      const layRow = (row: readonly TableCard[], rowY: number) => {
+      const sizeRow = (row: readonly TableCard[], rowY: number) => {
         // Each minion takes a card-sized slot from the villain outwards; room to spare is left at the far end.
         const slotWidth = Math.min((right - left) / row.length, enemyCardWidth * 1.5);
         const sized = row.map((card) => {
           const { tabs, footprint } = footprintOf(card);
           const width = Math.min(enemyCardWidth, Math.max(1, slotWidth * 0.78) / footprint);
-          return { card, tabs, width, across: width * footprint };
+          return { card, tabs, footprint, width, across: width * footprint };
         });
         // The same gap as the schemes keep on the villain's other side. A crowded row shrinks its cards a little to
         // keep that gap, and only past that shares out what room there is.
@@ -2709,6 +2709,13 @@ export class BattleTable {
             one.width *= shrink;
             one.across *= shrink;
           }
+        // How wide a minion with nothing under it stands in this row, in table units: the rows of a block share the
+        // smaller of the two (below).
+        const perPixel = (this.#point(right, rowY, 0.05).x - this.#point(left, rowY, 0.05).x) / (right - left);
+        const plain = Math.min(enemyCardWidth, Math.max(1, slotWidth * 0.78)) * (fits ? shrink : 1) * perPixel;
+        return { rowY, slotWidth, fits, sized, perPixel, plain };
+      };
+      const layRow = ({ rowY, slotWidth, fits, sized }: ReturnType<typeof sizeRow>) => {
         let cursor = left + rowGap;
         sized.forEach(({ card, tabs, width, across }, i) => {
           const center = fits ? cursor + across / 2 : left + (i + 0.5) * slotWidth;
@@ -2719,8 +2726,17 @@ export class BattleTable {
           poseEnemy(card, x - perspectiveOffset, rowY, width);
         });
       };
-      layRow(near, nearRow);
-      if (far.length) layRow(far, upperRow);
+      const rows = [sizeRow(near, nearRow), ...(far.length ? [sizeRow(far, upperRow)] : [])];
+      // A block of two rows keeps its minions one size: the row with fewer cards (or further back, where the same
+      // screen width is a bigger card) would otherwise come out bigger than the crowded one (Adam, 2026-11-24: Armored
+      // Guard alone in the back row stood far bigger than the two minions in front of it).
+      const shared = Math.min(...rows.map((row) => row.plain));
+      for (const row of rows)
+        for (const one of row.sized) {
+          one.width = Math.min(one.width, shared / row.perPixel);
+          one.across = one.width * one.footprint;
+        }
+      rows.forEach(layRow);
     }
     // Encounter cards dealt facedown before the villain phase lie right of the middle, on the open mat. Where cards in
     // play already stand there (a row of minions), they lie in the first clear spot further down instead, never on
