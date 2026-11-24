@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 660" font-family="Segoe UI, Arial, sans-serif">
+  <title>The game room, seen from above: where the camera goes for each menu choice</title>
+  <rect width="960" height="660" fill="#14100c"/>
+
+  <!-- the room -->
+  <rect x="60" y="50" width="840" height="510" rx="6" fill="#211a13" stroke="#6b5338" stroke-width="3"/>
+  <rect x="415" y="555" width="130" height="10" fill="#14100c"/>
+  <text x="480" y="44" text-anchor="middle" font-size="12" fill="#8a7458" letter-spacing="2">BACK WALL</text>
+
+  <!-- camera paths from the doorway -->
+  <g stroke="#f2c14e" stroke-width="1.6" stroke-dasharray="6 6" fill="none" opacity="0.65">
+    <path d="M480 572 L480 262"/>
+    <path d="M480 572 L620 402"/>
+    <path d="M480 572 L152 404"/>
+    <path d="M480 572 L808 270"/>
+    <path d="M480 572 L706 98"/>
+  </g>
+
+  <!-- cube shelf of other boxes -->
+  <rect x="300" y="60" width="360" height="42" rx="3" fill="#3a2c1e" stroke="#6b5338"/>
+  <g fill="#52402c">
+    <rect x="310" y="66" width="50" height="30"/><rect x="368" y="66" width="50" height="30"/>
+    <rect x="426" y="66" width="50" height="30"/><rect x="484" y="66" width="50" height="30"/>
+    <rect x="542" y="66" width="50" height="30"/><rect x="600" y="66" width="50" height="30"/>
+  </g>
+  <text x="480" y="122" text-anchor="middle" font-size="12" fill="#a08a6c">Shelf of other boxes (later sets go here)</text>
+
+  <!-- the radio -->
+  <rect x="694" y="68" width="34" height="24" rx="4" fill="#5a4a7a" stroke="#9b86c9"/>
+  <circle cx="704" cy="80" r="5" fill="#211a13"/>
+  <text x="768" y="76" font-size="14" font-weight="700" fill="#f4ead8">SETTINGS</text>
+  <text x="768" y="93" font-size="12" fill="#a08a6c">the radio</text>
+
+  <!-- the table -->
+  <rect x="300" y="190" width="360" height="220" rx="10" fill="#6a4a2c" stroke="#8d6a43" stroke-width="2"/>
+  <!-- campaign boxes -->
+  <rect x="338" y="206" width="62" height="50" rx="3" fill="#4b5a45" stroke="#9fc25a"/>
+  <rect x="449" y="206" width="62" height="50" rx="3" fill="#5a2177" stroke="#e2364b"/>
+  <rect x="560" y="206" width="62" height="50" rx="3" fill="#8a4b22" stroke="#ff8a2a"/>
+  <g font-size="12" font-weight="700" fill="#f4ead8" text-anchor="middle">
+    <text x="369" y="236">01</text><text x="480" y="236">02</text><text x="591" y="236">03</text>
+  </g>
+  <text x="480" y="158" text-anchor="middle" font-size="14" font-weight="700" fill="#f4ead8">CAMPAIGN</text>
+  <text x="480" y="177" text-anchor="middle" font-size="12" fill="#a08a6c">the villain boxes, in order</text>
+  <!-- the mat -->
+  <rect x="352" y="286" width="218" height="106" rx="4" fill="#2a3a52" stroke="#7fa6d8" stroke-dasharray="5 4"/>
+  <text x="461" y="336" text-anchor="middle" font-size="14" font-weight="700" fill="#f4ead8">THE MAT</text>
+  <text x="461" y="354" text-anchor="middle" font-size="12" fill="#c5d6ee">where the game is played</text>
+  <!-- setup tray -->
+  <rect x="590" y="290" width="56" height="100" rx="4" fill="#3d2d1c" stroke="#d9b77c"/>
+  <g fill="#d9b77c"><rect x="598" y="298" width="40" height="14"/><rect x="598" y="318" width="40" height="14"/><rect x="598" y="338" width="40" height="14"/><rect x="598" y="358" width="40" height="14"/></g>
+  <text x="676" y="222" font-size="14" font-weight="700" fill="#f4ead8">FREE PLAY</text>
+  <text x="676" y="239" font-size="12" fill="#a08a6c">the setup tray:</text>
+  <text x="676" y="255" font-size="12" fill="#a08a6c">villain, module,</text>
+  <text x="676" y="271" font-size="12" fill="#a08a6c">difficulty, hero,</text>
+  <text x="676" y="287" font-size="12" fill="#a08a6c">deck</text>
+
+  <!-- deck bench -->
+  <rect x="72" y="170" width="80" height="260" rx="4" fill="#3a2c1e" stroke="#6b5338" stroke-width="2"/>
+  <g stroke="#211a13">
+    <rect x="84" y="184" width="26" height="34" fill="#c0392b"/><rect x="84" y="226" width="26" height="34" fill="#2e6fb5"/>
+    <rect x="84" y="268" width="26" height="34" fill="#3f8f4a"/><rect x="84" y="310" width="26" height="34" fill="#c9a227"/>
+    <rect x="84" y="352" width="26" height="34" fill="#5b3f8a"/>
+  </g>
+  <rect x="118" y="330" width="26" height="80" fill="#8d6a43" stroke="#211a13"/>
+  <text x="166" y="262" font-size="14" font-weight="700" fill="#f4ead8">HEROES</text>
+  <text x="166" y="280" font-size="14" font-weight="700" fill="#f4ead8">&amp; DECKS</text>
+  <text x="166" y="330" font-size="12" fill="#a08a6c">a deck box for</text>
+  <text x="166" y="346" font-size="12" fill="#a08a6c">each hero, and</text>
+  <text x="166" y="362" font-size="12" fill="#a08a6c">the card binder</text>
+
+  <!-- trophy cabinet and record board -->
+  <rect x="808" y="130" width="80" height="170" rx="4" fill="#27323a" stroke="#7fb8c9" stroke-width="2"/>
+  <g fill="#f2c14e"><circle cx="830" cy="160" r="7"/><circle cx="866" cy="160" r="7"/><circle cx="830" cy="205" r="7"/></g>
+  <g fill="none" stroke="#5d7078" stroke-width="2"><circle cx="866" cy="205" r="7"/><circle cx="830" cy="250" r="7"/><circle cx="866" cy="250" r="7"/></g>
+  <rect x="808" y="330" width="80" height="120" rx="4" fill="#6b5338" stroke="#a08a6c" stroke-width="2"/>
+  <g fill="#f4ead8"><rect x="818" y="342" width="26" height="34"/><rect x="852" y="350" width="26" height="34"/><rect x="822" y="394" width="50" height="40"/></g>
+  <text x="796" y="150" text-anchor="end" font-size="14" font-weight="700" fill="#f4ead8">TROPHIES</text>
+  <text x="796" y="167" text-anchor="end" font-size="12" fill="#a08a6c">the cabinet</text>
+  <text x="796" y="420" text-anchor="end" font-size="14" font-weight="700" fill="#f4ead8">STATS</text>
+  <text x="796" y="437" text-anchor="end" font-size="12" fill="#a08a6c">the record board</text>
+
+  <!-- numbered stops -->
+  <g font-size="13" font-weight="700" text-anchor="middle">
+    <g fill="#f2c14e" stroke="#14100c" stroke-width="2">
+      <circle cx="480" cy="580" r="13"/><circle cx="420" cy="153" r="13"/><circle cx="618" cy="276" r="13"/>
+      <circle cx="131" cy="198" r="13"/><circle cx="848" cy="116" r="13"/><circle cx="741" cy="80" r="13"/>
+    </g>
+    <g fill="#1a1208">
+      <text x="480" y="585">1</text><text x="420" y="158">2</text><text x="618" y="281">3</text>
+      <text x="131" y="203">4</text><text x="848" y="121">5</text><text x="741" y="85">6</text>
+    </g>
+  </g>
+
+  <!-- the doorway -->
+  <text x="480" y="618" text-anchor="middle" font-size="14" font-weight="700" fill="#f4ead8">TITLE SCREEN</text>
+  <text x="480" y="637" text-anchor="middle" font-size="12" fill="#a08a6c">the camera stands in the doorway with the whole room in view; each menu choice glides it along a dashed line</text>
+</svg>
