@@ -11,7 +11,17 @@ import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js
 import { arrangeScene, sceneVillain } from "./debug-scenes.js";
 import { sfx, type SoundName } from "./sound.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
-import { BattleModel, DRONE_NAME, isVillainId, VILLAINS, type BattleCard, type VillainId } from "./model.js";
+import {
+  BattleModel,
+  DRONE_NAME,
+  HEROES,
+  isHeroId,
+  isVillainId,
+  VILLAINS,
+  type BattleCard,
+  type HeroId,
+  type VillainId,
+} from "./model.js";
 import { answerRemote, createPlayer, type Player, type RemoteChannel } from "./play.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
 import { gameOnTable } from "./record/facts.js";
@@ -3748,16 +3758,33 @@ function setVillainChoice(villain: VillainId) {
   }
 }
 
+// ── Which hero ────────────────────────────────────────────────────────────────────────────────────────────────────
+// The hero Play deals, with their starter deck. As with the villain, `?hero=captain-marvel` in the address picks one
+// for that page (tests, the play hook); otherwise the last choice on this device (`battle-hero`, which the room's
+// bench will save when it offers the choice on screen), and Spider-Man on a first visit.
+const heroName = (id: HeroId) => HEROES.find((hero) => hero.id === id)!.name;
+function initialHero(): HeroId {
+  const asked = new URLSearchParams(location.search).get("hero");
+  if (isHeroId(asked)) return asked;
+  try {
+    const saved = localStorage.getItem("battle-hero");
+    if (isHeroId(saved)) return saved;
+  } catch {
+    // Private windows may refuse storage: Spider-Man it is.
+  }
+  return "spider-man";
+}
+const heroChoice: HeroId = initialHero();
+/** The hero of the game on the table. */
+let heroDealt: HeroId = heroChoice;
+
 function paintMatchup() {
+  const hero = heroName(heroDealt);
   const villain = villainName(villainDealt);
-  document.title = `Spider-Man vs. ${villain} · Marvel Champions`;
-  element("matchup").textContent = `Spider-Man vs. ${villain}`;
+  document.title = `${hero} vs. ${villain} · Marvel Champions`;
+  element("matchup").textContent = `${hero} vs. ${villain}`;
   const title = element("menu-title");
-  title.replaceChildren(
-    "Spider-Man ",
-    Object.assign(document.createElement("i"), { textContent: "vs." }),
-    ` ${villain}`,
-  );
+  title.replaceChildren(`${hero} `, Object.assign(document.createElement("i"), { textContent: "vs." }), ` ${villain}`);
 }
 
 /** A game has been dealt in this page, so a `?scene=` set-up has had its turn. */
@@ -3800,7 +3827,10 @@ function deal() {
   const sceneName = params.get("scene") ?? "";
   const arrange = import.meta.env.DEV ? arrangeScene(sceneName) : undefined;
   const villain = arrange ? sceneVillain(sceneName) : villainChoice;
-  model.reset(arrange ? { villain, seed, arrange } : { villain, seed, mulligan: true });
+  // The scenes are laid out with Spider-Man's cards.
+  const hero = arrange ? "spider-man" : heroChoice;
+  model.reset(arrange ? { hero, villain, seed, arrange } : { hero, villain, seed, mulligan: true });
+  heroDealt = hero;
   villainDealt = villain;
   // A set-up or a chosen shuffle is a check, not a game: it never goes on a record.
   gameSaved = arrange || seedFromUrl() !== undefined ? null : startGame(villain);

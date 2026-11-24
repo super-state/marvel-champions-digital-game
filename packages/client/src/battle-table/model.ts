@@ -502,7 +502,18 @@ const SCHEME_ICON_TEXT: Record<string, string> = {
   hazard: "Hazard icon: 1 more encounter card is dealt each villain phase while this is in play.",
 };
 
-/** The villains the table can deal, each a Core Set scenario played with Spider-Man's precon deck. */
+/** The heroes the table can deal, each with their Core Set starter deck. */
+export const HEROES = [
+  { id: "spider-man", name: "Spider-Man", starterDeckId: "core-spider-man-justice" },
+  { id: "captain-marvel", name: "Captain Marvel", starterDeckId: "core-captain-marvel-leadership" },
+] as const;
+export type HeroId = (typeof HEROES)[number]["id"];
+
+export function isHeroId(id: unknown): id is HeroId {
+  return HEROES.some((hero) => hero.id === id);
+}
+
+/** The villains the table can deal, each a Core Set scenario. */
 export const VILLAINS = [
   { id: "rhino", name: "Rhino" },
   { id: "klaw", name: "Klaw" },
@@ -515,8 +526,13 @@ export function isVillainId(id: unknown): id is VillainId {
 }
 
 export interface DealOptions {
+  // The game: who plays against whom.
+  /** Which hero, with their starter deck: Spider-Man unless chosen otherwise. */
+  hero?: HeroId;
   /** Which scenario: Rhino unless chosen otherwise. */
   villain?: VillainId;
+
+  // How it is dealt.
   /** The shuffle. Every seed is a different, repeatable deal. */
   seed?: number;
   /** Stop at the opening hand so the player can mulligan (RRG Appendix II step 15); otherwise keep it. */
@@ -547,14 +563,20 @@ function setupNotesOf(state: GameState, events: readonly GameEvent[]): string[] 
   return notes;
 }
 
-function openingTurn({ villain = "rhino", seed = PRACTICE_SEED, mulligan: ask = false, arrange }: DealOptions = {}): {
+function openingTurn({
+  hero = "spider-man",
+  villain = "rhino",
+  seed = PRACTICE_SEED,
+  mulligan: ask = false,
+  arrange,
+}: DealOptions = {}): {
   state: GameState;
   setup: string[];
 } {
   const created = createGame(
     coreScenario(villain, {
       seed,
-      players: [{ starterDeckId: "core-spider-man-justice" }],
+      players: [{ starterDeckId: HEROES.find((each) => each.id === hero)!.starterDeckId }],
     }),
     CORE_DEPS,
   );
@@ -562,7 +584,7 @@ function openingTurn({ villain = "rhino", seed = PRACTICE_SEED, mulligan: ask = 
   const state = created.state;
   const setup = setupNotesOf(state, created.events);
   const mulligan = state.pendingChoice;
-  if (mulligan?.prompt.kind !== "mulligan") throw Error("Expected Spider-Man's opening hand.");
+  if (mulligan?.prompt.kind !== "mulligan") throw Error("Expected the hero's opening hand.");
   if (ask) return { state, setup };
   const turn = apply(state, {
     type: "resolveChoice",
@@ -582,6 +604,7 @@ export class BattleModel {
   #subject: InstanceId | null = null;
   #targetPick: LegalAction | null = null;
   #view: BattleSnapshot | null = null;
+  #matchup: { hero: HeroId; villain: VillainId } = { hero: "spider-man", villain: "rhino" };
 
   #beats: BattleBeat[] = [];
   #villainActivity = "";
@@ -691,7 +714,13 @@ export class BattleModel {
     return true;
   }
 
+  /** The hero and villain of the game on the table, as it was dealt. */
+  get matchup(): { hero: HeroId; villain: VillainId } {
+    return this.#matchup;
+  }
+
   reset(options: DealOptions = {}): void {
+    this.#matchup = { hero: options.hero ?? "spider-man", villain: options.villain ?? "rhino" };
     this.#history = [];
     this.#events = [];
     this.#villainActivity = "";
@@ -1873,9 +1902,7 @@ export class BattleModel {
         kind: action.kind,
         label:
           action.kind === "changeForm"
-            ? player.identity.form === "hero"
-              ? "Change to Peter Parker"
-              : "Change to Spider-Man"
+            ? `Change to ${this.#otherFaceName()}`
             : action.kind === "basicAttack"
               ? "Attack"
               : action.kind === "basicThwart"
@@ -2089,6 +2116,16 @@ export class BattleModel {
     const open = view.enemyCards.some((card) => card.threat !== null && card.threat > 0 && !card.threatLock);
     if (!locked.length || open) return [];
     return locked.map((card) => `No thwart: ${card.name}. ${card.threatLock}.`);
+  }
+
+  /** The name on the identity's other face: what changing form turns the hero into ("Peter Parker", "Captain Marvel"). */
+  #otherFaceName(): string {
+    const identity = this.#game.players[0]!.identity;
+    const card = cardOf(this.#game, identity.instanceId) as unknown as Record<
+      string,
+      { faceName?: string } | undefined
+    >;
+    return card?.[identity.form === "hero" ? "alterEgo" : "hero"]?.faceName ?? "the other form";
   }
 
   /** The player's current form and hand size (with modifiers, so the hand limit at the end of the turn). */

@@ -30,7 +30,8 @@ Two files, both next to this one:
    instead of opening another. Tell Adam first if he is mid-game in it. After the game, put his table back:
    `surf_game_open` name "Marvel Champions", url `http://localhost:5173/battle/`. `?remote` makes the page take moves
    from the dev server; `&seed=N` deals a fixed game; `&villain=ultron` (or `klaw`, `rhino`) picks the villain, as
-   the campaign shelf's box does. Before pointing his tab back, check his table still answers
+   the campaign shelf's box does; `&hero=captain-marvel` (or `spider-man`) picks the hero and their starter deck
+   for that page. Before pointing his tab back, check his table still answers
    (`curl -s -o /dev/null -w "%{http_code}" localhost:5173/battle/`): a dev server started by a session stops when that
    session is archived, and his table was down for that reason on 2026-11-24. Start it again from the main folder,
    detached from your own session, if it is.
