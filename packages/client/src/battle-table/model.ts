@@ -704,6 +704,10 @@ export class BattleModel {
     );
     const name = (id: InstanceId) =>
       drones.has(id) ? DRONE_NAME : (shortIdentityNameOf(result.state, id) ?? faceUpName(result.state, id));
+    /** The cards these events put into play facedown as minions: each is seen leaving its pile as it moves. */
+    const facedownPuts = new Set<string>(
+      events.flatMap((e) => (e.type === "cardPutIntoPlayFacedown" && e.as === "minion" ? [e.instanceId] : [])),
+    );
     // The main scheme is one card through all its stages: until it advances in these events, it is still called by
     // the stage it was on (the threat that completes Underground Distribution goes on Underground Distribution).
     const mainId = this.#game.mainScheme.instanceId;
@@ -741,6 +745,14 @@ export class BattleModel {
       const miss = card ? missLineOf(plainRulesTextOf(card)) : null;
       return { ...source, ...(miss ? { miss } : {}) };
     };
+    /** Its text discards from a deck ("Discard the top card of your deck for each ...", Black Cat's "top 2 cards"). */
+    const millsDeck = (id: InstanceId) => {
+      const card = cardOf(result.state, id) ?? cardOf(this.#game, id);
+      return !!card && /\bdiscards? the top\b[^.]*\bdeck\b/i.test(plainRulesTextOf(card));
+    };
+    // The revealed card whose effect discards from the deck (Rage of Ultron, Invasive AI): its discard is its own,
+    // though another ability resolved in the middle of it (Spider-Sense, drawn as Rage of Ultron's attack began).
+    let milling: { card: InstanceId; label: string } | null = null;
     // How many cards the player's deck was just shuffled from (a reset reports it just after).
     let shuffledDeck: number | null = null;
     // An encounter deck shuffle is a run-out reset when an acceleration token follows it (effects.ts
@@ -781,8 +793,15 @@ export class BattleModel {
     // The cards in the player's deck as these events go by, for the count a Drone leaves behind.
     let deckLeft = this.#game.players[0]!.deck.length;
     // The player is eliminated: their hand, deck and cards in play are cleared away (RRG 1.8 "Player Elimination"),
-    // which is no discard for the table to play out card by card before the game ends.
-    let eliminated = false;
+    // which is no discard for the table to play out card by card before the game ends. The engine clears them just
+    // before it reports the elimination: every card move between the damage that did it and that report.
+    const clearedAway = new Set<(typeof events)[number]>();
+    const eliminatedAt = events.findIndex((e) => e.type === "playerEliminated");
+    for (let i = eliminatedAt - 1; i >= 0; i--) {
+      const earlier = events[i]!;
+      if (earlier.type === "damageDealt" || earlier.type === "damagePlaced") break;
+      if (earlier.type === "cardMoved") clearedAway.add(earlier);
+    }
     for (const e of events) {
       if (e.type === "roundStarted") {
         round = e.round;
@@ -791,11 +810,10 @@ export class BattleModel {
         if (heroPhase?.phase === "hero" && (heroPhase.round ?? 0) < round) heroPhase.round = round;
       }
       const before = this.#beats.length;
-      if (e.type === "playerEliminated") eliminated = true;
-      if (eliminated && e.type === "cardMoved") continue;
+      if (clearedAway.has(e)) continue;
       if (e.type === "deckShuffled" && e.zone.kind === "deck") shuffledDeck = deckLeft = e.order.length;
       else if (e.type === "cardDrawn") deckLeft--;
-      else if (e.type === "cardMoved" && e.from.kind === "deck" && e.to.kind !== "playArea") deckLeft--;
+      else if (e.type === "cardMoved" && e.from.kind === "deck" && !facedownPuts.has(e.instanceId)) deckLeft--;
       if (e.type === "abilityResolved") resolving = { card: e.instanceId, label: triggerLabel(e.abilityId) };
       // Only the ability that resolved last owns what follows; a move into play or a new step ends its say.
       else if (e.type === "stepChanged" || e.type === "cardPlayed") resolving = null;
@@ -883,20 +901,27 @@ export class BattleModel {
           text: `${name(e.instanceId)} enters play`,
           entersPlay: e.instanceId,
         });
-      } else if (e.type === "cardPutIntoPlayFacedown" && e.as === "minion") {
+      } else if (
+        e.type === "cardMoved" &&
+        e.to.kind === "playArea" &&
+        (e.from.kind === "deck" || e.from.kind === "discard") &&
+        facedownPuts.has(e.instanceId)
+      ) {
+        // The card leaves its pile here: when it was the deck's last, the reset that follows (the discard pile
+        // shuffled into a new deck, an encounter card dealt) plays after the Drone has gone, as it happens.
+        const fromDeck = e.from.kind === "deck";
         drones.add(e.instanceId);
         const source = resolving?.card ?? askedBy;
-        deckLeft -= e.from === "discard" ? 0 : 1;
+        if (fromDeck) deckLeft--;
         this.#beats.push({
           enemy,
           actor: e.instanceId,
-          text:
-            e.from === "discard"
-              ? "The top card of your discard pile goes into play facedown as a Drone minion"
-              : "The top card of your deck goes into play facedown as a Drone minion",
+          text: fromDeck
+            ? "The top card of your deck goes into play facedown as a Drone minion"
+            : "The top card of your discard pile goes into play facedown as a Drone minion",
           droneIn: {
             card: droneCard(e.instanceId),
-            from: e.from === "discard" ? "discard" : "deck",
+            from: fromDeck ? "deck" : "discard",
             source: source && source !== e.instanceId ? source : null,
             deckCount: Math.max(0, deckLeft),
           },
@@ -927,7 +952,7 @@ export class BattleModel {
           const defeat = `${name(e.instanceId)} defeated`;
           this.#beats.push({ enemy, actor: e.instanceId, text: defeat, defeat });
         } else if (e.type === "schemeDefeated" || type === "minion" || type === "ally") {
-          this.#beats.push({ enemy, defeatedCard: e.instanceId, text: "" });
+          this.#beats.push({ enemy, defeatedCard: e.instanceId, text: `${name(e.instanceId)} is defeated` });
         }
       } else if (e.type === "encounterCardDealt" || e.type === "boostCardDealt") {
         const surging = e.type === "encounterCardDealt" ? surgeOf.get(e.instanceId) : undefined;
@@ -944,6 +969,8 @@ export class BattleModel {
       } else if (e.type === "encounterCardRevealed" || e.type === "boostCardFlipped") {
         const card = cardOf(result.state, e.instanceId) ?? cardOf(this.#game, e.instanceId);
         if (card?.type === "villain" && e.type === "encounterCardRevealed") continue;
+        if (e.type === "encounterCardRevealed")
+          milling = millsDeck(e.instanceId) ? { card: e.instanceId, label: "When Revealed" } : null;
         const title = card?.name ?? name(e.instanceId);
         // Revealed by another card's ability rather than dealt (Shadow of the Past bringing in Vulture): it says so.
         const broughtBy =
@@ -1010,7 +1037,13 @@ export class BattleModel {
             enemy,
             text: "Discard from the top of your deck",
             milled: [e.instanceId],
-            ...(resolving ? { millSource: millSourceOf(resolving) } : {}),
+            ...(resolving && millsDeck(resolving.card)
+              ? { millSource: millSourceOf(resolving) }
+              : milling
+                ? { millSource: millSourceOf(milling) }
+                : resolving
+                  ? { millSource: millSourceOf(resolving) }
+                  : {}),
           });
       } else if (e.type === "cardMoved" && e.from.kind === "hand" && e.to.kind === "tucked") {
         const host = e.to.hostInstanceId;
@@ -1329,6 +1362,14 @@ export class BattleModel {
       }
       if (enemy && this.#beats.length > before) this.#beats[this.#beats.length - 1]!.activity = this.#villainActivity;
     }
+    // Cards off the top of the deck are named, with the card that discarded them: the log is how a player (and the
+    // play hook) knows what was lost.
+    for (const beat of this.#beats) {
+      if (!beat.milled) continue;
+      const names = beat.milled.map((id) => cardOf(result.state, id as InstanceId)?.name ?? "a card").join(", ");
+      const by = beat.millSource ? `${name(beat.millSource.card as InstanceId)}: d` : "D";
+      beat.text = `${by}iscard ${beat.milled.length === 1 ? "the top card" : `the top ${beat.milled.length} cards`} of your deck (${names})`;
+    }
     // The attack waits on a question (whether to defend): it is aimed now, as the question asks.
     if (heldAim) {
       this.#villainActivity = heldAim.activity;
@@ -1406,6 +1447,19 @@ export class BattleModel {
       hp: Math.max(0, remainingHitPoints(state, id, CORE_DEPS) ?? 0),
       exhausted: instance?.exhausted ?? false,
     };
+  }
+
+  /**
+   * A reaction window's headline about a Drone that was just defeated ("After you defeat a minion", Interrogation
+   * Room): by then the card lies faceup in the discard pile under its own name, but what the player defeated was a
+   * Drone, and the question says so ("The Drone was defeated", not "The Power of Justice was defeated").
+   */
+  #droneHeadline(headline: string | undefined, pending: NonNullable<GameState["pendingChoice"]>): string | undefined {
+    if (!headline || pending.prompt.kind !== "chooseTriggers") return headline;
+    const event = answeredEventsOf(this.#game, pending)[0] ?? pending.prompt.event;
+    if (event.kind !== "characterDefeated") return headline;
+    const was = this.#beats.find((beat) => beat.defeatedCard === event.instanceId && beat.droneWas)?.droneWas;
+    return was && headline.startsWith(was) ? `The ${DRONE_NAME}${headline.slice(was.length)}` : headline;
   }
 
   /**
@@ -1630,7 +1684,7 @@ export class BattleModel {
         ? {
             id: pending.choiceId,
             prompt:
-              trigger?.headline ??
+              this.#droneHeadline(trigger?.headline, pending) ??
               eitherOrTitle(state, pending) ??
               promptTitleOf(pending.prompt, CORE_DEPS, pending, state),
             ...(pending.prompt.kind === "declareDefender"
@@ -1979,6 +2033,13 @@ export class BattleModel {
   paymentSourceName(sourceId: string, cardId: string): string | null {
     const ref = activeAbilityRefs(this.#game, cardId as InstanceId).find((ability) => sourceId.includes(ability.id));
     return ref ? abilityLabelOf(this.#game, cardId as InstanceId, ref.id, CORE_DEPS) : null;
+  }
+
+  /** The damage an ally takes after attacking or thwarting (the small number beside its ATK and THW); 0 for others. */
+  consequentialDamage(id: string, power: "attack" | "thwart"): number {
+    const card = cardOf(this.#game, id as InstanceId);
+    if (card?.type !== "ally" || isFacedownMinion(this.#game, id as InstanceId)) return 0;
+    return card.consequentialDamage?.[power] ?? 0;
   }
 
   basicPower(id: string, stat: "atk" | "thw" | "rec"): number {

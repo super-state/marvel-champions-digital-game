@@ -57,6 +57,8 @@ export interface PlayHooks {
   /** The cards picked so far in a pick-several question (mulligan, discard, choose up to N). */
   picked(): ReadonlySet<string>;
   cardFacts(id: string): string;
+  /** The damage an ally takes for using that power (consequential damage); 0 for anything else. */
+  consequentialDamage(id: string, power: "attack" | "thwart"): number;
   /** The player's current form and hand size (the hand limit at the end of the turn). */
   playerFacts(): { form: "hero" | "alterEgo"; handSize: number };
   /** Any card's name as it shows now, wherever it is (a revealed treachery on its way to the discard included). */
@@ -295,10 +297,20 @@ export function createPlayer(hooks: PlayHooks): Player {
           run: () => hooks.useAction(state.hero.id, action.kind),
         });
       // Encounter cards can carry a player's action too (Klaw's Sonic Converter: pay to discard it).
+      // An ally pays for its own attack or thwart in damage (the small number beside the stat): said on the move when
+      // that damage is the ally's last hit points (Jessica Jones on 1 thwarted and was lost, 2026-11-24).
+      const costs = (card: BattleCard, label: string) => {
+        const power = kindOfLabel(label);
+        const damage = power ? hooks.consequentialDamage(card.id, power) : 0;
+        if (!damage || card.hp === undefined) return "";
+        return damage >= card.hp
+          ? ` — takes ${damage} damage for it: this defeats ${card.name}`
+          : ` — takes ${damage} damage for it`;
+      };
       for (const card of [...state.inPlay, ...state.enemyCards])
         for (const action of hooks.fieldActions(card.id))
           out.push({
-            label: `${card.name}: ${action.label}${warn(statusesOf(card), kindOfLabel(action.label))}`,
+            label: `${card.name}: ${action.label}${warn(statusesOf(card), kindOfLabel(action.label))}${costs(card, action.label)}`,
             run: () => hooks.useAction(card.id, action.kind),
           });
     }

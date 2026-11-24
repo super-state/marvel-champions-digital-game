@@ -38,6 +38,8 @@ interface Scene {
   schemes?: Placement[];
   /** Encounter attachments on the villain. */
   villainAttachments?: Placement[];
+  /** Encounter attachments on Ultron's environment, Ultron Drones (Upgraded Drones attaches there, not to Ultron). */
+  environmentAttachments?: Placement[];
   /** Cards to have in hand (the rest of the hand is refilled from the deck). */
   hand?: string[];
   /** The top of the player's deck, top first. */
@@ -482,11 +484,15 @@ const SCENES: Record<string, Scene> = {
     schemes: [{ code: "01148", threat: 3 }],
     hand: ["01060", "01089"],
   },
-  /** Upgraded Drones and Program Transmitter on Ultron, two Drones out, the resources to pay either off in hand. */
+  /**
+   * Upgraded Drones on the Ultron Drones environment and Program Transmitter on Ultron, two Drones out, the resources
+   * to pay either off in hand.
+   */
   ultrongear: {
     scenario: "ultron",
     hero: { form: "hero" },
-    villainAttachments: [{ code: "01142" }, { code: "01141" }],
+    villainAttachments: [{ code: "01141" }],
+    environmentAttachments: [{ code: "01142" }],
     drones: [{ code: "01005" }],
     hand: ["01088", "01089", "01090"],
   },
@@ -570,7 +576,8 @@ const SCENES: Record<string, Scene> = {
       { code: "01148", threat: 4 },
       { code: "01150", threat: 2 },
     ],
-    villainAttachments: [{ code: "01142" }, { code: "01152" }],
+    villainAttachments: [{ code: "01152" }],
+    environmentAttachments: [{ code: "01142" }],
     play: [{ code: "01059" }, { code: "01058" }],
   },
   /** Nick Fury in hand with the resources to pay for him: his "Choose one" waits in the dock, the table blurred behind. */
@@ -686,6 +693,16 @@ function arrange(state: GameState, scene: Scene): GameState {
   );
   const schemeIds = (scene.schemes ?? []).map((p) => place(p));
   const attached = (scene.villainAttachments ?? []).map((p) => place(p, { attachedTo: villain }));
+  const environment = [...state.villainArea, ...player.playArea].find(
+    (id) => cardOf(state, id)?.type === "environment",
+  );
+  if (scene.environmentAttachments?.length && !environment) throw new Error("scene: no environment in play");
+  const onEnvironment = (scene.environmentAttachments ?? []).map((p) => place(p, { attachedTo: environment! }));
+  if (environment)
+    instances[environment] = {
+      ...instances[environment]!,
+      attachments: [...instances[environment]!.attachments, ...onEnvironment],
+    };
   instances[villain] = {
     ...instances[villain]!,
     damage: scene.villain?.damage ?? 0,

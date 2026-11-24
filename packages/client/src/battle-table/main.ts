@@ -501,6 +501,8 @@ function toast(text: string) {
 function optionIcon(label: string): IconName | null {
   const text = label.toLowerCase();
   if (/\bheal/.test(text)) return "heal";
+  // A card off the player's deck becoming a Drone (Ultron, Assault on NORAD, Android Efficiency).
+  if (/\bdrone\b/.test(text)) return "deck";
   if (/remove .*threat|thwart/.test(text)) return "thwart";
   if (/threat/.test(text)) return "threat";
   if (/deal .*damage|attack/.test(text)) return "attack";
@@ -699,6 +701,7 @@ function choiceView(choice: Choice): DockView {
       parkedViews.get(state.choiceSource ?? "")?.name ||
       (state.turn === "enemy" ? "Villain phase" : state.turn === "ending" ? "End of turn" : staged?.name || ""));
   const heading = /^choose one[.:]?$/i.test(choice.prompt.trim()) ? "Choose one" : choice.prompt;
+  const eitherOr = /^Spend .+, or .+\?$/.test(choice.prompt);
   const order = pickOrder(choice, choicePicks);
   return {
     tone,
@@ -721,7 +724,10 @@ function choiceView(choice: Choice): DockView {
     })),
     primary: multiple
       ? {
-          label: n ? `Confirm ${n}` : "Confirm",
+          // An either-or payment ("Spend 1 physical, or put the top card of the deck into play ... as a Drone
+          // minion?"): the button says which half pressing it now takes, where a bare "Confirm" with nothing picked
+          // hid that it means the "or".
+          label: eitherOr ? (n ? `Spend ${n}` : "Don’t spend") : n ? `Confirm ${n}` : "Confirm",
           icon: "next",
           disabled: n < choice.min || discarding,
           attention: n >= choice.min,
@@ -4638,6 +4644,7 @@ if (import.meta.env.DEV) {
       defenseAsked: () => !!defenseQuestionDecline(state.choice),
       picked: () => choicePicks,
       cardFacts: (id) => model.cardFacts(id),
+      consequentialDamage: (id, power) => model.consequentialDamage(id, power),
       cardName: (id) => model.cardName(id),
       playerFacts: () => model.playerFacts(),
       sourceName: (sourceId, cardId) => model.paymentSourceName(sourceId, cardId),
