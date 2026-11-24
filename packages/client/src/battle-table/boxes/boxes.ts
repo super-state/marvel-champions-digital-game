@@ -12,6 +12,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { TokenKit } from "../tokens3d.js";
+import { HOLD, READY, START } from "./handover.js";
 import "../design.css";
 import "./boxes.css";
 
@@ -776,6 +777,9 @@ interface Box {
   card: THREE.Group;
   /** Where the villain card sits in the tray, in the box's own frame. */
   cardInTray: THREE.Matrix4;
+  /** The encounter deck and the campaign guide in the tray: where cards leave from on the way to the table. */
+  deck: THREE.Mesh;
+  guide: THREE.Mesh;
   hover: number;
   shake: number;
 }
@@ -937,7 +941,7 @@ function buildBox(c: Campaign, index: number, art: HTMLImageElement | null, back
 
   group.traverse((o) => (o.userData.box = index));
   scene.add(group);
-  return { campaign: c, index, group, lid, card, cardInTray, hover: 0, shake: 0 };
+  return { campaign: c, index, group, lid, card, cardInTray, deck, guide, hover: 0, shake: 0 };
 }
 
 interface Backs {
@@ -988,8 +992,10 @@ function choose(index: number) {
 }
 
 function close() {
+  if (outro) return;
   target = 0;
   opened.hidden = true;
+  closeHost();
 }
 
 function showOpened(c: Campaign) {
@@ -998,13 +1004,17 @@ function showOpened(c: Campaign) {
   el("opened-blurb").textContent = c.blurb;
   play.textContent = `Play vs ${c.name[0]}${c.name.slice(1).toLowerCase()}`;
   play.href = c.play ?? "#";
-  play.onclick = c.play
-    ? null
-    : (event) => {
-        event.preventDefault();
-        say("This villain's table is still being built. This page is a mock-up.");
-      };
+  play.onclick = (event) => {
+    event.preventDefault();
+    if (c.play) beginPlay();
+    else say("This villain's table is still being built. This page is a mock-up.");
+  };
   opened.hidden = false;
+  // Load the table now, held before it deals, so Play has it ready. `&play` presses Play at once (for checks).
+  if (c.play) {
+    openHost();
+    if (new URLSearchParams(location.search).has("play")) beginPlay();
+  }
 }
 
 function pickAt(x: number, y: number): number {
@@ -1065,6 +1075,10 @@ function pose(time: number, dt: number) {
     .multiplyScalar(lerp(pullBack, Math.max(1, 1.1 / camera.aspect), c))
     .add(aim);
   camera.position.x += (1 - c) * (pointer.x > -2 ? pointer.x * 0.35 : 0);
+  // Play: the camera swings round to the game table's own angle.
+  const toGame = outro ? span(outro.u, 0, 1.2) : 0;
+  camera.position.lerp(CAM_GAME.pos, toGame);
+  aim.lerp(CAM_GAME.at, toGame);
   camera.lookAt(aim);
 
   const moved = span(s, 0, 0.9);
@@ -1081,6 +1095,8 @@ function pose(time: number, dt: number) {
       group.position.y += Math.sin(Math.PI * moved) * 0.9;
       group.rotation.x = lerp(Math.PI / 2 - 0.1 * h, 0, moved);
       group.rotation.y = lerp(SHELF_YAW[index]!, 0, moved);
+      // Play: the emptied box and its lid are cleared off the table to the side.
+      if (outro) group.position.x += 16 * span(outro.u, 0.1, 1.0);
     } else {
       const away = chosen >= 0 ? others : 0;
       const side = Math.sign(SHELF_X[index]! - (chosen >= 0 ? SHELF_X[chosen]! : 0)) || 1;
@@ -1146,10 +1162,323 @@ function placeHoverTag() {
   hoverTag.hidden = false;
 }
 
+// ---------- Play: from the box onto the game table ----------
+// While an opened box waits, the real table page loads in a hidden frame and holds before dealing (`handover.ts`).
+// Play starts it there, unseen, and reads where it put every card on the screen. Here the box clears away, the camera
+// swings round to the table's own angle, and each card flies from the box (the player's cards from below) to exactly
+// the spot the table drew it, and the hand is dealt from the deck. The room dims, then the real table fades in under
+// the cards, already asking about the mulligan, and the menu page steps aside.
+
+const CAM_GAME = { pos: new THREE.Vector3(0, 10.8, 8.3), at: new THREE.Vector3(0, 0, 0.4) };
+/** Where the table's cards and the held hand are laid, in this scene. */
+const TABLE_Y = 0.012;
+const HAND_Y = 2.2;
+/** Outro seconds: the box is cleared and the table cards land by HAND_AT; the hand lands; the fade runs FADE_AT on. */
+const TARGETS_AT = 0.25;
+const HAND_AT = 1.55;
+const FADE_AT = 2.55;
+const FADE_LENGTH = 0.6;
+
+interface Rect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+type Quad = [THREE.Vector2, THREE.Vector2, THREE.Vector2, THREE.Vector2];
+interface HostedCard {
+  id: string;
+  art: string;
+  landscape: boolean;
+}
+interface HostedTable extends Window {
+  battleTable?: {
+    cardOutline(id: string): string[];
+    encounterAnchor(): Rect;
+    deckAnchor(): Rect;
+    readonly handSettled: boolean;
+  };
+  __battleState?: () => { villain: HostedCard; hero: HostedCard; hand: HostedCard[]; enemyCards: HostedCard[] };
+}
+
+/** A card in flight: a flat quad whose four corners (top left, top right, bottom right, bottom left) travel. */
+interface Flyer {
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  from: THREE.Vector3[];
+  to: THREE.Vector3[];
+  start: number;
+  length: number;
+  arc: number;
+}
+
+let host: { frame: HTMLIFrameElement; ready: boolean } | null = null;
+let outro: {
+  u: number;
+  started: boolean;
+  flyers: Flyer[];
+  hand: boolean;
+  done: boolean;
+  /** `&hold=1.8`: stop the outro there (for screenshots). */
+  hold: number;
+} | null = null;
+let stopped = false;
+
+function openHost() {
+  if (host) return;
+  const frame = document.createElement("iframe");
+  frame.className = "table-frame";
+  frame.title = "The game table";
+  frame.allow = "autoplay";
+  frame.src = "/battle/?handover";
+  document.body.append(frame);
+  host = { frame, ready: false };
+}
+
+function closeHost() {
+  host?.frame.remove();
+  host = null;
+}
+
+addEventListener("message", (event) => {
+  if (!host || event.origin !== location.origin || event.source !== host.frame.contentWindow) return;
+  if (event.data === READY) {
+    host.ready = true;
+    host.frame.contentWindow!.postMessage(HOLD, location.origin);
+  }
+});
+
+function beginPlay() {
+  if (outro || !host) return;
+  opened.hidden = true;
+  outro = {
+    u: 0,
+    started: false,
+    flyers: [],
+    hand: false,
+    done: false,
+    hold: Number(new URLSearchParams(location.search).get("hold") ?? Infinity),
+  };
+}
+
+/** The four corners of a card outline the table reported (a rounded rectangle in canvas pixels). */
+function cornersOf(outline: readonly string[], dx: number, dy: number): Quad | null {
+  const points = outline.map((p) => {
+    const [x, y] = p.split(" ").map(Number);
+    return new THREE.Vector2(x! + dx, y! + dy);
+  });
+  if (points.length < 4) return null;
+  const pick = (score: (p: THREE.Vector2) => number) => points.reduce((best, p) => (score(p) > score(best) ? p : best));
+  return [pick((p) => -(p.x + p.y)), pick((p) => p.x - p.y), pick((p) => p.x + p.y), pick((p) => p.y - p.x)];
+}
+
+function rectCorners(r: Rect, dx: number, dy: number): Quad {
+  return [
+    new THREE.Vector2(r.left + dx, r.top + dy),
+    new THREE.Vector2(r.right + dx, r.top + dy),
+    new THREE.Vector2(r.right + dx, r.bottom + dy),
+    new THREE.Vector2(r.left + dx, r.bottom + dy),
+  ];
+}
+
+const gameCamera = new THREE.PerspectiveCamera();
+const plane = new THREE.Plane();
+/** Where on the level `y` the screen point lands, seen from the game camera: so the card covers those pixels. */
+function onLevel(point: THREE.Vector2, y: number): THREE.Vector3 {
+  raycaster.setFromCamera(
+    new THREE.Vector2((point.x / innerWidth) * 2 - 1, -(point.y / innerHeight) * 2 + 1),
+    gameCamera,
+  );
+  plane.set(new THREE.Vector3(0, 1, 0), -y);
+  return raycaster.ray.intersectPlane(plane, new THREE.Vector3()) ?? new THREE.Vector3(0, y, 0);
+}
+const quadOnLevel = (quad: Quad, y: number) => quad.map((p) => onLevel(p, y));
+
+function cornersOfMesh(mesh: THREE.Object3D, w: number, h: number, local: (x: number, y: number) => THREE.Vector3) {
+  mesh.updateMatrixWorld(true);
+  return [local(-w / 2, h / 2), local(w / 2, h / 2), local(w / 2, -h / 2), local(-w / 2, -h / 2)].map((p) =>
+    p.applyMatrix4(mesh.matrixWorld),
+  );
+}
+
+const pictures = new Map<string, THREE.Texture>();
+async function picture(url: string): Promise<THREE.Texture | null> {
+  if (!pictures.has(url)) {
+    const image = await loadImage(url);
+    if (!image) return null;
+    pictures.set(url, texture(image));
+  }
+  return pictures.get(url)!;
+}
+
+function flyer(
+  map: THREE.Texture | null,
+  from: THREE.Vector3[],
+  to: THREE.Vector3[],
+  start: number,
+  length: number,
+  arc: number,
+) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(12), 3));
+  geometry.setAttribute("uv", new THREE.BufferAttribute(new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]), 2));
+  geometry.setIndex([0, 3, 1, 1, 3, 2]);
+  // Unlit and untouched by the room's exposure, like the table draws its cards: they stay bright as the room dims.
+  const material = new THREE.MeshBasicMaterial({
+    map,
+    color: map ? 0xffffff : 0x223242,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.frustumCulled = false;
+  scene.add(mesh);
+  const f: Flyer = { mesh, from, to, start, length, arc };
+  outro!.flyers.push(f);
+  placeFlyer(f, 0);
+  return f;
+}
+
+function placeFlyer(f: Flyer, u: number) {
+  const k = span(u, f.start, f.length);
+  const lift = Math.sin(Math.PI * k) * f.arc;
+  const position = f.mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
+  for (let i = 0; i < 4; i++) {
+    const a = f.from[i]!;
+    const b = f.to[i]!;
+    position.setXYZ(i, lerp(a.x, b.x, k), lerp(a.y, b.y, k) + lift, lerp(a.z, b.z, k));
+  }
+  position.needsUpdate = true;
+  f.mesh.visible = u >= f.start - 0.0001 || f.start === 0;
+}
+
+/** Once the hidden table has dealt: launch the table's cards from the box (and the player's from below). */
+async function launchTableCards(win: HostedTable, box: Box) {
+  const table = win.battleTable!;
+  const state = win.__battleState!();
+  const canvas = win.document.querySelector("#space canvas")?.getBoundingClientRect();
+  const dx = canvas?.left ?? 0;
+  const dy = canvas?.top ?? 0;
+  gameCamera.copy(camera);
+  gameCamera.position.copy(CAM_GAME.pos);
+  gameCamera.lookAt(CAM_GAME.at);
+  gameCamera.updateMatrixWorld();
+  const below = (quad: Quad) => quad.map((p) => new THREE.Vector2(p.x, p.y + innerHeight * 0.75)) as Quad;
+  const outlineOf = (id: string) => cornersOf(table.cardOutline(id), dx, dy);
+
+  const scheme = state.enemyCards.find((card) => card.landscape && card.id !== state.villain.id);
+  const [villainArt, schemeArt, heroArt, encounterBack, playerBack] = await Promise.all([
+    picture(state.villain.art),
+    scheme ? picture(scheme.art) : null,
+    picture(state.hero.art),
+    picture(`${CARDS}marvel-encounter-back.webp`),
+    picture(`${CARDS}marvel-player-back.webp`),
+  ]);
+
+  // The villain card, from where it floats.
+  box.card.visible = false;
+  const villain = outlineOf(state.villain.id);
+  if (villain) {
+    const from = cornersOfMesh(box.card, CARD_W, CARD_H, (x, y) => new THREE.Vector3(x, y, 0));
+    flyer(villainArt, from, quadOnLevel(villain, TABLE_Y), 0.25, 1.0, 0.6);
+  }
+  // The encounter deck, out of the tray.
+  box.deck.visible = false;
+  const deckFrom = cornersOfMesh(box.deck, CARD_W, CARD_H, (x, y) => new THREE.Vector3(x, 0.13, -y));
+  flyer(encounterBack, deckFrom, quadOnLevel(rectCorners(table.encounterAnchor(), dx, dy), TABLE_Y), 0.3, 1.0, 1.2);
+  // The main scheme, from under the campaign guide.
+  const schemeTo = scheme ? outlineOf(scheme.id) : null;
+  if (schemeTo) {
+    const from = cornersOfMesh(box.guide, GUIDE_W, GUIDE_H, (x, y) => new THREE.Vector3(x, 0.02, -y));
+    flyer(schemeArt, from, quadOnLevel(schemeTo, TABLE_Y), 0.4, 1.0, 1.0);
+  }
+  // The player's own hero and deck slide in from their side of the table.
+  const hero = outlineOf(state.hero.id);
+  if (hero) flyer(heroArt, quadOnLevel(below(hero), TABLE_Y), quadOnLevel(hero, TABLE_Y), 0.5, 0.9, 0.3);
+  const deckTo = rectCorners(table.deckAnchor(), dx, dy);
+  flyer(playerBack, quadOnLevel(below(deckTo), TABLE_Y), quadOnLevel(deckTo, TABLE_Y), 0.45, 0.9, 0.3);
+  return { deck: quadOnLevel(deckTo, TABLE_Y) };
+}
+
+/** The opening hand, dealt one by one from the player's deck into the hand the table holds up. */
+async function dealHand(win: HostedTable, deck: THREE.Vector3[]) {
+  const table = win.battleTable!;
+  const state = win.__battleState!();
+  const canvas = win.document.querySelector("#space canvas")?.getBoundingClientRect();
+  const dx = canvas?.left ?? 0;
+  const dy = canvas?.top ?? 0;
+  const arts = await Promise.all(state.hand.map((card) => picture(card.art)));
+  state.hand.forEach((card, i) => {
+    const quad = cornersOf(table.cardOutline(card.id), dx, dy);
+    if (quad) flyer(arts[i] ?? null, deck, quadOnLevel(quad, HAND_Y), HAND_AT + i * 0.1, 0.6, 0.5);
+  });
+}
+
+let launching = false;
+function stepOutro(dt: number) {
+  if (!outro || !host || outro.done || launching) return;
+  const win = host.frame.contentWindow as HostedTable | null;
+  const box = boxes[chosen]!;
+  if (!outro.started) {
+    if (!host.ready || !win) {
+      hint.textContent = "Setting up the table…";
+      hint.hidden = false;
+      return;
+    }
+    hint.hidden = true;
+    win.postMessage(START, location.origin);
+    outro.started = true;
+  }
+  // Wait for the hidden table to have drawn its cards, then for its hand to be dealt, before going past each point.
+  if (outro.u >= TARGETS_AT && outro.flyers.length === 0) {
+    if (!win?.battleTable || !win.__battleState) return;
+    launching = true;
+    void launchTableCards(win, box).then(({ deck }) => {
+      launching = false;
+      deckLanding = deck;
+    });
+    return;
+  }
+  if (outro.u >= HAND_AT - 0.05 && !outro.hand) {
+    if (!win?.battleTable?.handSettled || !deckLanding) return;
+    outro.hand = true;
+    launching = true;
+    void dealHand(win, deckLanding).then(() => (launching = false));
+    return;
+  }
+  outro.u = Math.min(outro.u + dt, outro.hold, FADE_AT + FADE_LENGTH);
+  for (const f of outro.flyers) placeFlyer(f, outro.u);
+  // The room dims as the cards land; the cards, unlit, stay bright.
+  renderer.toneMappingExposure = lerp(1.05, 0.12, span(outro.u, 1.0, 1.4));
+  document.querySelector<HTMLElement>(".boxes-head")!.style.opacity = String(1 - span(outro.u, 0, 0.4));
+  host.frame.style.opacity = String(span(outro.u, FADE_AT, FADE_LENGTH));
+  if (outro.u >= FADE_AT + FADE_LENGTH) finishOutro();
+}
+let deckLanding: THREE.Vector3[] | null = null;
+
+/** The table is in front: hand it the page. */
+function finishOutro() {
+  if (!outro || !host) return;
+  outro.done = true;
+  stopped = true;
+  host.frame.style.opacity = "1";
+  host.frame.style.pointerEvents = "auto";
+  host.frame.focus();
+  renderer.setAnimationLoop(null);
+  renderer.dispose();
+  renderer.domElement.remove();
+  for (const id of ["hover-tag", "hint", "opened", "toast"]) el(id).remove();
+  document.querySelector(".boxes-head")?.remove();
+  // A reload now opens the table itself, not the shelf.
+  history.replaceState(null, "", "/battle/");
+}
+
 let last = performance.now();
 function frame(now: number) {
+  if (stopped) return;
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  stepOutro(dt);
+  if (stopped) return;
   if (s !== target) {
     const speed = target > s ? 1 : 1.7;
     s = target > s ? Math.min(target, s + dt * speed) : Math.max(target, s - dt * speed);

@@ -1,4 +1,5 @@
 import { statHue } from "../tokens.js";
+import { startWhenHandedOver } from "./boxes/handover.js";
 import "./design.css";
 import "./battle.css";
 import { padActive, startController } from "./pad/controller.js";
@@ -4090,7 +4091,8 @@ const pad = startController({
       : [],
   useAction: useCardAction,
 });
-start();
+// Hosted by the campaign boxes page (`boxes/handover.ts`), the table waits for its move onto the table to finish.
+startWhenHandedOver(window, start);
 
 // ── Sound Studio (dev server only, `?studio`) ─────────────────────────────────────────────────────────────────────
 // The studio page (`battle/studio.html`) shows this table in a frame and asks it to act out one moment at a time, so a
@@ -4321,6 +4323,8 @@ if (import.meta.env.DEV) {
       reading: () => (readReveal.hidden ? null : revealFocus),
       doneReading: () => readReveal.click(),
     }),
+    // The table's snapshot, read-only: the campaign boxes page reads which card is where to fly them in.
+    __battleState: () => state,
   });
   if (import.meta.hot && new URLSearchParams(location.search).has("remote"))
     answerRemote((globalThis as unknown as { __battlePlay: Player }).__battlePlay, import.meta.hot as RemoteChannel);
