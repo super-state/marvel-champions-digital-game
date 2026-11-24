@@ -2019,7 +2019,22 @@ function placeLabels() {
   const discard = table.discardAnchor();
   const deck = table.deckAnchor();
   const encounter = table.encounterAnchor();
-  const encounterAt = { x: encounter.x, top: encounter.bottom + 4 };
+  const projected = table.anchors();
+  // An encounter pile's count is wider than the pile on a small screen: where it would reach over a card on its left
+  // (a minion at the end of its row), it steps right, still under its pile and never past the screen's edge (found on
+  // a phone against Ultron, 2026-11-24).
+  const piled = new Set([...state.encounterDiscard, ...state.discard].map((card) => card.id));
+  const clearOfCards = (x: number, top: number, node: HTMLElement) => {
+    const half = node.offsetWidth / 2;
+    const bottom = top + (node.offsetHeight || 22);
+    let at = x;
+    for (const card of projected) {
+      if (piled.has(card.id) || card.x >= x || card.bottom <= top || card.top >= bottom) continue;
+      if (card.right + 2 > at - half) at = card.right + 2 + half;
+    }
+    return Math.min(at, stage.clientWidth - half - 2);
+  };
+  const encounterAt = { x: clearOfCards(encounter.x, encounter.bottom + 4, encounterLabel), top: encounter.bottom + 4 };
   encounterLabel.style.transform = `translate(${Math.round(encounterAt.x)}px,${Math.round(encounterAt.top)}px)`;
   deckLabel.style.transform = `translate(${Math.round(deck.x)}px,${Math.round(deck.bottom + 5)}px)`;
   const encounterDiscard = table.encounterDiscardAnchor();
@@ -2027,7 +2042,7 @@ function placeLabels() {
     discardOpen && viewingEncounterDiscard
       ? null
       : {
-          x: Math.min(encounterDiscard.x, stage.clientWidth - encounterPile.offsetWidth / 2 - 2),
+          x: clearOfCards(encounterDiscard.x, encounterDiscard.bottom + 4, encounterPile),
           top: encounterDiscard.bottom + 4,
         };
   encounterPile.style.transform = encounterDiscardAt
@@ -2037,7 +2052,6 @@ function placeLabels() {
     discardOpen && !viewingEncounterDiscard
       ? ""
       : `translate(${Math.round(discard.x)}px,${Math.round(discard.bottom + 5)}px)`;
-  const projected = table.anchors();
   if (!formHint.hidden || !formFlash.hidden) {
     const hero = projected.find((point) => point.id === hintCardId);
     if (hero) {

@@ -248,8 +248,6 @@ function attachmentFanOffset(x: number, y: number, fan: number): [number, number
 /** An upright card standing among the schemes, as a share of a scheme's short side. */
 const UPRIGHT_AMONG_SCHEMES = 0.8;
 const WAITING_X = 0.67;
-/** Where they lie instead when everything right of the middle is taken: left of the player's row. */
-const WAITING_LEFT_X = 0.2;
 
 /** An encounter card dealt and waiting to be revealed, lying facedown in the villain's row. */
 function waitingCardWidth(w: number, h: number) {
@@ -518,6 +516,9 @@ export class BattleTable {
   /** How far the piles stand from the middle on a quiet table (#layout), and whether that second pass is running. */
   #pileSpread: number | null = null;
   #fittingPiles = false;
+  /** Extra room (layout pixels) under the encounter deck and discard pile for their counts, and whether that pass runs. */
+  #pileRoom = { deck: 0, discard: 0 };
+  #roomingPiles = false;
   readonly #villainLight = { value: 0 };
   #phaseTarget = 0;
 
@@ -2541,12 +2542,33 @@ export class BattleTable {
     // the minions a row they would not otherwise have (worked out with the minions' row, below), and keep their place
     // down the right rather than going up to the top corner.
     const discarded = state.encounterDiscard.length > 0;
+    // Where a point on the table shows on screen, before the table is fitted to it (the layout's own coordinates).
+    const screenAt = (x: number, elevation: number, z: number) =>
+      (1 - this.#scratch.set(x, elevation, z).project(this.#camera).y) * this.#canvasHeight * 0.5 - this.#extension;
+    // The player's piles are always full size. The discard pile stands taller than its well, a little more with
+    // every card, so its top card reaches up the screen towards the encounter deck above it. Room is kept for it eight
+    // cards at a time, so the table moves at most once every eight discards rather than a little with each one.
+    const playerPileWidth = Math.min(w * 0.125, h * 0.125);
+    const playerPileScale = this.#point(pileX + playerPileWidth, pileY, 0.025).x - base.x;
+    const discardRoomFor = Math.ceil(state.discard.length / 8) * 8;
+    const discardTop = screenAt(
+      base.x,
+      0.025 + playerPileScale * (0.06 + Math.max(0, discardRoomFor - 1) * 0.023),
+      base.z - (playerPileScale * HEIGHT) / 2,
+    );
+    // Extra room under each encounter pile for its count, found short once the table was fitted (below).
+    if (!this.#roomingPiles) this.#pileRoom = { deck: 0, discard: 0 };
+    const pileRoom = this.#pileRoom;
     const pilesOf = (full: boolean) => {
-      const width = full ? Math.min(w * 0.125, h * 0.125) : Math.min(w * 0.088, h * 0.088);
+      const width = full ? playerPileWidth : Math.min(w * 0.088, h * 0.088);
       // One pile's height on screen (a card lying on the mat, seen from the camera's angle) plus its label and a gap.
-      const step = width * 1.11 + h * 0.045;
-      const discardY = pileY - step * 2;
-      return { width, deckY: discarded ? pileY - step : h * 0.242, discardY };
+      const label = h * 0.045;
+      const step = width * 1.11 + label;
+      // The encounter deck's count stands under it, clear of the top of the player's discard pile however tall that
+      // grows. Shrunk, the piles once came down so far that the count lay on the player's discard pile (found playing
+      // Ultron, 2026-11-24).
+      const deckY = Math.min(pileY - step, discardTop - label - pileRoom.deck - width * 0.555);
+      return { width, deckY: discarded ? deckY : h * 0.242, discardY: deckY - step - pileRoom.discard };
     };
     let piles = pilesOf(true);
     const encounterPile = (y: number, width = piles.width) => {
@@ -2824,6 +2846,7 @@ export class BattleTable {
     });
     // The player's own row is laid out further down, but where it will stand follows from its cards alone: a waiting
     // encounter card keeps off it as well as off the minions (it lay across Interrogation Room, 2026-11-24).
+    let playerRowLeft = w / 2;
     {
       const permanents = state.inPlay.filter((c) => c.id !== state.staged?.id);
       const shown = [state.hero, ...permanents.filter((card) => card.type !== "upgrade" || card.showAsFullCard)];
@@ -2833,6 +2856,7 @@ export class BattleTable {
       const across = tabs + footprints.reduce((total, width) => total + width, 0) + gap * (shown.length - 1);
       const playWidth = Math.min(w * 0.1134, h * 0.133, (w * 0.62) / across);
       const half = (across * playWidth) / 2;
+      playerRowLeft = w / 2 - half;
       standing.push({
         left: w / 2 - half,
         right: w / 2 + half,
@@ -2840,12 +2864,40 @@ export class BattleTable {
         bottom: h * 0.532 + playWidth * HEIGHT * 0.62,
       });
     }
-    const waitingAt = ({ x, y }: { x: number; y: number }) => ({
-      left: w * x - waitingWidth / 2,
-      right: w * (x + Math.max(0, Math.min(3, waitingCount) - 1) * 0.034) + waitingWidth / 2,
-      top: y - waitingWidth * HEIGHT * 0.45,
-      bottom: y + waitingWidth * HEIGHT * 0.45,
+    // The piles at the mat's sides, each with its count below it: the player's deck and discard pile, and the
+    // encounter deck and discard pile. A waiting card that fell back to the left of the player's row lay over the
+    // right edge of the player's deck (found playing Ultron, 2026-11-24).
+    const pileHalf = playerPileWidth * 0.555;
+    const pileLabel = h * 0.045;
+    const playerDeckRight = w * 0.5 - pileSpread + playerPileWidth / 2;
+    standing.push(
+      {
+        left: w * 0.5 - pileSpread - playerPileWidth / 2,
+        right: playerDeckRight,
+        top: pileY - pileHalf - playerPileWidth * 0.1,
+        bottom: pileY + pileHalf + pileLabel,
+      },
+      { left: pileX - playerPileWidth / 2, right: w, top: discardTop, bottom: pileY + pileHalf + pileLabel },
+      ...[piles.deckY, ...(discarded ? [piles.discardY] : [])].map((y) => ({
+        left: pileX - piles.width / 2,
+        right: w,
+        top: y - piles.width * 0.555,
+        bottom: y + piles.width * 0.555 + pileLabel,
+      })),
+    );
+    const fanned = Math.max(0, Math.min(3, waitingCount) - 1);
+    // Lying raised over the table, the cards show a little bigger once it is fitted: room is kept for that.
+    const waitingAt = ({ x, y, fan }: { x: number; y: number; fan: number }) => ({
+      left: x - waitingWidth * 0.6,
+      right: x + fanned * fan + waitingWidth * 0.6,
+      top: y - waitingWidth * HEIGHT * 0.55,
+      bottom: y + waitingWidth * HEIGHT * 0.55,
     });
+    // Left of the player's row, the cards lie in the middle of the open mat between it and the player's deck, fanned
+    // closer if need be so they all fit there.
+    const leftRoom = playerRowLeft - playerDeckRight - waitingWidth * 0.24;
+    const leftFan = Math.max(waitingWidth * 0.12, Math.min(w * 0.034, fanned ? (leftRoom - waitingWidth) / fanned : 0));
+    const leftX = (playerDeckRight + playerRowLeft) / 2 - (fanned * leftFan) / 2;
     const overlap = (a: ReturnType<typeof waitingAt>) =>
       standing.reduce(
         (total, b) =>
@@ -2857,16 +2909,26 @@ export class BattleTable {
     // Right of the middle first, going down the mat; with minions in two rows above and a full row of the player's
     // cards below, the open mat left of the player's row (between it and the player's deck) is the nearest clear spot.
     const waitingSpot = !waitingCount
-      ? { x: WAITING_X, y: h * 0.26 }
+      ? { x: w * WAITING_X, y: h * 0.26, fan: w * 0.034 }
       : [
-          ...[0.26, 0.34, 0.42, 0.5].map((share) => ({ x: WAITING_X, y: h * share })),
-          ...[0.5, 0.56].map((share) => ({ x: WAITING_LEFT_X, y: h * share })),
+          ...[0.26, 0.34, 0.42, 0.5].map((share) => ({ x: w * WAITING_X, y: h * share, fan: w * 0.034 })),
+          ...[0.5, 0.56].map((share) => ({ x: leftX, y: h * share, fan: leftFan })),
+          // Failing those (a phone, where the player's deck stands right against the row), any open patch of mat
+          // between the villain's row and the player's, nearest the middle first.
+          ...[0.36, 0.4, 0.32].flatMap((share) =>
+            [0.5, 0.4, 0.6, 0.3, 0.7].map((x) => ({
+              x: w * x - (fanned * waitingWidth * 0.3) / 2,
+              y: h * share,
+              fan: waitingWidth * 0.3,
+            })),
+          ),
         ].reduce((best, spot) => (overlap(waitingAt(spot)) < overlap(waitingAt(best)) ? spot : best));
     const waitingY = waitingSpot.y;
+    const waitingIds: string[] = [];
     // A minion that comes out while they wait stands just below them.
     asideEnemies.forEach((card, i) => {
       const width = enemyCardWidth * 0.85;
-      poseEnemy(card, w * waitingSpot.x + width * (0.2 + i * 1.2), waitingY + h * 0.14, width);
+      poseEnemy(card, waitingSpot.x + width * (0.2 + i * 1.2), waitingY + h * 0.14, width);
     });
     let waiting = 0;
     // Where the revealed card stands on screen while it is held up, so a card being paid for keeps clear of it.
@@ -2921,10 +2983,11 @@ export class BattleTable {
           flat,
           -0.13,
         );
-      } else
+      } else {
+        waitingIds.push(card.id);
         this.#pose(
           card.id,
-          w * (waitingSpot.x + (waiting++ % 3) * 0.034),
+          waitingSpot.x + (waiting++ % 3) * waitingSpot.fan,
           waitingY,
           waitingCardWidth(w, h),
           // Above anything it lands over, a token on a card included: it only waits there for a moment (Adam,
@@ -2932,6 +2995,7 @@ export class BattleTable {
           0.42 + waiting * 0.045,
           flat,
         );
+      }
     }
     // Cards turned up off the deck stand in a row in the middle, above the hand; the ones being kept rise a little.
     if (this.#deckReveal.length) {
@@ -3249,6 +3313,89 @@ export class BattleTable {
       [this.#encounterSlot, encounterGoal],
       [this.#encounterDiscardSlot, encounterDiscardGoal],
     ]);
+    // The counts under the encounter piles are a fixed size on screen, while the room left for them grows and shrinks
+    // with the table: on a phone, fitted smaller, the encounter deck's count still touched the player's discard pile.
+    // Measured where everything now stands, a count short of room has the piles laid out once more with that much
+    // extra above it.
+    if (discarded && !this.#roomingPiles) {
+      const stageY = (x: number, y: number, z: number) =>
+        (0.5 - this.#scratch.set(x, y, z).project(this.#camera).y / 2) * this.#canvasHeight;
+      const nearEdge = (goal: { position: THREE.Vector3; scale: number }) =>
+        stageY(goal.position.x, goal.position.y, goal.position.z + (goal.scale * HEIGHT) / 2);
+      const farEdge = (goal: { position: THREE.Vector3; scale: number }, rise: number) =>
+        stageY(goal.position.x, goal.position.y + rise * goal.scale, goal.position.z - (goal.scale * HEIGHT) / 2);
+      // The count's offset under its pile, its height and a little air (`placeLabels` in main.ts).
+      const COUNT_ROOM = 4 + 22 + 5;
+      const discardStack = 0.012 + Math.max(0, discardRoomFor - 1) * 0.023 + 0.025;
+      const deckStock = 0.018 * Math.min(7, Math.max(1, state.encounterCount * 0.25)) + 0.002;
+      const short = {
+        deck: nearEdge(encounterGoal) + COUNT_ROOM - farEdge(discardGoal, discardStack),
+        discard: nearEdge(encounterDiscardGoal) + COUNT_ROOM - farEdge(encounterGoal, deckStock),
+      };
+      // Screen pixels per layout pixel here: the encounter deck's width on screen over its width in the layout.
+      const perPixel =
+        (this.#project(
+          encounterGoal.position.x + encounterGoal.scale,
+          encounterGoal.position.y,
+          encounterGoal.position.z,
+        ).x -
+          this.#project(encounterGoal.position.x, encounterGoal.position.y, encounterGoal.position.z).x) /
+        piles.width;
+      // A little over, as the piles standing further up make the table a touch smaller again.
+      const wanted = (shortBy: number) => (shortBy > 0.5 ? (shortBy / perPixel) * 1.2 + 1 : 0);
+      if (perPixel > 0 && (short.deck > 0.5 || short.discard > 0.5)) {
+        this.#pileRoom = { deck: wanted(short.deck), discard: wanted(short.discard) };
+        this.#roomingPiles = true;
+        try {
+          this.#layout();
+        } finally {
+          this.#roomingPiles = false;
+        }
+        return;
+      }
+    }
+    // Cards waiting left of the player's row lie raised over the table, so once it is fitted they come out bigger
+    // beside the deck and the row than the layout reckoned: measured where they now lie, they are centred in the open
+    // mat between the player's deck and the row, fanned closer if that is what keeps them clear of both.
+    if (waitingIds.length && waitingSpot.x === leftX) {
+      const across = (target: { position: THREE.Vector3; scale: number }, scale = target.scale) => {
+        const xs = [-0.5, 0.5].flatMap((dx) =>
+          [-HEIGHT / 2, HEIGHT / 2].map(
+            (dz) => this.#project(target.position.x + dx * scale, target.position.y, target.position.z + dz * scale).x,
+          ),
+        );
+        return { left: Math.min(...xs), right: Math.max(...xs) };
+      };
+      const targets = waitingIds.flatMap((id) => {
+        const target = this.#pieces.get(id)?.target;
+        return target ? [target] : [];
+      });
+      const rowTargets = [...upgrades, ...row].flatMap((card) => {
+        const target = this.#pieces.get(card.id)?.target;
+        return target && card.id !== state.staged?.id ? [target] : [];
+      });
+      if (targets.length && rowTargets.length) {
+        const boxes = targets.map((target) => across(target));
+        const cardWidth = boxes[0]!.right - boxes[0]!.left;
+        const air = cardWidth * 0.08;
+        const from = across(deckGoal).right + air;
+        const to = Math.min(...rowTargets.map((target) => across(target).left)) - air;
+        const n = targets.length;
+        const fan =
+          n > 1
+            ? Math.max(
+                cardWidth * 0.12,
+                Math.min((boxes[n - 1]!.left - boxes[0]!.left) / (n - 1), (to - from - cardWidth) / (n - 1)),
+              )
+            : 0;
+        const start = (from + to) / 2 - (cardWidth + fan * (n - 1)) / 2;
+        targets.forEach((target, i) => {
+          const { x, y, z } = target.position;
+          const pixelsPerUnit = this.#project(x + 0.1, y, z).x * 10 - this.#project(x, y, z).x * 10;
+          if (pixelsPerUnit > 0) target.position.x += (start + i * fan - boxes[i]!.left) / pixelsPerUnit;
+        });
+      }
+    }
     // A revealed card asking the player to pick cards on the table steps aside, clear of them (`revealAside`).
     // Worked out once per question and screen size, then held: a pick lifted under the pointer grows a little, and
     // the card must not twitch with it.
