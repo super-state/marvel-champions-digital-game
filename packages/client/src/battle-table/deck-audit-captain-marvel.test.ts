@@ -405,7 +405,7 @@ const villainPhaseDeals = (...codes: string[]) => stack("01104", ...codes, "0110
  * an option by its words; a question it doesn't pick for (-1) gets the driver's default, and attacks go undefended.
  */
 function villainPhase(p: Player, answer: (labels: string[]) => number = () => -1) {
-  const asked: { prompt: string; source?: string; labels: string[] }[] = [];
+  const asked: { prompt: string; source?: string | undefined; labels: string[] }[] = [];
   p.mark();
   p.end();
   p.drive({
@@ -497,7 +497,7 @@ test("01178 Kree Manipulator: the order of its When Revealed and its surge is as
   const before = p.snap.enemyCards.find((c) => c.type === "main_scheme")!.threat!;
   const asked = villainPhase(p);
   const order = asked.find((a) => /Order/.test(a.prompt))!;
-  expect(order.labels).toEqual(["Place 1 threat on the main scheme", "Surge: reveal 1 more encounter card"]);
+  expect(order.labels).toEqual(["Place 1 threat on the main scheme", "Surge: deal yourself 1 more encounter card"]);
   // Its 1 threat on top of the main scheme's own step and Rhino's scheme (Advance: no boost).
   const kree = p.beats.find((b) => b.reveal?.name === "Kree Manipulator")!.reveal!.id;
   expect(p.beats.some((b) => b.text === "Kree Manipulator surges")).toBe(true);

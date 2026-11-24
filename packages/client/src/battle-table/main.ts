@@ -1366,7 +1366,8 @@ function showOutcome(outcome: Snapshot["outcome"]) {
       : outcome.reason === "allPlayersDefeated"
         ? "Knocked out"
         : "Defeat";
-  element("game-over-kicker").textContent = `${state.hero.name} vs. ${state.villain.name}`;
+  // The hero's name, not the face showing ("Captain Marvel vs. Rhino", lost as Carol Danvers or not).
+  element("game-over-kicker").textContent = `${heroName(heroDealt)} vs. ${state.villain.name}`;
   // The test site keeps the player's record (test-site/player.ts): this ending, once.
   void finishGame(gameSaved, {
     result: outcome.result === "win" ? "win" : "loss",
@@ -3580,7 +3581,11 @@ function render() {
         : [],
     discardOpen,
     hand: displayedHand,
-    staged,
+    // An upgrade being paid for knows its host by now (Inspired on an ally): the table holds it by that card.
+    staged:
+      staged && state.payment?.subject.id === staged.id
+        ? { ...staged, attachedTo: state.payment.subject.attachedTo ?? null }
+        : staged,
     stagedOverEnemies: !!staged && staged.id === stagedAttachment,
     paymentSources: state.payment?.sources.filter((s) => s.available).map(resourcePieceId) ?? null,
     selected,

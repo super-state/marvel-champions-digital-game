@@ -8,6 +8,7 @@ import {
   characterProfile,
   createGame,
   getInstance,
+  handDiscardCandidates,
   handSize,
   legalActions,
   paymentOptionsPool,
@@ -505,9 +506,10 @@ function playerReason(card: object | undefined, message: string): string {
  * share a timing and the players order them): what it does, in the card's words. Kree Manipulator: "Place 1 threat on
  * the main scheme" and "Surge: reveal 1 more encounter card". The engine names a printed step by its ability id.
  */
-function whenRevealedStepLabel(state: GameState, card: InstanceId, step: string): string {
-  if (step === "surge") return "Surge: reveal 1 more encounter card";
-  if (step === "incite") return "Incite: place threat on the main scheme";
+function whenRevealedStepLabel(state: GameState, card: InstanceId, step: string, engineLabel: string): string {
+  // RRG 1.8 "Surge" (p. 42): deal yourself 1 facedown encounter card; it is revealed with the others.
+  if (step === "surge") return "Surge: deal yourself 1 more encounter card";
+  if (step === "incite") return `${engineLabel}: place that much threat on the main scheme`;
   const printed = cardOf(state, card);
   const text = printed ? plainRulesTextOf(printed) : "";
   const line = /When Revealed(?: \([^)]*\))?:\s*([^.]*)/.exec(text)?.[1]?.trim();
@@ -645,7 +647,7 @@ export class BattleModel {
    * An ability whose cost discards cards from the hand ("choose and discard 1 card from your hand →", Alpha Flight
    * Station), waiting for the player to pick which: the engine's own example would pick for them.
    */
-  #costDiscard: { entry: LegalAction; min: number; max: number } | null = null;
+  #costDiscard: { entry: LegalAction; candidates: readonly InstanceId[]; min: number; max: number } | null = null;
   #view: BattleSnapshot | null = null;
   #matchup: { hero: HeroId; villain: VillainId } = { hero: "spider-man", villain: "rhino" };
 
@@ -1767,7 +1769,8 @@ export class BattleModel {
     const payment =
       priced && this.#subject
         ? {
-            subject: this.#card(this.#subject),
+            // An upgrade being paid for already knows its host (Inspired on an ally): it waits by that card.
+            subject: { ...this.#card(this.#subject), attachedTo: this.#payment?.target ?? null },
             ability: this.#payment?.action.kind === "useAbility",
             outstanding: priced.outstanding,
             required: priced.required,
@@ -1814,9 +1817,7 @@ export class BattleModel {
           id: `cost:${costDiscard.entry.action.kind === "useAbility" ? costDiscard.entry.action.abilityId : ""}`,
           prompt: `Discard ${costDiscard.min === costDiscard.max ? costDiscard.min : `${costDiscard.min} to ${costDiscard.max}`} to pay`,
           sourceTitle: faceUpName(state, this.#subject as InstanceId),
-          options: player.hand
-            .filter((id) => id !== this.#subject)
-            .map((id) => ({ id, label: faceUpName(state, id), cardId: id })),
+          options: costDiscard.candidates.map((id) => ({ id, label: faceUpName(state, id), cardId: id })),
           canSkip: false,
           canCancel: true,
           min: costDiscard.min,
@@ -1898,7 +1899,7 @@ export class BattleModel {
                 id: option.optionId,
                 label:
                   pending.prompt.kind === "orderWhenRevealed"
-                    ? whenRevealedStepLabel(state, pending.prompt.instanceId, option.optionId)
+                    ? whenRevealedStepLabel(state, pending.prompt.instanceId, option.optionId, option.label ?? "")
                     : option.ref.kind === "ability"
                       ? (abilityShortLabelOf(state, option.ref.instanceId, option.ref.abilityId, CORE_DEPS) ??
                         `Use ${faceUpName(state, option.ref.instanceId)}`)
@@ -2028,8 +2029,12 @@ export class BattleModel {
     return this.#openPayment(entry, entry.targets[0] ?? null);
   }
 
+  /** An attachment played onto an enemy (Webbed Up, Spider-Tracer): it waits over the villain's side for its host. */
   isTargetedAttachment(id: string): boolean {
-    return (this.#plays.get(id)?.targets.length ?? 0) > 0;
+    return (this.#plays.get(id)?.targets ?? []).some((target) => {
+      const type = cardOf(this.#game, target)?.type ?? "";
+      return type === "villain" || ENCOUNTER_TYPES.has(type);
+    });
   }
 
   #openPayment(entry: LegalAction, target: InstanceId | null): boolean {
@@ -2301,7 +2306,15 @@ export class BattleModel {
     const discard = CORE_DEPS.abilities[entry.action.abilityId]?.cost?.discardFromHand;
     if (discard && !entry.needsPayment) {
       // The player picks the cards the cost discards, on the hand, as at the end of the turn.
-      this.#costDiscard = { entry, min: discard.min, max: discard.max ?? discard.min };
+      // The cards the engine lets the cost take (a filter, a card that can't be chosen), and as many as it allows.
+      const candidates = handDiscardCandidates(
+        this.#game,
+        CORE_DEPS,
+        entry.action.instanceId,
+        this.#game.players[0]!.playerId,
+        CORE_DEPS.abilities[entry.action.abilityId]?.cost,
+      );
+      this.#costDiscard = { entry, candidates, min: discard.min, max: discard.max ?? candidates.length };
       this.#subject = entry.action.instanceId;
       this.#view = null;
       return true;
@@ -2369,9 +2382,9 @@ export class BattleModel {
 
   chooseMany(ids: readonly string[]): boolean {
     if (this.#costDiscard) {
-      const { entry, min, max } = this.#costDiscard;
-      const hand = this.#game.players[0]!.hand;
-      if (ids.length < min || ids.length > max || ids.some((id) => !hand.includes(id as InstanceId))) return false;
+      const { entry, candidates, min, max } = this.#costDiscard;
+      if (ids.length < min || ids.length > max || ids.some((id) => !candidates.includes(id as InstanceId)))
+        return false;
       if (entry.example.type !== "useAbility") return false;
       const result = applyCommand(
         this.#game,

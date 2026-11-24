@@ -419,7 +419,6 @@ function playGame(seed: number, policy: Policy, villain: VillainId = "rhino", he
       if (b.droneIn) coverage["drone:in"] = (coverage["drone:in"] ?? 0) + 1;
       if (b.droneWas) coverage["drone:defeated"] = (coverage["drone:defeated"] ?? 0) + 1;
     }
-    const told = JSON.stringify([s.beats, s.choice, s.enemyCards, s.inPlay, s.payment]);
     for (const id of facedown) {
       const shown = s.enemyCards.find((c) => c.id === id);
       const zone = s.inPlay.some((c) => c.id === id) ? "inPlay" : s.hand.some((c) => c.id === id) ? "hand" : "nowhere";
@@ -430,10 +429,10 @@ function playGame(seed: number, policy: Policy, villain: VillainId = "rhino", he
       const hidden = engine.cardOf(st, id as engine.InstanceId)?.name;
       // A copy of the card named as it was discarded faceup earlier in the move (Invasive AI's discard), shuffled back
       // in with the discard pile when the deck ran out: the discard was public, and which Drone is which is not told.
-      const milled = s.beats.some((b) =>
-        b.milled?.some((other) => engine.cardOf(st, other as engine.InstanceId)?.name === hidden),
-      );
-      const toldNow = milled ? JSON.stringify([s.choice, s.enemyCards, s.inPlay, s.payment]) : told;
+      // Only that discard's own beat is let off; every other beat still counts.
+      const millsIt = (b: BattleBeat) =>
+        !!b.milled?.some((other) => engine.cardOf(st, other as engine.InstanceId)?.name === hidden);
+      const toldNow = JSON.stringify([s.beats.filter((b) => !millsIt(b)), s.choice, s.enemyCards, s.inPlay, s.payment]);
       // The whole name, not part of a longer title ("Energy" inside "Energy Channel" is not Energy).
       const named =
         !!hidden &&

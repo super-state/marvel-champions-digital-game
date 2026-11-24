@@ -3085,7 +3085,8 @@ export class BattleTable {
         allyUpgrades.set(card.attachedTo!, [...(allyUpgrades.get(card.attachedTo!) ?? []), card]);
     const visibleUpgrades = permanents.filter((card) => card.type === "upgrade" && card.showAsFullCard);
     const row = [state.hero, ...visibleUpgrades, ...permanents.filter((card) => card.type !== "upgrade")];
-    const tabsOf = (card: TableCard) => (allyUpgrades.get(card.id)?.length ?? 0) * TAB;
+    const tabsOf = (card: TableCard) =>
+      (allyUpgrades.get(card.id)?.length ?? 0) * TAB * (card.exhausted ? 1 / HEIGHT : 1);
     const allyTabs = row.reduce((total, card) => total + tabsOf(card), 0);
     this.#heroShadow.visible = upgrades.some((card) => card.id !== state.staged?.id);
     this.#heroShadow.position.z = -0.006 * upgrades.length - 0.004;
@@ -3143,11 +3144,14 @@ export class BattleTable {
       const tucked = allyUpgrades.get(card.id);
       if (!tucked || i === 0) return;
       const half = (playWidth * (card.exhausted ? HEIGHT : 1)) / 2;
+      const width = playWidth * (card.exhausted ? 1 / HEIGHT : 1);
       tucked.forEach((upgrade, j) => {
         const depth = tucked.length - j;
-        const x = centers[i]! - half + playWidth * 0.5 - playWidth * TAB * depth;
+        const x = centers[i]! - half + width * 0.5 - width * TAB * depth;
+        // Still being paid for: it waits lifted where it will go, as the hero's upgrades do.
+        if (upgrade.id === state.staged?.id) return posePermanent(upgrade, x, 0.05);
         this.#tucked.set(upgrade.id, { host: card.id, depth });
-        this.#pose(upgrade.id, x, rowY - playWidth * STAGGER * depth, playWidth, 0.045 + j * 0.035, flat);
+        this.#pose(upgrade.id, x, rowY - width * STAGGER * depth, width, 0.045 + j * 0.035, flat);
         onBoard.add(upgrade.id);
         const target = this.#pieces.get(upgrade.id)!.target;
         rest(target.position, target.scale, false);
@@ -3273,7 +3277,7 @@ export class BattleTable {
           const half = (footprints[i]! * playWidth) / 2;
           return Math.abs(centers[i]! - x) < half + playWidth * 0.62 && Math.abs(rowY - y) < playWidth * 1.45;
         });
-      const rowLeft = first - heroHalf - tabs * tabScale * playWidth;
+      const rowLeft = first - heroHalf - upgrades.length * TAB * tabScale * playWidth;
       const spots: [number, number][] = [
         [first + playWidth * 0.92, rowY - playWidth * 0.48],
         [rowLeft - playWidth * 0.75, rowY - playWidth * 0.48],

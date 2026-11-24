@@ -521,3 +521,13 @@ test("01074 Inspired: the refusal reason says ally, not host", () => {
   p.play("Inspired", { pay: ["Energy"] });
   expect(p.card("Inspired").reason).toMatch(/ally/i);
 });
+
+test("01074 Inspired: while it is paid for it is held by the ally chosen, not over the villain's side", () => {
+  const p = scenario(handOf("01074", "01088"), inPlay("01068"), inPlay("01067"));
+  const inspired = p.card("Inspired");
+  // Its hosts are allies: it is not staged over the enemies as Webbed Up is.
+  expect(p.battle.isTargetedAttachment(inspired.id)).toBe(false);
+  expect(p.battle.pick(inspired.id)).toBe(true);
+  p.choose({ label: "Maria Hill" });
+  expect(p.snap.payment!.subject).toMatchObject({ id: inspired.id, attachedTo: p.card("Maria Hill", "inPlay").id });
+});
