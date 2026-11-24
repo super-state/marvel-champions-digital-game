@@ -1,7 +1,8 @@
 # The room: title screen, menus, heroes and deck building (plan)
 
-_Adam asked for this on 2026-11-24. It is a plan, not built yet. Nothing here is decided until Adam says so; the
-"Adam's calls" section lists what is his to choose, each with the default this plan assumes._
+_Adam asked for this on 2026-11-24 and said yes to it the same day, with the four assumed answers in "Adam's calls".
+It is being built as separate tasks running side by side: "Who is building what" below says which task owns which
+files. The session that wrote this plan keeps this document; a task reports what landed and does not edit it._
 
 ## The idea
 
@@ -172,6 +173,26 @@ How the room is built (for whoever builds 0.3.0):
 - Draw only what is in view, and build a place's things the first time the camera heads there, so the title appears
   fast on a phone.
 - A browser test with `battle` in its name walks the room with keyboard and controller.
+
+## Who is building what (started 2026-11-24)
+
+Four tasks at once, each in its own project copy and its own session, on Opus 5.5. A fifth waits.
+
+| Task                                      | Owns                                                                                                                                                               | Leaves alone                                 |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
+| The room and title                        | `boxes/` (becoming `room/`), the part of `main.ts` that opens the shelf (`showShelf`, `begin`)                                                                     | the deal, the record, the cards              |
+| Captain Marvel and hero choice            | `model.ts` (the deal and its options), the hero's audit tests, Spider-Man's name wherever it is assumed                                                            | the `finishGame` call in `main.ts`; `boxes/` |
+| The record and achievements               | `test-site/players.ts`, `test-site/site-api.ts`, a new `record/` folder, the `finishGame` call in `main.ts` (reading the hero and deck from the game, not by name) | `model.ts`, `boxes/`                         |
+| The deck builder                          | a new `decks/` folder and its own page                                                                                                                             | `main.ts`, `model.ts`, `table.ts`, `boxes/`  |
+| Waiting: Expert and the two other modules | starts once the hero task has landed its change to the deal's options in `model.ts`                                                                                |                                              |
+
+- `main.ts`, `model.ts` and `table.ts` are shared and large: small pull requests, merged often, and the main line
+  merged into the branch before each push.
+- This PC (Nimbus) has 16 GB of memory and little disk. While working, run only the test file being changed. Anything
+  heavy (a push with its check, the type check, a whole test run) takes its turn through
+  `bash scripts/heavy-turn.sh <command>`. No production builds, no kept test recordings.
+- Each task previews on its own port (5201 the room, 5202 the hero, 5203 the record, 5204 the deck builder), never
+  5173 (Adam's own table), and does not commit a changed `.claude/launch.json`.
 
 ## Adam's calls
 

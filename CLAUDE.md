@@ -18,11 +18,12 @@ The 3D table still borrows about 255 files from the old 2D game (mostly `package
 can't be deleted yet. Avoid adding new imports from it: each one is something to untangle later. Game state lives only
 in the engine; the 3D table shows it and sends the player's choices back, it never decides an outcome itself.
 
-Where it is heading: [docs/project/room-plan.md](docs/project/room-plan.md) is the proposed plan for the room (title
-screen and menus as places in one room), Campaign and Free Play, the other four Core Set heroes, deck building,
-achievements and stats, with the order and the version each lands in. It is a proposal until Adam has answered its
-four questions: don't start building a step from it unless Adam has asked for that step. When he has, read it first
-and keep it true as steps land.
+Where it is heading: [docs/project/room-plan.md](docs/project/room-plan.md) is the plan for the room (title screen and
+menus as places in one room), Campaign and Free Play, the other four Core Set heroes, deck building, achievements and
+stats, with the order and the version each lands in. Adam said yes to it on 2026-11-24 and it is being built as
+several tasks at once: its "Who is building what" says which task owns which files, so read it before touching the
+room, the deal, the record or the decks. Several sessions work on this PC at once: run anything heavy (a push, the
+type check, a whole test run) through `bash scripts/heavy-turn.sh <command>` so two never overlap.
 
 ## Run, test, push
 
