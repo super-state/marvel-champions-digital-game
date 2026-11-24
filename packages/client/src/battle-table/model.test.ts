@@ -469,3 +469,37 @@ describe("the pictures a game loads as it deals", () => {
     expect([...pictures].every((url) => typeof url === "string" && url.length > 0)).toBe(true);
   });
 });
+
+describe("the hero the deal takes", () => {
+  test("is Spider-Man with his Justice starter deck unless chosen otherwise", () => {
+    const battle = new BattleModel();
+    battle.reset({ seed: 75 });
+    expect(battle.matchup).toEqual({ hero: "spider-man", villain: "rhino" });
+    const state = battle.snapshot();
+    expect(state.hero.name).toBe("Peter Parker");
+    expect(state.heroActions.find((action) => action.kind === "changeForm")?.label).toBe("Change to Spider-Man");
+  });
+
+  test("is Captain Marvel with her Leadership starter deck when chosen, against any villain", () => {
+    for (const villain of ["rhino", "klaw", "ultron"] as const) {
+      const battle = new BattleModel();
+      battle.reset({ hero: "captain-marvel", villain, seed: 7, mulligan: true });
+      expect(battle.matchup).toEqual({ hero: "captain-marvel", villain });
+      const state = battle.snapshot();
+      expect(state.hero.name).toBe("Carol Danvers");
+      // Her deck: her own cards, Leadership and basic, and none of Spider-Man's.
+      const names = new Set([...state.hand.map((card) => card.name)]);
+      expect([...names].some((name) => /Web|Spider|Black Cat|Aunt May/.test(name))).toBe(false);
+      expect(battle.pictures().length).toBeGreaterThan(40);
+    }
+  });
+
+  test("names her other face on the change of form, both ways", () => {
+    const battle = new BattleModel();
+    battle.reset({ hero: "captain-marvel", seed: 7 });
+    const label = () => battle.snapshot().heroActions.find((action) => action.kind === "changeForm")?.label;
+    expect(label()).toBe("Change to Captain Marvel");
+    battle.heroAction("changeForm");
+    expect(battle.snapshot().hero.name).toBe("Captain Marvel");
+  });
+});
