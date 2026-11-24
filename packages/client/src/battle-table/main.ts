@@ -14,6 +14,16 @@ import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import { BattleModel, DRONE_NAME, isVillainId, VILLAINS, type BattleCard, type VillainId } from "./model.js";
 import { answerRemote, createPlayer, type Player, type RemoteChannel } from "./play.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
+import {
+  addRecordButton,
+  finishGame,
+  lockReason,
+  playerReady,
+  shelfDrawn,
+  shelfStale,
+  startGame,
+  type GameHandle,
+} from "./test-site/player.js";
 import { spreadPlates, type Obstacle, type Plate, type PlateShift } from "./plate-spread.js";
 import { eventLook, offerDoes, spotOf, waitsOnDock, type GlowTone, type Spot } from "./spotlight.js";
 import {
@@ -1328,6 +1338,14 @@ function showOutcome(outcome: Snapshot["outcome"]) {
         ? "Knocked out"
         : "Defeat";
   element("game-over-kicker").textContent = `${state.hero.name} vs. ${state.villain.name}`;
+  // The test site keeps the player's record (test-site/player.ts): this ending, once.
+  void finishGame(gameSaved, {
+    result: outcome.result === "win" ? "win" : "loss",
+    reason: outcome.reason,
+    rounds: state.round,
+    hero: "Spider-Man",
+    deck: ["core-spider-man-justice"],
+  });
   element("game-over-title").textContent = won ? "Victory" : "Defeat";
   element("game-over-detail").textContent = detail;
   gameOver.toggleAttribute("data-victory", won);
@@ -3743,6 +3761,8 @@ function paintMatchup() {
 
 /** A game has been dealt in this page, so a `?scene=` set-up has had its turn. */
 let sceneDealt = false;
+/** The game on the table, as the test site saves it to the player's record (null when nothing is saved). */
+let gameSaved: GameHandle | null = null;
 
 function deal() {
   if (gameMenu.open) gameMenu.close();
@@ -3781,6 +3801,8 @@ function deal() {
   const villain = arrange ? sceneVillain(sceneName) : villainChoice;
   model.reset(arrange ? { villain, seed, arrange } : { villain, seed, mulligan: true });
   villainDealt = villain;
+  // A set-up or a chosen shuffle is a check, not a game: it never goes on a record.
+  gameSaved = arrange || seedFromUrl() !== undefined ? null : startGame(villain);
   paintMatchup();
   // The table opens with what the scenario's setup already did (Ultron's Drones environment and the first Drone off
   // the player's deck): the log says so, so nothing on it is there unexplained.
@@ -4015,7 +4037,9 @@ readReveal.addEventListener("pointermove", mirrorRevealHover);
 readReveal.addEventListener("pointerleave", () => mirrorRevealHover());
 readReveal.addEventListener("click", () => mirrorRevealHover());
 // Ctrl+Space ends the turn: the same as pressing End Turn, so it does nothing whenever the button is greyed out.
-endTurnButton.title = "End Turn (Ctrl+Space)";
+// A Mac names its keys by their symbols (⌃ control, ⌘ command), and its players undo with ⌘Z.
+const onMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+endTurnButton.title = onMac ? "End Turn (⌃Space)" : "End Turn (Ctrl+Space)";
 document.addEventListener("keydown", (event) => {
   if (event.code !== "Space" || !event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return;
   event.preventDefault();
@@ -4050,7 +4074,7 @@ document.addEventListener("keydown", (event) => {
   button.click();
 });
 // Ctrl+Z takes the last move back, as Undo does (on the game-over screen, its Undo last move).
-undoButton.title = "Undo (Ctrl+Z)";
+undoButton.title = onMac ? "Undo (⌘Z)" : "Undo (Ctrl+Z)";
 document.addEventListener("keydown", (event) => {
   if (event.code !== "KeyZ" || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
   if ((document.activeElement as HTMLElement | null)?.matches("input, textarea")) return;
@@ -4407,8 +4431,15 @@ async function showShelf() {
   // Dark until the room is drawn, so the bare table never shows while the shelf loads.
   document.documentElement.toggleAttribute("data-shelf-loading", true);
   try {
+    // A villain unlocked since the shelf was drawn: the page starts again, and the shelf is drawn with it open.
+    if (shelfStale()) {
+      location.reload();
+      return;
+    }
     const { openShelf } = await import("./boxes/boxes.js");
+    shelfDrawn();
     await openShelf({
+      lock: lockReason,
       deal: (villain) => {
         setVillainChoice(villain);
         rememberAtTable(villain);
@@ -4433,8 +4464,15 @@ async function showShelf() {
     document.documentElement.toggleAttribute("data-shelf-loading", false);
   }
 }
-if (opensOnShelf()) void showShelf();
-else start();
+// On the test site the player is known first (their name asked on first open), so the shelf knows what's unlocked.
+// Elsewhere (Adam's dev table, the browser tests) it starts at once, as it always has.
+function begin() {
+  addRecordButton(document.querySelector("#menu .menu-actions"), () => gameMenu.close());
+  if (opensOnShelf()) void showShelf();
+  else start();
+}
+if (import.meta.env.VITE_TABLE_VERSION) void playerReady.then(begin);
+else begin();
 
 // ── Sound Studio (dev server only, `?studio`) ─────────────────────────────────────────────────────────────────────
 // The studio page (`battle/studio.html`) shows this table in a frame and asks it to act out one moment at a time, so a

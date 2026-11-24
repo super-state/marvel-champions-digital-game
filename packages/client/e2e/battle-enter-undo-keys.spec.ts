@@ -10,7 +10,7 @@ test("Enter presses the yellow button; Ctrl+Z takes the last move back", async (
   await page.goto("/battle/?seed=7");
   await expect(page.locator("#dock-title")).toHaveText("Keep your hand?", { timeout: 60_000 });
   await expect(page.locator("#dock")).not.toHaveAttribute("data-waiting", "", { timeout: 15_000 });
-  await expect(page.locator("#undo")).toHaveAttribute("title", "Undo (Ctrl+Z)");
+  await expect(page.locator("#undo")).toHaveAttribute("title", /^Undo \((Ctrl\+|⌘)Z\)$/);
   await page.waitForTimeout(600);
 
   // Enter keeps the hand; a second Enter straight after must not end the turn.
