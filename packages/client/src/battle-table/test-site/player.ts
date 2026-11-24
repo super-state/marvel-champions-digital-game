@@ -232,6 +232,8 @@ export interface GameHandle {
 
 /** A newly dealt game, to be saved when it ends; null when nothing is being saved. */
 export function startGame(villain: string): GameHandle | null {
+  // The last game's line under the game-over text goes with it.
+  document.getElementById("game-over-record")?.remove();
   if (!profile?.saving || !profile.name) return null;
   const id = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return { id, villain, startedAt: Date.now(), sent: null };
@@ -277,7 +279,14 @@ export async function finishGame(
   line.replaceChildren(`You against ${name}: ${v.won} won, ${v.lost} lost.`);
   for (const villain of saved.newlyUnlocked ?? []) {
     const news = make("strong", "outcome-unlocked", `${villain} is unlocked!`);
-    line.append(make("br"), news);
+    // Try again deals the same villain: this goes back to the shelf, drawn with the new one open.
+    const go = make("button", "btn btn-secondary outcome-unlock-go", `Play ${villain}`);
+    go.type = "button";
+    go.onclick = () => {
+      (document.getElementById("game-over") as HTMLDialogElement | null)?.close();
+      document.getElementById("reset")?.click();
+    };
+    line.append(make("br"), news, go);
   }
 }
 

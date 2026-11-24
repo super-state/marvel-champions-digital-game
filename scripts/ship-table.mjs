@@ -77,30 +77,12 @@ if (existing && !redeploy) fail(`${tag} is already shipped: bump table-version.j
 if (existing && git("rev-list", "-n", "1", tag) !== head)
   fail(`${tag} points at another commit: bump the version instead`);
 
-if (!redeploy) {
-  // Every browser test, on exactly this commit; a pass is remembered, so shipping again after `table:check` is quick.
-  console.log(`ship-table: the release check on ${head.slice(0, 9)} (type check, unit tests, every browser test)`);
-  run("sh", [".githooks/battle-gate.sh", head], { BATTLE_E2E: "1" });
-}
-
-console.log(`ship-table: building ${tag} (${head.slice(0, 9)})`);
-run("pnpm", ["--filter", "@mc/client", "build"], { VITE_TABLE_VERSION: version, MC_CARD_ART: "pool" });
-
-// A checkout without the card scans (a fresh worktree: they come from `pnpm assets:fetch`, not git) still builds,
-// with every face drawn as a generated frame. Never ship that.
-const scans = readdirSync(path.join(dist, "card-art/bundles/cards")).filter((f) => /^\d/.test(f)).length;
-if (scans < 1000) fail(`the build carries only ${scans} card scans: run \`pnpm assets:fetch\` first`);
-
-console.log(`ship-table: deploying ${tag}`);
 // The lock goes in as `_worker.js` (Pages' "advanced mode"): every page, script and card scan passes through it.
 // Wrangler runs from a folder with no wrangler config of its own (packages/sync-worker has one, which newer
 // wranglers pick up and try to deploy instead), using the sync Worker's pinned copy.
 const wrangler = path.join(root, "packages/sync-worker/node_modules/wrangler/bin/wrangler.js");
 const scratch = mkdtempSync(path.join(tmpdir(), "ship-table-"));
 const wranglerRun = (...args) => run("node", [wrangler, ...args], {}, scratch);
-wranglerRun("deploy", "--dry-run", "--outdir", path.join(scratch, "bundle"), "--config", config);
-copyFileSync(path.join(scratch, "bundle", "worker.js"), path.join(dist, "_worker.js"));
-
 // The players' database: made the first time, then the same one every ship.
 const DB_NAME = "champions-table-players";
 const listDatabases = () =>
@@ -112,6 +94,13 @@ if (!database) {
   database = listDatabases().find((d) => d.name === DB_NAME);
 }
 if (!database?.uuid) fail(`couldn't find or make the D1 database ${DB_NAME}`);
+// Adam's players page needs its own key; the table works without it, so this only warns.
+const secrets = execFileSync("node", [wrangler, "pages", "secret", "list", "--project-name", project], {
+  cwd: scratch,
+  encoding: "utf8",
+});
+if (!/bADMIN_KEYb/.test(secrets))
+  console.warn("ship-table: ADMIN_KEY isn't set, so the players page (/admin) can't be opened yet");
 const pagesDir = path.join(scratch, "pages");
 mkdirSync(pagesDir);
 writeFileSync(
@@ -131,6 +120,24 @@ writeFileSync(
     2,
   ),
 );
+if (!redeploy) {
+  // Every browser test, on exactly this commit; a pass is remembered, so shipping again after `table:check` is quick.
+  console.log(`ship-table: the release check on ${head.slice(0, 9)} (type check, unit tests, every browser test)`);
+  run("sh", [".githooks/battle-gate.sh", head], { BATTLE_E2E: "1" });
+}
+
+console.log(`ship-table: building ${tag} (${head.slice(0, 9)})`);
+run("pnpm", ["--filter", "@mc/client", "build"], { VITE_TABLE_VERSION: version, MC_CARD_ART: "pool" });
+
+// A checkout without the card scans (a fresh worktree: they come from `pnpm assets:fetch`, not git) still builds,
+// with every face drawn as a generated frame. Never ship that.
+const scans = readdirSync(path.join(dist, "card-art/bundles/cards")).filter((f) => /^\d/.test(f)).length;
+if (scans < 1000) fail(`the build carries only ${scans} card scans: run \`pnpm assets:fetch\` first`);
+
+console.log(`ship-table: deploying ${tag}`);
+wranglerRun("deploy", "--dry-run", "--outdir", path.join(scratch, "bundle"), "--config", config);
+copyFileSync(path.join(scratch, "bundle", "worker.js"), path.join(dist, "_worker.js"));
+
 run(
   "node",
   [
