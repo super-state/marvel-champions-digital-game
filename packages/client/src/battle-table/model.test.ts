@@ -454,3 +454,18 @@ describe("a treachery that makes the villain attack (Assault)", () => {
     expect(beats.slice(reveal).some((beat) => beat.attackAim)).toBe(false);
   });
 });
+
+describe("the pictures a game loads as it deals", () => {
+  test.each(["rhino", "klaw", "ultron"] as const)("cover every card of a game against %s, both faces", (villain) => {
+    const battle = new BattleModel();
+    battle.reset({ villain, seed: 7, mulligan: true });
+    const pictures = new Set(battle.pictures());
+    const state = battle.snapshot();
+    // The hand, the hero, the villain and every face-up enemy card are among them.
+    for (const card of [...state.hand, state.hero, state.villain, ...state.enemyCards])
+      if (card.art && !card.art.startsWith("data:")) expect(pictures).toContain(card.art);
+    // A whole player deck and encounter deck, both backs, and the hero's other side: far more than the opening table.
+    expect(pictures.size).toBeGreaterThan(40);
+    expect([...pictures].every((url) => typeof url === "string" && url.length > 0)).toBe(true);
+  });
+});

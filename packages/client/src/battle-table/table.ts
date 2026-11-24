@@ -2173,6 +2173,21 @@ export class BattleTable {
     return this.#anchor(this.#encounterSlot);
   }
 
+  /**
+   * Starts loading these pictures, a few at a time once the table has drawn, so a card that turns over later shows its
+   * face at once rather than black while its picture downloads (the test site, 2026-11-24). Each lands in the same
+   * texture a card asks for (`#texture`), so nothing loads twice.
+   */
+  preload(urls: readonly string[]): void {
+    const queue = urls.filter((url) => url && !this.#textures.has(url));
+    const step = () => {
+      if (this.#disposed) return;
+      for (const url of queue.splice(0, 6)) this.#texture(url);
+      if (queue.length) window.setTimeout(step, 250);
+    };
+    window.setTimeout(step, 1200);
+  }
+
   #texture(url: string): THREE.Texture | null {
     if (!url) return null;
     let texture = this.#textures.get(url);
