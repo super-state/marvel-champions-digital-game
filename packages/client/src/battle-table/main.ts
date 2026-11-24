@@ -3835,6 +3835,8 @@ function deal() {
     table?.setBottomReserve(
       Math.max(0, boardViewport.getBoundingClientRect().bottom - dock.getBoundingClientRect().top),
     );
+  // Every picture this game can show starts loading now, so no card turns over black (online they download).
+  table?.preload(model.pictures());
   layoutHand();
   render();
   inspect(state.hand.find((card) => card.playable)?.id ?? state.hero.id);

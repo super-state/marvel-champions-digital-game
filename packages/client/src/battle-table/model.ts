@@ -609,6 +609,46 @@ export class BattleModel {
   #dronesDefeated = new Map<string, string>();
   #setup: string[] = [];
   /** What the scenario's setup put on the table before the first hand was drawn, for the log. */
+  /**
+   * Every picture this game can show: each card's faces (a hero's two, a villain's stages, a main scheme's stages and
+   * sides, a flip side) and both card backs. Online a card's picture downloads the first time it is needed, so a card
+   * turning over showed black for a moment (Adam, 2026-11-24, on the test site); the table loads these as it deals.
+   */
+  pictures(): string[] {
+    const urls = new Set<string>([CARD_BACKS.player.url, CARD_BACKS.encounter.url]);
+    const add = (card: Parameters<typeof artFor>[0], face: Parameters<typeof artFor>[1]) => {
+      try {
+        const url = artFor(card, face)?.url;
+        if (url) urls.add(url);
+      } catch {
+        // A face this card doesn't have: nothing to load.
+      }
+    };
+    for (const id of Object.keys(this.#game.instances)) {
+      const card = cardOf(this.#game, id as InstanceId);
+      if (!card) continue;
+      add(card, { kind: "front" });
+      if (card.type === "hero_identity") {
+        add(card, { kind: "hero" });
+        add(card, { kind: "alterEgo" });
+      }
+      if ("flipSide" in card && card.flipSide) add(card, { kind: "flipSide" });
+      // Ultron's Drones: player cards facedown, shown by their own stand-in picture.
+      if (card.type === "villain" && /ultron/i.test(card.name))
+        urls.add(standInArt({ kind: "ultronDrone", atk: DRONE_BASE.atk }).url);
+      if (card.type === "villain")
+        card.sides.forEach((side, sideIndex) =>
+          side.stages.forEach((_, stageIndex) => add(card, { kind: "villainStage", sideIndex, stageIndex })),
+        );
+      if (card.type === "main_scheme")
+        card.stages.forEach((_, stageIndex) => {
+          add(card, { kind: "mainSchemeStage", stageIndex, side: "A" });
+          add(card, { kind: "mainSchemeStage", stageIndex, side: "B" });
+        });
+    }
+    return [...urls];
+  }
+
   get setupNotes(): readonly string[] {
     return this.#setup;
   }
