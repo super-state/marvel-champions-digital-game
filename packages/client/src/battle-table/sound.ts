@@ -217,6 +217,10 @@ export class SoundBoard {
     if (this.#forward) return this.#forward.play(name, options);
     const variants = this.#manifest.sounds[name];
     if (!variants?.length || !this.#enabled) return;
+    // The audio starts with the first sound asked for, not only at a click or key: a game Claude plays through the
+    // play hook never clicks, and stayed silent (Adam, 2026-11-24). A browser that insists on a gesture first keeps
+    // it suspended until one, as before.
+    if (!this.#context) this.unlock();
     const now = performance.now();
     // Throttled by when it will be heard: five draws asked for at once, each due 180 ms apart, all play.
     const delay = Math.max(0, options.delay ?? 0) + Math.max(0, options.contactIn ?? 0);
