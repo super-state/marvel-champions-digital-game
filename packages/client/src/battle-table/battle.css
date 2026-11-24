@@ -36,6 +36,14 @@ body {
 html body {
   visibility: visible;
 }
+/* While the campaign shelf loads over the table (main.ts showShelf), the page stays dark: the bare table never shows. */
+html[data-shelf-loading]::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  background: #0d0a08;
+}
 button {
   color: inherit;
   font: inherit;

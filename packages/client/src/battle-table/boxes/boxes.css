@@ -1,43 +1,49 @@
-/* The campaign boxes page. Type, buttons and colours come from the 3D table's own design.css; Bangers stays on the
-   box prints only (it's the comic lettering of the boxes, not the game's interface). */
+/* The campaign shelf, over the 3D table page until Play hands over to the table. Type, buttons and colours come from
+   the table's own design.css; Bangers stays on the box prints only (it's the comic lettering of the boxes, not the
+   game's interface). */
 
-html,
-body {
-  margin: 0;
-  height: 100%;
+.shelf {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
   overflow: hidden;
   background: #0d0a08;
+  color: var(--text);
+}
+.shelf[hidden] {
+  display: none;
 }
 
-.stage,
-.stage canvas {
-  position: fixed;
+.shelf-stage,
+.shelf-stage canvas {
+  position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   display: block;
+  touch-action: none;
 }
 
-.boxes-head {
-  position: fixed;
+.shelf-head {
+  position: absolute;
   top: 22px;
   left: 28px;
   pointer-events: none;
 }
-.boxes-head h1,
-.opened h2 {
+.shelf-head h1,
+.shelf-opened h2 {
   margin: 4px 0 0;
   color: var(--text);
   font: 800 clamp(26px, 3vw, 38px) / 1.1 var(--font-ui);
   letter-spacing: -0.02em;
   text-shadow: 0 2px 14px #000c;
 }
-.boxes-head .eyebrow {
+.shelf-head .eyebrow {
   text-shadow: 0 1px 8px #000;
 }
 
-.hover-tag {
-  position: fixed;
+.shelf-hover-tag {
+  position: absolute;
   margin: 0;
   transform: translate(-50%, -100%);
   padding: 6px 12px;
@@ -51,8 +57,8 @@ body {
   white-space: nowrap;
 }
 
-.hint {
-  position: fixed;
+.shelf-hint {
+  position: absolute;
   left: 50%;
   bottom: 26px;
   transform: translateX(-50%);
@@ -63,10 +69,11 @@ body {
   text-transform: uppercase;
   text-shadow: 0 1px 8px #000;
   pointer-events: none;
+  white-space: nowrap;
 }
 
-.opened {
-  position: fixed;
+.shelf-opened {
+  position: absolute;
   left: 50%;
   bottom: 24px;
   transform: translateX(-50%);
@@ -78,33 +85,30 @@ body {
   border: 1px solid var(--line-strong);
   box-shadow: var(--shadow-2);
   color: var(--text);
-  animation: rise 0.45s var(--ease-out);
+  animation: shelf-rise 0.45s var(--ease-out);
 }
-.opened .eyebrow {
+.shelf-opened .eyebrow {
   justify-content: flex-start;
 }
-.opened-blurb {
+.shelf-blurb {
   margin: 6px 0 14px;
   color: var(--text-2);
   font: 500 15px/1.45 var(--font-ui);
 }
-.opened-buttons {
+.shelf-buttons {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
-.opened-buttons .btn {
-  text-decoration: none;
-}
-@keyframes rise {
+@keyframes shelf-rise {
   from {
     opacity: 0;
     transform: translate(-50%, 16px);
   }
 }
 
-.toast {
-  position: fixed;
+.shelf-toast {
+  position: absolute;
   top: 24px;
   left: 50%;
   transform: translateX(-50%);
@@ -118,15 +122,6 @@ body {
   font: 700 14px var(--font-ui);
 }
 
-/* The real table, loading behind the menu until Play hands over to it. */
-.table-frame {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  opacity: 0;
-  pointer-events: none;
-  z-index: 5;
-  background: transparent;
+.shelf:focus {
+  outline: none;
 }

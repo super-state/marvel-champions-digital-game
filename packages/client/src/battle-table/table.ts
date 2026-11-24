@@ -2137,7 +2137,7 @@ export class BattleTable {
     return this.#anchor(this.#discardSlot);
   }
 
-  deckAnchor(): { x: number; bottom: number } {
+  deckAnchor(): { x: number; top: number; bottom: number; left: number; right: number } {
     return this.#anchor(this.#deckSlot);
   }
 
