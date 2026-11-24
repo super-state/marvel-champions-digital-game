@@ -42,8 +42,8 @@ The Core Set has no printed campaign: it has three villains, five modules and tw
   (adding Legions of Hydra and The Doomsday Chair), Standard or Expert, any hero and deck you have.
 - Stringing your own villains into a campaign of your own is parked until the above is in.
 
-The rules side can already do all of this (`coreScenario` takes the difficulty and the modules; the engine tests play
-Expert Rhino). The 3D table can't yet: it always deals Standard with the recommended module, and has never shown the
+The rules side can already do all of this (`coreScenario` takes `difficulty` and `modularSetIds`; the engine tests
+play Expert Rhino). The 3D table can't yet: it always deals Standard with the recommended module, and has never shown the
 Expert set's cards or the two other modules. Each of those needs the same card-by-card look the villains had.
 
 ## Heroes
@@ -63,7 +63,8 @@ Core Set heroes and their starter decks:
 reads right (`deck-audit-player.test.ts` is that check for Spider-Man, 78 tests), their nemesis set too, and nothing
 in the table's own code still assumes Spider-Man (the matchup title, the saved record and the deal in `model.ts`
 name him today). The order above brings in a new aspect with each of the first three, so the whole Core Set card
-pool is on the table after Black Panther.
+pool is on the table after Black Panther: each starter deck holds every card of its aspect and all 11 basic cards
+(checked against `starterDecks.ts` on 2026-11-24; the 44 aspect and basic cards are all in one starter or another).
 
 The first new hero is the measure: how long Captain Marvel takes tells us how long the other three will. No estimate
 before then.
@@ -100,7 +101,8 @@ At the bench:
 4. **Save** it under a name. It then shows as a deck box choice in Free Play and Campaign.
 
 The builder can only offer cards the 3D table has been checked with, so it opens once all four aspects are in (after
-Black Panther). Until then each hero plays their starter deck.
+Black Panther). Until then each hero plays their starter deck. It also makes pairings no starter deck has (Spider-Man
+with Aggression), so its step ends with a few such games played through on the table.
 
 ## Achievements, stats and rewards
 
@@ -130,7 +132,9 @@ and names, not a plan we are bound to.
 1. A saved game today records hero, villain, result, reason, rounds, deck and version. Add: difficulty, modules, the
    hero's hit points and form at the end, allies played, whether Undo was used, and which card dealt the last blow.
    The old 2D game already works most of this out from the finished game (`packages/client/src/engine/game-summary.ts`,
-   pure code): the table takes its own copy of what it needs, as the controller did, not a new import.
+   pure code): the table takes its own copy of what it needs, as the controller did, not a new import. The test
+   site's `games` table is already live and is only created when missing, so the new facts go in one added column
+   (a block of JSON) with a step that adds it to the live database, not in a changed table definition.
 2. Games are only saved on the test site (its database). Adam's own table saves nothing, so his cabinet would be
    empty. Give the table one "record" with two homes: the test site's database for friends, this browser's storage
    on Adam's table. Saved decks use the same two homes.
@@ -155,6 +159,8 @@ Core Set player card on the table first, so the heroes come before it.
   tests; the room is the shelf's files), so a hero and a room step can be built at the same time as separate tasks.
   Both touch `main.ts`: check nobody else is mid-edit there.
 - Adam's daily fixes go on as now and bump the last number. The numbers above are what the friend site gets.
+- A change to the numbering, for Adam to accept: until now the middle number went up only for a new hero or villain.
+  Here the room, Free Play and Trophies each take one too, so that 1.0.0 still lands on "Core Set complete".
 
 How the room is built (for whoever builds 0.3.0):
 
@@ -169,9 +175,9 @@ How the room is built (for whoever builds 0.3.0):
 
 ## Adam's calls
 
-| #   | Question                             | This plan assumes                                                                                                                      |
-| --- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | What is "Campaign" for the Core Set? | The three villains in order, then again on Expert. Free Play is where you build your own game. Building your own campaign comes later. |
-| 2   | What does the room look like?        | The dim, warm games room the shelf already has, our own design, filling up as you earn things.                                         |
-| 3   | Room first or heroes first?          | The room first (0.3.0), heroes alongside from 0.6.0, the deck builder once Black Panther is in.                                        |
-| 4   | Do locks apply to Adam too?          | Friends unlock by playing. Adam's own table has everything open, with a switch to see it as a friend does.                             |
+| #   | Question                             | This plan assumes                                                                                                                                                                                                                                 |
+| --- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | What is "Campaign" for the Core Set? | The three villains in order, then again on Expert. Free Play is where you build your own game. Building your own campaign comes later. (Today the shelf's code calls each villain's box a "campaign"; here the campaign is the run of all three.) |
+| 2   | What does the room look like?        | The dim, warm games room the shelf already has, our own design, filling up as you earn things.                                                                                                                                                    |
+| 3   | Room first or heroes first?          | The room first (0.3.0), heroes alongside from 0.6.0, the deck builder once Black Panther is in.                                                                                                                                                   |
+| 4   | Do locks apply to Adam too?          | Friends unlock by playing. Adam's own table has everything open, with a switch to see it as a friend does.                                                                                                                                        |
