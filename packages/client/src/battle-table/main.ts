@@ -7,6 +7,7 @@ import { besideSpot, dockSpot } from "./dock-spot.js";
 import { whileStillThere } from "./beat-order.js";
 import { handBetweenBeats } from "./hand-flow.js";
 import { nextOfferIndex } from "./offer-queue.js";
+import { pickOrder } from "./pick-order.js";
 import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js";
 import { arrangeScene, sceneVillain } from "./debug-scenes.js";
 import { sfx, type SoundName } from "./sound.js";
@@ -65,6 +66,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 const model = new BattleModel();
 const stage = element("stage");
+const orderLayer = element("order-badges");
 const boardLabels = element("board-labels");
 const labelClips = [boardLabels];
 const anchors = element("anchors");
@@ -299,6 +301,8 @@ interface DockOption {
   detail?: string | null;
   icon?: IconName | null;
   pressed?: boolean;
+  /** Where this pick stands in an ordered question: 1 goes first (`pick-order.ts`). */
+  order?: number;
   onClick(): void;
 }
 interface DockView {
@@ -417,7 +421,8 @@ function paintDock(view: DockView): boolean {
       button.type = "button";
       button.dataset.option = option.id;
       if (option.pressed !== undefined) button.setAttribute("aria-pressed", String(option.pressed));
-      if (option.icon) button.append(icon(option.icon));
+      if (option.order !== undefined) button.append(orderBadge(option.order));
+      else if (option.icon) button.append(icon(option.icon));
       button.append(make("span", "", option.label));
       if (option.detail) button.append(make("small", "", option.detail));
       button.onclick = (event) => {
@@ -687,6 +692,7 @@ function choiceView(choice: Choice): DockView {
       parkedViews.get(state.choiceSource ?? "")?.name ||
       (state.turn === "enemy" ? "Villain phase" : state.turn === "ending" ? "End of turn" : staged?.name || ""));
   const heading = /^choose one[.:]?$/i.test(choice.prompt.trim()) ? "Choose one" : choice.prompt;
+  const order = pickOrder(choice, choicePicks);
   return {
     tone,
     asking: true,
@@ -703,6 +709,7 @@ function choiceView(choice: Choice): DockView {
       label: option.label,
       icon: optionIcon(option.label),
       ...(multiple ? { pressed: choicePicks.has(option.id) } : {}),
+      ...(order.has(option.id) ? { order: order.get(option.id)! } : {}),
       onClick: () => selectChoice(option.id),
     })),
     primary: multiple
@@ -1412,7 +1419,12 @@ function synchronizeLabels() {
     );
     label.dataset.spent = String(!!source?.selected);
     const picked = handPick && choicePicks.has(target!.id);
+    // An ordered question (Masters of Mayhem's "Order the enemies"): the plate says each pick's place, and the card
+    // itself wears it as a number (`placeOrderBadges`).
+    const ordering = !!state.choice?.ordered && !!target && !handPick;
+    const place = ordering ? pickOrder(state.choice, choicePicks).get(target!.id) : undefined;
     if (source || handPick) label.setAttribute("aria-pressed", String(source?.selected ?? picked));
+    else if (ordering) label.setAttribute("aria-pressed", String(place !== undefined));
     else label.removeAttribute("aria-pressed");
     const hero = card.id === state.hero.id;
     const enemy = card.id === state.villain.id;
@@ -1471,7 +1483,7 @@ function synchronizeLabels() {
       discardOpen
         ? `Inspect ${card.name}`
         : target
-          ? `${handPick ? (state.choice?.mulligan ? "Swap" : "Discard") : "Choose"} ${card.name}`
+          ? `${handPick ? (state.choice?.mulligan ? "Swap" : "Discard") : "Choose"} ${card.name}${place !== undefined ? `, ${ordinal(place)}` : ""}`
           : source
             ? `${source.selected ? "Remove" : "Spend"} ${card.name}, ${resourceText(source.icons)}`
             : card.playable
@@ -1479,6 +1491,20 @@ function synchronizeLabels() {
               : `Inspect ${card.name}`,
     );
   }
+}
+
+/** The place a pick stands in an ordered question, as a gold number on its card's plate or its button. */
+function orderBadge(place: number) {
+  const badge = make("span", "pick-order", String(place));
+  badge.setAttribute("aria-hidden", "true");
+  return badge;
+}
+
+/** 1st, 2nd, 3rd, 4th…: said with a card's name while an ordered question numbers it. */
+function ordinal(n: number) {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th");
+  return `${n}${suffix}`;
 }
 
 /** Plates the last question made pickable (gold "Choose" plates) go back to plain ones while the answer plays out. */
@@ -1861,6 +1887,41 @@ function untagBoost(id: string) {
   boostTags.delete(id);
 }
 
+/**
+ * An ordered question (Masters of Mayhem's "Order the enemies"): each picked card on the table wears its place, 1 going
+ * first, on its top-left corner, above the shade the question draws over the table. They go as soon as the picks do.
+ */
+const orderBadges = new Map<string, HTMLElement>();
+function placeOrderBadges(projected: ReturnType<BattleTable["anchors"]>) {
+  const order = new Map<string, number>();
+  for (const [optionId, place] of pickOrder(state.choice, choicePicks)) {
+    const cardId = state.choice?.options.find((option) => option.id === optionId)?.cardId;
+    if (cardId) order.set(cardId, place);
+  }
+  for (const [id, badge] of orderBadges)
+    if (!order.has(id)) {
+      badge.remove();
+      orderBadges.delete(id);
+    }
+  for (const [id, place] of order) {
+    const card = projected.find((p) => p.id === id);
+    let badge = orderBadges.get(id);
+    if (!card) {
+      badge?.remove();
+      orderBadges.delete(id);
+      continue;
+    }
+    if (!badge) {
+      badge = orderBadge(place);
+      orderLayer.append(badge);
+      orderBadges.set(id, badge);
+    }
+    badge.textContent = String(place);
+    badge.style.setProperty("--size", `${Math.round(Math.min(44, Math.max(24, card.width * 0.26)))}px`);
+    badge.style.transform = `translate(${Math.round(card.left)}px,${Math.round(card.top)}px)`;
+  }
+}
+
 function syncBoostTags() {
   for (const id of [...boostTags.keys()]) if (!state.facedownBoosts.some((boost) => boost.id === id)) untagBoost(id);
   for (const boost of state.facedownBoosts) tagBoost(boost.id);
@@ -1944,6 +2005,7 @@ function placeLabels() {
     if (card) placeBoostBurst(burst.node, card);
     else dropBoostBurst(id);
   }
+  placeOrderBadges(projected);
   // Klaw's attacks deal him two boost cards, fanned beside him: one tag, on the outermost card, counts them
   // ("Boost ×2"), rather than a tag per card drawn over each other.
   const boostsBy = new Map<string, string[]>();
