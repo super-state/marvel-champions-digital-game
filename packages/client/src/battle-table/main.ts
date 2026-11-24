@@ -4426,6 +4426,8 @@ function tableInert(inert: boolean) {
 }
 async function showShelf() {
   shelfUp = true;
+  // No game on the shelf yet: the tab says the game's name, not the last matchup.
+  document.title = "Marvel Champions";
   rememberAtTable(null);
   tableInert(true);
   // Dark until the room is drawn, so the bare table never shows while the shelf loads.
