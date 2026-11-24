@@ -182,11 +182,19 @@ export function createPlayer(hooks: PlayHooks): Player {
   }
   const name = (id: string | null) => (id ? (cardById(id)?.name ?? hooks.cardName(id)) : "");
 
+  const STAT_NAMES: ReadonlySet<string> = new Set(["THW", "ATK", "DEF", "SCH", "REC", "HP"]);
+
   function cardLine(card: BattleCard, extra: string[] = []): string {
     const bits = [...extra];
     if (card.hp !== undefined) bits.push(`${card.hp} HP left`);
     if (card.threat !== null) bits.push(`threat ${card.threat}${card.threatTarget ? `/${card.threatTarget}` : ""}`);
-    for (const marker of card.markers) bits.push(`${marker.name} ${marker.count}`);
+    // A stat modifier reads as one ("+10 HP" from The "Immortal" Klaw, "+1 ATK" from Sonic Converter), not as a count.
+    for (const marker of card.markers)
+      bits.push(
+        STAT_NAMES.has(marker.name)
+          ? `${marker.count > 0 ? "+" : ""}${marker.count} ${marker.name}`
+          : `${marker.name} ${marker.count}`,
+      );
     if (card.exhausted) bits.push("exhausted");
     const facts = hooks.cardFacts(card.id);
     const state = hooks.state();
@@ -285,7 +293,8 @@ export function createPlayer(hooks: PlayHooks): Player {
           label: `${state.hero.name}: ${action.label}${warn(heroStatuses, kindOfLabel(action.label))}`,
           run: () => hooks.useAction(state.hero.id, action.kind),
         });
-      for (const card of state.inPlay)
+      // Encounter cards can carry a player's action too (Klaw's Sonic Converter: pay to discard it).
+      for (const card of [...state.inPlay, ...state.enemyCards])
         for (const action of hooks.fieldActions(card.id))
           out.push({
             label: `${card.name}: ${action.label}${warn(statusesOf(card), kindOfLabel(action.label))}`,

@@ -8,10 +8,10 @@ import { whileStillThere } from "./beat-order.js";
 import { handBetweenBeats } from "./hand-flow.js";
 import { nextOfferIndex } from "./offer-queue.js";
 import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js";
-import { arrangeScene } from "./debug-scenes.js";
+import { arrangeScene, sceneVillain } from "./debug-scenes.js";
 import { sfx, type SoundName } from "./sound.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
-import { BattleModel, type BattleCard } from "./model.js";
+import { BattleModel, isVillainId, VILLAINS, type BattleCard, type VillainId } from "./model.js";
 import { answerRemote, createPlayer, type Player, type RemoteChannel } from "./play.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
 import { eventLook, offerDoes, spotOf, waitsOnDock, type GlowTone, type Spot } from "./spotlight.js";
@@ -683,6 +683,8 @@ function choiceView(choice: Choice): DockView {
   const source =
     choice.sourceTitle?.replace(/ · When Revealed$/, "") ??
     (nameOf(state.choiceSource) ||
+      // A revealed card standing aside beside the villain while it asks (Sonic Boom) is in none of the zones.
+      parkedViews.get(state.choiceSource ?? "")?.name ||
       (state.turn === "enemy" ? "Villain phase" : state.turn === "ending" ? "End of turn" : staged?.name || ""));
   const heading = /^choose one[.:]?$/i.test(choice.prompt.trim()) ? "Choose one" : choice.prompt;
   return {
@@ -1942,9 +1944,18 @@ function placeLabels() {
     if (card) placeBoostBurst(burst.node, card);
     else dropBoostBurst(id);
   }
+  // Klaw's attacks deal him two boost cards, fanned beside him: one tag, on the outermost card, counts them
+  // ("Boost ×2"), rather than a tag per card drawn over each other.
+  const boostsBy = new Map<string, string[]>();
+  for (const boost of state.facedownBoosts) {
+    if (!boostTags.has(boost.id) || !projected.some((p) => p.id === boost.id)) continue;
+    boostsBy.set(boost.enemy, [...(boostsBy.get(boost.enemy) ?? []), boost.id]);
+  }
   for (const [id, tag] of boostTags) {
     const card = projected.find((p) => p.id === id);
-    tag.hidden = !card;
+    const stack = [...boostsBy.values()].find((ids) => ids.includes(id)) ?? [];
+    tag.hidden = !card || stack[stack.length - 1] !== id;
+    tag.lastElementChild!.textContent = stack.length > 1 ? `Boost ×${stack.length}` : "Boost";
     // The tag sits on the part of the card showing past its enemy's edge.
     if (card)
       tag.style.transform = `translate(${Math.round(card.right - card.width * 0.32)}px,${Math.round(card.y)}px)`;
@@ -2048,7 +2059,7 @@ function placeLabels() {
 // ── Presenting what happened ─────────────────────────────────────────────────────────────────────────────────────
 const PHASE_BANNER_MS = 1500;
 
-function phaseIndicator(phase: "hero" | "villain" | "ending" | "setup", announce = false) {
+function phaseIndicator(phase: "hero" | "villain" | "ending" | "setup", announce = false, round = state?.round ?? 1) {
   if (phase !== "setup") table?.setPhase(phase === "villain" ? "villain" : "hero");
   const title =
     phase === "hero"
@@ -2060,7 +2071,7 @@ function phaseIndicator(phase: "hero" | "villain" | "ending" | "setup", announce
           : "Setup";
   turnStatus.dataset.phase = phase === "villain" ? "villain" : phase === "ending" ? "ending" : "hero";
   turnStatus.replaceChildren(...(phase === "setup" ? [] : [icon(phase === "villain" ? "villain" : "hero")]), title);
-  roundLabel.textContent = `Round ${state?.round ?? 1}`;
+  roundLabel.textContent = `Round ${round}`;
   if (announce && phase !== "setup") sweepBanner(title, phase);
 }
 
@@ -2318,7 +2329,8 @@ function feedLineOf(beat: Beat): FeedLine | null {
       icon: "attack",
       tone: "villain",
     };
-  if (beat.villainStage || beat.villainFlip) return { text: beat.text, icon: "flip", tone: "villain" };
+  if (beat.villainStage || beat.villainFlip || beat.schemeAdvance)
+    return { text: beat.text, icon: "flip", tone: "villain" };
   if (beat.modifier) return { text: beat.text, icon: "action", tone: beat.enemy ? "villain" : "hero" };
   return beat.text
     ? { text: beat.text, icon: beat.enemy ? "scheme" : "action", tone: beat.enemy ? "villain" : "hero" }
@@ -2593,9 +2605,42 @@ async function present(beats: Snapshot["beats"]) {
       await sleep(discarded ? 560 : 240);
       continue;
     }
+    if (beat.schemeAdvance) {
+      // The main scheme's stage is completed: stamped, then it turns over to the next stage, its threat starting again.
+      const { scheme, from, to, threat, target } = beat.schemeAdvance;
+      table?.markActor(scheme);
+      narrate(beat, feedLineOf(beat), {
+        eyebrow: { text: `${from} completed`, icon: "flip", tone: "villain" },
+        title: `The main scheme advances: ${to}`,
+      });
+      stampCard(scheme, "Completed");
+      await sleep(reducedMotion() ? 300 : 900);
+      const face = state.enemyCards.find((card) => card.id === scheme);
+      if (face) table?.turnEnemyCard({ ...face, threat });
+      table?.setThreat(scheme, threat);
+      sfx.play("flip");
+      const counter = labels.get(scheme)?.querySelector<HTMLElement>(".scheme-threat");
+      if (counter) counter.replaceWith(threatPill(threat, target));
+      inspect(scheme);
+      await sleep(reducedMotion() ? 300 : 1100);
+      continue;
+    }
+    if (beat.entersPlay) {
+      // Put into play without a reveal (the minion Klaw's main scheme finds): it comes off the encounter pile.
+      const card = state.enemyCards.find((c) => c.id === beat.entersPlay);
+      narrate(beat, feedLineOf(beat));
+      if (card) {
+        table?.bringInEnemy(card);
+        sfx.play("deal");
+        await sleep(reducedMotion() ? 200 : 700);
+        synchronizeLabels();
+        placeLabels();
+      }
+      continue;
+    }
     if (beat.phase) {
       announcement.hidden = true;
-      phaseIndicator(beat.phase, true);
+      phaseIndicator(beat.phase, true, beat.round);
       if (beat.phase === "hero" || beat.phase === "villain")
         sfx.play(beat.phase === "hero" ? "phase-hero" : "phase-villain", { delay: 120 });
       narrate(beat, null, { title: beat.phase === "hero" ? "Your turn" : "Villain phase", eyebrow: null });
@@ -3362,6 +3407,73 @@ function seedFromUrl(): number | undefined {
   return Number.isInteger(seed) && seed > 0 ? seed : undefined;
 }
 
+// ── Which villain ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The menu's Villain choice is what the next New game (or Try Again) deals; the game in progress keeps its own.
+// `?villain=klaw` in the address picks one for that page (tests, scenes, the play hook); otherwise the last choice on
+// this device, and Rhino on a first visit.
+const villainName = (id: VillainId) => VILLAINS.find((villain) => villain.id === id)!.name;
+function initialVillain(): VillainId {
+  const asked = new URLSearchParams(location.search).get("villain");
+  if (isVillainId(asked)) return asked;
+  try {
+    const saved = localStorage.getItem("battle-villain");
+    if (isVillainId(saved)) return saved;
+  } catch {
+    // Private windows may refuse storage: Rhino it is.
+  }
+  return "rhino";
+}
+let villainChoice: VillainId = initialVillain();
+/** The villain of the game on the table. */
+let villainDealt: VillainId = villainChoice;
+
+function paintVillainChoice() {
+  for (const button of gameMenu.querySelectorAll<HTMLButtonElement>("[data-villain]"))
+    button.setAttribute("aria-pressed", String(button.dataset.villain === villainChoice));
+  // New game says who it deals, and stands out when that isn't the villain already on the table.
+  restart.textContent = `New game vs. ${villainName(villainChoice)}`;
+  const switching = villainChoice !== villainDealt;
+  restart.classList.toggle("btn-primary", switching);
+  restart.classList.toggle("btn-secondary", !switching);
+  // One gold button: Resume steps back while New game would deal someone else.
+  const resume = element<HTMLButtonElement>("menu-resume");
+  resume.classList.toggle("btn-primary", !switching);
+  resume.classList.toggle("btn-secondary", switching);
+}
+
+function setVillainChoice(villain: VillainId) {
+  villainChoice = villain;
+  try {
+    localStorage.setItem("battle-villain", villain);
+  } catch {
+    // The choice just lasts this visit.
+  }
+  // An address that named a villain follows the choice, so a reload deals the one chosen.
+  const params = new URLSearchParams(location.search);
+  if (params.has("villain")) {
+    params.set("villain", villain);
+    history.replaceState(history.state, "", `${location.pathname}?${params.toString()}${location.hash}`);
+  }
+  paintVillainChoice();
+}
+
+function paintMatchup() {
+  const villain = villainName(villainDealt);
+  document.title = `Spider-Man vs. ${villain} · Marvel Champions`;
+  element("matchup").textContent = `Spider-Man vs. ${villain}`;
+  const title = element("menu-title");
+  title.replaceChildren(
+    "Spider-Man ",
+    Object.assign(document.createElement("i"), { textContent: "vs." }),
+    ` ${villain}`,
+  );
+}
+
+for (const button of gameMenu.querySelectorAll<HTMLButtonElement>("[data-villain]"))
+  button.onclick = () => {
+    if (isVillainId(button.dataset.villain)) setVillainChoice(button.dataset.villain);
+  };
+
 /** A game has been dealt in this page, so a `?scene=` set-up has had its turn. */
 let sceneDealt = false;
 
@@ -3396,8 +3508,14 @@ function deal() {
     history.replaceState(history.state, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
   }
   sceneDealt = true;
-  const arrange = import.meta.env.DEV ? arrangeScene(params.get("scene") ?? "") : undefined;
-  model.reset(arrange ? { seed, arrange } : { seed, mulligan: true });
+  // A scene names its own villain (Rhino unless it says Klaw).
+  const sceneName = params.get("scene") ?? "";
+  const arrange = import.meta.env.DEV ? arrangeScene(sceneName) : undefined;
+  const villain = arrange ? sceneVillain(sceneName) : villainChoice;
+  model.reset(arrange ? { villain, seed, arrange } : { villain, seed, mulligan: true });
+  villainDealt = villain;
+  paintMatchup();
+  paintVillainChoice();
   state = model.snapshot();
   presented = state.beats;
   if (!table) {
@@ -3965,7 +4083,7 @@ const pad = startController({
   heroActions: () => (powersReady() ? state.heroActions : []),
   fieldActions: () =>
     powersReady()
-      ? state.inPlay.flatMap((card) =>
+      ? [...state.inPlay, ...state.enemyCards].flatMap((card) =>
           model
             .fieldActions(card.id)
             .map((action) => ({ cardId: card.id, kind: action.kind, label: `${card.name}: ${action.label}` })),

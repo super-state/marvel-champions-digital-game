@@ -93,6 +93,13 @@ test("Claude's play hook reads the table in words and plays a whole round throug
   }
   // Every card the villain phase held up to be read was named, never by its internal id.
   expect(seen.join(" | ")).not.toMatch(/after reading i\d+\)/);
+  // The engine is in round 2 before the table has finished showing round 1's villain phase (a card held up to be
+  // read waits for Continue): the corner says "Round 2" only once that has played out.
+  for (let i = 0; i < 10 && !(await moves(page)).includes("End Turn"); i++) {
+    const continuing = (await moves(page)).find((m) => m.startsWith("Continue"));
+    if (continuing) await play(page, continuing);
+    else await wait(page);
+  }
   const after = await look(page);
   expect(after).toContain("Round 2, your turn");
   await expect(page.locator("#round-label")).toHaveText("Round 2");

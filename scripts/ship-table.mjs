@@ -4,7 +4,7 @@
  * Pages project `champions-table`), where a friend plays it while Adam builds the next one on his own PC.
  *
  * Version numbers (packages/client/src/battle-table/test-site/table-version.json), Adam's rule of 2026-11-23:
- *   - 0.0.1 is Spider-Man vs Rhino playing without bugs; 0.0.0 is the site's placeholder before that.
+ *   - 0.0.1 is Spider-Man vs Rhino playing without bugs; 0.0.0 is the site's placeholder before that; 0.1.0 adds Klaw;
  *   - a bug fix bumps the last number (0.0.2, 0.0.3...);
  *   - each new hero or villain bumps the middle one (0.1.0, 0.2.0...);
  *   - 1.0.0 only when every current set and character is in.
