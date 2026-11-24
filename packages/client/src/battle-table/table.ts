@@ -2884,11 +2884,12 @@ export class BattleTable {
       })),
     );
     const fanned = Math.max(0, Math.min(3, waitingCount) - 1);
+    // Lying raised over the table, the cards show a little bigger once it is fitted: room is kept for that.
     const waitingAt = ({ x, y, fan }: { x: number; y: number; fan: number }) => ({
-      left: x - waitingWidth / 2,
-      right: x + fanned * fan + waitingWidth / 2,
-      top: y - waitingWidth * HEIGHT * 0.45,
-      bottom: y + waitingWidth * HEIGHT * 0.45,
+      left: x - waitingWidth * 0.6,
+      right: x + fanned * fan + waitingWidth * 0.6,
+      top: y - waitingWidth * HEIGHT * 0.55,
+      bottom: y + waitingWidth * HEIGHT * 0.55,
     });
     // Left of the player's row, the cards lie in the middle of the open mat between it and the player's deck, fanned
     // closer if need be so they all fit there.
@@ -2910,8 +2911,18 @@ export class BattleTable {
       : [
           ...[0.26, 0.34, 0.42, 0.5].map((share) => ({ x: w * WAITING_X, y: h * share, fan: w * 0.034 })),
           ...[0.5, 0.56].map((share) => ({ x: leftX, y: h * share, fan: leftFan })),
+          // Failing those (a phone, where the player's deck stands right against the row), any open patch of mat
+          // between the villain's row and the player's, nearest the middle first.
+          ...[0.36, 0.4, 0.32].flatMap((share) =>
+            [0.5, 0.4, 0.6, 0.3, 0.7].map((x) => ({
+              x: w * x - (fanned * waitingWidth * 0.3) / 2,
+              y: h * share,
+              fan: waitingWidth * 0.3,
+            })),
+          ),
         ].reduce((best, spot) => (overlap(waitingAt(spot)) < overlap(waitingAt(best)) ? spot : best));
     const waitingY = waitingSpot.y;
+    const waitingIds: string[] = [];
     // A minion that comes out while they wait stands just below them.
     asideEnemies.forEach((card, i) => {
       const width = enemyCardWidth * 0.85;
@@ -2970,7 +2981,8 @@ export class BattleTable {
           flat,
           -0.13,
         );
-      } else
+      } else {
+        waitingIds.push(card.id);
         this.#pose(
           card.id,
           waitingSpot.x + (waiting++ % 3) * waitingSpot.fan,
@@ -2981,6 +2993,7 @@ export class BattleTable {
           0.42 + waiting * 0.045,
           flat,
         );
+      }
     }
     // Cards turned up off the deck stand in a row in the middle, above the hand; the ones being kept rise a little.
     if (this.#deckReveal.length) {
@@ -3337,6 +3350,48 @@ export class BattleTable {
           this.#roomingPiles = false;
         }
         return;
+      }
+    }
+    // Cards waiting left of the player's row lie raised over the table, so once it is fitted they come out bigger
+    // beside the deck and the row than the layout reckoned: measured where they now lie, they are centred in the open
+    // mat between the player's deck and the row, fanned closer if that is what keeps them clear of both.
+    if (waitingIds.length && waitingSpot.x === leftX) {
+      const across = (target: { position: THREE.Vector3; scale: number }, scale = target.scale) => {
+        const xs = [-0.5, 0.5].flatMap((dx) =>
+          [-HEIGHT / 2, HEIGHT / 2].map(
+            (dz) => this.#project(target.position.x + dx * scale, target.position.y, target.position.z + dz * scale).x,
+          ),
+        );
+        return { left: Math.min(...xs), right: Math.max(...xs) };
+      };
+      const targets = waitingIds.flatMap((id) => {
+        const target = this.#pieces.get(id)?.target;
+        return target ? [target] : [];
+      });
+      const rowTargets = [...upgrades, ...row].flatMap((card) => {
+        const target = this.#pieces.get(card.id)?.target;
+        return target && card.id !== state.staged?.id ? [target] : [];
+      });
+      if (targets.length && rowTargets.length) {
+        const boxes = targets.map((target) => across(target));
+        const cardWidth = boxes[0]!.right - boxes[0]!.left;
+        const air = cardWidth * 0.08;
+        const from = across(deckGoal).right + air;
+        const to = Math.min(...rowTargets.map((target) => across(target).left)) - air;
+        const n = targets.length;
+        const fan =
+          n > 1
+            ? Math.max(
+                cardWidth * 0.12,
+                Math.min((boxes[n - 1]!.left - boxes[0]!.left) / (n - 1), (to - from - cardWidth) / (n - 1)),
+              )
+            : 0;
+        const start = (from + to) / 2 - (cardWidth + fan * (n - 1)) / 2;
+        targets.forEach((target, i) => {
+          const { x, y, z } = target.position;
+          const pixelsPerUnit = this.#project(x + 0.1, y, z).x * 10 - this.#project(x, y, z).x * 10;
+          if (pixelsPerUnit > 0) target.position.x += (start + i * fan - boxes[i]!.left) / pixelsPerUnit;
+        });
       }
     }
     // A revealed card asking the player to pick cards on the table steps aside, clear of them (`revealAside`).
