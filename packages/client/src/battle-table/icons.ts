@@ -54,6 +54,12 @@ const ICONS = {
         exclaim(8.2, 19.2),
     },
   ],
+  /** Locked: threat that can't be removed (a padlock, its shackle cut out). */
+  lock: [
+    {
+      d: "M7 10V7.6a5 5 0 0 1 10 0V10h1.1c.77 0 1.4.63 1.4 1.4v8.2c0 .77-.63 1.4-1.4 1.4H5.9c-.77 0-1.4-.63-1.4-1.4v-8.2c0-.77.63-1.4 1.4-1.4zm2.5 0h5V7.6a2.5 2.5 0 0 0-5 0z",
+    },
+  ],
   /** Acceleration: extra threat every villain phase. */
   acceleration: [
     { d: "M12 2.5l8.5 8-2.2 2.3L12 6.9l-6.3 5.9-2.2-2.3zM12 10.4l8.5 8-2.2 2.3L12 14.8l-6.3 5.9-2.2-2.3z" },

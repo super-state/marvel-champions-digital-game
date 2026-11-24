@@ -684,6 +684,12 @@
   font-weight: 700;
   font-size: 12px;
 }
+.stat-pill[data-kind="threat"][data-locked] .icon-lock {
+  width: 12px;
+  height: 12px;
+  margin-left: 3px;
+  color: #ffd27a;
+}
 .stat-pill[data-kind="threat"][data-near-limit] {
   background: linear-gradient(180deg, #7a1d12, #4a0f0a);
   animation: hp-low 1.2s ease-in-out infinite;

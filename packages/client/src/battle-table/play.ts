@@ -188,6 +188,7 @@ export function createPlayer(hooks: PlayHooks): Player {
     const bits = [...extra];
     if (card.hp !== undefined) bits.push(`${card.hp} HP left`);
     if (card.threat !== null) bits.push(`threat ${card.threat}${card.threatTarget ? `/${card.threatTarget}` : ""}`);
+    if (card.threatLock) bits.push(`locked: ${card.threatLock}`);
     // A stat modifier reads as one ("+10 HP" from The "Immortal" Klaw, "+1 ATK" from Sonic Converter), not as a count.
     for (const marker of card.markers)
       bits.push(

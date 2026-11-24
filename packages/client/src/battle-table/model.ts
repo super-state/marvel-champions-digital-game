@@ -14,6 +14,7 @@ import {
   readsOverpaid,
   playCostOf,
   remainingHitPoints,
+  threatCannotBeRemoved,
   type Command,
   type GameState,
   type InstanceId,
@@ -126,6 +127,12 @@ export interface BattleCard {
   under?: string;
   /** A player's card in play facedown as a Drone minion: shown by the Drone picture, never by its own face. */
   drone?: true;
+  /**
+   * On a scheme: why the player can't take threat off it right now, in the table's words ("Threat cannot be removed
+   * from this scheme", Countdown to Oblivion; a crisis icon in play, for the main scheme). The threat pill wears a
+   * lock, and a thwart never offers it.
+   */
+  threatLock?: string;
 }
 
 export interface BattlePayment {
@@ -1372,6 +1379,30 @@ export class BattleModel {
     };
   }
 
+  /**
+   * Why the player's thwarts and cards can't remove threat from this scheme now, or null. RRG 1.8 "Crisis Icon"
+   * (p. 14): while one is in play, player cards remove no threat from the main scheme; "Target" (p. 43): a scheme
+   * that cannot be thwarted is no target for a thwart (Countdown to Oblivion 3B, "Threat cannot be removed from this
+   * scheme").
+   */
+  #threatLock(id: InstanceId): string | null {
+    const state = this.#game;
+    const player = state.players[0]!;
+    const hero = player.identity.instanceId;
+    if (threatCannotBeRemoved(state, CORE_DEPS, id, true, player.playerId, hero, [hero]))
+      return "Threat cannot be removed from this scheme";
+    if (id !== state.mainScheme.instanceId) return null;
+    const crisis = [...state.villainArea, ...player.playArea].find((other) => {
+      const card = cardOf(state, other);
+      return (
+        card?.type === "side_scheme" &&
+        "icons" in card &&
+        ((card.icons as readonly string[] | undefined) ?? []).includes("crisis")
+      );
+    });
+    return crisis ? `Crisis: no threat comes off the main scheme while ${faceUpName(state, crisis)} is in play` : null;
+  }
+
   #card(id: InstanceId): BattleCard {
     const state = this.#game;
     if (isFacedownMinion(state, id)) return this.#drone(id);
@@ -1382,6 +1413,7 @@ export class BattleModel {
       this.#actions.kind === "turn" &&
       this.#actions.illegal.find((entry) => entry.action.kind === "playCard" && entry.action.instanceId === id);
     const instance = getInstance(state, id);
+    const lock = card?.type === "main_scheme" || card?.type === "side_scheme" ? this.#threatLock(id) : null;
     const showAsFullCard =
       card?.type === "upgrade" &&
       (card.keywords.some((keyword) => keyword.name === "uses") ||
@@ -1431,6 +1463,7 @@ export class BattleModel {
       cost: playCostOf(state, viewer, id, CORE_DEPS)?.current ?? null,
       reason:
         card?.type === "resource" ? "Spend this card to pay for another card." : (blocked && blocked.message) || null,
+      ...(lock ? { threatLock: lock } : {}),
     };
   }
 
@@ -1879,6 +1912,23 @@ export class BattleModel {
           )
         : [];
     return [stats.join(" "), text, ...icons].filter(Boolean).join(" · ");
+  }
+
+  /**
+   * What the hero's menu says about a power that is missing for a reason the player can't see on the hero: a ready
+   * Spider-Man with threat on the table and no Thwart, because no scheme's threat can be removed.
+   */
+  heroNotes(): string[] {
+    const view = this.snapshot();
+    const state = this.#game;
+    const identity = state.players[0]!.identity;
+    if (view.turn !== "player" || view.choice || view.payment || identity.form !== "hero" || view.hero.exhausted)
+      return [];
+    if (view.heroActions.some((action) => action.kind === "basicThwart")) return [];
+    const locked = view.enemyCards.filter((card) => card.threatLock && (card.threat ?? 0) > 0);
+    const open = view.enemyCards.some((card) => card.threat !== null && card.threat > 0 && !card.threatLock);
+    if (!locked.length || open) return [];
+    return locked.map((card) => `No thwart: ${card.name}. ${card.threatLock}.`);
   }
 
   /** The player's current form and hand size (with modifiers, so the hand limit at the end of the turn). */

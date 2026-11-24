@@ -1244,12 +1244,18 @@ function hpPill(hp: number): HTMLElement {
   return pill;
 }
 
-function threatPill(count: number, target: number | null): HTMLElement {
+function threatPill(count: number, target: number | null, lock?: string): HTMLElement {
   const pill = make("span", "stat-pill scheme-threat");
   pill.dataset.kind = "threat";
   if (target != null) pill.dataset.target = String(target);
   pill.append(icon("threat"), make("b", "", ""));
   if (target != null) pill.append(make("i", "", `/${target}`));
+  // Threat the player can't remove (Countdown to Oblivion; the main scheme under a crisis icon) wears a lock.
+  if (lock) {
+    pill.dataset.locked = "";
+    pill.title = lock;
+    pill.append(icon("lock", lock));
+  }
   updateThreatLabel(pill, count);
   return pill;
 }
@@ -1473,7 +1479,8 @@ function synchronizeLabels() {
     }
     if (hp === undefined || discardOpen || inHand) delete label.dataset.hp;
     else label.dataset.hp = String(hp);
-    if (card.threat !== null && onTable(card.id)) label.append(threatPill(card.threat, card.threatTarget));
+    if (card.threat !== null && onTable(card.id))
+      label.append(threatPill(card.threat, card.threatTarget, card.threatLock));
     if (
       !inHand &&
       target &&
@@ -2830,7 +2837,7 @@ async function present(beats: Snapshot["beats"]) {
       table?.setThreat(scheme, threat);
       sfx.play("flip");
       const counter = labels.get(scheme)?.querySelector<HTMLElement>(".scheme-threat");
-      if (counter) counter.replaceWith(threatPill(threat, target));
+      if (counter) counter.replaceWith(threatPill(threat, target, face?.threatLock));
       inspect(scheme);
       await sleep(reducedMotion() ? 300 : 1100);
       continue;
@@ -3603,6 +3610,8 @@ function renderCardMenu() {
   const card = [state.hero, ...state.inPlay].find((c) => c.id === id);
   const actions = id === state.hero.id ? state.heroActions : model.fieldActions(id);
   if (!actions.length) decision.append(make("p", "menu-note", card?.exhausted ? "Exhausted" : "No actions available"));
+  // A power missing for a reason the hero's own card doesn't show (no scheme's threat can be removed) says why.
+  if (id === state.hero.id) for (const note of model.heroNotes()) decision.append(make("p", "menu-note", note));
   for (const action of actions) {
     const button = make("button", "btn btn-secondary menu-action");
     button.type = "button";
