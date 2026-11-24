@@ -51,6 +51,11 @@ async function enterEveryCard(page: Page, times: number): Promise<void> {
 
 test("build a legal deck by mouse, save it, and open it again", async ({ page }) => {
   await page.goto("/battle/decks.html");
+  // No card panel until something asks for one; hovering a hero's box shows their card full size.
+  await expect(page.locator("#card-panel")).toBeHidden();
+  await page.getByRole("button", { name: /She-Hulk/ }).hover();
+  await expect(page.locator("#card-panel")).toBeVisible();
+  await expect(page.locator("#card-panel-img")).toHaveAttribute("src", /01019a\.png$/);
   await page.getByRole("button", { name: /Spider-Man/ }).click();
   await page.getByRole("button", { name: /New deck/ }).click();
   await expect(total(page)).toHaveText("15 cards (40 to 50)");
@@ -132,6 +137,18 @@ test("build a legal deck by keyboard alone", async ({ page }) => {
   await page.keyboard.press("Delete");
   await expect(total(page)).not.toHaveText(before!);
 
+  // Full size from a card with two of three copies: adding the third greys out Add, and the focus moves on to Take
+  // one out rather than being lost.
+  const two = page.locator(".binder-card", { has: page.locator(".binder-count", { hasText: /^2\/3$/ }) }).first();
+  await two.focus();
+  await page.keyboard.press("f");
+  await expect(page.locator(":focus")).toHaveId("zoom-add");
+  await page.keyboard.press("+");
+  await expect(page.locator("#zoom-add")).toBeDisabled();
+  await expect(page.locator(":focus")).toHaveId("zoom-remove");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#zoom")).not.toHaveAttribute("open", "");
+
   // F shows the focused card full size; Escape closes it.
   await page.keyboard.press("f");
   await expect(page.locator("#zoom")).toHaveAttribute("open", "");
@@ -184,9 +201,14 @@ test("a controller: D-pad through the binder, A adds, X takes out, Y full size, 
     await frames(page, 3);
   };
 
+  // A mouse click first: the pad must still show where its focus is afterwards.
+  await page.locator("#binder-help").click();
+  await page.locator(".binder-card").first().focus();
   const first = await page.locator(":focus").getAttribute("data-card");
   await press(PAD.right);
   await expect(page.locator(":focus")).not.toHaveAttribute("data-card", first!);
+  const ring = await page.locator(":focus").evaluate((el) => getComputedStyle(el).outlineStyle);
+  expect(ring).not.toBe("none");
   await press(PAD.a);
   await expect(total(page)).toHaveText("16 cards (40 to 50)");
   await press(PAD.x);
@@ -199,6 +221,52 @@ test("a controller: D-pad through the binder, A adds, X takes out, Y full size, 
   await expect(page.getByRole("tab", { name: "Aspect" })).toHaveAttribute("aria-selected", "true");
   await press(PAD.rb);
   await expect(page.getByRole("tab", { name: "Basic" })).toHaveAttribute("aria-selected", "true");
+});
+
+test("save, rename, duplicate and delete a deck", async ({ page }) => {
+  await page.goto("/battle/decks.html?hero=01001a&deck=starter");
+  const name = page.getByLabel("Deck name");
+  const notice = page.locator("#builder-notice");
+  // Duplicate copies a saved deck, so it waits for the first save.
+  await expect(page.getByRole("button", { name: "Duplicate" })).toBeDisabled();
+  await name.fill("Webs");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(notice).toHaveText("Saved as “Webs”.");
+  await expect(page.getByRole("button", { name: "Duplicate" })).toBeEnabled();
+
+  // Rename: a new name and Save keeps the one deck, under the new name.
+  await name.fill("Webs Deluxe");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(notice).toHaveText("Renamed and saved as “Webs Deluxe”.");
+
+  // Duplicate: a second deck, and the builder now edits the copy.
+  await page.getByRole("button", { name: "Duplicate" }).click();
+  await expect(notice).toHaveText(/Saved a copy as “Webs Deluxe copy”/);
+  await expect(name).toHaveValue("Webs Deluxe copy");
+
+  const options = page.locator(".deck-option");
+  await page.getByRole("button", { name: /Heroes/ }).click();
+  await expect(options).toHaveText([/Starter deck/, /Webs Deluxe copy/, /Webs Deluxe/, /New deck/]);
+
+  // Delete asks first; Cancel keeps it, Delete removes it.
+  await options.filter({ hasText: "Webs Deluxe copy" }).click();
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(page.locator("#confirm")).toHaveAttribute("open", "");
+  await expect(page.locator("#confirm-text")).toHaveText("Delete “Webs Deluxe copy”? This can't be undone.");
+  await page.locator("#confirm-no").click();
+  await expect(name).toHaveValue("Webs Deluxe copy");
+  await page.getByRole("button", { name: "Delete" }).click();
+  await page.locator("#confirm-yes").click();
+  await expect(options).toHaveText([/Starter deck/, /Webs Deluxe/, /New deck/]);
+
+  // Unsaved changes ask before leaving.
+  await options.filter({ hasText: "Webs Deluxe" }).click();
+  await page.getByRole("tab", { name: "Basic" }).click();
+  await page.locator('.binder-card[aria-disabled="false"]').first().click();
+  await page.getByRole("button", { name: /Heroes/ }).click();
+  await expect(page.locator("#confirm-text")).toHaveText("Leave without saving your changes?");
+  await page.locator("#confirm-yes").click();
+  await expect(options).toHaveText([/Starter deck/, /Webs Deluxe40 cards/, /New deck/]);
 });
 
 test.describe("at phone width", () => {
