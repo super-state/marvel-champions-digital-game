@@ -1,0 +1,144 @@
+/* The test site's player dialogs (player.ts): the name, the laptop notice and "My record". Built on design.css. */
+.player-dialog {
+  width: min(400px, calc(100% - 32px));
+  max-height: calc(100% - 48px);
+  overflow: auto;
+  padding: 26px 24px 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: var(--glass, var(--bg-2));
+  color: var(--text);
+  text-align: center;
+  box-shadow: var(--shadow-2);
+}
+.player-dialog::backdrop {
+  background: rgb(4 7 12 / 78%);
+}
+.player-dialog .eyebrow {
+  justify-content: center;
+}
+.player-dialog h2 {
+  margin: 6px 0 10px;
+  font: italic 900 26px/1.1 var(--font-ui);
+  letter-spacing: -0.01em;
+}
+.player-dialog h3 {
+  margin: 22px 0 8px;
+  color: var(--text-2);
+  font: 800 12px/1 var(--font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+}
+.player-note {
+  margin: 0 0 16px;
+  color: var(--text-2);
+  font: 500 14px/1.45 var(--font-ui);
+}
+.player-dialog form {
+  display: grid;
+  gap: 12px;
+}
+.player-dialog form .player-note {
+  margin: 0 0 4px;
+}
+.player-dialog input[type="text"] {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--bg-1);
+  color: var(--text);
+  font: 600 16px/1 var(--font-ui);
+  text-align: center;
+}
+.player-dialog input[type="text"]:focus-visible {
+  outline: 2px solid var(--hero);
+  outline-offset: 2px;
+}
+.player-error {
+  margin: 0;
+  color: var(--villain);
+  font: 600 13px/1.4 var(--font-ui);
+}
+.player-link-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.player-link-actions a.btn {
+  text-decoration: none;
+}
+.player-dialog > .btn-ghost,
+.player-dialog > .btn-primary {
+  width: 100%;
+  margin-top: 6px;
+}
+
+/* "My record": a wider sheet. */
+.player-record {
+  width: min(640px, calc(100% - 32px));
+}
+.player-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+.player-stat {
+  display: grid;
+  gap: 4px;
+  padding: 12px 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-1);
+}
+.player-stat b {
+  font: 900 26px/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.player-stat span {
+  color: var(--text-3);
+  font: 700 11px/1 var(--font-ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.player-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 500 13px/1.35 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+.player-table th {
+  padding: 6px 8px;
+  color: var(--text-3);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.player-table td {
+  padding: 7px 8px;
+  border-top: 1px solid var(--line);
+}
+.player-table .won {
+  color: var(--heal);
+  font-weight: 700;
+}
+.player-table .lost {
+  color: var(--villain);
+  font-weight: 700;
+}
+
+/* Under the game-over text: how they stand against this villain, and an unlock. */
+.outcome-record {
+  margin: 8px 0 0;
+  color: var(--text-2);
+  font: 600 14px/1.45 var(--font-ui);
+}
+.outcome-unlocked {
+  color: var(--gold);
+  font-size: 16px;
+}

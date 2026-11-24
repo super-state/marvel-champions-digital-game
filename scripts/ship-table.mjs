@@ -25,9 +25,14 @@
  *   node packages/sync-worker/node_modules/wrangler/bin/wrangler.js pages secret put INVITE_KEY
  *     --project-name champions-table   (run from a folder outside the repo)
  * A Pages address, unlike a Worker's workers.dev one, carries no account name.
+ *
+ * Players and their games (src/battle-table/test-site/players.ts) live in the D1 database `champions-table-players`.
+ * Each ship makes it if it's missing and binds it to the Pages project as DB: the deploy runs from a folder holding a
+ * Pages wrangler.json with that binding (Pages takes a config file's bindings as the project's; its secrets stay).
+ * Adam's players page needs the second secret ADMIN_KEY (`/admin/<ADMIN_KEY>`), put the same way as INVITE_KEY.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -95,18 +100,55 @@ const scratch = mkdtempSync(path.join(tmpdir(), "ship-table-"));
 const wranglerRun = (...args) => run("node", [wrangler, ...args], {}, scratch);
 wranglerRun("deploy", "--dry-run", "--outdir", path.join(scratch, "bundle"), "--config", config);
 copyFileSync(path.join(scratch, "bundle", "worker.js"), path.join(dist, "_worker.js"));
-wranglerRun(
-  "pages",
-  "deploy",
-  dist,
-  "--project-name",
-  project,
-  "--branch",
-  "main",
-  "--commit-hash",
-  head,
-  "--commit-message",
-  tag,
+
+// The players' database: made the first time, then the same one every ship.
+const DB_NAME = "champions-table-players";
+const listDatabases = () =>
+  JSON.parse(execFileSync("node", [wrangler, "d1", "list", "--json"], { cwd: scratch, encoding: "utf8" }));
+let database = listDatabases().find((d) => d.name === DB_NAME);
+if (!database) {
+  console.log(`ship-table: making the players' database ${DB_NAME}`);
+  wranglerRun("d1", "create", DB_NAME);
+  database = listDatabases().find((d) => d.name === DB_NAME);
+}
+if (!database?.uuid) fail(`couldn't find or make the D1 database ${DB_NAME}`);
+const pagesDir = path.join(scratch, "pages");
+mkdirSync(pagesDir);
+writeFileSync(
+  path.join(pagesDir, "wrangler.json"),
+  JSON.stringify(
+    {
+      name: project,
+      pages_build_output_dir: dist,
+      compatibility_date: JSON.parse(
+        readFileSync(config, "utf8")
+          .replace(/^\s*\/\/.*$/gm, "")
+          .replace(/,(\s*[}\]])/g, "$1"),
+      ).compatibility_date,
+      d1_databases: [{ binding: "DB", database_name: DB_NAME, database_id: database.uuid }],
+    },
+    null,
+    2,
+  ),
+);
+run(
+  "node",
+  [
+    wrangler,
+    "pages",
+    "deploy",
+    dist,
+    "--project-name",
+    project,
+    "--branch",
+    "main",
+    "--commit-hash",
+    head,
+    "--commit-message",
+    tag,
+  ],
+  {},
+  pagesDir,
 );
 rmSync(scratch, { recursive: true, force: true });
 
