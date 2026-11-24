@@ -4,8 +4,12 @@ import { SOUND_NAMES } from "./sound-moments.js";
 import { BUNDLED_MANIFEST, pickVariant, resolveSound, SoundBoard, sfx } from "./sound.js";
 
 describe("the bundled sounds", () => {
-  test("every moment the table plays has a file", () => {
-    for (const name of SOUND_NAMES) expect(sfx.names(), name).toContain(name);
+  test("every moment the table plays has a file, unless the studio's shipped edits made it silent", () => {
+    for (const name of SOUND_NAMES) {
+      // Switched off in the Sound Studio and shipped that way (Adam, 2026-11-24): an empty list, on purpose.
+      if (BUNDLED_MANIFEST.sounds[name]?.length === 0) continue;
+      expect(sfx.names(), name).toContain(name);
+    }
   });
 
   test("every variant's file resolves to an address", () => {
@@ -178,10 +182,13 @@ describe("the sound board", () => {
     expect(new SoundBoard(manifest, resolve, { automated: true }).enabled).toBe(false);
   });
 
-  test("a person's browser starts muted; the studio's board is on regardless, and leaves the setting alone", () => {
-    expect(new SoundBoard(manifest, resolve).enabled).toBe(false);
+  test("a person's browser starts with sound on (the audio is approved); the studio's board too, leaving the setting alone", () => {
+    expect(new SoundBoard(manifest, resolve).enabled).toBe(true);
     expect(new SoundBoard(manifest, resolve, { alwaysOn: true }).enabled).toBe(true);
     expect(localStorage.getItem("battle-sound")).toBeNull();
+    // Turned off in the menu, it stays off.
+    localStorage.setItem("battle-sound", "off");
+    expect(new SoundBoard(manifest, resolve).enabled).toBe(false);
   });
 
   test("a sound with no variants is ignored; a new manifest swaps what plays", () => {

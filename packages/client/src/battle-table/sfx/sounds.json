@@ -1,0 +1,249 @@
+{
+  "version": 1,
+  "sounds": {
+    "phase-hero": [],
+    "phase-villain": [],
+    "lose": [
+      {
+        "file": "lose-1.mp3",
+        "echoMix": 0.33
+      }
+    ],
+    "draw": [
+      {
+        "file": "draw-1.mp3",
+        "sync": 0.0172,
+        "fadeOut": 0.0295,
+        "start": 0
+      },
+      {
+        "file": "draw-2.mp3"
+      },
+      {
+        "file": "draw-3.mp3"
+      },
+      {
+        "file": "draw-4.mp3"
+      }
+    ],
+    "flip": [
+      {
+        "file": "flip-1.mp3",
+        "sync": 0.1275,
+        "echoMix": 0.09,
+        "reverbSeconds": 1.2,
+        "echoMs": 105,
+        "reverbMix": 0.81
+      }
+    ],
+    "place": [
+      {
+        "file": "place-1.mp3",
+        "sync": 0.0426,
+        "echoMix": 0.2,
+        "reverbMix": 0.45,
+        "rate": 0.63
+      },
+      {
+        "file": "place-2.mp3"
+      },
+      {
+        "file": "place-3.mp3"
+      }
+    ],
+    "play": [
+      {
+        "file": "play-1.mp3",
+        "sync": 0.0086
+      },
+      {
+        "file": "play-2.mp3"
+      },
+      {
+        "file": "play-3.mp3"
+      }
+    ],
+    "turn": [
+      {
+        "file": "turn-1.mp3",
+        "rate": 1.26,
+        "sync": 0.0352,
+        "reverbMix": 0.09
+      },
+      {
+        "file": "turn-2.mp3"
+      },
+      {
+        "file": "turn-3.mp3"
+      }
+    ],
+    "discard": [
+      {
+        "file": "discard-1.mp3",
+        "sync": 0.0812,
+        "echoMix": 0.63
+      },
+      {
+        "file": "discard-2.mp3"
+      }
+    ],
+    "shuffle": [
+      {
+        "file": "shuffle-1.mp3",
+        "end": 1.485,
+        "sync": 0
+      }
+    ],
+    "whoosh": [
+      {
+        "file": "whoosh-1.mp3",
+        "echoMix": 0.25
+      },
+      {
+        "file": "whoosh-2.mp3"
+      },
+      {
+        "file": "whoosh-3.mp3"
+      }
+    ],
+    "hit": [
+      {
+        "file": "hit-1.mp3",
+        "sync": 0.0149,
+        "reverbMix": 0.76,
+        "reverbSeconds": 2.9,
+        "rate": 0.5
+      },
+      {
+        "file": "hit-2.mp3",
+        "rate": 0.561
+      },
+      {
+        "file": "hit-3.mp3",
+        "rate": 0.53
+      },
+      {
+        "file": "hit-4.mp3",
+        "rate": 0.5
+      },
+      {
+        "file": "hit-5.mp3",
+        "rate": 0.53
+      }
+    ],
+    "draw-land": [
+      {
+        "file": "place-1.mp3",
+        "rate": 0.667,
+        "gainDb": -9
+      },
+      {
+        "file": "place-2.mp3",
+        "rate": 1.4,
+        "gainDb": -9
+      },
+      {
+        "file": "place-3.mp3",
+        "rate": 1.4,
+        "gainDb": -9
+      }
+    ],
+    "hit-heavy": [
+      {
+        "file": "hit-heavy-1.mp3",
+        "rate": 0.578,
+        "echoMix": 0.19,
+        "reverbSeconds": 4.5,
+        "reverbMix": 0.55
+      }
+    ],
+    "block": [],
+    "defeat": [
+      {
+        "file": "defeat-1.mp3",
+        "echoMix": 0.69
+      }
+    ],
+    "boom": [
+      {
+        "file": "boom-1.mp3",
+        "echoMix": 0.57,
+        "reverbMix": 0.28
+      }
+    ],
+    "threat": [
+      {
+        "file": "threat-1.mp3",
+        "gainDb": 3.5
+      },
+      {
+        "file": "threat-2.mp3"
+      },
+      {
+        "file": "threat-3.mp3"
+      },
+      {
+        "file": "threat-4.mp3"
+      }
+    ],
+    "ability": [],
+    "cancel": [
+      {
+        "file": "block-1.mp3",
+        "rate": 1.297,
+        "gainDb": -13
+      }
+    ],
+    "vanish": [
+      {
+        "file": "block-2.mp3",
+        "rate": 0.8,
+        "gainDb": -10.5,
+        "reverbMix": 0.75
+      }
+    ],
+    "surge": [
+      {
+        "file": "surge-1.mp3",
+        "echoMix": 0.28,
+        "echoMs": 140
+      }
+    ],
+    "boost": [
+      {
+        "file": "boost-1.mp3",
+        "echoMix": 0.23
+      }
+    ],
+    "whoosh-big": [
+      {
+        "file": "whoosh-big-1.mp3",
+        "echoMix": 0.26,
+        "reverbMix": 0.12
+      }
+    ],
+    "win": [
+      {
+        "file": "win-1.mp3",
+        "echoMix": 0.17
+      }
+    ],
+    "confirm": [
+      {
+        "file": "confirm-1.mp3",
+        "rate": 0.771,
+        "gainDb": -8.5,
+        "echoMix": 0.08,
+        "echoMs": 120,
+        "reverbMix": 0.07
+      }
+    ],
+    "error": [
+      {
+        "file": "error-1.mp3",
+        "gainDb": -10,
+        "rate": 0.707
+      }
+    ]
+  }
+}
