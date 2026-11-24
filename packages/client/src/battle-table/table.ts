@@ -2264,14 +2264,28 @@ export class BattleTable {
     // the layout put it, over the top of the hand, and the villain stays in the middle.
     const corners = [box.x0, box.x1].flatMap((x) => [box.z0, box.z1].map((z) => this.#project(x, 0.06, z)));
     const lowest = Math.max(...corners.map((p) => p.y));
-    const fit: BoardFit = fitBoard(
-      box,
-      this.#project,
-      { ...room, top: 46, bottom: Math.max(room.bottom, lowest) },
-      // A quiet board (the first turn: Rhino, the main scheme, the hero) zooms in further, so its cards are bigger
-      // rather than sitting in a sea of empty mat (Adam, 2026-11-23: "we should get some benefit from it").
-      { maxScale: 1.6 },
-    );
+    const fitFrom = (top: number): BoardFit =>
+      fitBoard(
+        box,
+        this.#project,
+        { ...room, top, bottom: Math.max(room.bottom, lowest) },
+        // A quiet board (the first turn: Rhino, the main scheme, the hero) zooms in further, so its cards are bigger
+        // rather than sitting in a sea of empty mat (Adam, 2026-11-23: "we should get some benefit from it").
+        { maxScale: 1.6 },
+      );
+    // The mat's margin past the cards, in table units, and how wide it shows on screen beside the piles halfway down
+    // the table. The far edge is seen at a slant, so the same margin there would look half as wide.
+    const matMargin = (at: BoardFit) =>
+      (fitToBox(at, { x: 0.32, y: 0, z: 0 }).x - fitToBox(at, { x: 0, y: 0, z: 0 }).x) * 0.8;
+    const sidePad = (at: BoardFit) => {
+      const right = fitToBox(at, { x: box.x1, y: 0, z: (box.z0 + box.z1) / 2 });
+      return this.#project(right.x + matMargin(at), 0, right.z).x - this.#project(right.x, 0, right.z).x;
+    };
+    // The mat shows as much of itself above the top cards (Rhino) as beside the piles at its sides (Adam, 2026-11-24:
+    // "a little bit of padding around the top of Rhino"): the cards come down, a touch smaller if need be, so that
+    // margin still fits under the turn bar.
+    let fit: BoardFit = fitFrom(46);
+    if (14 + sidePad(fit) > 46) fit = fitFrom(14 + sidePad(fit));
     const place = (p: THREE.Vector3) => {
       const q = fitToBox(fit, p);
       return p.set(q.x, q.y, q.z);
@@ -2302,11 +2316,20 @@ export class BattleTable {
     // at a fixed size), so a quiet board shows no bare mat beyond what it needs (Adam, 2026-11-23).
     const far = fitToBox(fit, { x: box.x0, y: 0, z: box.z0 });
     const near = fitToBox(fit, { x: box.x1, y: 0, z: box.z1 });
-    const margin = (fitToBox(fit, { x: 0.32, y: 0, z: 0 }).x - fitToBox(fit, { x: 0, y: 0, z: 0 }).x) * 0.8;
+    const margin = matMargin(fit);
     const screenNear = this.#point(w * 0.985, h * 0.98, 0);
     const halfWidth = Math.max(-(far.x - margin), near.x + margin);
-    // The mat's far edge follows the cards: no bare strip of mat above the villain's row.
-    const top = far.z - margin;
+    // The mat's far edge follows the cards, no bare strip of mat above the villain's row, but stands as far above
+    // them on screen as its sides stand out from the piles.
+    const edgeY = this.#project(0, 0, far.z).y - sidePad(fit);
+    let lo = far.z - margin * 8,
+      hi = far.z - margin;
+    for (let i = 0; i < 32; i++) {
+      const mid = (lo + hi) / 2;
+      if (this.#project(0, 0, mid).y < edgeY) lo = mid;
+      else hi = mid;
+    }
+    const top = lo;
     const front = Math.max(screenNear.z, near.z + margin);
     this.#matGoal = { x: 0, z: (top + front) / 2, width: halfWidth * 2, depth: front - top };
     this.#reshapeMat?.((halfWidth * 2) / Math.max(1e-6, front - top));
