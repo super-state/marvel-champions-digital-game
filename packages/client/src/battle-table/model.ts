@@ -140,6 +140,11 @@ export interface BattleChoice {
   discardFromHand: boolean;
   /** The opening-hand mulligan: pick any cards to discard, then draw back up to hand size. */
   mulligan: boolean;
+  /**
+   * The picks are an order (Masters of Mayhem's "Order the enemies", "Order these effects"): the first one picked goes
+   * first. The table numbers the picked cards as they are picked (`pick-order.ts`).
+   */
+  ordered?: boolean;
 }
 
 export interface BattleBeat {
@@ -1469,6 +1474,9 @@ export class BattleModel {
             max: pending.maxSelections,
             discardFromHand: pending.prompt.kind === "discardDownToHandSize",
             mulligan: pending.prompt.kind === "mulligan",
+            // A reaction window's picks are ordered too, but the table asks those one card at a time (`offers`).
+            ordered:
+              pending.ordered && pending.maxSelections > 1 && !(trigger && pending.prompt.kind === "chooseTriggers"),
           }
         : null;
     const attached = getInstance(state, player.identity.instanceId)?.attachments ?? [];

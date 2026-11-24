@@ -369,7 +369,7 @@ function faceGeometry(shape: THREE.Shape, width: number, height: number): THREE.
  * rooftop art fills it, cropped rather than stretched, and the stitched border always runs round its edge (Adam,
  * 2026-11-23: the mat "would stretch and fit, keeping its image ... not skewed").
  */
-function matPrint(redraw: () => void): { texture: THREE.CanvasTexture; reshape: (aspect: number) => void } {
+export function matPrint(redraw: () => void): { texture: THREE.CanvasTexture; reshape: (aspect: number) => void } {
   const canvas = document.createElement("canvas");
   canvas.width = 1536;
   canvas.height = 976;
@@ -2087,6 +2087,21 @@ export class BattleTable {
     piece.root.updateMatrixWorld();
     return (piece.card.landscape ? this.#landscapeOutline : this.#outline).map(({ x, y }) => {
       this.#scratch.set(x, y, 0.019).applyMatrix4(piece.root.matrixWorld).project(this.#camera);
+      return `${(((1 + this.#scratch.x) * this.#width) / 2).toFixed(1)} ${(((1 - this.#scratch.y) * this.#canvasHeight) / 2).toFixed(1)}`;
+    });
+  }
+
+  /** The playmat's corners on screen (far left, far right, near right, near left): the campaign boxes page rolls its
+   * own mat out onto exactly this spot before handing over to the table. */
+  matOutline(): string[] {
+    this.#mat.updateMatrixWorld();
+    return [
+      [-0.5, 0.5],
+      [0.5, 0.5],
+      [0.5, -0.5],
+      [-0.5, -0.5],
+    ].map(([x, y]) => {
+      this.#scratch.set(x!, y!, 0).applyMatrix4(this.#mat.matrixWorld).project(this.#camera);
       return `${(((1 + this.#scratch.x) * this.#width) / 2).toFixed(1)} ${(((1 - this.#scratch.y) * this.#canvasHeight) / 2).toFixed(1)}`;
     });
   }
