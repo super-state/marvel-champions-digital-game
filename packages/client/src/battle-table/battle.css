@@ -422,6 +422,10 @@ button:focus-visible {
   min-height: 0;
   padding: var(--preview-padding);
   display: grid;
+  /* One row exactly the reader's height, so the picture's max-height holds: on a short window (a 13" MacBook in
+     Safari, 720 high) a card as wide as the panel is taller than the room above the log, and it ran off the top. */
+  grid-template-rows: minmax(0, 1fr);
+  align-items: center;
   align-content: center;
   justify-items: center;
   background: radial-gradient(ellipse at center, #2c3a44 0%, #1a252e 52%, var(--bg-2) 82%);
@@ -436,6 +440,15 @@ button:focus-visible {
   filter: drop-shadow(0 14px 18px #05090b87);
 }
 @media (min-width: 741px) {
+  /* Beside the table the card is only as wide as the reader's height lets it stand (a card is 63 x 88), so on a
+     short window it shrinks whole, round corners and all, rather than being letterboxed inside a wider box. The
+     ratios are the card scans' own (627 x 900 and 900 x 632), a touch off a printed card's 63 x 88. */
+  .reader {
+    container-type: size;
+  }
+  .reader img {
+    width: min(100%, 100cqh * 627 / 900);
+  }
   /* A landscape card (a scheme) opens wide over the table's edge. */
   .rail[data-wide-preview] .reader {
     position: absolute;
@@ -451,6 +464,7 @@ button:focus-visible {
   }
   /* The landscape card fills the wider reader, with the same margin round it as a portrait card has. */
   .rail[data-wide-preview] .reader img {
+    width: min(100%, 100cqh * 900 / 632);
     max-width: none;
   }
 }
@@ -1185,6 +1199,7 @@ button:focus-visible {
   inset: 0;
   z-index: 2;
   background: rgb(3 8 13 / 22%);
+  -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
   pointer-events: none;
   opacity: 0;

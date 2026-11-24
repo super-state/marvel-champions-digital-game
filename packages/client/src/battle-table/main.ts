@@ -4023,7 +4023,9 @@ readReveal.addEventListener("pointermove", mirrorRevealHover);
 readReveal.addEventListener("pointerleave", () => mirrorRevealHover());
 readReveal.addEventListener("click", () => mirrorRevealHover());
 // Ctrl+Space ends the turn: the same as pressing End Turn, so it does nothing whenever the button is greyed out.
-endTurnButton.title = "End Turn (Ctrl+Space)";
+// A Mac names its keys by their symbols (⌃ control, ⌘ command), and its players undo with ⌘Z.
+const onMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+endTurnButton.title = onMac ? "End Turn (⌃Space)" : "End Turn (Ctrl+Space)";
 document.addEventListener("keydown", (event) => {
   if (event.code !== "Space" || !event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return;
   event.preventDefault();
@@ -4058,7 +4060,7 @@ document.addEventListener("keydown", (event) => {
   button.click();
 });
 // Ctrl+Z takes the last move back, as Undo does (on the game-over screen, its Undo last move).
-undoButton.title = "Undo (Ctrl+Z)";
+undoButton.title = onMac ? "Undo (⌘Z)" : "Undo (Ctrl+Z)";
 document.addEventListener("keydown", (event) => {
   if (event.code !== "KeyZ" || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
   if ((document.activeElement as HTMLElement | null)?.matches("input, textarea")) return;
