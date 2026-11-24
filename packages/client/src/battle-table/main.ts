@@ -1,5 +1,4 @@
 import { statHue } from "../tokens.js";
-import { startWhenHandedOver } from "./boxes/handover.js";
 import "./design.css";
 import "./battle.css";
 import { padActive, startController } from "./pad/controller.js";
@@ -1315,7 +1314,8 @@ function showOutcome(outcome: Snapshot["outcome"]) {
   gameOver.toggleAttribute("data-victory", won);
   gameOverUndo.hidden = !model.canUndo;
   tryAgain.replaceChildren(icon("mulligan"), make("span", "", won ? "Play again" : "Try again"));
-  if (!gameOver.open) {
+  // Never over the campaign shelf: the dialog would sit on top of it with the page underneath untouchable.
+  if (!gameOver.open && !shelfUp) {
     if (gameMenu.open) gameMenu.close();
     if (won) throwConfetti();
     sfx.play(won ? "win" : "lose");
@@ -3599,9 +3599,9 @@ function seedFromUrl(): number | undefined {
 }
 
 // ── Which villain ─────────────────────────────────────────────────────────────────────────────────────────────────
-// The menu's Villain choice is what the next New game (or Try Again) deals; the game in progress keeps its own.
-// `?villain=klaw` in the address picks one for that page (tests, scenes, the play hook); otherwise the last choice on
-// this device, and Rhino on a first visit.
+// The campaign shelf's box is the villain Play deals, and what Try Again deals again; the game in progress keeps its
+// own. `?villain=klaw` in the address picks one for that page (tests, scenes, the play hook); otherwise the last
+// choice on this device, and Rhino on a first visit.
 const villainName = (id: VillainId) => VILLAINS.find((villain) => villain.id === id)!.name;
 function initialVillain(): VillainId {
   const asked = new URLSearchParams(location.search).get("villain");
@@ -3618,20 +3618,6 @@ let villainChoice: VillainId = initialVillain();
 /** The villain of the game on the table. */
 let villainDealt: VillainId = villainChoice;
 
-function paintVillainChoice() {
-  for (const button of gameMenu.querySelectorAll<HTMLButtonElement>("[data-villain]"))
-    button.setAttribute("aria-pressed", String(button.dataset.villain === villainChoice));
-  // New game says who it deals, and stands out when that isn't the villain already on the table.
-  restart.textContent = `New game vs. ${villainName(villainChoice)}`;
-  const switching = villainChoice !== villainDealt;
-  restart.classList.toggle("btn-primary", switching);
-  restart.classList.toggle("btn-secondary", !switching);
-  // One gold button: Resume steps back while New game would deal someone else.
-  const resume = element<HTMLButtonElement>("menu-resume");
-  resume.classList.toggle("btn-primary", !switching);
-  resume.classList.toggle("btn-secondary", switching);
-}
-
 function setVillainChoice(villain: VillainId) {
   villainChoice = villain;
   try {
@@ -3645,7 +3631,6 @@ function setVillainChoice(villain: VillainId) {
     params.set("villain", villain);
     history.replaceState(history.state, "", `${location.pathname}?${params.toString()}${location.hash}`);
   }
-  paintVillainChoice();
 }
 
 function paintMatchup() {
@@ -3659,11 +3644,6 @@ function paintMatchup() {
     ` ${villain}`,
   );
 }
-
-for (const button of gameMenu.querySelectorAll<HTMLButtonElement>("[data-villain]"))
-  button.onclick = () => {
-    if (isVillainId(button.dataset.villain)) setVillainChoice(button.dataset.villain);
-  };
 
 /** A game has been dealt in this page, so a `?scene=` set-up has had its turn. */
 let sceneDealt = false;
@@ -3706,7 +3686,6 @@ function deal() {
   model.reset(arrange ? { villain, seed, arrange } : { villain, seed, mulligan: true });
   villainDealt = villain;
   paintMatchup();
-  paintVillainChoice();
   state = model.snapshot();
   presented = state.beats;
   if (!table) {
@@ -3812,7 +3791,12 @@ undoButton.onclick = () => {
   }
   inspect(heldEncounter ?? state.hero.id);
 };
-restart.onclick = start;
+// New game goes back to the campaign shelf, to pick a box (Adam, 2026-11-24); Try Again deals the same villain again.
+restart.textContent = "New game";
+restart.onclick = () => {
+  if (gameMenu.open) gameMenu.close();
+  void showShelf();
+};
 menuButton.onclick = () => {
   if (!gameMenu.open) gameMenu.showModal();
 };
@@ -4282,8 +4266,71 @@ const pad = startController({
       : [],
   useAction: useCardAction,
 });
-// Hosted by the campaign boxes page (`boxes/handover.ts`), the table waits for its move onto the table to finish.
-startWhenHandedOver(window, start);
+// ── The campaign shelf: the table's front door ────────────────────────────────────────────────────────────────────
+// The page opens on the campaign shelf (`boxes/boxes.ts`), laid over the table. Play there deals the game here, under
+// it, then the shelf moves every piece onto the table and fades away. An address that sets a game up (the browser
+// tests, scenes, the play hook, the sound studio) goes straight to the table, as does a reload during a game: the dev
+// server reloads the page on every change, and that should land back at the table, not the shelf.
+const AT_TABLE = "battle-at-table";
+/** The campaign shelf is over the table. */
+let shelfUp = false;
+function opensOnShelf(): boolean {
+  const params = new URLSearchParams(location.search);
+  if (params.has("open")) return true;
+  if (["seed", "scene", "villain", "remote", "studio"].some((key) => params.has(key))) return false;
+  try {
+    return !sessionStorage.getItem(AT_TABLE);
+  } catch {
+    return true;
+  }
+}
+function rememberAtTable(villain: VillainId | null) {
+  try {
+    if (villain) sessionStorage.setItem(AT_TABLE, villain);
+    else sessionStorage.removeItem(AT_TABLE);
+  } catch {
+    // Private windows may refuse storage: a reload just opens the shelf.
+  }
+}
+/** Everything of the table page stays laid out under the shelf (the shelf reads where its cards are), but untouchable. */
+function tableInert(inert: boolean) {
+  for (const child of document.body.children)
+    if (child instanceof HTMLElement && child.id !== "shelf") child.inert = inert;
+}
+async function showShelf() {
+  shelfUp = true;
+  rememberAtTable(null);
+  tableInert(true);
+  // Dark until the room is drawn, so the bare table never shows while the shelf loads.
+  document.documentElement.toggleAttribute("data-shelf-loading", true);
+  try {
+    const { openShelf } = await import("./boxes/boxes.js");
+    await openShelf({
+      deal: (villain) => {
+        setVillainChoice(villain);
+        rememberAtTable(villain);
+        start();
+      },
+      table: () => table ?? null,
+      state: () => state,
+      shown: () => {
+        shelfUp = false;
+        tableInert(false);
+        dockTitle.focus({ preventScroll: true });
+      },
+    });
+  } catch (error) {
+    // No shelf (it failed to load): the table deals as it always has.
+    console.error(error);
+    shelfUp = false;
+    tableInert(false);
+    start();
+  } finally {
+    document.documentElement.toggleAttribute("data-shelf-loading", false);
+  }
+}
+if (opensOnShelf()) void showShelf();
+else start();
 
 // ── Sound Studio (dev server only, `?studio`) ─────────────────────────────────────────────────────────────────────
 // The studio page (`battle/studio.html`) shows this table in a frame and asks it to act out one moment at a time, so a
@@ -4514,8 +4561,6 @@ if (import.meta.env.DEV) {
       reading: () => (readReveal.hidden ? null : revealFocus),
       doneReading: () => readReveal.click(),
     }),
-    // The table's snapshot, read-only: the campaign boxes page reads which card is where to fly them in.
-    __battleState: () => state,
   });
   if (import.meta.hot && new URLSearchParams(location.search).has("remote"))
     answerRemote((globalThis as unknown as { __battlePlay: Player }).__battlePlay, import.meta.hot as RemoteChannel);

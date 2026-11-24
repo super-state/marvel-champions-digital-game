@@ -135,6 +135,12 @@ test("New game from the menu while a revealed card stands aside deals a clean ta
   await page.locator("#menu-button").click();
   await expect(page.locator("#reset")).toBeEnabled({ timeout: 15_000 });
   await page.locator("#reset").click();
+  // New game goes back to the campaign shelf; Rhino's box deals the fresh game.
+  await expect(page.locator("#shelf")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Open Rhino" }).focus();
+  await page.keyboard.press("Enter");
+  await page.locator("#shelf-play").click({ timeout: 30_000 });
+  await expect(page.locator("#shelf")).toBeHidden({ timeout: 60_000 });
   await expectFreshTable(page, fresh);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/4-new-game.png` });
 });

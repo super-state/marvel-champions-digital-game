@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * Klaw on the 3D table (table 0.1.0): the game menu picks Rhino or Klaw for the next game, Klaw's main scheme turns
+ * Klaw on the 3D table (table 0.1.0): the campaign shelf's Klaw box deals Klaw, Klaw's main scheme turns
  * over to its second stage on a beat of its own, and Sonic Converter's "spend [energy][mental][physical] → discard
  * this card" is a move like any other. Played through the play hook (`src/battle-table/play.ts`), as Claude plays.
  */
@@ -46,7 +46,9 @@ async function throughVillainPhase(page: Page): Promise<string> {
   throw new Error(`The hero's turn never came back:\n${await look(page)}`);
 }
 
-test("the game menu picks Rhino or Klaw for the next game, and remembers it", async ({ page }) => {
+test("the shelf's Klaw box deals Klaw, a reload keeps it, and New game goes back to the shelf for Rhino", async ({
+  page,
+}) => {
   test.setTimeout(180_000);
   await page.addInitScript(() => {
     if (!sessionStorage.getItem("klaw-spec")) {
@@ -54,22 +56,9 @@ test("the game menu picks Rhino or Klaw for the next game, and remembers it", as
       sessionStorage.setItem("klaw-spec", "1");
     }
   });
-  await open(page, "/battle/?seed=7");
-  // Rhino by default.
-  await expect(page).toHaveTitle(/Spider-Man vs\. Rhino/);
-  expect(await look(page)).toMatch(/Rhino \(\d+ HP\)/);
-
-  await page.locator("#menu-button").click();
-  await expect(page.locator("#reset")).toHaveText("New game vs. Rhino");
-  await page.locator('[data-villain="klaw"]').click();
-  await expect(page.locator('[data-villain="klaw"]')).toHaveAttribute("aria-pressed", "true");
-  // New game says who it deals, and is the one gold button while that isn't the villain on the table.
-  await expect(page.locator("#reset")).toHaveText("New game vs. Klaw");
-  await expect(page.locator("#reset")).toHaveClass(/btn-primary/);
-  await expect(page.locator("#menu-resume")).toHaveClass(/btn-secondary/);
-  await expect(page.locator("#reset")).toBeEnabled({ timeout: 15_000 });
-  await page.locator("#reset").click();
-
+  // `open=klaw&play`: the shelf opens Klaw's box and presses Play.
+  await open(page, "/battle/?seed=7&open=klaw&play");
+  await expect(page.locator("#shelf")).toBeHidden({ timeout: 60_000 });
   await expect(page).toHaveTitle(/Spider-Man vs\. Klaw/);
   await expect.poll(() => look(page), { timeout: 30_000 }).toMatch(/Klaw \(12 HP\)/);
   const klaw = await look(page);
@@ -77,17 +66,22 @@ test("the game menu picks Rhino or Klaw for the next game, and remembers it", as
   expect(klaw).toContain("Defense Network (side scheme");
   expect(klaw).not.toContain("Rhino");
 
-  // A reload deals Klaw again: the choice is remembered on this device.
+  // A reload deals Klaw again, straight onto the table: the choice is remembered on this device.
   await page.reload();
   await expect.poll(() => hook(page), { timeout: 60_000 }).toBe(true);
   await expect(page).toHaveTitle(/Spider-Man vs\. Klaw/);
+  await expect(page.locator("#shelf")).toHaveCount(0);
 
-  // And back to Rhino, from the same menu.
+  // New game goes back to the shelf, where Rhino's box deals Rhino.
   await page.locator("#menu-button").click();
-  await page.locator('[data-villain="rhino"]').click();
-  await expect(page.locator("#reset")).toHaveText("New game vs. Rhino");
+  await expect(page.locator("#reset")).toHaveText("New game");
   await expect(page.locator("#reset")).toBeEnabled({ timeout: 15_000 });
   await page.locator("#reset").click();
+  await expect(page.locator("#shelf")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Open Rhino" }).focus();
+  await page.keyboard.press("Enter");
+  await page.locator("#shelf-play").click({ timeout: 30_000 });
+  await expect(page.locator("#shelf")).toBeHidden({ timeout: 60_000 });
   await expect(page).toHaveTitle(/Spider-Man vs\. Rhino/);
   await expect.poll(() => look(page), { timeout: 30_000 }).toMatch(/Rhino \(\d+ HP\)/);
 });

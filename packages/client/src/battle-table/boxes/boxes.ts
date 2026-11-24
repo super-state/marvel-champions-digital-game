@@ -1,19 +1,20 @@
 /**
- * Campaign boxes (mock-up): the campaigns stand on a wooden table as retail boxes, with a cube shelf of other game
- * boxes in the dim room behind. Pick one and it tips onto its back, the lid lifts off and is set aside, and the villain
- * card rises out of the tray towards you. Ultron is still sealed ("coming soon") and won't open.
+ * The campaign shelf, the 3D table's front door: the campaigns stand on a wooden table as retail boxes, with a cube
+ * shelf of other game boxes in the dim room behind. Pick one and it tips onto its back, the lid lifts off and is set
+ * aside, and the villain card rises out of the tray towards you. Ultron is still sealed ("coming soon") and won't open.
  *
- * Dev page only (`/battle/boxes.html`, not in the build). It is a look at what a 3D menu could be, not the game's real
- * start flow: only Rhino's Play button goes anywhere (the table we have today). `?open=klaw` jumps straight to an
- * opened box, for screenshots.
+ * It lies over the table page (`main.ts` loads it when the page opens on the shelf, and again for New game), with its
+ * own renderer. Play deals the game on the table underneath, out of sight, then flies every piece from the box to the
+ * spot the table drew it on and fades away over the real table. `?open=klaw` jumps straight to an opened box, `&play`
+ * presses Play, `&at=1.8` freezes the opening and `&hold=2.4` the move onto the table (for checks and screenshots).
  *
  * The box prints are our own design drawn on canvases at load, with the villain's art cropped from its card scan.
  */
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { TokenKit } from "../tokens3d.js";
-import { HOLD, READY, START } from "./handover.js";
-import { matPrint } from "../table.js";
+import { matPrint, type BattleTable } from "../table.js";
+import type { BattleCard, VillainId } from "../model.js";
 import "../design.css";
 import "./boxes.css";
 
@@ -35,8 +36,8 @@ interface Campaign {
   blurb: string;
   /** False: greyed out and sealed. */
   open: boolean;
-  /** Where Play goes; absent while that villain's game isn't on the table yet. */
-  play?: string;
+  /** The villain Play deals; absent while that villain's game isn't on the table yet. */
+  villain?: VillainId;
 }
 
 const CARDS = "/card-art/bundles/cards/";
@@ -54,7 +55,7 @@ const CAMPAIGNS: readonly Campaign[] = [
     difficulty: 1,
     blurb: "Rhino is smashing through the city. Knock him down before his schemes pile up.",
     open: true,
-    play: "/battle/",
+    villain: "rhino",
   },
   {
     id: "klaw",
@@ -69,6 +70,7 @@ const CAMPAIGNS: readonly Campaign[] = [
     difficulty: 2,
     blurb: "Klaw and his sound weapons are after a secret stash. Stop him before he gets away with it.",
     open: true,
+    villain: "klaw",
   },
   {
     id: "ultron",
@@ -576,12 +578,41 @@ renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 maxAnisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-const stage = document.getElementById("stage")!;
-stage.append(renderer.domElement);
+// The shelf's own layer over the table page: the room, its headings, and the opened box's card.
+const root = document.createElement("div");
+root.id = "shelf";
+root.className = "shelf";
+root.setAttribute("role", "dialog");
+root.setAttribute("aria-label", "Choose your campaign");
+root.hidden = true;
+root.tabIndex = -1;
+root.innerHTML = `
+  <div class="shelf-stage"></div>
+  <header class="shelf-head">
+    <p class="eyebrow">Marvel Champions</p>
+    <h1>Choose your campaign</h1>
+  </header>
+  <div class="shelf-picks visually-hidden" role="group" aria-label="Campaigns"></div>
+  <p class="shelf-hover-tag" hidden></p>
+  <p class="shelf-hint">Pick a box to open it</p>
+  <section class="shelf-opened" hidden>
+    <p class="eyebrow shelf-kicker"></p>
+    <h2 class="shelf-title"></h2>
+    <p class="shelf-blurb"></p>
+    <div class="shelf-buttons">
+      <button type="button" class="btn btn-primary" id="shelf-play">Play</button>
+      <button type="button" class="btn btn-secondary" id="shelf-back">Back to the shelf</button>
+    </div>
+  </section>
+  <p class="shelf-toast" role="status" hidden></p>`;
+document.body.append(root);
+root.querySelector(".shelf-stage")!.append(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0d0a08);
-scene.fog = new THREE.Fog(0x0d0a08, 13, 26);
+const FOG_NEAR = 13;
+const FOG_FAR = 26;
+scene.fog = new THREE.Fog(0x0d0a08, FOG_NEAR, FOG_FAR);
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.32;
@@ -952,12 +983,13 @@ interface Backs {
 
 // ---------- the page ----------
 
-const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const hoverTag = el<HTMLParagraphElement>("hover-tag");
-const hint = el<HTMLParagraphElement>("hint");
-const opened = el<HTMLElement>("opened");
-const toast = el<HTMLParagraphElement>("toast");
-const play = el<HTMLAnchorElement>("play");
+const el = <T extends HTMLElement>(selector: string) => root.querySelector(selector) as T;
+const head = el<HTMLElement>(".shelf-head");
+const hoverTag = el<HTMLParagraphElement>(".shelf-hover-tag");
+const hint = el<HTMLParagraphElement>(".shelf-hint");
+const opened = el<HTMLElement>(".shelf-opened");
+const toast = el<HTMLParagraphElement>(".shelf-toast");
+const play = el<HTMLButtonElement>("#shelf-play");
 
 let boxes: Box[] = [];
 /** The open box, or -1 on the shelf. */
@@ -996,25 +1028,25 @@ function close() {
   if (outro) return;
   target = 0;
   opened.hidden = true;
-  closeHost();
+  // The keyboard goes back to the box it opened.
+  el<HTMLElement>(".shelf-picks").querySelectorAll("button")[chosen]?.focus({ preventScroll: true });
 }
 
 function showOpened(c: Campaign) {
-  el("opened-kicker").textContent = `Campaign ${c.number}`;
-  el("opened-title").textContent = c.name;
-  el("opened-blurb").textContent = c.blurb;
+  el(".shelf-kicker").textContent = `Campaign ${c.number}`;
+  el(".shelf-title").textContent = c.name;
+  el(".shelf-blurb").textContent = c.blurb;
   play.textContent = `Play vs ${c.name[0]}${c.name.slice(1).toLowerCase()}`;
-  play.href = c.play ?? "#";
-  play.onclick = (event) => {
-    event.preventDefault();
-    if (c.play) beginPlay();
-    else say("This villain's table is still being built. This page is a mock-up.");
+  play.onclick = () => {
+    if (c.villain) beginPlay(c.villain);
+    else say("This villain's table is still being built.");
   };
   opened.hidden = false;
-  // Load the table now, held before it deals, so Play has it ready. `&play` presses Play at once (for checks).
-  if (c.play) {
-    openHost();
-    if (new URLSearchParams(location.search).has("play")) beginPlay();
+  play.focus();
+  // `&play` presses Play at once (for checks).
+  if (c.villain && pressPlay) {
+    pressPlay = false;
+    beginPlay(c.villain);
   }
 }
 
@@ -1040,10 +1072,21 @@ renderer.domElement.addEventListener("click", (event) => {
   const index = pickAt(event.clientX, event.clientY);
   if (index >= 0) choose(index);
 });
-el("back").addEventListener("click", close);
-addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && chosen >= 0) close();
-});
+el("#shelf-back").addEventListener("click", close);
+// While the shelf is up, keys are the shelf's: none reach the table's own (Enter for End Turn, Escape for its menu,
+// Ctrl+Z) on the page underneath. Listening on the window in the capture phase runs before every one of those.
+addEventListener(
+  "keydown",
+  (event) => {
+    if (root.hidden) return;
+    event.stopPropagation();
+    if (event.key === "Escape" && chosen >= 0) {
+      event.preventDefault();
+      close();
+    }
+  },
+  { capture: true },
+);
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight);
@@ -1071,13 +1114,18 @@ function pose(time: number, dt: number) {
   const pullBack = Math.max(1, 1.45 / camera.aspect);
   camera.position.lerpVectors(CAM_SHELF.pos, CAM_OPEN.pos, c);
   aim.lerpVectors(CAM_SHELF.at, CAM_OPEN.at, c);
-  camera.position
-    .sub(aim)
-    .multiplyScalar(lerp(pullBack, Math.max(1, 1.1 / camera.aspect), c))
-    .add(aim);
+  const pull = lerp(pullBack, Math.max(1, 1.1 / camera.aspect), c);
+  const near = camera.position.distanceTo(aim);
+  camera.position.sub(aim).multiplyScalar(pull).add(aim);
   camera.position.x += (1 - c) * (pointer.x > -2 ? pointer.x * 0.35 : 0);
   // Play: the camera swings round to the game table's own angle.
   const toGame = outro ? span(outro.u, 0, 1.2) : 0;
+  // The fog starts as far beyond the boxes as it does on a wide screen, however far a narrow one pulls the camera
+  // back: otherwise a phone held upright sees the boxes through it, or not at all.
+  const fog = scene.fog as THREE.Fog;
+  const extra = near * (pull - 1) * (1 - toGame);
+  fog.near = FOG_NEAR + extra;
+  fog.far = FOG_FAR + extra;
   camera.position.lerp(CAM_GAME.pos, toGame);
   aim.lerp(CAM_GAME.at, toGame);
   camera.lookAt(aim);
@@ -1164,11 +1212,10 @@ function placeHoverTag() {
 }
 
 // ---------- Play: from the box onto the game table ----------
-// While an opened box waits, the real table page loads in a hidden frame and holds before dealing (`handover.ts`).
-// Play starts it there, unseen, and reads where it put the mat and every card on the screen. Here the box clears away,
-// the camera swings round to the table's own angle, the mat rolls out to exactly where the table has it, and each
-// piece lands on exactly its spot, one at a time, before the hand is dealt from the deck. The room dims, then the real
-// table fades in under the cards, already asking about the mulligan, and the menu page steps aside.
+// Play deals the game on the table underneath, unseen, and reads where it put the mat and every card on the screen.
+// Here the box clears away, the camera swings round to the table's own angle, the mat rolls out to exactly where the
+// table has it, and each piece lands on exactly its spot, one at a time, before the hand is dealt from the deck. The
+// room dims, then the shelf fades away over the real table, already asking about the mulligan.
 
 const CAM_GAME = { pos: new THREE.Vector3(0, 10.8, 8.3), at: new THREE.Vector3(0, 0, 0.4) };
 /** Levels in this scene: the mat, the shadows on it, the cards on it, the held hand, and pieces waiting to land. */
@@ -1200,20 +1247,16 @@ interface Rect {
 }
 type Quad = [THREE.Vector2, THREE.Vector2, THREE.Vector2, THREE.Vector2];
 type Corners = THREE.Vector3[];
-interface HostedCard {
-  id: string;
-  art: string;
-  landscape: boolean;
-}
-interface HostedTable extends Window {
-  battleTable?: {
-    cardOutline(id: string): string[];
-    matOutline?(): string[];
-    encounterAnchor(): Rect;
-    deckAnchor(): Rect;
-    readonly handSettled: boolean;
-  };
-  __battleState?: () => { villain: HostedCard; hero: HostedCard; hand: HostedCard[]; enemyCards: HostedCard[] };
+/** What the shelf reads of the table page it lies over (`main.ts`). */
+export interface ShelfHost {
+  /** Deals a new game against this villain on the table under the shelf. */
+  deal(villain: VillainId): void;
+  /** The table, once a game has been dealt on it. */
+  table(): Pick<BattleTable, "cardOutline" | "matOutline" | "encounterAnchor" | "deckAnchor" | "handSettled"> | null;
+  /** The game on the table: where its villain, scheme, hero and hand are. */
+  state(): { villain: BattleCard; hero: BattleCard; hand: readonly BattleCard[]; enemyCards: readonly BattleCard[] };
+  /** The shelf has faded away: the table is the page. */
+  shown(): void;
 }
 
 /**
@@ -1240,10 +1283,10 @@ interface Flyer {
   bob: number;
 }
 
-let host: { frame: HTMLIFrameElement; ready: boolean } | null = null;
+let host: ShelfHost | null = null;
+let pressPlay = false;
 let outro: {
   u: number;
-  started: boolean;
   flyers: Flyer[];
   launched: boolean;
   hand: boolean;
@@ -1253,36 +1296,13 @@ let outro: {
 } | null = null;
 let stopped = false;
 
-function openHost() {
-  if (host) return;
-  const frame = document.createElement("iframe");
-  frame.className = "table-frame";
-  frame.title = "The game table";
-  frame.allow = "autoplay";
-  frame.src = "/battle/?handover";
-  document.body.append(frame);
-  host = { frame, ready: false };
-}
-
-function closeHost() {
-  host?.frame.remove();
-  host = null;
-}
-
-addEventListener("message", (event) => {
-  if (!host || event.origin !== location.origin || event.source !== host.frame.contentWindow) return;
-  if (event.data === READY) {
-    host.ready = true;
-    host.frame.contentWindow!.postMessage(HOLD, location.origin);
-  }
-});
-
-function beginPlay() {
+function beginPlay(villain: VillainId) {
   if (outro || !host) return;
   opened.hidden = true;
+  // The game is dealt now, under the shelf: its cards are where they will be by the time they are read.
+  host.deal(villain);
   outro = {
     u: 0,
-    started: false,
     flyers: [],
     launched: false,
     hand: false,
@@ -1525,13 +1545,16 @@ function placeMat(u: number) {
   mat.roll.visible = u >= MAT_AT && r < 0.995;
 }
 
-/** Once the hidden table has drawn its cards: plan every piece's trip, from the box (and from the player's side). */
-async function launch(win: HostedTable, box: Box) {
-  const table = win.battleTable!;
-  const state = win.__battleState!();
-  const canvasRect = win.document.querySelector("#space canvas")?.getBoundingClientRect();
-  const dx = canvasRect?.left ?? 0;
-  const dy = canvasRect?.top ?? 0;
+/** The table canvas's offset on the page: the table reports its spots in canvas pixels. */
+const canvasRect = () => document.querySelector("#space canvas")?.getBoundingClientRect();
+
+/** Once the table underneath has drawn its cards: plan every piece's trip, from the box (and from the player's side). */
+async function launch(host: ShelfHost, box: Box) {
+  const table = host.table()!;
+  const state = host.state();
+  const rect = canvasRect();
+  const dx = rect?.left ?? 0;
+  const dy = rect?.top ?? 0;
   gameCamera.copy(camera);
   gameCamera.position.copy(CAM_GAME.pos);
   gameCamera.lookAt(CAM_GAME.at);
@@ -1544,7 +1567,7 @@ async function launch(win: HostedTable, box: Box) {
   const deckSpot = () => quadOnLevel(rectCorners(table.deckAnchor(), dx, dy), TABLE_Y);
   const fromBelow = (corners: Corners) => corners.map((p) => p.clone().setZ(p.z + 9));
 
-  const matQuad = table.matOutline ? cornersOf(table.matOutline(), dx, dy) : null;
+  const matQuad = cornersOf(table.matOutline(), dx, dy);
   if (matQuad) buildMat(quadOnLevel(matQuad, MAT_Y));
   // Just below the middle of the view (the hover height lifts them back up the screen a little).
   const waitZ = CAM_GAME.at.z + 1.5;
@@ -1662,12 +1685,12 @@ async function launch(win: HostedTable, box: Box) {
 }
 
 /** The opening hand, dealt one by one from the player's deck into the hand the table holds up. */
-async function dealHand(win: HostedTable, deck: Corners) {
-  const table = win.battleTable!;
-  const state = win.__battleState!();
-  const canvasRect = win.document.querySelector("#space canvas")?.getBoundingClientRect();
-  const dx = canvasRect?.left ?? 0;
-  const dy = canvasRect?.top ?? 0;
+async function dealHand(host: ShelfHost, deck: Corners) {
+  const table = host.table()!;
+  const state = host.state();
+  const rect = canvasRect();
+  const dx = rect?.left ?? 0;
+  const dy = rect?.top ?? 0;
   const arts = await Promise.all(state.hand.map((card) => picture(card.art)));
   state.hand.forEach((card, i) => {
     const quad = cornersOf(table.cardOutline(card.id), dx, dy);
@@ -1693,31 +1716,21 @@ async function dealHand(win: HostedTable, deck: Corners) {
 let launching = false;
 function stepOutro(dt: number) {
   if (!outro || !host || outro.done || launching) return;
-  const win = host.frame.contentWindow as HostedTable | null;
+  const table = host.table();
   const box = boxes[chosen]!;
-  if (!outro.started) {
-    if (!host.ready || !win) {
-      hint.textContent = "Setting up the table…";
-      hint.hidden = false;
-      return;
-    }
-    hint.hidden = true;
-    win.postMessage(START, location.origin);
-    outro.started = true;
-  }
-  // Wait for the hidden table to have drawn its cards, then for its hand to be dealt, before going past each point.
+  // Wait for the table to have drawn its cards, then for its hand to be dealt, before going past each point.
   if (outro.u >= TARGETS_AT && !outro.launched) {
-    if (!win?.battleTable || !win.__battleState) return;
+    if (!table) return;
     outro.launched = true;
     launching = true;
-    void launch(win, box).then(() => (launching = false));
+    void launch(host, box).then(() => (launching = false));
     return;
   }
   if (outro.u >= HAND_AT - 0.05 && !outro.hand) {
-    if (!win?.battleTable?.handSettled || !deckLanding) return;
+    if (!table?.handSettled || !deckLanding) return;
     outro.hand = true;
     launching = true;
-    void dealHand(win, deckLanding).then(() => (launching = false));
+    void dealHand(host, deckLanding).then(() => (launching = false));
     return;
   }
   outro.u = Math.min(outro.u + dt, outro.hold, FADE_AT + FADE_LENGTH);
@@ -1725,36 +1738,79 @@ function stepOutro(dt: number) {
   for (const f of outro.flyers) placeFlyer(f, outro.u);
   // The room dims as the mat rolls out; the mat and the cards, unlit, stay bright.
   renderer.toneMappingExposure = lerp(1.05, 0.12, span(outro.u, MAT_AT, MAT_LENGTH));
-  document.querySelector<HTMLElement>(".boxes-head")!.style.opacity = String(1 - span(outro.u, 0, 0.4));
-  host.frame.style.opacity = String(span(outro.u, FADE_AT, FADE_LENGTH));
+  head.style.opacity = String(1 - span(outro.u, 0, 0.4));
+  // The shelf fades away over the real table, which has every card where the shelf just laid it.
+  root.style.opacity = String(1 - span(outro.u, FADE_AT, FADE_LENGTH));
   if (outro.u >= FADE_AT + FADE_LENGTH) finishOutro();
 }
 let deckLanding: Corners | null = null;
 
-/** The table is in front: hand it the page. */
+/** The table is in front: hand it the page. The shelf keeps its room, ready for the next New game. */
 function finishOutro() {
   if (!outro || !host) return;
   outro.done = true;
   stopped = true;
-  host.frame.style.opacity = "1";
-  host.frame.style.pointerEvents = "auto";
-  host.frame.focus();
-  renderer.setAnimationLoop(null);
-  renderer.dispose();
-  renderer.domElement.remove();
-  for (const id of ["hover-tag", "hint", "opened", "toast"]) el(id).remove();
-  document.querySelector(".boxes-head")?.remove();
-  // A reload now opens the table itself, not the shelf.
-  history.replaceState(null, "", "/battle/");
+  root.hidden = true;
+  // The shelf's own address settings (an opened box, a pressed Play) have had their turn: a reload opens the table.
+  const params = new URLSearchParams(location.search);
+  for (const key of ["open", "play", "at", "hold"]) params.delete(key);
+  const query = params.toString();
+  history.replaceState(history.state, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
+  host.shown();
+}
+
+/** Back to the room as it first stands: every box on the shelf, nothing in flight. */
+function reset() {
+  for (const f of outro?.flyers ?? [])
+    for (const mesh of [f.mesh, f.shadow]) {
+      if (!mesh) continue;
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    }
+  if (mat) {
+    scene.remove(mat.flat, mat.roll);
+    mat.flat.geometry.dispose();
+    mat.flat.material.map?.dispose();
+    mat.flat.material.dispose();
+    mat.roll.geometry.dispose();
+    (mat.roll.material as THREE.Material).dispose();
+    mat = null;
+  }
+  outro = null;
+  deckLanding = null;
+  launching = false;
+  for (const box of boxes) {
+    box.card.visible = true;
+    box.deck.visible = true;
+  }
+  chosen = -1;
+  s = target = 0;
+  hovered = -1;
+  renderer.toneMappingExposure = 1.05;
+  head.style.opacity = "";
+  hint.textContent = "Pick a box to open it";
+  hint.hidden = false;
+  opened.hidden = true;
+  toast.hidden = true;
+  hoverTag.hidden = true;
+  renderer.domElement.style.cursor = "default";
 }
 
 let last = performance.now();
+let looping = false;
 function frame(now: number) {
-  if (stopped) return;
+  if (stopped) {
+    looping = false;
+    return;
+  }
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   stepOutro(dt);
-  if (stopped) return;
+  if (stopped) {
+    looping = false;
+    return;
+  }
   if (s !== target) {
     const speed = target > s ? 1 : 1.7;
     s = target > s ? Math.min(target, s + dt * speed) : Math.max(target, s - dt * speed);
@@ -1770,7 +1826,8 @@ function frame(now: number) {
   requestAnimationFrame(frame);
 }
 
-async function start() {
+let built: Promise<void> | null = null;
+async function build() {
   await Promise.all([document.fonts.load("120px Bangers"), document.fonts.load("900 40px 'Public Sans'")]);
   const [villainBack, encounterBack, ...arts] = await Promise.all([
     loadImage(`${CARDS}marvel-villain-back.webp`),
@@ -1788,9 +1845,43 @@ async function start() {
     if (o instanceof THREE.Light) o.layers.enableAll();
   });
   boxes = CAMPAIGNS.map((c, i) => buildBox(c, i, arts[i] ?? null, backs));
+  // The boxes from the keyboard (and for screen readers): a button each, which lifts its box while it has the focus.
+  const picks = el<HTMLElement>(".shelf-picks");
+  CAMPAIGNS.forEach((c, i) => {
+    const name = `${c.name[0]}${c.name.slice(1).toLowerCase()}`;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = c.open ? `Open ${name}` : `${name} (coming soon)`;
+    button.onclick = () => {
+      // On the shelf, or this box still going back onto it (it turns round and opens again).
+      if (!outro && (chosen < 0 || (chosen === i && target === 0))) choose(i);
+    };
+    button.onfocus = () => {
+      if (chosen < 0) hovered = i;
+    };
+    button.onblur = () => {
+      if (hovered === i) hovered = -1;
+    };
+    picks.append(button);
+  });
+}
+
+/**
+ * Puts the shelf up over the table page: the room with every box on the shelf, or, the first time with `?open=rhino`
+ * in the address, that box already open. Resolves once the room is drawn.
+ */
+export async function openShelf(over: ShelfHost): Promise<void> {
+  host = over;
+  root.hidden = false;
+  root.style.opacity = "1";
+  // The keyboard starts on the shelf (Tab reaches the boxes), not on the table underneath.
+  root.focus({ preventScroll: true });
+  await (built ??= build());
+  reset();
   resize();
 
-  // ?open=rhino opens a box at once; &at=1.8 freezes the opening that many seconds in (for screenshots).
+  // ?open=rhino opens a box at once; &at=1.8 freezes the opening that many seconds in (for screenshots). Only the
+  // first time: the address loses them once the game is on the table.
   const params = new URLSearchParams(location.search);
   const preset = boxes.findIndex((b) => b.campaign.id === params.get("open") && b.campaign.open);
   if (preset >= 0) {
@@ -1798,11 +1889,18 @@ async function start() {
     chosen = preset;
     s = target = Math.min(OPENED, Math.max(0, at));
     hint.hidden = true;
+    pressPlay = params.has("play");
     if (s === OPENED) showOpened(boxes[preset]!.campaign);
   }
   pose(performance.now() / 1000, 0);
   renderFrame();
-  requestAnimationFrame(frame);
+  stopped = false;
+  last = performance.now();
+  if (!looping) {
+    looping = true;
+    requestAnimationFrame(frame);
+  }
 }
 
-void start();
+/** Whether the shelf is up over the table. */
+export const shelfShown = () => !root.hidden;
