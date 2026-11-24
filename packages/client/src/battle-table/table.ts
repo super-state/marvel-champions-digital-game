@@ -209,7 +209,6 @@ const ATTACHMENT_TURN = 0.07;
 const SIZZLE_MS = 620;
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 /** Scratch vectors for a boost card's path under its enemy. */
-const TUCK_OFFSET = new THREE.Vector3();
 const TUCK_LANDING = new THREE.Vector3();
 /** Scratch angle for a tucked card turning with its hovered host. */
 const TUCK_EULER = new THREE.Euler();
@@ -2619,7 +2618,9 @@ export class BattleTable {
           w * (WAITING_X + (waiting++ % 3) * 0.034),
           waitingY,
           waitingCardWidth(w, h),
-          0.07 + waiting * 0.045,
+          // Above anything it lands over, a token on a card included: it only waits there for a moment (Adam,
+          // 2026-11-24: it went under a player card's token).
+          0.42 + waiting * 0.045,
           flat,
         );
     }
@@ -3141,6 +3142,8 @@ export class BattleTable {
       [Math.max(target.position.x, host.position.x + sideX), target.position.z],
       [target.position.x, Math.min(target.position.z, host.position.z - sideZ)],
     ];
+    // A card going under the right-hand edge (a boost card) tries the right side first.
+    if (target.position.x > host.position.x) [spots[0], spots[2]] = [spots[2]!, spots[0]!];
     let best = spots[0]!;
     let least = Infinity;
     for (const spot of spots) {
@@ -3435,10 +3438,9 @@ export class BattleTable {
           // Arc over whatever stands between (a minion), land on the table just past the edge it goes under, then
           // slide in flat: it passes under that card, never over it and down through it.
           const { fly, hop, slide } = tuckPath(progress);
-          const out = TUCK_OFFSET.copy(piece.target.position).sub(hostPiece.target.position).setY(0);
-          if (out.lengthSq() < 1e-6) out.set(1, 0, 0);
-          out.setLength(piece.target.scale * 0.85);
-          const landing = TUCK_LANDING.copy(piece.target.position).add(out);
+          // Beside the edge it goes under if that is clear, else another clear side: a minion right of the villain
+          // had the boost card land on it, drop under it and slide on (Adam, 2026-11-24).
+          const landing = this.#clearLanding(piece, underHost!, TUCK_LANDING);
           if (slide > 0) piece.root.position.lerpVectors(landing, piece.target.position, slide);
           else {
             piece.root.position.lerpVectors(from.position, landing, fly);
