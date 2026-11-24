@@ -65,7 +65,7 @@ test("browse, assign a sample to Hit, shape it, save it, and play it on the tabl
     }
   });
   await page.goto("/battle/studio.html");
-  await expect(page.locator(".sound")).toHaveCount(32);
+  await expect(page.locator(".sound")).toHaveCount(34);
 
   // Browse: type the folder, open the subfolder; only sound files are listed.
   const path = page.locator("#crumbs");

@@ -125,3 +125,23 @@ test("a person's browser starts with sound on, and the menu turns it off", async
   await page.locator('[data-sound="off"]').click();
   await expect(page.locator('[data-sound="off"]')).toHaveAttribute("aria-pressed", "true");
 });
+
+test("pointing at a card plays a soft tick: one for the hand, one for the table, once per card", async ({ page }) => {
+  test.setTimeout(120_000);
+  // Hover sounds (Adam, 2026-11-24).
+  await page.goto("/battle/?seed=11&scene=defend");
+  await expect(page.locator("#end-turn")).toBeEnabled({ timeout: 60_000 });
+  await page.evaluate(() => (globalThis.__battleSounds = []));
+  const canvas = page.locator("#board-viewport canvas, canvas").first();
+  const box = (await canvas.boundingBox())!;
+  // The hand runs along the bottom; Rhino stands at the top of the table.
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.93);
+  await page.mouse.move(box.x + box.width * 0.5 + 3, box.y + box.height * 0.93);
+  await page.waitForTimeout(300);
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.25);
+  await page.waitForTimeout(300);
+  const hovers = (await played(page)).filter((name) => name.startsWith("hover"));
+  expect(hovers).toContain("hover-hand");
+  expect(hovers).toContain("hover-table");
+  expect(hovers.filter((name) => name === "hover-hand")).toHaveLength(1);
+});

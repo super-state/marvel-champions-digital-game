@@ -781,6 +781,8 @@ let hoveredCard: string | null = null;
 let pointedCard: string | null = null;
 let overMenu = false;
 function hoverCard(id: string | null) {
+  // A soft tick as the pointer comes onto a new card, one for the hand and one for the table (Adam, 2026-11-24).
+  if (id && id !== pointedCard) sfx.play(inHand(id) ? "hover-hand" : "hover-table");
   pointedCard = id;
   showHovered();
 }
