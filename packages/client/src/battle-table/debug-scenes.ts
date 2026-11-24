@@ -595,8 +595,50 @@ export function sceneVillain(name: string): VillainId {
   return SCENES[name]?.scenario ?? "rhino";
 }
 
+/**
+ * The Drone that Ultron's setup put into play is whatever card was on top of the deck. When it is one the scene needs
+ * (the deck's only Strength), it changes places with a deck card the scene has no use for, so the scene deals on every
+ * shuffle.
+ */
+function freeSetupDrone(state: GameState, scene: Scene): GameState {
+  const player = state.players[0]!;
+  const needed = new Set(JSON.stringify(scene).match(/\b\d{5}[a-c]?\b/g) ?? []);
+  const drone = player.playArea.find(
+    (id) => state.instances[id]?.facedownAs && needed.has(state.instances[id]!.cardId),
+  );
+  const spare = player.deck.find((id) => !needed.has(state.instances[id]!.cardId));
+  if (!drone || !spare) return state;
+  const under = state.instances[drone]!;
+  const other = state.instances[spare]!;
+  const role = {
+    faceup: under.faceup,
+    controllerId: under.controllerId,
+    engagedWith: under.engagedWith,
+    facedownAs: under.facedownAs,
+  };
+  const plain = {
+    faceup: other.faceup,
+    controllerId: other.controllerId,
+    engagedWith: other.engagedWith,
+    facedownAs: other.facedownAs,
+  };
+  return {
+    ...state,
+    instances: { ...state.instances, [drone]: { ...under, ...plain }, [spare]: { ...other, ...role } },
+    players: [
+      {
+        ...player,
+        playArea: player.playArea.map((id) => (id === drone ? spare : id)),
+        deck: player.deck.map((id) => (id === spare ? drone : id)),
+      },
+      ...state.players.slice(1),
+    ],
+  };
+}
+
 function arrange(state: GameState, scene: Scene): GameState {
   if (scene.clearMinions) state = discardMinions(state);
+  if (scene.scenario === "ultron") state = freeSetupDrone(state, scene);
   const player = state.players[0]!;
   const piles = activeEncounterDeck(state);
   const used = new Set<InstanceId>();

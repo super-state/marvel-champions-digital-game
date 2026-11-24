@@ -471,11 +471,21 @@ function apply(state: GameState, command: Command) {
 /** The repeatable practice deal the tests use: seed 75 deals Swinging Web Kick, Strength and several priced permanents. */
 export const PRACTICE_SEED = 75;
 
-/** Sonic Converter's and Solid-Sound Body's "Hero Action: Spend [energy][mental][physical] resources → discard this card." */
-const KLAW_GEAR_ACTIONS: ReadonlySet<string> = new Set([
-  "01118.sonic-converter-action",
-  "01119.solid-sound-body-action",
-]);
+/**
+ * An encounter card's own way off the table: "Hero Action: Spend [energy][mental][physical] resources → discard this
+ * card." (Klaw's Sonic Converter, Ultron's Upgraded Drones) or "Exhaust your hero and spend [mental][mental]
+ * resources → discard this card." (Program Transmitter, Vibranium Armor). Its short label is only the cost, so the
+ * button says what paying it does: "Discard it: spend energy, mental, physical".
+ */
+function payToDiscardLabel(card: object | undefined, cost: string): string | null {
+  if (!card || !/→\s*discard this card\b/i.test(plainRulesTextOf(card as Parameters<typeof plainRulesTextOf>[0])))
+    return null;
+  const words = cost
+    .replace(/\b1 (energy|mental|physical|wild)\b/gi, "$1")
+    .replace(/\byour identity\b/i, "your hero")
+    .replace(/^./, (first) => first.toLowerCase());
+  return `Discard it: ${words}`;
+}
 
 /** What a side scheme's printed icons do (RRG 1.8 "Acceleration Icon", "Crisis Icon", "Hazard Icon"). */
 const SCHEME_ICON_TEXT: Record<string, string> = {
@@ -734,6 +744,9 @@ export class BattleModel {
     let round = this.#game.round;
     // The cards in the player's deck as these events go by, for the count a Drone leaves behind.
     let deckLeft = this.#game.players[0]!.deck.length;
+    // The player is eliminated: their hand, deck and cards in play are cleared away (RRG 1.8 "Player Elimination"),
+    // which is no discard for the table to play out card by card before the game ends.
+    let eliminated = false;
     for (const e of events) {
       if (e.type === "roundStarted") {
         round = e.round;
@@ -742,6 +755,8 @@ export class BattleModel {
         if (heroPhase?.phase === "hero" && (heroPhase.round ?? 0) < round) heroPhase.round = round;
       }
       const before = this.#beats.length;
+      if (e.type === "playerEliminated") eliminated = true;
+      if (eliminated && e.type === "cardMoved") continue;
       if (e.type === "deckShuffled" && e.zone.kind === "deck") shuffledDeck = deckLeft = e.order.length;
       else if (e.type === "cardDrawn") deckLeft--;
       else if (e.type === "cardMoved" && e.from.kind === "deck" && e.to.kind !== "playArea") deckLeft--;
@@ -865,11 +880,12 @@ export class BattleModel {
         if (drone) {
           // The Drone is defeated and the card under it is known at last, on its way to its owner's discard pile.
           drones.delete(e.instanceId);
+          const was = cardOf(result.state, e.instanceId)?.name ?? "a card";
           this.#beats.push({
             enemy,
             defeatedCard: e.instanceId,
-            text: "",
-            droneWas: cardOf(result.state, e.instanceId)?.name ?? "a card",
+            text: `${DRONE_NAME} defeated: it was ${was}, now in your discard pile`,
+            droneWas: was,
           });
         } else if (type === "villain" && e.type === "characterDefeated") {
           const defeat = `${name(e.instanceId)} defeated`;
@@ -1799,10 +1815,13 @@ export class BattleModel {
           ? "Next card costs 1 less"
           : action.abilityId === "01091.avengers-mansion-action"
             ? "Draw 1 card"
-            : // Klaw's attachments: the short label is only the cost, so say what paying it does.
-              KLAW_GEAR_ACTIONS.has(action.abilityId)
-              ? "Discard it: spend energy, mental, physical"
-              : does.charAt(0).toUpperCase() + does.slice(1);
+            : // An encounter card paid off the table: the short label is only the cost, so say what paying it does.
+              (payToDiscardLabel(
+                ENCOUNTER_TYPES.has(cardOf(this.#game, action.instanceId)?.type ?? "")
+                  ? cardOf(this.#game, action.instanceId)
+                  : undefined,
+                short,
+              ) ?? does.charAt(0).toUpperCase() + does.slice(1));
       return [{ kind: String(action.abilityId), label, exhausts: !!ability.cost?.exhaustSelf, entry }];
     });
   }
