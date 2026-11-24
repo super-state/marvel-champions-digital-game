@@ -386,7 +386,8 @@ export class SoundBoard {
  * the audio"). Browser tests keep it on, so they still hear (and record) what the table plays. When the audio is
  * approved, make `soundOnByDefault` true.
  */
-const soundOnByDefault = false;
+// Approved with the studio's edits shipped (Adam, 2026-11-24): sound is on unless the player turns it off.
+const soundOnByDefault = true;
 function readSetting(automated: boolean): boolean {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -412,8 +413,14 @@ const SPLIT_FROM_BLOCK: SoundManifest["sounds"] = {
   "draw-land": [1, 2, 3].map((n) => ({ file: `place-${n}.mp3`, rate: 1.4, gainDb: -9 })),
 };
 
-/** The game's own sounds, with nothing from the studio. */
-export const BUNDLED_MANIFEST: SoundManifest = shipped ?? manifestFromFiles([...bundled.keys()], SPLIT_FROM_BLOCK);
+/**
+ * The game's own sounds: one per file in `sfx/`, with the studio's shipped edits (`sfx/sounds.json`: cuts, volume,
+ * pitch, echo, reverb, a moment made silent) laid over them, so a moment the studio never touched keeps its own file.
+ */
+const FROM_FILES = manifestFromFiles([...bundled.keys()], SPLIT_FROM_BLOCK);
+export const BUNDLED_MANIFEST: SoundManifest = shipped
+  ? { version: 1, sounds: { ...FROM_FILES.sounds, ...shipped.sounds } }
+  : FROM_FILES;
 
 /**
  * A file name to an address: bundled, saved by the studio on this PC, or straight off the disk (the studio's

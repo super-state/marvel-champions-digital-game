@@ -9,9 +9,7 @@ import { expect, test, type Page } from "@playwright/test";
 const played = (page: Page) =>
   page.evaluate(() => (globalThis.__battleSounds ?? []).map((sound: { name: string }) => sound.name));
 
-test("the villain phase is heard: its stinger, threat on the scheme, the swoosh of the attack and its hit", async ({
-  page,
-}) => {
+test("the villain phase is heard: threat on the scheme, the swoosh of the attack and its hit", async ({ page }) => {
   test.setTimeout(180_000);
   await page.goto("/battle/?seed=11&scene=defend");
   await expect(page.locator("#turn-status")).toHaveText(/Hero phase/i, { timeout: 60_000 });
@@ -43,7 +41,8 @@ test("the villain phase is heard: its stinger, threat on the scheme, the swoosh 
 
   const sounds = await played(page);
   expect(sounds).toContain("confirm");
-  expect(sounds).toContain("phase-villain");
+  // The villain phase's stinger was switched off in the Sound Studio and shipped silent (Adam, 2026-11-24).
+  expect(sounds).not.toContain("phase-villain");
   expect(sounds).toContain("threat");
   const hit = sounds.findIndex((name) => name.startsWith("hit"));
   expect(hit, sounds.join(", ")).toBeGreaterThan(0);
@@ -115,14 +114,14 @@ test("outside automation, the first click unlocks Web Audio, every file decodes,
   expect((await started()).every((seconds) => seconds > 0)).toBe(true);
 });
 
-test("a person's browser starts with sound off until it is turned on in the menu", async ({ page }) => {
+test("a person's browser starts with sound on, and the menu turns it off", async ({ page }) => {
   test.setTimeout(120_000);
-  // Muted until Adam approves the audio (2026-11-23); the menu can turn it on.
+  // On by default since the audio was approved (Adam, 2026-11-24); the menu still turns it off.
   await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false }));
   await page.goto("/battle/?seed=11&scene=defend");
   await expect(page.locator("#end-turn")).toBeEnabled({ timeout: 60_000 });
   await page.locator("#menu-button").click();
-  await expect(page.locator('[data-sound="off"]')).toHaveAttribute("aria-pressed", "true");
-  await page.locator('[data-sound="on"]').click();
   await expect(page.locator('[data-sound="on"]')).toHaveAttribute("aria-pressed", "true");
+  await page.locator('[data-sound="off"]').click();
+  await expect(page.locator('[data-sound="off"]')).toHaveAttribute("aria-pressed", "true");
 });
