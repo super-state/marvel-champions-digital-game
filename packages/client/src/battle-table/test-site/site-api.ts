@@ -47,7 +47,7 @@ export interface Visitor {
 export interface Me {
   /** The site can save games (its database is there). */
   saving: boolean;
-  /** Asked for on first open: someone in on the shared invite link who isn't a player yet. */
+  /** Asked for on first open: someone in on the shared invite link (or Adam) who isn't a player yet. */
   needsName: boolean;
   name: string | null;
   /** Their own link: their login on any device. */
@@ -73,7 +73,7 @@ async function me(db: D1Like | undefined, who: Visitor, origin: string): Promise
   const unlocked = who.admin ? [...VILLAIN_CHAIN] : p ? unlockedFrom(await gamesOf(db, p.id)) : [VILLAIN_CHAIN[0]];
   return {
     saving: true,
-    needsName: !p && !who.admin,
+    needsName: !p,
     name: p?.name ?? null,
     link: p ? playerLink(origin, p) : null,
     unlocked,
