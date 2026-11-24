@@ -103,7 +103,11 @@ test.describe("battle table: the room", () => {
     await page.goto("/battle/?room=decks");
     await at(page, "decks");
     await expect(room(page).getByRole("heading", { name: "Heroes & Decks" })).toBeVisible();
-    await expect(room(page).locator('[data-for="decks"]').getByText(/^Coming soon/)).toBeVisible();
+    await expect(
+      room(page)
+        .locator('[data-for="decks"]')
+        .getByText(/^Coming soon/),
+    ).toBeVisible();
     await room(page).getByRole("button", { name: "Back" }).click();
     await at(page, "title");
   });
