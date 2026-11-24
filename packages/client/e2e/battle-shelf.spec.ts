@@ -14,19 +14,23 @@ test("the table page opens on the shelf, and Rhino's box plays into the mulligan
   // The table underneath can't be reached while the shelf is up.
   await expect(page.locator("main.battle")).toHaveJSProperty("inert", true);
 
-  // Ultron is sealed.
-  await page.getByRole("button", { name: "Ultron (coming soon)" }).click();
+  // Ultron is sealed. (The boxes are picked from the keyboard here: their buttons are for keyboards and screen
+  // readers, and lie under the room the mouse clicks.)
+  await page.getByRole("button", { name: "Ultron (coming soon)" }).focus();
+  await page.keyboard.press("Enter");
   await expect(shelf.locator(".shelf-toast")).toHaveText("Ultron is coming soon.");
 
   // Rhino's box opens; Escape puts it back on the shelf.
-  await page.getByRole("button", { name: "Open Rhino" }).click();
+  await page.getByRole("button", { name: "Open Rhino" }).focus();
+  await page.keyboard.press("Enter");
   await expect(page.locator("#shelf-play")).toHaveText("Play vs Rhino", { timeout: 30_000 });
   // Keys are the shelf's while it is up: Escape shuts the box, it does not open the table's menu underneath.
   await page.keyboard.press("Escape");
   await expect(shelf.locator(".shelf-opened")).toBeHidden();
   await expect(page.locator("#menu")).not.toHaveJSProperty("open", true);
 
-  await page.getByRole("button", { name: "Open Rhino" }).click();
+  await page.getByRole("button", { name: "Open Rhino" }).focus();
+  await page.keyboard.press("Enter");
   await page.locator("#shelf-play").click({ timeout: 30_000 });
   await expect(shelf).toBeHidden({ timeout: 60_000 });
   await expect(page.locator("main.battle")).toHaveJSProperty("inert", false);

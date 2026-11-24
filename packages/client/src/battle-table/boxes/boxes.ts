@@ -1853,7 +1853,8 @@ async function build() {
     button.type = "button";
     button.textContent = c.open ? `Open ${name}` : `${name} (coming soon)`;
     button.onclick = () => {
-      if (chosen < 0 && !outro) choose(i);
+      // On the shelf, or this box still going back onto it (it turns round and opens again).
+      if (!outro && (chosen < 0 || (chosen === i && target === 0))) choose(i);
     };
     button.onfocus = () => {
       if (chosen < 0) hovered = i;
