@@ -37,6 +37,8 @@ interface Campaign {
   blurb: string;
   /** False: greyed out and sealed. */
   open: boolean;
+  /** Sealed until the player unlocks it, saying how ("Beat Rhino to unlock"); otherwise sealed means coming soon. */
+  lock?: string;
   /** The villain Play deals; absent while that villain's game isn't on the table yet. */
   villain?: VillainId;
 }
@@ -305,12 +307,19 @@ function frontPrint(c: Campaign, art: HTMLImageElement | null): HTMLCanvasElemen
 
   if (!c.open) {
     greyOut(cv);
-    comingSoon(g, 512, 560, 1, -0.32);
+    comingSoon(g, 512, 560, 1, -0.32, c.lock?.toUpperCase());
   }
   return cv;
 }
 
-function comingSoon(g: CanvasRenderingContext2D, x: number, y: number, size: number, angle: number) {
+function comingSoon(
+  g: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  angle: number,
+  text = "COMING SOON",
+) {
   g.save();
   g.translate(x, y);
   g.rotate(angle);
@@ -323,7 +332,10 @@ function comingSoon(g: CanvasRenderingContext2D, x: number, y: number, size: num
   g.fillStyle = "#f1f3f5";
   g.textAlign = "center";
   g.font = "118px Bangers";
-  g.fillText("COMING SOON", 0, 42);
+  // A longer seal ("BEAT RHINO TO UNLOCK") shrinks to stay inside the band.
+  const fit = Math.min(1, 1400 / g.measureText(text).width);
+  g.font = `${Math.floor(118 * fit)}px Bangers`;
+  g.fillText(text, 0, 42 * fit);
   g.restore();
 }
 
@@ -1018,7 +1030,8 @@ function choose(index: number) {
   const box = boxes[index]!;
   if (!box.campaign.open) {
     box.shake = 1;
-    say(`${box.campaign.name[0]}${box.campaign.name.slice(1).toLowerCase()} is coming soon.`);
+    const name = `${box.campaign.name[0]}${box.campaign.name.slice(1).toLowerCase()}`;
+    say(box.campaign.lock ? `${name} is locked. ${box.campaign.lock}.` : `${name} is coming soon.`);
     return;
   }
   chosen = index;
@@ -1215,7 +1228,7 @@ function placeHoverTag() {
   hoverTag.style.top = `${((1 - top.y) / 2) * innerHeight}px`;
   hoverTag.textContent = box.campaign.open
     ? `Campaign ${box.campaign.number} · ${box.campaign.name}`
-    : `${box.campaign.name} · coming soon`;
+    : `${box.campaign.name} · ${box.campaign.lock ?? "coming soon"}`;
   hoverTag.hidden = false;
 }
 
@@ -1247,6 +1260,8 @@ export interface ShelfHost {
   table(): Pick<BattleTable, "matOutline" | "enter"> | null;
   /** The shelf has faded away: the table is the page. */
   shown(): void;
+  /** Why a villain is still sealed for this player ("Beat Rhino to unlock"), or null when it is open (the test site). */
+  lock?(villain: VillainId): string | null;
 }
 
 let host: ShelfHost | null = null;
@@ -1466,11 +1481,17 @@ function frame(now: number) {
 
 let built: Promise<void> | null = null;
 async function build() {
+  // The player's locks seal a box the same way coming soon does, saying what opens it. Drawn once: main.ts starts the
+  // page again when a villain unlocks, so the box is drawn open.
+  const campaigns = CAMPAIGNS.map((c) => {
+    const lock = c.villain ? host?.lock?.(c.villain) : null;
+    return lock ? { ...c, open: false, lock } : c;
+  });
   await Promise.all([document.fonts.load("120px Bangers"), document.fonts.load("900 40px 'Public Sans'")]);
   const [villainBack, encounterBack, ...arts] = await Promise.all([
     loadImage(`${CARDS}marvel-villain-back.webp`),
     loadImage(`${CARDS}marvel-encounter-back.webp`),
-    ...CAMPAIGNS.map((c) => loadImage(c.scan)),
+    ...campaigns.map((c) => loadImage(c.scan)),
   ]);
   const backs: Backs = {
     villain: villainBack ? texture(villainBack) : null,
@@ -1482,14 +1503,14 @@ async function build() {
   scene.traverse((o) => {
     if (o instanceof THREE.Light) o.layers.enableAll();
   });
-  boxes = CAMPAIGNS.map((c, i) => buildBox(c, i, arts[i] ?? null, backs));
+  boxes = campaigns.map((c, i) => buildBox(c, i, arts[i] ?? null, backs));
   // The boxes from the keyboard (and for screen readers): a button each, which lifts its box while it has the focus.
   const picks = el<HTMLElement>(".shelf-picks");
-  CAMPAIGNS.forEach((c, i) => {
+  campaigns.forEach((c, i) => {
     const name = `${c.name[0]}${c.name.slice(1).toLowerCase()}`;
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = c.open ? `Open ${name}` : `${name} (coming soon)`;
+    button.textContent = c.open ? `Open ${name}` : `${name} (${c.lock ?? "coming soon"})`;
     button.onclick = () => {
       if (outro) return;
       // On the shelf, or this box still going back onto it (it turns round and opens again).
