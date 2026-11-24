@@ -11,6 +11,8 @@
  */
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { TokenKit } from "../tokens3d.js";
+import "../design.css";
 import "./boxes.css";
 
 type CampaignId = "rhino" | "klaw" | "ultron";
@@ -105,7 +107,9 @@ const CAM_SHELF = { pos: new THREE.Vector3(0, 4.1, 10.2), at: new THREE.Vector3(
 const CAM_OPEN = { pos: new THREE.Vector3(0.1, 8.0, 7.9), at: new THREE.Vector3(0.1, 0.55, 0.75) };
 
 /** Seconds into the opening at which everything has landed. */
-const OPENED = 3.1;
+const OPENED = 3.4;
+/** How high the villain card lifts, flat, before it turns: clear of the tray's walls (D tall) with room to spare. */
+const CARD_LIFT = D + 0.8;
 
 // ---------- small helpers ----------
 
@@ -138,6 +142,9 @@ function texture(source: HTMLCanvasElement | HTMLImageElement): THREE.Texture {
   t.needsUpdate = true;
   return t;
 }
+
+let kit: TokenKit | null = null;
+const tokens = () => (kit ??= new TokenKit(maxAnisotropy, () => {}));
 
 /** Greys out a print: most of the colour gone, a little darker. */
 function greyOut(c: HTMLCanvasElement) {
@@ -386,58 +393,162 @@ function trayPrint(c: Campaign): HTMLCanvasElement {
   return cv;
 }
 
-/** The campaign guide's cover, folded in the tray. */
-function guidePrint(c: Campaign): HTMLCanvasElement {
-  const [cv, g] = canvas(1024, 480);
+const GUIDE_W = 1.28;
+const GUIDE_H = 1.02;
+
+/** The campaign guide booklet's cover: a strip of the villain's art, the title, and a contents line. */
+function guidePrint(c: Campaign, art: HTMLImageElement | null): HTMLCanvasElement {
+  const [cv, g] = canvas(1024, Math.round((1024 * GUIDE_H) / GUIDE_W));
+  const h = cv.height;
   g.fillStyle = "#efe6d2";
-  g.fillRect(0, 0, 1024, 480);
-  g.fillStyle = c.mid;
-  g.fillRect(0, 0, 1024, 150);
+  g.fillRect(0, 0, 1024, h);
+  // Paper grain.
+  let seed = 3;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 2400; i++) {
+    g.fillStyle = `rgba(${rand() < 0.5 ? "120,100,70" : "255,255,255"},${0.05 + rand() * 0.06})`;
+    g.fillRect(rand() * 1024, rand() * h, 1 + rand() * 2, 1 + rand() * 2);
+  }
+  const strip = [
+    [0, 0],
+    [1024, 0],
+    [1024, 360],
+    [0, 420],
+  ] as const;
+  g.save();
+  polygon(g, strip);
+  g.clip();
+  drawArt(g, c, art, [0, -40, 1024, 500]);
+  const tint = g.createLinearGradient(0, 0, 0, 420);
+  tint.addColorStop(0, "rgba(0,0,0,0)");
+  tint.addColorStop(1, c.deep + "cc");
+  g.fillStyle = tint;
+  g.fillRect(0, 0, 1024, 420);
+  g.restore();
+  polygon(g, strip);
+  g.lineWidth = 10;
+  g.strokeStyle = "#0b0705";
+  g.stroke();
   g.fillStyle = c.accent;
-  g.fillRect(0, 150, 1024, 14);
+  polygon(g, [
+    [0, 420],
+    [1024, 360],
+    [1024, 382],
+    [0, 442],
+  ]);
+  g.fill();
+
+  g.save();
+  g.translate(56, 560);
+  g.rotate(-0.04);
+  g.font = "150px Bangers";
+  g.lineJoin = "round";
+  g.lineWidth = 18;
+  g.strokeStyle = "#0b0705";
+  g.strokeText(c.name, 0, 0);
   g.fillStyle = "#ffd54a";
-  g.font = "110px Bangers";
-  g.fillText(`${c.name}`, 40, 118);
-  g.fillStyle = "#f4ead8";
-  g.textAlign = "right";
-  g.font = "900 38px 'Public Sans'";
-  g.fillText("CAMPAIGN GUIDE", 984, 96);
-  g.textAlign = "left";
-  g.fillStyle = "#b9ad97";
-  for (let line = 0; line < 7; line++) g.fillRect(40, 214 + line * 34, line % 3 === 2 ? 560 : 940, 12);
-  g.fillStyle = "rgba(0,0,0,0.08)";
-  g.fillRect(508, 0, 8, 480);
+  g.fillText(c.name, 0, 0);
+  g.restore();
+  g.fillStyle = "#1c140e";
+  g.font = "900 54px 'Public Sans'";
+  g.fillText("CAMPAIGN GUIDE", 60, 650);
+  g.fillStyle = "#6f6352";
+  g.font = "700 28px 'Public Sans'";
+  g.fillText(`STORY  ·  SETUP  ·  RULES  ·  CAMPAIGN ${c.number}`, 60, 702);
+  g.fillStyle = c.mid;
+  g.fillRect(0, h - 26, 1024, 26);
+  // The stapled spine down the left edge.
+  g.fillStyle = "rgba(0,0,0,0.18)";
+  g.fillRect(0, 0, 10, h);
+  g.fillStyle = "#9aa1a8";
+  for (const y of [h * 0.28, h * 0.72]) g.fillRect(3, y - 22, 5, 44);
   if (!c.open) greyOut(cv);
   return cv;
 }
 
+/** Edges of a stack of pages: thin cream lines. */
+function pagesPrint(): HTMLCanvasElement {
+  const [cv, g] = canvas(256, 32);
+  g.fillStyle = "#e8dfca";
+  g.fillRect(0, 0, 256, 32);
+  g.fillStyle = "rgba(90,70,45,0.35)";
+  for (let y = 2; y < 32; y += 4) g.fillRect(0, y, 256, 1);
+  return cv;
+}
+
+/**
+ * A plank table top, 8 boards to the texture. Every wave in the grain repeats a whole number of times across the
+ * texture and the boards end exactly at its top and bottom, so repeated tiles meet with no visible seam.
+ */
 function woodPrint(): HTMLCanvasElement {
-  const [cv, g] = canvas(1024, 1024);
-  g.fillStyle = "#4e301b";
-  g.fillRect(0, 0, 1024, 1024);
+  const size = 2048;
+  const planks = 8;
+  const ph = size / planks;
+  const TAU = Math.PI * 2;
+  const [cv, g] = canvas(size, size);
   let seed = 7;
   const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  for (let plank = 0; plank < 4; plank++) {
-    const top = plank * 256;
-    g.fillStyle = `rgba(${plank % 2 ? "255,200,150" : "0,0,0"},0.05)`;
-    g.fillRect(0, top, 1024, 256);
-    for (let i = 0; i < 70; i++) {
-      const y0 = top + rand() * 256;
-      const wave = 3 + rand() * 9;
-      const freq = 0.004 + rand() * 0.01;
+  const wave = (x: number, cycles: number, phase: number) => Math.sin((TAU * cycles * x) / size + phase);
+  for (let p = 0; p < planks; p++) {
+    const top = p * ph;
+    const tone = 0.8 + rand() * 0.32;
+    const warm = 0.88 + rand() * 0.2;
+    g.fillStyle = `rgb(${82 * tone}, ${50 * tone}, ${28 * tone * warm})`;
+    g.fillRect(0, top, size, ph);
+    g.save();
+    g.beginPath();
+    g.rect(0, top, size, ph);
+    g.clip();
+    for (let i = 0; i < 7; i++) {
+      g.fillStyle = `rgba(${rand() < 0.5 ? "255,205,150" : "26,12,4"},${0.03 + rand() * 0.05})`;
+      g.fillRect(0, top + rand() * ph, size, 12 + rand() * 50);
+    }
+    for (let i = 0; i < 120; i++) {
+      const y0 = top + rand() * ph;
+      const c1 = 1 + Math.floor(rand() * 3);
+      const c2 = 4 + Math.floor(rand() * 7);
+      const a1 = 2 + rand() * 9;
+      const a2 = 0.4 + rand() * 2;
+      const p1 = rand() * TAU;
+      const p2 = rand() * TAU;
       g.strokeStyle =
-        rand() < 0.5 ? `rgba(20,10,4,${0.08 + rand() * 0.18})` : `rgba(160,104,60,${0.06 + rand() * 0.12})`;
-      g.lineWidth = 0.8 + rand() * 2.6;
+        rand() < 0.55 ? `rgba(22,10,3,${0.07 + rand() * 0.16})` : `rgba(170,112,64,${0.05 + rand() * 0.1})`;
+      g.lineWidth = 0.7 + rand() * 2.4;
       g.beginPath();
-      for (let x = 0; x <= 1024; x += 16) {
-        const y = y0 + Math.sin(x * freq + i) * wave + Math.sin(x * 0.031 + i * 3) * 1.5;
+      for (let x = 0; x <= size; x += 8) {
+        const y = y0 + a1 * wave(x, c1, p1) + a2 * wave(x, c2, p2);
         if (x) g.lineTo(x, y);
         else g.moveTo(x, y);
       }
       g.stroke();
     }
-    g.fillStyle = "rgba(12,6,2,0.75)";
-    g.fillRect(0, top, 1024, 3);
+    // A knot now and then, drawn three times so one near an edge carries on into the next tile.
+    if (rand() < 0.7) {
+      const kx = rand() * size;
+      const ky = top + ph * (0.3 + rand() * 0.4);
+      for (const dx of [-size, 0, size]) {
+        for (let r = 7; r >= 1; r--) {
+          g.beginPath();
+          g.ellipse(kx + dx, ky, r * 15, r * 4.2, 0, 0, TAU);
+          g.strokeStyle = `rgba(30,14,5,${0.1 + (7 - r) * 0.03})`;
+          g.lineWidth = 2;
+          g.stroke();
+        }
+        g.beginPath();
+        g.ellipse(kx + dx, ky, 12, 4, 0, 0, TAU);
+        g.fillStyle = "rgba(26,11,3,0.6)";
+        g.fill();
+      }
+    }
+    g.restore();
+    // The gap between boards, and where one board butts against the next one along.
+    g.fillStyle = "rgba(10,5,2,0.85)";
+    g.fillRect(0, top, size, 4);
+    g.fillStyle = "rgba(255,220,180,0.07)";
+    g.fillRect(0, top + 4, size, 2);
+    const joint = rand() * size;
+    g.fillStyle = "rgba(10,5,2,0.7)";
+    g.fillRect(joint, top, 3, ph);
   }
   return cv;
 }
@@ -495,11 +606,69 @@ shelfLight.position.set(0, 6.5, -3.5);
 shelfLight.target.position.set(0, 0.4, -8.6);
 scene.add(shelfLight, shelfLight.target);
 
+// ---------- the soft backdrop ----------
+// The shelf and the wall live on their own layer. Each frame they are drawn small, blurred, and laid behind the table
+// as the scene's background, like a camera focused on the boxes. The table and the boxes are drawn sharp on top.
+
+const BACKDROP = 1;
+const backdropColour = new THREE.Color(0x0d0a08);
+const backdrop = {
+  a: new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType }),
+  b: new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType }),
+  material: new THREE.ShaderMaterial({
+    uniforms: { source: { value: null }, step: { value: new THREE.Vector2() } },
+    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+    // A 9-tap Gaussian along `step`, run across then down, twice.
+    fragmentShader: `
+      uniform sampler2D source; uniform vec2 step; varying vec2 vUv;
+      void main() {
+        vec4 c = texture2D(source, vUv) * 0.2270270270;
+        c += (texture2D(source, vUv + step * 1.3846153846) + texture2D(source, vUv - step * 1.3846153846)) * 0.3162162162;
+        c += (texture2D(source, vUv + step * 3.2307692308) + texture2D(source, vUv - step * 3.2307692308)) * 0.0702702703;
+        gl_FragColor = c;
+      }`,
+    depthTest: false,
+    depthWrite: false,
+  }),
+  scene: new THREE.Scene(),
+  camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1),
+};
+backdrop.scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), backdrop.material));
+
+function blurPass(from: THREE.WebGLRenderTarget, to: THREE.WebGLRenderTarget, x: number, y: number) {
+  backdrop.material.uniforms.source!.value = from.texture;
+  (backdrop.material.uniforms.step!.value as THREE.Vector2).set(x / from.width, y / from.height);
+  renderer.setRenderTarget(to);
+  renderer.render(backdrop.scene, backdrop.camera);
+}
+
+function renderFrame() {
+  camera.layers.set(BACKDROP);
+  scene.background = backdropColour;
+  renderer.setRenderTarget(backdrop.a);
+  renderer.render(scene, camera);
+  for (let i = 0; i < 2; i++) {
+    blurPass(backdrop.a, backdrop.b, 1.6, 0);
+    blurPass(backdrop.b, backdrop.a, 0, 1.6);
+  }
+  renderer.setRenderTarget(null);
+  camera.layers.set(0);
+  scene.background = backdrop.a.texture;
+  renderer.render(scene, camera);
+}
+
 function buildTable() {
   const wood = texture(woodPrint());
   wood.wrapS = wood.wrapT = THREE.RepeatWrapping;
-  wood.repeat.set(4, 2.2);
-  const top = new THREE.MeshStandardMaterial({ map: wood, roughness: 0.55, metalness: 0 });
+  // Whole repeats only: a fraction would cut a board in half at the table's edge.
+  wood.repeat.set(2, 1);
+  const top = new THREE.MeshPhysicalMaterial({
+    map: wood,
+    roughness: 0.5,
+    metalness: 0,
+    clearcoat: 0.35,
+    clearcoatRoughness: 0.35,
+  });
   const side = new THREE.MeshStandardMaterial({ color: 0x24150b, roughness: 0.7 });
   const table = new THREE.Mesh(new THREE.BoxGeometry(30, 0.5, 15), [side, side, top, side, side, side]);
   table.position.set(0, -0.25, 2.4);
@@ -511,6 +680,7 @@ function buildTable() {
     new THREE.MeshStandardMaterial({ color: 0x241a14, roughness: 0.95 }),
   );
   wall.position.set(0, 4, -9.9);
+  wall.layers.set(BACKDROP);
   scene.add(wall);
 }
 
@@ -592,6 +762,7 @@ function buildShelf() {
       }
     }
   shelf.position.set(0, -1.1, -8.7);
+  shelf.traverse((o) => o.layers.set(BACKDROP));
   scene.add(shelf);
 }
 
@@ -703,26 +874,40 @@ function buildBox(c: Campaign, index: number, art: HTMLImageElement | null, back
   stages.position.set(-0.55, 0.03 + 0.04, 0.55);
   stages.rotation.y = -0.04;
   tray.add(stages);
-  // The campaign guide, a folded sheet along the top of the tray under the tokens.
-  const guide = new THREE.Mesh(
-    new THREE.BoxGeometry(innerW - 0.16, 0.012, 1.05),
-    new THREE.MeshStandardMaterial({ map: texture(guidePrint(c)), roughness: 0.85 }),
-  );
-  guide.position.set(0, 0.036, -0.86);
-  guide.rotation.y = 0.02;
-  guide.receiveShadow = true;
-  tray.add(guide);
-  const tokenColours = [c.accent, "#d8342c", "#2a7bd8", "#f2c94c", "#e9e3d6"];
-  tokenColours.forEach((colour, i) => {
-    const token = shadowed(
-      new THREE.Mesh(
-        new THREE.CylinderGeometry(0.15, 0.15, 0.05, 28),
-        new THREE.MeshStandardMaterial({ color: colour, roughness: 0.5 }),
-      ),
-    );
-    token.position.set(0.25 + (i % 3) * 0.36, 0.068 + Math.floor(i / 3) * 0.01, -1.02 + Math.floor(i / 3) * 0.34);
-    tray.add(token);
+  // The campaign guide: a stapled booklet in the top corner.
+  const pages = new THREE.MeshStandardMaterial({ map: texture(pagesPrint()), roughness: 0.9 });
+  const cover = new THREE.MeshPhysicalMaterial({
+    map: texture(guidePrint(c, art)),
+    roughness: 0.55,
+    clearcoat: 0.25,
+    clearcoatRoughness: 0.5,
   });
+  const guide = shadowed(
+    new THREE.Mesh(new THREE.BoxGeometry(GUIDE_W, 0.035, GUIDE_H), [pages, pages, cover, pages, pages, pages]),
+  );
+  guide.position.set(-0.5, 0.03 + 0.0175, -0.84);
+  guide.rotation.y = 0.035;
+  tray.add(guide);
+
+  // The same tokens the game table uses, loose in the other corner.
+  const loose: [name: string, count: number, x: number, y: number, z: number, turn: number][] = [
+    ["damage", 3, 0.47, 0, -1.13, 0.2],
+    ["damage", 1, 0.88, 0, -1.2, -0.4],
+    ["damage", 1, 0.86, 0.053, -1.15, 0.9],
+    ["threat", 2, 0.5, 0, -0.78, 0.1],
+    ["acceleration", 1, 0.86, 0, -0.8, -0.2],
+    ["stunned", 1, 0.48, 0, -0.45, 0.12],
+    ["tough", 1, 0.93, 0, -0.42, -0.1],
+  ];
+  for (const [name, count, x, y, z, turn] of loose) {
+    const token = tokens().build(name, count);
+    token.rotation.set(-Math.PI / 2, 0, turn);
+    token.position.set(x, 0.03 + y, z);
+    token.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.castShadow = true;
+    });
+    tray.add(token);
+  }
   group.add(tray);
 
   // The villain card is its own object so it can leave the box; `cardInTray` is where it lies inside.
@@ -851,6 +1036,9 @@ addEventListener("keydown", (event) => {
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight);
+  const px = renderer.getPixelRatio() / 4;
+  backdrop.a.setSize(Math.ceil(innerWidth * px), Math.ceil(innerHeight * px));
+  backdrop.b.setSize(Math.ceil(innerWidth * px), Math.ceil(innerHeight * px));
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
 }
@@ -921,20 +1109,23 @@ function pose(time: number, dt: number) {
     }
     group.updateMatrixWorld(true);
 
-    // The villain card: rides in the tray, then rises to face you.
-    const rise = index === chosen ? span(s, 2.0, 1.0) : 0;
+    // The villain card rides in the tray, lifts straight up, still flat, until it is clear of the tray's walls, and
+    // only then turns and travels out to face you.
+    const lift = index === chosen ? span(s, 2.0, 0.5) : 0;
+    const travel = index === chosen ? span(s, 2.4, 0.95) : 0;
     scratch.matrix.multiplyMatrices(group.matrixWorld, box.cardInTray);
     scratch.matrix.decompose(scratch.pos, scratch.quat, scratch.scale);
+    scratch.pos.y += CARD_LIFT * lift;
     const end = CARD_END.clone();
     if (index === chosen && s >= OPENED - 0.001) end.y += Math.sin(time * 1.6) * 0.06;
     scratch.look.position.copy(end);
     scratch.look.lookAt(camera.position);
     scratch.endQuat.copy(scratch.look.quaternion);
-    box.card.position.lerpVectors(scratch.pos, end, rise);
-    box.card.position.y += Math.sin(Math.PI * rise) * 0.9;
-    box.card.quaternion.slerpQuaternions(scratch.quat, scratch.endQuat, rise);
-    box.card.scale.setScalar(lerp(1, CARD_END_SCALE, rise));
-    if (index === chosen && rise >= 1) box.card.rotation.z += Math.sin(time * 1.1) * 0.02;
+    box.card.position.lerpVectors(scratch.pos, end, travel);
+    box.card.position.y += Math.sin(Math.PI * travel) * 0.35;
+    box.card.quaternion.slerpQuaternions(scratch.quat, scratch.endQuat, travel);
+    box.card.scale.setScalar(lerp(1, CARD_END_SCALE, travel));
+    if (index === chosen && travel >= 1) box.card.rotation.z += Math.sin(time * 1.1) * 0.02;
   }
 }
 
@@ -970,7 +1161,7 @@ function frame(now: number) {
   }
   pose(now / 1000, dt);
   placeHoverTag();
-  renderer.render(scene, camera);
+  renderFrame();
   requestAnimationFrame(frame);
 }
 
@@ -987,6 +1178,10 @@ async function start() {
   };
   buildTable();
   buildShelf();
+  // Lights shine on both layers: the sharp table and the soft backdrop.
+  scene.traverse((o) => {
+    if (o instanceof THREE.Light) o.layers.enableAll();
+  });
   boxes = CAMPAIGNS.map((c, i) => buildBox(c, i, arts[i] ?? null, backs));
   resize();
 
@@ -1001,7 +1196,7 @@ async function start() {
     if (s === OPENED) showOpened(boxes[preset]!.campaign);
   }
   pose(performance.now() / 1000, 0);
-  renderer.render(scene, camera);
+  renderFrame();
   requestAnimationFrame(frame);
 }
 
