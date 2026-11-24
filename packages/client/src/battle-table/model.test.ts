@@ -501,5 +501,12 @@ describe("the hero the deal takes", () => {
     expect(label()).toBe("Change to Captain Marvel");
     battle.heroAction("changeForm");
     expect(battle.snapshot().hero.name).toBe("Captain Marvel");
+    battle.endTurn();
+    while (battle.snapshot().choice) {
+      const choice = battle.snapshot().choice!;
+      battle.chooseMany(choice.options.slice(0, choice.min).map((option) => option.id));
+    }
+    expect(battle.snapshot().turn).toBe("player");
+    expect(label()).toBe("Change to Carol Danvers");
   });
 });

@@ -3758,22 +3758,18 @@ function setVillainChoice(villain: VillainId) {
 }
 
 // ── Which hero ────────────────────────────────────────────────────────────────────────────────────────────────────
-// The hero Play deals, with their starter deck. `?hero=captain-marvel` in the address picks one and is remembered on
-// this device, as the villain is; otherwise the last choice, and Spider-Man on a first visit. (The room's bench will
-// offer the choice on screen.)
+// The hero Play deals, with their starter deck. As with the villain, `?hero=captain-marvel` in the address picks one
+// for that page (tests, the play hook); otherwise the last choice on this device (`battle-hero`, which the room's
+// bench will save when it offers the choice on screen), and Spider-Man on a first visit.
 const heroName = (id: HeroId) => HEROES.find((hero) => hero.id === id)!.name;
 function initialHero(): HeroId {
   const asked = new URLSearchParams(location.search).get("hero");
+  if (isHeroId(asked)) return asked;
   try {
-    if (isHeroId(asked)) {
-      localStorage.setItem("battle-hero", asked);
-      return asked;
-    }
     const saved = localStorage.getItem("battle-hero");
     if (isHeroId(saved)) return saved;
   } catch {
-    // Private windows may refuse storage: the address's hero, or Spider-Man.
-    if (isHeroId(asked)) return asked;
+    // Private windows may refuse storage: Spider-Man it is.
   }
   return "spider-man";
 }
