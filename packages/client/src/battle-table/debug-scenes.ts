@@ -606,6 +606,28 @@ const SCENES: Record<string, Scene> = {
     environmentAttachments: [{ code: "01142" }],
     play: [{ code: "01059" }, { code: "01058" }],
   },
+  /**
+   * The same crowded table later in the game: a tall player discard pile and cards in the encounter discard pile, so
+   * the shrunken encounter piles stand down the right just above the player's discard pile. Their counts must keep
+   * off it, and a card dealt while the player's row is full must keep off the player's deck.
+   */
+  ultronpiles: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    villain: { damage: 5 },
+    mainThreat: 2,
+    drones: [{ code: "01005" }, { code: "01002" }, { code: "01008" }, { code: "01088", statuses: { stunned: 1 } }],
+    minions: [{ code: "01143", damage: 1 }],
+    schemes: [
+      { code: "01148", threat: 4 },
+      { code: "01150", threat: 2 },
+    ],
+    villainAttachments: [{ code: "01152" }],
+    environmentAttachments: [{ code: "01142" }],
+    play: [{ code: "01059" }, { code: "01058" }],
+    deckLeft: 14,
+    encounterLeft: 16,
+  },
   /** Nick Fury in hand with the resources to pay for him: his "Choose one" waits in the dock, the table blurred behind. */
   fury: {
     hero: { form: "hero" },
