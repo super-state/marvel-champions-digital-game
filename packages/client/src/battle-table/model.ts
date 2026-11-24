@@ -16,6 +16,7 @@ import {
   remainingHitPoints,
   threatCannotBeRemoved,
   type Command,
+  type GameEvent,
   type GameState,
   type InstanceId,
   type LegalAction,
@@ -524,12 +525,32 @@ export interface DealOptions {
   arrange?: (state: GameState) => GameState;
 }
 
-function openingTurn({
-  villain = "rhino",
-  seed = PRACTICE_SEED,
-  mulligan: ask = false,
-  arrange,
-}: DealOptions = {}): GameState {
+/**
+ * What the scenario's setup put on the table before the first hand was drawn, in words: the cards its main scheme
+ * brought into play (Klaw's Defense Network, Ultron's Drones environment) and a Drone made of the top card of the
+ * player's deck. The table opens with them already there, so the log says where they came from.
+ */
+function setupNotesOf(state: GameState, events: readonly GameEvent[]): string[] {
+  const notes: string[] = [];
+  for (const e of events) {
+    if (e.type === "cardPutIntoPlayFacedown" && e.as === "minion")
+      notes.push("Setup: the top card of your deck goes into play facedown as a Drone minion");
+    else if (
+      e.type === "cardMoved" &&
+      (e.to.kind === "villainArea" || e.to.kind === "playArea") &&
+      ["encounterDeck", "encounterSetAside", "encounterDiscard", "dealtEncounter"].includes(e.from.kind)
+    ) {
+      const card = cardOf(state, e.instanceId);
+      if (card && ENCOUNTER_TYPES.has(card.type)) notes.push(`Setup: ${card.name} comes into play`);
+    }
+  }
+  return notes;
+}
+
+function openingTurn({ villain = "rhino", seed = PRACTICE_SEED, mulligan: ask = false, arrange }: DealOptions = {}): {
+  state: GameState;
+  setup: string[];
+} {
   const created = createGame(
     coreScenario(villain, {
       seed,
@@ -539,16 +560,17 @@ function openingTurn({
   );
   if (!created.ok) throw Error(created.error.message);
   const state = created.state;
+  const setup = setupNotesOf(state, created.events);
   const mulligan = state.pendingChoice;
   if (mulligan?.prompt.kind !== "mulligan") throw Error("Expected Spider-Man's opening hand.");
-  if (ask) return state;
+  if (ask) return { state, setup };
   const turn = apply(state, {
     type: "resolveChoice",
     playerId: mulligan.playerId,
     choiceId: mulligan.choiceId,
     selectedOptionIds: [],
   });
-  return arrange ? arrange(turn.state) : turn.state;
+  return { state: arrange ? arrange(turn.state) : turn.state, setup };
 }
 
 export class BattleModel {
@@ -579,6 +601,12 @@ export class BattleModel {
     effectAttack: { enemy: string; activity: string } | null;
   }[] = [];
 
+  #setup: string[] = [];
+  /** What the scenario's setup put on the table before the first hand was drawn, for the log. */
+  get setupNotes(): readonly string[] {
+    return this.#setup;
+  }
+
   get canUndo(): boolean {
     return this.#history.length > 0;
   }
@@ -608,7 +636,8 @@ export class BattleModel {
     this.#effectAttack = null;
     this.#beats = [];
     const opening = openingTurn(options);
-    this.#setGame(opening, opening.players[0]!.hand);
+    this.#setup = opening.setup;
+    this.#setGame(opening.state, opening.state.players[0]!.hand);
   }
 
   #setGame(state: GameState, drawn: readonly string[]): void {

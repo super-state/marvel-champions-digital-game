@@ -1,7 +1,8 @@
 /**
  * The campaign shelf, the 3D table's front door: the campaigns stand on a wooden table as retail boxes, with a cube
  * shelf of other game boxes in the dim room behind. Pick one and it tips onto its back, the lid lifts off and is set
- * aside, and the villain card rises out of the tray towards you. Ultron is still sealed ("coming soon") and won't open.
+ * aside, and the villain card rises out of the tray towards you. A campaign marked `open: false` is sealed ("coming
+ * soon") and won't open; all three Core Set villains are open.
  *
  * It lies over the table page (`main.ts` loads it when the page opens on the shelf, and again for New game), with its
  * own renderer. Play deals the game on the table underneath, out of sight, then flies every piece from the box to the
@@ -83,8 +84,9 @@ const CAMPAIGNS: readonly Campaign[] = [
     accent: "#ff8a2a",
     ink: "#1a0d04",
     difficulty: 3,
-    blurb: "Ultron's drones are coming.",
-    open: false,
+    blurb: "Ultron turns the cards in your own deck into his Drones. Break them, then him, before his countdown ends.",
+    open: true,
+    villain: "ultron",
   },
 ];
 

@@ -3762,6 +3762,13 @@ function deal() {
   model.reset(arrange ? { villain, seed, arrange } : { villain, seed, mulligan: true });
   villainDealt = villain;
   paintMatchup();
+  // The table opens with what the scenario's setup already did (Ultron's Drones environment and the first Drone off
+  // the player's deck): the log says so, so nothing on it is there unexplained.
+  for (const note of model.setupNotes) {
+    story.push(note);
+    pushFeed({ text: note, icon: "deck", tone: "villain" });
+  }
+  paintFeed();
   state = model.snapshot();
   presented = state.beats;
   if (!table) {

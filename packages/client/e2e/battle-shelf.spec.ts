@@ -14,11 +14,13 @@ test("the table page opens on the shelf, and Rhino's box plays into the mulligan
   // The table underneath can't be reached while the shelf is up.
   await expect(page.locator("main.battle")).toHaveJSProperty("inert", true);
 
-  // Ultron is sealed. (The boxes are picked from the keyboard here: their buttons are for keyboards and screen
-  // readers, and lie under the room the mouse clicks.)
-  await page.getByRole("button", { name: "Ultron (coming soon)" }).focus();
+  // All three Core Set boxes open. (The boxes are picked from the keyboard here: their buttons are for keyboards and
+  // screen readers, and lie under the room the mouse clicks.)
+  await page.getByRole("button", { name: "Open Ultron" }).focus();
   await page.keyboard.press("Enter");
-  await expect(shelf.locator(".shelf-toast")).toHaveText("Ultron is coming soon.");
+  await expect(page.locator("#shelf-play")).toHaveText("Play vs Ultron", { timeout: 30_000 });
+  await page.keyboard.press("Escape");
+  await expect(shelf.locator(".shelf-opened")).toBeHidden();
 
   // Rhino's box opens; Escape puts it back on the shelf.
   await page.getByRole("button", { name: "Open Rhino" }).focus();
