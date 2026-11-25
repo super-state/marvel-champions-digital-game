@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./battle-test";
 
 /**
  * The campaign shelf is the 3D table's front door: the table page opens on the boxes, Play deals the game on the table

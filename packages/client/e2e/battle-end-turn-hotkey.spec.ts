@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./battle-test";
 
 /**
  * Ctrl+Space on the 3D battle table does what End Turn does: nothing while the menu is open, and ends the hero phase

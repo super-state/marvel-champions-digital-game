@@ -395,7 +395,12 @@ export interface BattleBeat {
   round?: number;
   gameEnded?: true;
   activate?: { card: string; hero: string };
-  threat?: { scheme: string; delta: number };
+  /**
+   * Threat placed on or removed from a scheme: `delta` is the change, `to` the scheme's threat once it has landed. The
+   * table shows `to` rather than adding `delta` to what it shows, so a label redrawn mid-move (a Drone arriving) can
+   * never count the same threat twice.
+   */
+  threat?: { scheme: string; delta: number; to: number };
   hit?: { source: string | null; target: string; amount: number; tough?: boolean };
 }
 
@@ -929,6 +934,10 @@ export class BattleModel {
       if (earlier.type === "damageDealt" || earlier.type === "damagePlaced") break;
       if (earlier.type === "cardMoved") clearedAway.add(earlier);
     }
+    // Each scheme's threat as these events go by, from the game before the move: every threat beat carries the number
+    // its scheme should read once it lands.
+    const threatNow = new Map<string, number>();
+    const threatOf = (id: string) => threatNow.get(id) ?? getInstance(this.#game, id as InstanceId)?.threat ?? 0;
     for (const e of events) {
       if (e.type === "roundStarted") {
         round = e.round;
@@ -997,6 +1006,7 @@ export class BattleModel {
             : {}),
         });
       } else if (e.type === "mainSchemeAdvanced" && !e.schemeInstanceId) {
+        threatNow.set(mainId, 0);
         const card = cardOf(result.state, mainId);
         const stage = card?.type === "main_scheme" ? card.stages[e.stageIndex] : undefined;
         const from = mainStageName;
@@ -1414,8 +1424,13 @@ export class BattleModel {
               ? `${name(e.sourceInstanceId)} places ${e.amount} threat on ${schemeName(e.schemeInstanceId)}`
               : `${schemeName(e.schemeInstanceId)} gains ${e.amount} threat`
             : `Remove ${e.amount} threat from ${schemeName(e.schemeInstanceId)}`,
-          threat: { scheme: e.schemeInstanceId, delta: placed ? e.amount : -e.amount },
+          threat: {
+            scheme: e.schemeInstanceId,
+            delta: placed ? e.amount : -e.amount,
+            to: Math.max(0, threatOf(e.schemeInstanceId) + (placed ? e.amount : -e.amount)),
+          },
         });
+        threatNow.set(e.schemeInstanceId, this.#beats.at(-1)!.threat!.to);
       } else if (enemy) {
         switch (e.type) {
           case "enemyActivated":
