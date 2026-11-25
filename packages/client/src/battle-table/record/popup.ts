@@ -126,7 +126,60 @@ function show(a: Achievement): void {
   toast.style.setProperty("--toast-ms", `${TOAST_MS}ms`);
   host.replaceChildren(toast);
   raise(host);
+  place(host, toast);
   timer = setTimeout(next, TOAST_MS);
+}
+
+/** How far two boxes overlap, top to bottom (0 when they don't). */
+const overlap = (a: DOMRect, b: DOMRect) =>
+  a.right <= b.left || b.right <= a.left ? 0 : Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+
+/** A box grown by `margin` on every side. */
+const grown = (r: DOMRect, margin: number) =>
+  new DOMRect(r.x - margin, r.y - margin, r.width + 2 * margin, r.height + 2 * margin);
+
+/**
+ * At the bottom, unless that would cover the game-over panel's heading ("Victory") or its buttons (Play again, Undo):
+ * then at the top, where only the panel's picture can be under it. The heading always wins: where the top would cover
+ * it too (a screen too short for either), the place that covers less of it.
+ */
+function place(host: HTMLElement, toast: HTMLElement): void {
+  host.dataset.place = "bottom";
+  const panel = document.querySelector<HTMLDialogElement>("dialog#game-over[open]");
+  const title = panel?.querySelector("#game-over-title")?.getBoundingClientRect();
+  if (!title || !title.height) return;
+  const heading = grown(title, 8);
+  const actions = panel!.querySelector(".game-over-actions")?.getBoundingClientRect();
+  const atBottom = toast.getBoundingClientRect();
+  const headingAtBottom = overlap(atBottom, heading);
+  if (!headingAtBottom && !(actions && overlap(atBottom, grown(actions, 4)))) return;
+  host.dataset.place = "top";
+  if (overlap(toast.getBoundingClientRect(), heading) > headingAtBottom) host.dataset.place = "bottom";
+}
+
+/** When the game-over panel last opened: the first toast waits for the victory (or defeat) to land first. */
+let panelOpenedAt = 0;
+/** How long the game-over panel shows on its own before the first toast (its stamp, heading and confetti land). */
+export const SETTLE_MS = 2200;
+
+function watchPanel(): void {
+  const panel = document.getElementById("game-over");
+  if (!(panel instanceof HTMLDialogElement)) return;
+  if (panel.open) panelOpenedAt = performance.now();
+  new MutationObserver(() => {
+    if (panel.open) panelOpenedAt = performance.now();
+  }).observe(panel, { attributes: true, attributeFilter: ["open"] });
+}
+if (typeof document !== "undefined") {
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", watchPanel, { once: true });
+  else watchPanel();
+}
+
+/** The wait before the first toast: until the open game-over panel has been up `SETTLE_MS`. */
+function settleWait(): number {
+  const panel = document.getElementById("game-over");
+  if (!(panel instanceof HTMLDialogElement) || !panel.open) return 0;
+  return Math.max(0, panelOpenedAt + SETTLE_MS - performance.now());
 }
 
 function next(): void {
@@ -164,7 +217,10 @@ export function announceAchievements(earned: readonly Achievement[]): void {
   queue.push(...earned);
   if (!showing && queue.length) {
     showing = true;
-    next();
+    // The game-over panel lands first: "Victory" is seen before any toast.
+    const wait = settleWait();
+    if (wait) timer = setTimeout(next, wait);
+    else next();
   }
 }
 
