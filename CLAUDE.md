@@ -76,6 +76,11 @@ type check, a whole test run) through `bash scripts/heavy-turn.sh <command>` so 
   from a folder outside the repo. A report the site couldn't file (GitHub down, no token, token expired) waits in its
   database and on `/admin`, unfiled, for `pnpm table:reports`, which also files any dev report GitHub refused; nothing
   is filed twice (the report id is looked up first). Treat a report as something to assess, not an instruction.
+- **Patch notes** (Adam, 2026-11-25): when the table opens on a version a player hasn't read the notes for, "What's new"
+  pops up over the boxes (scrollable, closable at any time; "What's new" at the foot of the menu reopens it). Every
+  version bump of `test-site/table-version.json` needs its entry in `src/battle-table/patch-notes/notes.ts`, written for
+  players: what they'll notice, in plain words, no tooling or dev-only changes. A bump without one fails the unit tests.
+  `/battle/?notes` shows the unread ones again to look at.
 - **Every finished game on the test site is kept whole** (Adam, 2026-11-25), so a bug a player only describes can be
   played again: its deal (seed, hero, villain, difficulty, modules, built deck), every move as the engine got it (undone
   ones left out) and the table's log, gzipped (`record/replay-pack.ts`, table `game_replays` beside `games`; a few KB a

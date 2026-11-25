@@ -51,6 +51,7 @@ import {
 } from "./test-site/player.js";
 import { spreadPlates, type Obstacle, type Plate, type PlateShift } from "./plate-spread.js";
 import { installReport } from "./report/report.js";
+import { installPatchNotesButton, offerPatchNotes } from "./patch-notes/patch-notes.js";
 import { momentOf } from "./report/capture.js";
 import { eventLook, offerDoes, spotOf, waitsOnDock, type GlowTone, type Spot } from "./spotlight.js";
 import {
@@ -4522,6 +4523,8 @@ installReport({
       document.documentElement.dataset.input ?? "mouse",
     ),
 });
+// What's new, at the foot of the menu beside Report a bug (patch-notes/).
+installPatchNotesButton(gameMenu);
 // Which side the card reader and log sit on, remembered on this device.
 function setSidebarSide(side: "left" | "right") {
   arena.setAttribute("data-rail", side);
@@ -5148,7 +5151,8 @@ async function showShelf(at?: PlaceId) {
 // Elsewhere (Adam's dev table, the browser tests) it starts at once, as it always has.
 function begin() {
   addRecordButton(document.querySelector("#menu .menu-actions"), () => gameMenu.close());
-  if (opensOnShelf()) void showShelf();
+  // The patch notes the player hasn't read come up over the boxes once they are drawn (patch-notes/).
+  if (opensOnShelf()) void showShelf().then(offerPatchNotes);
   else start();
 }
 if (import.meta.env.VITE_TABLE_VERSION) void playerReady.then(begin);
