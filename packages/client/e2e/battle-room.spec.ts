@@ -78,7 +78,8 @@ test.describe("battle table: the room", () => {
     await expect(page.locator("#menu")).not.toHaveJSProperty("open", true);
 
     // A place still to come says so, and the camera stays (whichever is still to come: they fill up one by one).
-    const soon = await menu.locator('[aria-disabled="true"] .room-choice-name').first().textContent();
+    const stillToCome = menu.locator('[aria-disabled="true"] .room-choice-name');
+    const soon = (await stillToCome.count()) ? await stillToCome.first().textContent() : null;
     if (soon) {
       for (let i = 0; i < 5 && !(await focused(page)).startsWith(soon); i++) await page.keyboard.press("ArrowUp");
       await page.keyboard.press("Enter");
@@ -102,16 +103,11 @@ test.describe("battle table: the room", () => {
     await expect.poll(() => focused(page)).toMatch(/^Campaign/);
   });
 
-  test("?room= starts at a place, even one still to come", async ({ page }) => {
+  test("?room= starts at a place", async ({ page }) => {
     await page.goto("/battle/?room=trophies");
     await at(page, "trophies");
     await expect(room(page).getByRole("heading", { name: "Trophies & Stats" })).toBeVisible();
-    await expect(
-      room(page)
-        .locator('[data-for="trophies"]')
-        .getByText(/^Coming soon/),
-    ).toBeVisible();
-    await room(page).getByRole("button", { name: "Back" }).click();
+    await room(page).getByRole("button", { name: "Back", exact: true }).click();
     await at(page, "title");
   });
 
