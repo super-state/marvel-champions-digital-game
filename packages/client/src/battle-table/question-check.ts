@@ -7,7 +7,7 @@
  *
  * Used twice: the dev table wears a "No designed screen" tag while such a question is up (main.ts), and every driven
  * game in the tests (the fuzz, the deck audits) fails on one that is not in `KNOWN_PLAIN` (question-watch.ts).
- * The map of every kind, and the cards that raise each: https://claude.ai/artifact/JhpB3AJgJcdqBAMVNcVwr4
+ * The map of every kind, and the cards that raise each: https://claude.ai/artifact/KuRruTjfX6Jc5HwzpJNEFg
  */
 import type { ChoicePrompt, GameState } from "@mc/engine";
 import type { BattleSnapshot } from "./model.js";
