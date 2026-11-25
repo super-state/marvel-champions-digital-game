@@ -20,6 +20,22 @@ export function arrangeHand<T extends Identified>(hand: readonly T[], order: rea
   return hand.map((card) => (rank.has(card.id) ? known[next++]! : card));
 }
 
+/**
+ * The player's order brought up to date with the hand now shown (already in that order): a card new to it goes in
+ * next to its neighbour in the hand. Cards out of the hand for now keep their place in the order, so one taken out to
+ * be played and then cancelled or undone comes back to the slot the player gave it.
+ */
+export function rememberOrder(order: readonly string[], shown: readonly string[]): string[] {
+  const result = [...order];
+  shown.forEach((id, index) => {
+    if (result.includes(id)) return;
+    const before = index > 0 ? result.indexOf(shown[index - 1]!) : -1;
+    const after = shown.slice(index + 1).find((next) => result.includes(next));
+    result.splice(before >= 0 ? before + 1 : after ? result.indexOf(after) : result.length, 0, id);
+  });
+  return result;
+}
+
 /** The hand with the card `id` taken out and put back at `slot` (0 is the left end). */
 export function moveInHand<T extends Identified>(hand: readonly T[], id: string, slot: number): T[] {
   const card = hand.find((item) => item.id === id);

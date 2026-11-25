@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { arrangeHand, moveInHand, slotAt } from "./hand-order.js";
+import { arrangeHand, moveInHand, rememberOrder, slotAt } from "./hand-order.js";
 
 const hand = (...ids: string[]) => ids.map((id) => ({ id }));
 const ids = (cards: readonly { id: string }[]) => cards.map((card) => card.id);
@@ -19,6 +19,19 @@ describe("the player's own hand order", () => {
 
   test("a card that left the hand leaves no gap", () => {
     expect(ids(arrangeHand(hand("a", "c"), ["c", "b", "a"]))).toEqual(["c", "a"]);
+  });
+
+  test("a card new to the hand is remembered next to its neighbour", () => {
+    expect(rememberOrder(["c", "a", "b"], ["new", "c", "a", "b"])).toEqual(["new", "c", "a", "b"]);
+    expect(rememberOrder(["c", "a", "b"], ["c", "a", "new", "b"])).toEqual(["c", "a", "new", "b"]);
+    expect(rememberOrder([], ["a", "b"])).toEqual(["a", "b"]);
+  });
+
+  test("a card taken out to be played and then cancelled comes back to the slot the player gave it", () => {
+    // Dragged into c, a, b; a is clicked to play, so the hand shows c, b; the play is cancelled.
+    const order = rememberOrder(["c", "a", "b"], ["c", "b"]);
+    expect(order).toEqual(["c", "a", "b"]);
+    expect(ids(arrangeHand(hand("a", "b", "c"), order))).toEqual(["c", "a", "b"]);
   });
 
   test("moving a card files it at the slot it was let go over", () => {
