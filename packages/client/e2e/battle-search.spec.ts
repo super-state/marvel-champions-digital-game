@@ -60,6 +60,11 @@ test("Masters of Mayhem's search shows the minions as cards to read, pick and co
     "Radioactive Man",
   ]);
   await expect(cards.first().locator("img")).toHaveJSProperty("complete", true);
+  // The new question puts the keyboard on the first card, and Enter picks it (a controller's A steps the same way).
+  await expect(cards.first()).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(cards.first()).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#dock-primary")).toHaveText("Confirm Tiger Shark");
 
   const melter = cards.filter({ hasText: "Melter" });
   await melter.hover();
@@ -67,10 +72,11 @@ test("Masters of Mayhem's search shows the minions as cards to read, pick and co
   await expect(page.locator("#hover-card")).toBeVisible();
   await expect(page.locator("#hover-card")).toHaveAttribute("alt", "Melter");
 
+  // Picking another card moves the pick to it.
   const confirm = page.locator("#dock-primary");
-  await expect(confirm).toBeDisabled();
   await melter.click();
   await expect(melter).toHaveAttribute("aria-pressed", "true");
+  await expect(cards.first()).toHaveAttribute("aria-pressed", "false");
   await expect(confirm).toHaveText("Confirm Melter");
   await confirm.click();
   await expect
