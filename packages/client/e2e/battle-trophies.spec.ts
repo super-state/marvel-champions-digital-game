@@ -93,7 +93,9 @@ async function dealRhino(page: Page, mat: string): Promise<void> {
 
 async function nudge(page: Page, index: number): Promise<void> {
   await setButton(page, index, true);
-  await frames(page, 3);
+  // Held for two frames: the pad reads a direction held over three reads and 400 ms as held, and repeats it, so on a
+  // busy PC (slow frames) a three-frame tap could step twice.
+  await frames(page, 2);
   await setButton(page, index, false);
   await frames(page, 3);
 }
