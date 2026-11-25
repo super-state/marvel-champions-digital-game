@@ -91,6 +91,20 @@ cards work in one form only, what each status does and the hand limit.
 - **The deck runs dry by round 6** (Drones, Invasive AI, Avengers Mansion): the reshuffle is one more encounter card.
   `seen 1×`
 
+### Captain Marvel (Leadership starter deck) — 0 wins, 3 losses (one each against Rhino, Klaw, Ultron)
+
+- **She draws through her deck fast.** Commander every round as Carol, Rechannel, Alpha Flight Station (2 as Carol)
+  and Maria Hill emptied the 40 cards by round 5 against Klaw; the reshuffle deals an encounter card facedown in
+  front of her. Draw only what you will use. `seen 2×`
+- **Recover as Carol, then flip to Captain Marvel the same turn** works (form change needs no ready hero), but she
+  stays exhausted, so she can't defend that villain phase. `seen 2×`
+- **Thwart before you build.** All three losses had the scheme or the minions run away while turns went on allies and
+  upgrades: Rhino's Break-In! 4 → 8 in one phase, Ultron's NORAD 1 → 7 twice. Count the phase's threat first. `seen 3×`
+- **Lead from the Front with four characters out is a big thwart turn** (+1 THW each: 10 threat off at once against
+  Ultron). Keep it for that. `seen 1×`
+- **Spider-Woman's confuse is worth most against a high-SCH villain** (Klaw SCH 2), played while you stay Carol. `seen 1×`
+- **Cosmic Flight: spend it on the big hit.** Passing it on Rhino's 4 cost a game's worth of HP. `seen 1×`
+
 ### Driving the hook
 
 - Pick moves from `moves()` labels only; a look's text starts with the move just made. `seen 1×`
@@ -118,6 +132,14 @@ cards work in one form only, what each status does and the hand limit.
 
 ## Recent games
 
+- 2026-11-25 · Captain Marvel (Leadership) vs Ultron · lost in round 9, knocked out · Lead from the Front + four
+  thwarts took NORAD from 8 to 0, but Ultron's boosts kept adding 4-6 a phase and the Drones wore her down (an
+  auto-player declined every defend at the end).
+- 2026-11-25 · Captain Marvel (Leadership) vs Klaw · lost in round 5, knocked out · stayed Captain Marvel through
+  Family Emergency (stunned, surged into Radioactive Man); Sonic Boom exhausted everything and four minions piled up.
+- 2026-11-24 · Captain Marvel (Leadership) vs Rhino · lost in round 6, The Break-In! 4 → 8 in one phase · Rhino's
+  first stage fell in round 4 (Photonic Blast through the Armored Suit, Nick Fury's 4 past a Guard); spent the next
+  turn on Inspired and the Triskelion instead of thwarting.
 - 2026-11-24 · Spider-Man (Justice) vs Ultron · lost in round 6, Countdown to Oblivion 5/5 · Jessica Jones was
   lost to her own thwart in round 2, so nothing blocked; by round 3 four Drones, an Advanced Ultron Drone and two
   hazard schemes were out; hiding as Peter with six Drones let them fill the last stage in one phase. First game
@@ -141,10 +163,3 @@ cards work in one form only, what each status does and the hand limit.
 - 2026-11-23 · Spider-Man (Justice) vs Rhino · lost in round 10, The Break-In! 3 → 7 in one phase · in round 7 two
   Kicks (16) were set up against stage 2's 15, but the first fizzled on a Sweeping Swoop stun I hadn't read; Hard to
   Keep Down then healed Rhino twice. (An earlier start was wiped in round 4 when a merge reloaded the table.)
-- 2026-11-23 · Spider-Man (Justice) vs Rhino · lost in round 9 at 6/7 · stage 1 fell in round 2 (Kick + basic) and
-  stage 2 was on 7 by round 5, but Armored Suit, a Guard minion, Sandman and Crowd Control piled up with no allies
-  and no Kicks left.
-- 2026-11-23 · Spider-Man (Justice) vs Rhino · **won** in round 10 · threat 6/7 and Rhino on 10 ATK, but basic +
-  Web Kick + Daredevil + Mockingbird was exactly his 11 HP and Toughness.
-- 2026-11-23 · Spider-Man (Justice) vs Rhino · lost in round 10, The Break-In! 2 → 7 as Peter · Rhino on 7, then
-  Toughness, a Guard minion and Vulture in one phase.
