@@ -140,6 +140,8 @@ let revealWindowHeld: string | null = null;
 let releaseHeld: string | null = null;
 /** A revealed card whose own question was just answered, standing aside: it fires before the answer's beats play. */
 let answeredHeld: string | null = null;
+/** Revealed cards whose When Revealed fired before their question was asked (a search), so it isn't fired again. */
+const firedBeforeAsking = new Set<string>();
 /** The reveal of the card held up, kept for moves whose own beats don't carry it (paying for a reaction to it). */
 let heldReveal: Beat["reveal"] = undefined;
 /** How long the table takes to darken where it fades in (`.fade-in` in battle.css). */
@@ -462,6 +464,15 @@ function searchPicked(choice: Choice): string | null {
   return searchPick?.choice === choice.id && choice.options.some((option) => option.id === searchPick!.option)
     ? searchPick.option
     : null;
+}
+
+/** Where on screen each card just taken from a search was, so it flies from there onto the table (Adam, 2026-11-25). */
+let foundAt = new Map<string, DOMRect>();
+function markFound(option: string) {
+  const button = [...dockCards.children].find((node) => (node as HTMLElement).dataset.option === option);
+  const art = button?.querySelector("img");
+  const id = (button as HTMLElement | undefined)?.dataset.found;
+  foundAt = id && art ? new Map([[id, art.getBoundingClientRect()]]) : new Map();
 }
 
 /** Paint the turn bar; true when it now asks a question it was not asking before. */
@@ -913,6 +924,7 @@ function choiceView(choice: Choice): DockView {
             onClick: () => {
               if (!picked) return;
               searchPick = null;
+              markFound(picked);
               choose(picked);
             },
           }
@@ -2021,6 +2033,34 @@ async function pickFromHandAtRandom(beat: Beat, ids: readonly string[], stamp: s
   await sleep(reducedMotion() ? 500 : 900);
 }
 
+/** A revealed card held up at full size, the table soft around it, until the player has read it and pressed Continue. */
+async function waitToBeRead(beat: Beat, reveal: NonNullable<Beat["reveal"]>) {
+  readReveal.setAttribute("aria-label", `Continue after reading ${reveal.name}`);
+  readReveal.hidden = false;
+  // Known before the bar asks, so its Continue leaves the table where it is.
+  revealFocus = reveal.id;
+  narrate(beat, null, {
+    eyebrow: { text: revealedBy(reveal), icon: "forced", tone: "villain" },
+    title: reveal.name,
+    help: appliesHelp(reveal),
+    primary: { label: "Continue", icon: "next", attention: true, onClick: () => readReveal.click() },
+  });
+  readReveal.focus({ preventScroll: true });
+  table?.holdReveal(true);
+  // The table goes soft around the revealed card while it waits to be read.
+  focusBlur.hidden = false;
+  placeLabels();
+  requestAnimationFrame(() => (focusBlur.dataset.ready = ""));
+  await new Promise<void>((resolve) => readReveal.addEventListener("click", () => resolve(), { once: true }));
+  table?.holdReveal(false);
+  revealFocus = null;
+  delete focusBlur.dataset.ready;
+  focusBlur.hidden = !handQuestion();
+  focusBlur.style.clipPath = "";
+  revealHint.hidden = readReveal.hidden = true;
+  narrate(beat, null);
+}
+
 /** How a revealed card is introduced: dealt and turned over, or brought in by another card (your nemesis, by Shadow). */
 function revealedBy(reveal: NonNullable<Beat["reveal"]>): string {
   if (!reveal.broughtBy) return "Revealed";
@@ -2976,7 +3016,8 @@ async function present(beats: Snapshot["beats"]) {
       // in the air).
       const id = answeredHeld;
       answeredHeld = null;
-      if (!reducedMotion() && table?.parkedEncounters().includes(id)) {
+      // A card whose When Revealed already fired before it asked (a search) doesn't fire a second time.
+      if (!firedBeforeAsking.delete(id) && !reducedMotion() && table?.parkedEncounters().includes(id)) {
         await sleep(450);
         // Named as it was revealed: once removed from the game it is in none of the piles the final state lists.
         await whenRevealedFires(beat, { id, name: parkedViews.get(id)?.name ?? nameOf(id) }, "Resolve");
@@ -3222,7 +3263,9 @@ async function present(beats: Snapshot["beats"]) {
       const card = state.enemyCards.find((c) => c.id === beat.entersPlay);
       narrate(beat, feedLineOf(beat));
       if (card) {
-        table?.bringInEnemy(card);
+        const from = reducedMotion() ? undefined : foundAt.get(card.id);
+        foundAt.delete(card.id);
+        table?.bringInEnemy(card, from);
         sfx.play("deal");
         await sleep(reducedMotion() ? 200 : 700);
         synchronizeLabels();
@@ -3534,7 +3577,7 @@ async function present(beats: Snapshot["beats"]) {
         !beat.reveal.boost &&
         !beat.reveal.quick &&
         !state.outcome &&
-        !(state.choice?.sourceTitle && state.choiceSource === beat.reveal.id);
+        !(state.choice?.sourceTitle && state.choiceSource === beat.reveal.id && !state.choice.searched?.length);
       if (willHold) table?.holdReveal(true);
       table?.revealEncounter(beat.reveal);
       sfx.play("flip");
@@ -3555,6 +3598,14 @@ async function present(beats: Snapshot["beats"]) {
       }
       heldReveal = beat.reveal;
       if (state.choice?.sourceTitle && state.choiceSource === beat.reveal.id) {
+        if (state.choice.searched?.length) {
+          // A search fills the screen with the cards it finds, so the card it comes from is read and fires first,
+          // like any other reveal, and only then is the player asked (Adam, 2026-11-25: Masters of Mayhem's panel
+          // came up before the card had been seen).
+          await waitToBeRead(beat, beat.reveal);
+          await whenRevealedFires(beat, beat.reveal);
+          firedBeforeAsking.add(beat.reveal.id);
+        }
         heldEncounter = beat.reveal.id;
         readingCard = null;
         continue;
@@ -3581,32 +3632,7 @@ async function present(beats: Snapshot["beats"]) {
           title: beat.reveal.name,
         });
         await sleep(reducedMotion() ? 700 : beat.reveal.broughtBy ? 1900 : 1150);
-      } else {
-        readReveal.setAttribute("aria-label", `Continue after reading ${beat.reveal.name}`);
-        readReveal.hidden = false;
-        // Known before the bar asks, so its Continue leaves the table where it is.
-        revealFocus = beat.reveal.id;
-        narrate(beat, null, {
-          eyebrow: { text: revealedBy(beat.reveal), icon: "forced", tone: "villain" },
-          title: beat.reveal.name,
-          help: appliesHelp(beat.reveal),
-          primary: { label: "Continue", icon: "next", attention: true, onClick: () => readReveal.click() },
-        });
-        readReveal.focus({ preventScroll: true });
-        table?.holdReveal(true);
-        // The table goes soft around the revealed card while it waits to be read.
-        focusBlur.hidden = false;
-        placeLabels();
-        requestAnimationFrame(() => (focusBlur.dataset.ready = ""));
-        await new Promise<void>((resolve) => readReveal.addEventListener("click", () => resolve(), { once: true }));
-        table?.holdReveal(false);
-        revealFocus = null;
-        delete focusBlur.dataset.ready;
-        focusBlur.hidden = !handQuestion();
-        focusBlur.style.clipPath = "";
-        revealHint.hidden = readReveal.hidden = true;
-        narrate(beat, null);
-      }
+      } else await waitToBeRead(beat, beat.reveal);
       readingCard = null;
       setWidePreview(false);
       const permanent = state.enemyCards.find((c) => c.id === beat.reveal!.id);
@@ -4199,6 +4225,8 @@ function deal() {
   choicePicks.clear();
   staged = null;
   heldEncounter = revealWindowHeld = releaseHeld = answeredHeld = null;
+  firedBeforeAsking.clear();
+  foundAt.clear();
   heldReveal = undefined;
   readingCard = null;
   aimTarget = null;
