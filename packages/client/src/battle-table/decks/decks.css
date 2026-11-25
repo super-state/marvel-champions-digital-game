@@ -79,7 +79,7 @@ body.decks-page {
   inset: 0;
   z-index: 40;
   overflow-y: auto;
-  background: linear-gradient(180deg, #0a1018fa, #070c12fd);
+  background: linear-gradient(180deg, #0a1018, #070c12);
   color: var(--text);
   font-family: var(--font-ui);
   text-align: left;
@@ -672,6 +672,13 @@ body.decks-page {
 
 /* ── Phone and tablet ───────────────────────────────────────────────────── */
 @media (max-width: 899px) {
+  /* Over the room the screen is a fixed box: on a narrow screen it scrolls as one page, rather than squeezing the
+     binder into what is left of the height. */
+  .decks[data-mode="room"][data-view="builder"],
+  .decks[data-mode="room"] .decks-builder {
+    display: block;
+    height: auto;
+  }
   .decks[data-view="builder"] {
     height: auto;
     min-height: 100dvh;
