@@ -11,7 +11,17 @@ import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js
 import { arrangeScene, sceneVillain } from "./debug-scenes.js";
 import { sfx, type SoundName } from "./sound.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
-import { BattleModel, DRONE_NAME, isVillainId, VILLAINS, type BattleCard, type VillainId } from "./model.js";
+import {
+  BattleModel,
+  DRONE_NAME,
+  HEROES,
+  isHeroId,
+  isVillainId,
+  VILLAINS,
+  type BattleCard,
+  type HeroId,
+  type VillainId,
+} from "./model.js";
 import { answerRemote, createPlayer, type Player, type RemoteChannel } from "./play.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
 import type { PlaceId, RoomSetting } from "./room/index.js";
@@ -687,6 +697,23 @@ function choiceView(choice: Choice): DockView {
       },
     };
   }
+  if (choice.discardFromHand && choice.canCancel) {
+    // A card's cost that discards from the hand (Alpha Flight Station): named by the card, and it can be called off.
+    return {
+      tone: "hero",
+      asking: true,
+      eyebrow: { text: choice.sourceTitle ?? "Cost", icon: "discard", tone: "hero" },
+      title: choice.prompt,
+      primary: {
+        label: n ? `Discard ${n}` : `Pick ${choice.min}`,
+        icon: "discard",
+        disabled: n < choice.min || n > choice.max || discarding,
+        attention: n >= choice.min,
+        onClick: confirmChoice,
+      },
+      secondary: { label: "Cancel", onClick: cancel },
+    };
+  }
   if (choice.discardFromHand) {
     const forced = choice.min > 0;
     return {
@@ -1120,6 +1147,8 @@ function cancel() {
   // A reaction called off goes with its question: what it was about plays out as if passed.
   reacting = null;
   paymentCalledOff = !!state.payment;
+  // A cost's hand discard called off (Alpha Flight Station): the cards picked for it go back to being just cards.
+  choicePicks.clear();
   model.cancel();
   staged = null;
   flying = false;
@@ -1338,7 +1367,8 @@ function showOutcome(outcome: Snapshot["outcome"]) {
       : outcome.reason === "allPlayersDefeated"
         ? "Knocked out"
         : "Defeat";
-  element("game-over-kicker").textContent = `${state.hero.name} vs. ${state.villain.name}`;
+  // The hero's name, not the face showing ("Captain Marvel vs. Rhino", lost as Carol Danvers or not).
+  element("game-over-kicker").textContent = `${heroName(heroDealt)} vs. ${state.villain.name}`;
   // The test site keeps the player's record (test-site/player.ts): this ending, once.
   void finishGame(gameSaved, {
     result: outcome.result === "win" ? "win" : "loss",
@@ -3552,7 +3582,11 @@ function render() {
         : [],
     discardOpen,
     hand: displayedHand,
-    staged,
+    // An upgrade being paid for knows its host by now (Inspired on an ally): the table holds it by that card.
+    staged:
+      staged && state.payment?.subject.id === staged.id
+        ? { ...staged, attachedTo: state.payment.subject.attachedTo ?? null }
+        : staged,
     stagedOverEnemies: !!staged && staged.id === stagedAttachment,
     paymentSources: state.payment?.sources.filter((s) => s.available).map(resourcePieceId) ?? null,
     selected,
@@ -3748,16 +3782,33 @@ function setVillainChoice(villain: VillainId) {
   }
 }
 
+// ── Which hero ────────────────────────────────────────────────────────────────────────────────────────────────────
+// The hero Play deals, with their starter deck. As with the villain, `?hero=captain-marvel` in the address picks one
+// for that page (tests, the play hook); otherwise the last choice on this device (`battle-hero`, which the room's
+// bench will save when it offers the choice on screen), and Spider-Man on a first visit.
+const heroName = (id: HeroId) => HEROES.find((hero) => hero.id === id)!.name;
+function initialHero(): HeroId {
+  const asked = new URLSearchParams(location.search).get("hero");
+  if (isHeroId(asked)) return asked;
+  try {
+    const saved = localStorage.getItem("battle-hero");
+    if (isHeroId(saved)) return saved;
+  } catch {
+    // Private windows may refuse storage: Spider-Man it is.
+  }
+  return "spider-man";
+}
+const heroChoice: HeroId = initialHero();
+/** The hero of the game on the table. */
+let heroDealt: HeroId = heroChoice;
+
 function paintMatchup() {
+  const hero = heroName(heroDealt);
   const villain = villainName(villainDealt);
-  document.title = `Spider-Man vs. ${villain} · Marvel Champions`;
-  element("matchup").textContent = `Spider-Man vs. ${villain}`;
+  document.title = `${hero} vs. ${villain} · Marvel Champions`;
+  element("matchup").textContent = `${hero} vs. ${villain}`;
   const title = element("menu-title");
-  title.replaceChildren(
-    "Spider-Man ",
-    Object.assign(document.createElement("i"), { textContent: "vs." }),
-    ` ${villain}`,
-  );
+  title.replaceChildren(`${hero} `, Object.assign(document.createElement("i"), { textContent: "vs." }), ` ${villain}`);
 }
 
 /** A game has been dealt in this page, so a `?scene=` set-up has had its turn. */
@@ -3800,7 +3851,10 @@ function deal() {
   const sceneName = params.get("scene") ?? "";
   const arrange = import.meta.env.DEV ? arrangeScene(sceneName) : undefined;
   const villain = arrange ? sceneVillain(sceneName) : villainChoice;
-  model.reset(arrange ? { villain, seed, arrange } : { villain, seed, mulligan: true });
+  // The scenes are laid out with Spider-Man's cards.
+  const hero = arrange ? "spider-man" : heroChoice;
+  model.reset(arrange ? { hero, villain, seed, arrange } : { hero, villain, seed, mulligan: true });
+  heroDealt = hero;
   villainDealt = villain;
   // A set-up or a chosen shuffle is a check, not a game: it never goes on a record.
   gameSaved = arrange || seedFromUrl() !== undefined ? null : startGame(villain);
