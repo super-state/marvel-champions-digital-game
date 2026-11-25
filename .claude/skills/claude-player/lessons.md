@@ -145,6 +145,24 @@ cards work in one form only, what each status does and the hand limit.
 - **Spider-Man with Leadership has no Web Kick turn to spare:** Make the Call needs an ally in the discard, so both
   copies are dead in the opening hand; mulligan them. `seen 1×`
 
+### Iron Man (Aggression starter deck) — 0 wins, 3 losses (Rhino, Klaw, Ultron)
+
+- **His hand size is 1 plus each Tech upgrade (at most 7), so Tony Stark builds first.** Two or three rounds as Tony
+  playing Mark V Armor, Helmet, Rocket Boots, Arc Reactor, Powered Gauntlets, then suit up. As Iron Man with one
+  upgrade the turn ends on a hand of 2. `seen 3×`
+- **His upgrades don't last.** Electric Whip Attack, Caught Off Guard and the like took the Armor (and its +6 HP) in
+  every game; his hand size drops with each one. Keep a spare Tech card in hand. `seen 3×`
+- **He runs his deck dry by round 5.** Futurist discards 2 a round and Repulsor Blast 5; the deck ran out in all three
+  games and the reshuffle dealt an encounter card. Use Futurist only for a card you need. `seen 3×`
+- **Arc Reactor is a second action every turn:** thwart, ready, thwart again (main scheme 4 → 0 against Klaw), or
+  ready him to defend after an attack. `seen 3×`
+- **War Machine's "1 damage to each enemy" is the Ultron card:** both 1-HP Drones broken in one go. It costs him 2,
+  so it is a once-or-twice card. `seen 1×`
+- **Rocket Boots' Aerial turns Supersonic Punch into 8** (took Ultron I from 11 to 3). It needs a mental resource,
+  and it lasts only the phase. `seen 1×`
+- **Sonic Boom twice in one Klaw game exhausted everything both times**: with no mental card in hand there is no
+  paying it. `seen 1×`
+
 ### Driving the hook
 
 - Pick moves from `moves()` labels only; a look's text starts with the move just made. `seen 1×`
@@ -169,6 +187,8 @@ cards work in one form only, what each status does and the hand limit.
 
 ## Try next
 
+- Iron Man: three rounds as Tony building four Tech upgrades before suiting up, with allies thwarting; save Futurist
+  for when the hand is thin; against Ultron, War Machine early for the Drones.
 - Expert Rhino: Nick Fury or Daredevil plus Mockingbird to clear Breakin' & Takin' in round 1, then hold both Kicks for
   stage III, with Webbed Up ready for the stun turn.
 - Legions of Hydra: thwart Legions of Hydra to 0 before touching Madame Hydra; Spider-Tracer on her for the 3 threat.
@@ -183,6 +203,13 @@ cards work in one form only, what each status does and the hand limit.
 
 ## Recent games
 
+- 2026-11-26 · Iron Man (Aggression) vs Ultron · lost in round 5, knocked out · War Machine broke both Drones and an
+  Aerial Supersonic Punch left Ultron I on 1 HP, but NORAD kept jumping 4-6 a phase and two Upgraded Drones finished him.
+- 2026-11-26 · Iron Man (Aggression) vs Klaw · lost in round 4, knocked out · two Sonic Booms exhausted everything;
+  Tiger Shark, Whirlwind and Weapons Runner wore him down once the Armor was gone. (A first try was lost to the
+  headless browser's graphics running out of memory.)
+- 2026-11-26 · Iron Man (Aggression) vs Rhino · lost in round 6, knocked out · Rhino I fell in round 5 (Nick Fury 4 +
+  allies), but stage II's attacks finished a 7-HP Iron Man; his deck had run dry.
 - 2026-11-25 · Captain Marvel (Justice, built at the bench) vs Rhino · lost in round 6, knocked out · stage one fell
   in round 5 (Photonic Blast through the Armored Rhino Suit, Nick Fury, Mockingbird); then Assault, Gang-Up and Stampede
   hit her in one phase. A stunned Rhino schemed the Break-In to 6 while she was Carol.
@@ -201,15 +228,3 @@ cards work in one form only, what each status does and the hand limit.
 - 2026-11-25 · Spider-Man (Justice) vs Rhino, The Doomsday Chair · lost in round 9, knocked out · allies blocked and
   thwarted well until a driver script declined a defence (10 → 2 HP); stage I fell to basic + Kick, then Rhino (II)
   attacked three times in one phase. Doomsday Chair and M.O.D.O.K. never came out of the deck.
-- 2026-11-25 · Spider-Man (Justice) vs Rhino, Legions of Hydra · stopped in round 8 (main scheme 3/7, three Hydra
-  minions out) · Madame Hydra kept adding 2 to Legions of Hydra; Jessica Jones' thwarts held it.
-- 2026-11-25 · Spider-Man (Justice) vs Rhino, Expert · lost in round 5, knocked out · cleared Breakin' & Takin' in
-  round 1, but Charge and Ivory Horn made Rhino ATK 7 and Bomb Scare's acceleration ran the main scheme to 5/7.
-- 2026-11-25 · Captain Marvel (Leadership) vs Ultron · lost in round 9, knocked out · Lead from the Front + four
-  thwarts took NORAD from 8 to 0, but Ultron's boosts kept adding 4-6 a phase and the Drones wore her down (an
-  auto-player declined every defend at the end).
-- 2026-11-25 · Captain Marvel (Leadership) vs Klaw · lost in round 5, knocked out · stayed Captain Marvel through
-  Family Emergency (stunned, surged into Radioactive Man); Sonic Boom exhausted everything and four minions piled up.
-- 2026-11-24 · Captain Marvel (Leadership) vs Rhino · lost in round 6, The Break-In! 4 → 8 in one phase · Rhino's
-  first stage fell in round 4 (Photonic Blast through the Armored Suit, Nick Fury's 4 past a Guard); spent the next
-  turn on Inspired and the Triskelion instead of thwarting.
