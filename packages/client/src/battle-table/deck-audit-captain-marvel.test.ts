@@ -17,6 +17,7 @@ import {
   handOf,
   inPlay,
   patchByCode,
+  patchCard,
   Player,
   scenarioOf,
   type Id,
@@ -287,6 +288,8 @@ test("01018 Energy Channel: spend any number of energy (only energy pays), a cou
   expect(p.battle.fieldAction(channel.id, "01018.energy-channel-action")).toBe(true);
   const avail = () => p.snap.payment!.sources.filter((s) => s.available && !s.selected).map((s) => s.label);
   expect(avail().sort()).toEqual(["Energy", "Energy Absorption"]);
+  // The turn bar says what X counts ("Spend any energy", then "Spend 2 energy"), not just "Use it?".
+  expect(p.snap.payment!.spendX).toBe("energy");
   expect(p.snap.payment!.canPay).toBe(false);
   p.spend("Energy");
   expect(p.snap.payment!.canPay).toBe(true);
@@ -540,4 +543,26 @@ test("01178 Kree Manipulator as Rhino's boost card: an undefended attack puts 1 
   expect(boost).toBeGreaterThanOrEqual(0);
   const threat = beat(p, (b) => b.threat?.scheme === main.id && b.threat.delta === 1 && /Kree/.test(b.text));
   expect(threat, JSON.stringify(p.beats.map((b) => b.text))).toBeGreaterThan(boost);
+});
+
+test("Against Ultron: Hawkeye's offer for a facedown Drone entering play names it Drone, as the table does", () => {
+  const p = scenarioOf(
+    { hero: "captain-marvel", villain: "ultron" },
+    inPlay("01066"),
+    patchCard("01066", { counters: { arrow: 4 } }),
+  );
+  // In hero form Ultron attacks, then asks for 1 threat or the top card of the deck as a Drone: the Drone it is.
+  p.form();
+  p.end();
+  const s = p.drive({
+    defend: () => "decline",
+    stopWhen: (x) => !!x.choice?.offers?.some((o) => o.question === "Respond with Hawkeye?"),
+    pick: (choice) => {
+      const drone = choice.options.find((o) => /Drone minion/.test(o.label));
+      return drone ? [drone.id] : undefined;
+    },
+  });
+  expect(s.choice?.offers, "a Drone came in and Hawkeye was asked").toBeTruthy();
+  expect(s.choice!.prompt).not.toMatch(/DRONE/);
+  expect(s.choice!.prompt).toMatch(/^Drone entered play/);
 });

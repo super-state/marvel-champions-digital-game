@@ -546,7 +546,16 @@ function paymentView(payment: Payment): DockView {
     tone: "hero",
     asking: true,
     eyebrow: { text: payment.subject.name, icon: "action", tone: "hero" },
-    title: payment.required ? `Pay ${payment.required}` : payment.ability ? "Use it?" : "Play it?",
+    title: payment.spendX
+      ? // "Spend X energy" (Energy Channel): how many is what the player picks.
+        payment.paid
+        ? `Spend ${payment.paid} ${payment.spendX}`
+        : `Spend any ${payment.spendX}`
+      : payment.required
+        ? `Pay ${payment.required}`
+        : payment.ability
+          ? "Use it?"
+          : "Play it?",
     meter: payment.required
       ? {
           paid: payment.paid,

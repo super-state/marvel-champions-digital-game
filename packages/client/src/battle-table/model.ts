@@ -11,6 +11,7 @@ import {
   handDiscardCandidates,
   handSize,
   legalActions,
+  locateCard,
   paymentOptionsPool,
   readsOverpaid,
   playCostOf,
@@ -141,6 +142,8 @@ export interface BattlePayment {
   ability: boolean;
   /** The log's line once it is paid, for a hero's own named ability: "Captain Marvel uses Rechannel". */
   used?: string;
+  /** "Spend X [energy] resources" (Energy Channel): the type of resource X counts. The amount is what is paid. */
+  spendX?: string;
   outstanding?: readonly string[];
   subject: BattleCard;
   required: number;
@@ -1590,6 +1593,8 @@ export class BattleModel {
    * Drone, and the question says so ("The Drone was defeated", not "The Power of Justice was defeated").
    */
   #droneHeadline(headline: string | undefined, pending: NonNullable<GameState["pendingChoice"]>): string | undefined {
+    // A facedown Drone's own name is printed in capitals ("DRONE entered play", Hawkeye's arrow on one).
+    headline = headline?.replace(/\bDRONE\b/g, DRONE_NAME);
     if (!headline || pending.prompt.kind !== "chooseTriggers") return headline;
     const event = answeredEventsOf(this.#game, pending)[0] ?? pending.prompt.event;
     if (event.kind !== "characterDefeated") return headline;
@@ -1774,6 +1779,7 @@ export class BattleModel {
             // An upgrade being paid for already knows its host (Inspired on an ally): it waits by that card.
             subject: { ...this.#card(this.#subject), attachedTo: this.#payment?.target ?? null },
             ability: this.#payment?.action.kind === "useAbility",
+            ...(spendX && spendX.resource !== "any" ? { spendX: spendX.resource } : {}),
             ...(this.#payment?.action.kind === "useAbility" && this.#subject === player.identity.instanceId
               ? {
                   used: `${faceUpName(state, this.#subject)} uses ${
@@ -1842,7 +1848,7 @@ export class BattleModel {
                 ? "Choose an enemy to attack"
                 : this.#targetPick.action.kind === "basicThwart"
                   ? "Choose a scheme to thwart"
-                  : "Choose a card to attach to",
+                  : this.#targetPrompt(this.#targetPick),
             options: this.#targetPick.targets.map((id) => ({ id, label: faceUpName(state, id), cardId: id })),
             canSkip: false,
             canCancel: true,
@@ -2189,7 +2195,8 @@ export class BattleModel {
             SCHEME_ICON_TEXT[icon] ? [SCHEME_ICON_TEXT[icon]] : [],
           )
         : [];
-    return [stats.join(" "), text, ...icons].filter(Boolean).join(" · ");
+    // A printed [energy] icon reads as a word: "Spend a [energy] resource" is "Spend an energy resource".
+    return [stats.join(" "), text.replace(/\ba (?=energy\b)/g, "an "), ...icons].filter(Boolean).join(" · ");
   }
 
   /**
@@ -2253,6 +2260,19 @@ export class BattleModel {
             .split(/\.(?:\s|$)/)[0]!
             .trim();
     return does ? `${name}: ${does.charAt(0).toLowerCase()}${does.slice(1)}` : name;
+  }
+
+  /**
+   * The question for a card's own pick before it is paid for: a host for an upgrade or attachment, an ally in a discard
+   * pile for Make the Call ("Pay the printed cost of an ally in any player's discard pile").
+   */
+  #targetPrompt(entry: LegalAction): string {
+    const type = entry.action.kind === "playCard" ? cardOf(this.#game, entry.action.instanceId)?.type : undefined;
+    if (type === "upgrade" || type === "attachment") return "Choose a card to attach to";
+    const inDiscard = entry.targets.every((id) => locateCard(this.#game, id)?.kind === "discard");
+    const allies = entry.targets.every((id) => cardOf(this.#game, id)?.type === "ally");
+    if (inDiscard) return `Choose ${allies ? "an ally" : "a card"} from a discard pile`;
+    return "Choose a target";
   }
 
   /** The name on the identity's other face: what changing form turns the hero into ("Peter Parker", "Captain Marvel"). */

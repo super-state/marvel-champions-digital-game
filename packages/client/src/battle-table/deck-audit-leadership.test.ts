@@ -366,6 +366,8 @@ test("01071 Make the Call: a second ally in the discard pile is a choice naming 
   const p = scenario(handOf("01071", "01088", "01089", "01090", "01086"), discardOf("01066", "01067"));
   expect(p.battle.pick(p.card("Make the Call").id)).toBe(true);
   const choice = p.snap.choice!;
+  // Found playing Ultron: it asked "Choose a card to attach to", the words for an upgrade's host.
+  expect(choice.prompt).toBe("Choose an ally from a discard pile");
   expect(choice.options.map((o) => o.label).sort()).toEqual(["Hawkeye", "Maria Hill"]);
   p.choose({ label: "Maria Hill" });
   expect(p.snap.payment!.required).toBe(2);
