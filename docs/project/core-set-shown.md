@@ -21,9 +21,9 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 
 | Rows              | Shown | Log only | Silent | Never fired | All |
 | ----------------- | ----- | -------- | ------ | ----------- | --- |
-| All Core Set rows | 435   | 2        | 17     | 69          | 523 |
-| Player cards      | 210   | 2        | 9      | 36          | 257 |
-| Encounter cards   | 225   | 0        | 8      | 33          | 266 |
+| All Core Set rows | 437   | 2        | 16     | 69          | 524 |
+| Player cards      | 210   | 2        | 10     | 36          | 258 |
+| Encounter cards   | 227   | 0        | 6      | 33          | 266 |
 
 | Card type     | Shown | Log only | Silent | Never fired | All |
 | ------------- | ----- | -------- | ------ | ----------- | --- |
@@ -31,9 +31,9 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | attachment    | 20    | 0        | 2      | 9           | 31  |
 | environment   | 0     | 0        | 0      | 3           | 3   |
 | event         | 80    | 0        | 1      | 0           | 81  |
-| hero_identity | 3     | 1        | 3      | 3           | 10  |
-| main_scheme   | 3     | 0        | 1      | 6           | 10  |
-| minion        | 49    | 0        | 1      | 7           | 57  |
+| hero_identity | 3     | 1        | 4      | 3           | 11  |
+| main_scheme   | 4     | 0        | 0      | 6           | 10  |
+| minion        | 50    | 0        | 0      | 7           | 57  |
 | obligation    | 12    | 0        | 0      | 0           | 12  |
 | resource      | 8     | 0        | 0      | 13          | 21  |
 | side_scheme   | 32    | 0        | 0      | 3           | 35  |
@@ -44,42 +44,41 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 
 ## Silent: player cards
 
-| Card   | Name                | Set         | What                             | What was missed                                                            | Times    |
-| ------ | ------------------- | ----------- | -------------------------------- | -------------------------------------------------------------------------- | -------- |
-| 01017  | Cosmic Flight       | Hero:01010a | 01017.cosmic-flight-interrupt    | traits changed                                                             | 2 of 24  |
-| 01017  | Cosmic Flight       | Hero:01010a | played                           | traits changed                                                             | 3 of 23  |
-| 01019a | She-Hulk            | Hero        | 01019a.do-you-even-lift          | the ability fired                                                          | 1 of 33  |
-| 01029a | Iron Man            | Hero        | 01029b.futurist                  | the ability fired                                                          | 2 of 88  |
-| 01029a | Iron Man            | Hero        | hand size                        | hand size changed (by 01036 played); hand size changed (by 01108 revealed) | 2 of 2   |
-| 01041  | Shuri               | Hero:01040a | 01041.shuri-response             | a deck shuffled                                                            | 4 of 13  |
-| 01042  | Ancestral Knowledge | Hero:01040a | 01042.ancestral-knowledge-action | a deck shuffled                                                            | 2 of 8   |
-| 01046  | Energy Daggers      | Hero:01040a | 01046.energy-daggers-special     | damage prevented                                                           | 1 of 6   |
-| 01084  | Nick Fury           | Basic       | lasting effect                   | an effect that lasts begins; an effect that lasts ends                     | 10 of 33 |
+| Card   | Name                | Set         | What                             | What was missed                                                            | Times     |
+| ------ | ------------------- | ----------- | -------------------------------- | -------------------------------------------------------------------------- | --------- |
+| 01017  | Cosmic Flight       | Hero:01010a | 01017.cosmic-flight-interrupt    | traits changed                                                             | 2 of 24   |
+| 01017  | Cosmic Flight       | Hero:01010a | played                           | traits changed                                                             | 3 of 23   |
+| 01019a | She-Hulk            | Hero        | 01019a.do-you-even-lift          | the ability fired                                                          | 1 of 37   |
+| 01029a | Iron Man            | Hero        | 01029b.futurist                  | the ability fired                                                          | 2 of 88   |
+| 01029a | Iron Man            | Hero        | hand size                        | hand size changed (by 01036 played); hand size changed (by 01108 revealed) | 2 of 2    |
+| 01040a | Black Panther       | Hero        | effects                          | a deck shuffled                                                            | 77 of 154 |
+| 01041  | Shuri               | Hero:01040a | 01041.shuri-response             | a deck shuffled                                                            | 4 of 13   |
+| 01042  | Ancestral Knowledge | Hero:01040a | 01042.ancestral-knowledge-action | a deck shuffled                                                            | 2 of 8    |
+| 01046  | Energy Daggers      | Hero:01040a | 01046.energy-daggers-special     | damage prevented                                                           | 1 of 6    |
+| 01084  | Nick Fury           | Basic       | lasting effect                   | an effect that lasts begins; an effect that lasts ends                     | 12 of 35  |
 
 ## Silent: encounter cards
 
-| Card   | Name                | Set                | What                                      | What was missed                             | Times   |
-| ------ | ------------------- | ------------------ | ----------------------------------------- | ------------------------------------------- | ------- |
-| 01094  | Rhino               | Rhino              | 01095.when-revealed                       | a deck shuffled                             | 5 of 10 |
-| 01106  | Stampede            | Rhino              | 01106.when-revealed-alter-ego             | the ability fired and did nothing           | 3 of 25 |
-| 01113  | Klaw                | Klaw               | 01114.when-revealed                       | a deck shuffled                             | 1 of 2  |
-| 01119  | Solid-Sound Body    | Klaw               | revealed                                  | keywords changed                            | 2 of 8  |
-| 01134  | Ultron              | Ultron             | 01136.when-revealed                       | a deck shuffled                             | 1 of 2  |
-| 01137a | The Crimson Cowl    | Ultron             | 01139a.when-revealed                      | a deck shuffled                             | 1 of 81 |
-| 01141  | Program Transmitter | Ultron             | 01141.program-transmitter-forced-response | the ability fired and did nothing           | 4 of 8  |
-| 01167  | Vulture             | Spider-Man Nemesis | revealed                                  | event activationAwaitsAbility (no rule yet) | 3 of 43 |
+| Card  | Name                | Set    | What                                      | What was missed                   | Times   |
+| ----- | ------------------- | ------ | ----------------------------------------- | --------------------------------- | ------- |
+| 01094 | Rhino               | Rhino  | 01095.when-revealed                       | a deck shuffled                   | 8 of 16 |
+| 01106 | Stampede            | Rhino  | 01106.when-revealed-alter-ego             | the ability fired and did nothing | 3 of 26 |
+| 01113 | Klaw                | Klaw   | 01114.when-revealed                       | a deck shuffled                   | 1 of 2  |
+| 01119 | Solid-Sound Body    | Klaw   | revealed                                  | keywords changed                  | 2 of 8  |
+| 01134 | Ultron              | Ultron | 01136.when-revealed                       | a deck shuffled                   | 1 of 2  |
+| 01141 | Program Transmitter | Ultron | 01141.program-transmitter-forced-response | the ability fired and did nothing | 4 of 8  |
 
 ## Silent: the game's own rules (no card resolving)
 
-| Row   | What was missed | Times                                                                                |
-| ----- | --------------- | ------------------------------------------------------------------------------------ |
-| rules | game rules      | a deck shuffled; an effect that lasts ends; the text before a 'then' did not resolve | 204 |
+| Row   | What was missed | Times                                    |
+| ----- | --------------- | ---------------------------------------- |
+| rules | game rules      | the text before a 'then' did not resolve | 27  |
 
 ## Log only (words in the dock, nothing on the table)
 
 | Card   | Name         | Set         | What                      | What was missed  | Times   |
 | ------ | ------------ | ----------- | ------------------------- | ---------------- | ------- |
-| 01019a | She-Hulk     | Hero        | 01019b.i-object           | threat prevented | 3 of 64 |
+| 01019a | She-Hulk     | Hero        | 01019b.i-object           | threat prevented | 3 of 46 |
 | 01039  | Rocket Boots | Hero:01029a | 01039.rocket-boots-action | traits changed   | 4 of 12 |
 
 ## Shown, with the card that did it not named
@@ -93,8 +92,8 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01048  | Tactical Genius | 01048.tactical-genius-special         | 2 of 3                          |
 | 01049  | Vibranium Suit  | 01049.vibranium-suit-special          | 3 of 3                          |
 | 01067  | Maria Hill      | 01067.maria-hill-response             | 1 of 1                          |
-| 01083  | Mockingbird     | 01083.mockingbird-response            | 16 of 16                        |
-| 01084  | Nick Fury       | 01084.nick-fury-forced-response       | 9 of 20                         |
+| 01083  | Mockingbird     | 01083.mockingbird-response            | 17 of 17                        |
+| 01084  | Nick Fury       | 01084.nick-fury-forced-response       | 10 of 21                        |
 | 01152  | Vibranium Armor | 01152.vibranium-armor-forced-response | 3 of 3                          |
 
 ## Never fired
@@ -175,26 +174,26 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 
 | Card   | Name                     | What                                          | Times |
 | ------ | ------------------------ | --------------------------------------------- | ----- |
-| 01001a | Spider-Man               | 01001a.spider-sense                           | 174   |
-| 01002  | Black Cat                | 01002.black-cat-forced-response               | 85    |
-| 01002  | Black Cat                | played                                        | 34    |
+| 01001a | Spider-Man               | 01001a.spider-sense                           | 168   |
+| 01002  | Black Cat                | 01002.black-cat-forced-response               | 95    |
+| 01002  | Black Cat                | played                                        | 38    |
 | 01002  | Black Cat                | activation                                    | 23    |
-| 01003  | Backflip                 | 01003.backflip-interrupt                      | 32    |
-| 01003  | Backflip                 | played                                        | 32    |
+| 01003  | Backflip                 | 01003.backflip-interrupt                      | 34    |
+| 01003  | Backflip                 | played                                        | 34    |
 | 01003  | Backflip                 | activation                                    | 73    |
 | 01004  | Enhanced Spider-Sense    | 01004.enhanced-spider-sense-interrupt         | 26    |
 | 01004  | Enhanced Spider-Sense    | played                                        | 26    |
 | 01004  | Enhanced Spider-Sense    | activation                                    | 176   |
-| 01005  | Swinging Web Kick        | 01005.swinging-web-kick-action                | 47    |
-| 01005  | Swinging Web Kick        | played                                        | 41    |
+| 01005  | Swinging Web Kick        | 01005.swinging-web-kick-action                | 52    |
+| 01005  | Swinging Web Kick        | played                                        | 37    |
 | 01005  | Swinging Web Kick        | activation                                    | 273   |
-| 01006  | Aunt May                 | 01006.aunt-may-action                         | 58    |
+| 01006  | Aunt May                 | 01006.aunt-may-action                         | 60    |
 | 01006  | Aunt May                 | played                                        | 34    |
 | 01006  | Aunt May                 | activation                                    | 10    |
-| 01007  | Spider-Tracer            | 01007.spider-tracer-forced-interrupt          | 8     |
-| 01007  | Spider-Tracer            | played                                        | 54    |
+| 01007  | Spider-Tracer            | 01007.spider-tracer-forced-interrupt          | 4     |
+| 01007  | Spider-Tracer            | played                                        | 51    |
 | 01007  | Spider-Tracer            | activation                                    | 57    |
-| 01008  | Web-Shooter              | played                                        | 96    |
+| 01008  | Web-Shooter              | played                                        | 88    |
 | 01008  | Web-Shooter              | activation                                    | 28    |
 | 01009  | Webbed Up                | 01009.webbed-up-forced-interrupt              | 36    |
 | 01009  | Webbed Up                | played                                        | 39    |
@@ -220,12 +219,12 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01018  | Energy Channel           | played                                        | 15    |
 | 01018  | Energy Channel           | activation                                    | 1     |
 | 01020  | Hellcat                  | 01020.hellcat-action                          | 4     |
-| 01020  | Hellcat                  | played                                        | 2     |
+| 01020  | Hellcat                  | played                                        | 4     |
 | 01021  | Gamma Slam               | 01021.gamma-slam-action                       | 2     |
 | 01021  | Gamma Slam               | played                                        | 2     |
 | 01021  | Gamma Slam               | activation                                    | 1     |
-| 01022  | Ground Stomp             | 01022.ground-stomp-action                     | 12    |
-| 01022  | Ground Stomp             | played                                        | 8     |
+| 01022  | Ground Stomp             | 01022.ground-stomp-action                     | 16    |
+| 01022  | Ground Stomp             | played                                        | 10    |
 | 01022  | Ground Stomp             | activation                                    | 9     |
 | 01023  | Legal Practice           | 01023.legal-practice-action                   | 4     |
 | 01023  | Legal Practice           | played                                        | 6     |
@@ -233,14 +232,14 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01024  | One-Two Punch            | played                                        | 2     |
 | 01025  | Split Personality        | 01025.split-personality-action                | 34    |
 | 01025  | Split Personality        | played                                        | 9     |
-| 01026  | Superhuman Law Division  | 01026.superhuman-law-division-action          | 7     |
-| 01026  | Superhuman Law Division  | played                                        | 10    |
+| 01026  | Superhuman Law Division  | 01026.superhuman-law-division-action          | 3     |
+| 01026  | Superhuman Law Division  | played                                        | 8     |
 | 01026  | Superhuman Law Division  | activation                                    | 5     |
 | 01027  | Focused Rage             | 01027.focused-rage-action                     | 20    |
 | 01027  | Focused Rage             | played                                        | 9     |
 | 01027  | Focused Rage             | activation                                    | 3     |
 | 01028  | Superhuman Strength      | 01028.superhuman-strength-forced-response     | 15    |
-| 01028  | Superhuman Strength      | played                                        | 20    |
+| 01028  | Superhuman Strength      | played                                        | 24    |
 | 01030  | War Machine              | 01030.war-machine-action                      | 5     |
 | 01031  | Repulsor Blast           | 01031.repulsor-blast-action                   | 24    |
 | 01031  | Repulsor Blast           | played                                        | 3     |
@@ -272,43 +271,43 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01043b | Wakanda Forever!         | played                                        | 4     |
 | 01043c | Wakanda Forever!         | 01043c.wakanda-forever-action                 | 5     |
 | 01043c | Wakanda Forever!         | played                                        | 9     |
-| 01043d | Wakanda Forever!         | 01043d.wakanda-forever-action                 | 3     |
-| 01043d | Wakanda Forever!         | played                                        | 5     |
+| 01043d | Wakanda Forever!         | 01043d.wakanda-forever-action                 | 4     |
+| 01043d | Wakanda Forever!         | played                                        | 7     |
 | 01043d | Wakanda Forever!         | activation                                    | 4     |
-| 01045  | The Golden City          | 01045.the-golden-city-action                  | 12    |
+| 01045  | The Golden City          | 01045.the-golden-city-action                  | 16    |
 | 01045  | The Golden City          | played                                        | 8     |
 | 01046  | Energy Daggers           | played                                        | 15    |
 | 01047  | Panther Claws            | 01047.panther-claws-special                   | 4     |
 | 01048  | Tactical Genius          | 01048.tactical-genius-special                 | 6     |
 | 01048  | Tactical Genius          | played                                        | 12    |
 | 01049  | Vibranium Suit           | 01049.vibranium-suit-special                  | 9     |
-| 01049  | Vibranium Suit           | played                                        | 21    |
+| 01049  | Vibranium Suit           | played                                        | 24    |
 | 01050  | Hulk                     | 01050.hulk-forced-response                    | 81    |
 | 01050  | Hulk                     | played                                        | 10    |
 | 01050  | Hulk                     | activation                                    | 1     |
-| 01051  | Tigra                    | 01051.tigra-response                          | 2     |
-| 01051  | Tigra                    | played                                        | 2     |
+| 01051  | Tigra                    | 01051.tigra-response                          | 3     |
+| 01051  | Tigra                    | played                                        | 4     |
 | 01051  | Tigra                    | activation                                    | 2     |
-| 01052  | Chase Them Down          | 01052.chase-them-down-response                | 6     |
-| 01052  | Chase Them Down          | played                                        | 6     |
+| 01052  | Chase Them Down          | 01052.chase-them-down-response                | 4     |
+| 01052  | Chase Them Down          | played                                        | 4     |
 | 01053  | Relentless Assault       | 01053.relentless-assault-action               | 32    |
 | 01053  | Relentless Assault       | played                                        | 17    |
 | 01054  | Uppercut                 | 01054.uppercut-action                         | 15    |
-| 01054  | Uppercut                 | played                                        | 11    |
+| 01054  | Uppercut                 | played                                        | 10    |
 | 01054  | Uppercut                 | activation                                    | 13    |
 | 01055  | The Power of Aggression  | activation                                    | 5     |
-| 01056  | Tac Team                 | 01056.tac-team-action                         | 72    |
-| 01056  | Tac Team                 | played                                        | 30    |
+| 01056  | Tac Team                 | 01056.tac-team-action                         | 74    |
+| 01056  | Tac Team                 | played                                        | 33    |
 | 01056  | Tac Team                 | activation                                    | 7     |
 | 01057  | Combat Training          | played                                        | 35    |
 | 01057  | Combat Training          | activation                                    | 7     |
 | 01058  | Daredevil                | 01058.daredevil-response                      | 12    |
-| 01058  | Daredevil                | played                                        | 25    |
+| 01058  | Daredevil                | played                                        | 24    |
 | 01058  | Daredevil                | activation                                    | 53    |
 | 01059  | Jessica Jones            | played                                        | 32    |
 | 01059  | Jessica Jones            | activation                                    | 72    |
-| 01060  | For Justice!             | 01060.for-justice-action                      | 34    |
-| 01060  | For Justice!             | played                                        | 26    |
+| 01060  | For Justice!             | 01060.for-justice-action                      | 32    |
+| 01060  | For Justice!             | played                                        | 24    |
 | 01060  | For Justice!             | activation                                    | 288   |
 | 01061  | Great Responsibility     | 01061.great-responsibility-interrupt          | 50    |
 | 01061  | Great Responsibility     | played                                        | 49    |
@@ -317,9 +316,9 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01063  | Interrogation Room       | 01063.interrogation-room-response             | 15    |
 | 01063  | Interrogation Room       | played                                        | 44    |
 | 01063  | Interrogation Room       | activation                                    | 71    |
-| 01064  | Surveillance Team        | 01064.surveillance-team-action                | 182   |
-| 01064  | Surveillance Team        | played                                        | 104   |
-| 01065  | Heroic Intuition         | played                                        | 53    |
+| 01064  | Surveillance Team        | 01064.surveillance-team-action                | 177   |
+| 01064  | Surveillance Team        | played                                        | 92    |
+| 01065  | Heroic Intuition         | played                                        | 50    |
 | 01065  | Heroic Intuition         | activation                                    | 100   |
 | 01066  | Hawkeye                  | 01066.hawkeye-constant                        | 22    |
 | 01066  | Hawkeye                  | 01066.hawkeye-response                        | 16    |
@@ -342,7 +341,7 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01073  | The Triskelion           | played                                        | 10    |
 | 01074  | Inspired                 | played                                        | 44    |
 | 01075  | Black Widow              | 01075.black-widow-interrupt                   | 12    |
-| 01075  | Black Widow              | played                                        | 4     |
+| 01075  | Black Widow              | played                                        | 6     |
 | 01076  | Luke Cage                | played                                        | 12    |
 | 01076  | Luke Cage                | activation                                    | 3     |
 | 01077  | Counter-Punch            | 01077.counter-punch-response                  | 17    |
@@ -352,30 +351,30 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01078  | Get Behind Me!           | played                                        | 6     |
 | 01079  | The Power of Protection  | activation                                    | 4     |
 | 01080  | Med Team                 | 01080.med-team-action                         | 23    |
-| 01080  | Med Team                 | played                                        | 15    |
+| 01080  | Med Team                 | played                                        | 18    |
 | 01081  | Armored Vest             | played                                        | 17    |
 | 01081  | Armored Vest             | activation                                    | 8     |
 | 01082  | Indomitable              | 01082.indomitable-response                    | 27    |
 | 01082  | Indomitable              | played                                        | 36    |
-| 01083  | Mockingbird              | 01083.mockingbird-response                    | 33    |
-| 01083  | Mockingbird              | played                                        | 39    |
+| 01083  | Mockingbird              | 01083.mockingbird-response                    | 35    |
+| 01083  | Mockingbird              | played                                        | 41    |
 | 01083  | Mockingbird              | activation                                    | 4     |
-| 01084  | Nick Fury                | 01084.nick-fury-forced-response               | 63    |
-| 01084  | Nick Fury                | played                                        | 40    |
+| 01084  | Nick Fury                | 01084.nick-fury-forced-response               | 67    |
+| 01084  | Nick Fury                | played                                        | 41    |
 | 01084  | Nick Fury                | activation                                    | 3     |
 | 01085  | Emergency                | 01085.emergency-interrupt                     | 37    |
 | 01085  | Emergency                | played                                        | 70    |
 | 01085  | Emergency                | activation                                    | 5     |
-| 01086  | First Aid                | 01086.first-aid-action                        | 35    |
-| 01086  | First Aid                | played                                        | 25    |
+| 01086  | First Aid                | 01086.first-aid-action                        | 33    |
+| 01086  | First Aid                | played                                        | 23    |
 | 01086  | First Aid                | activation                                    | 3     |
-| 01087  | Haymaker                 | 01087.haymaker-action                         | 61    |
-| 01087  | Haymaker                 | played                                        | 41    |
+| 01087  | Haymaker                 | 01087.haymaker-action                         | 63    |
+| 01087  | Haymaker                 | played                                        | 40    |
 | 01087  | Haymaker                 | activation                                    | 11    |
 | 01088  | Energy                   | activation                                    | 42    |
 | 01089  | Genius                   | activation                                    | 7     |
 | 01090  | Strength                 | activation                                    | 412   |
-| 01091  | Avengers Mansion         | 01091.avengers-mansion-action                 | 66    |
+| 01091  | Avengers Mansion         | 01091.avengers-mansion-action                 | 63    |
 | 01091  | Avengers Mansion         | played                                        | 23    |
 | 01091  | Avengers Mansion         | activation                                    | 8     |
 | 01092  | Helicarrier              | 01092.helicarrier-action                      | 100   |
@@ -383,56 +382,56 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01092  | Helicarrier              | activation                                    | 7     |
 | 01092  | Helicarrier              | lasting effect                                | 50    |
 | 01093  | Tenacity                 | 01093.tenacity-action                         | 70    |
-| 01093  | Tenacity                 | played                                        | 84    |
+| 01093  | Tenacity                 | played                                        | 87    |
 | 01093  | Tenacity                 | activation                                    | 4     |
 | 01094  | Rhino                    | 01096.when-revealed                           | 2     |
-| 01094  | Rhino                    | activation                                    | 4395  |
+| 01094  | Rhino                    | activation                                    | 3598  |
 | 01094  | Rhino                    | revealed                                      | 0     |
 | 01098  | Armored Rhino Suit       | 01098.armored-rhino-suit-forced-interrupt     | 28    |
 | 01098  | Armored Rhino Suit       | revealed                                      | 15    |
 | 01099  | Charge                   | 01099.charge-forced-interrupt                 | 7     |
-| 01099  | Charge                   | revealed                                      | 27    |
-| 01100  | Enhanced Ivory Horn      | 01100.enhanced-ivory-horn-action              | 8     |
+| 01099  | Charge                   | revealed                                      | 31    |
+| 01100  | Enhanced Ivory Horn      | 01100.enhanced-ivory-horn-action              | 12    |
 | 01100  | Enhanced Ivory Horn      | revealed                                      | 19    |
 | 01101  | Hydra Mercenary          | revealed                                      | 58    |
 | 01101  | Hydra Mercenary          | activation                                    | 9     |
 | 01102  | Sandman                  | revealed                                      | 24    |
 | 01102  | Sandman                  | activation                                    | 366   |
 | 01103  | Shocker                  | 01103.when-revealed                           | 7     |
-| 01103  | Shocker                  | revealed                                      | 8     |
-| 01103  | Shocker                  | activation                                    | 1     |
+| 01103  | Shocker                  | revealed                                      | 10    |
+| 01103  | Shocker                  | activation                                    | 2     |
 | 01104  | Hard to Keep Down        | 01104.when-revealed                           | 30    |
 | 01104  | Hard to Keep Down        | revealed                                      | 34    |
 | 01104  | Hard to Keep Down        | keyword surge                                 | 2     |
 | 01105  | "I'm Tough!"             | 01105.when-revealed                           | 69    |
 | 01105  | "I'm Tough!"             | revealed                                      | 77    |
 | 01105  | "I'm Tough!"             | keyword surge                                 | 1     |
-| 01106  | Stampede                 | 01106.when-revealed-hero                      | 39    |
-| 01106  | Stampede                 | revealed                                      | 51    |
+| 01106  | Stampede                 | 01106.when-revealed-hero                      | 38    |
+| 01106  | Stampede                 | revealed                                      | 52    |
 | 01106  | Stampede                 | keyword surge                                 | 8     |
-| 01107  | Breakin' & Takin'        | 01107.when-revealed                           | 20    |
-| 01107  | Breakin' & Takin'        | revealed                                      | 18    |
+| 01107  | Breakin' & Takin'        | 01107.when-revealed                           | 26    |
+| 01107  | Breakin' & Takin'        | revealed                                      | 22    |
 | 01108  | Crowd Control            | revealed                                      | 231   |
 | 01109  | Bomb Scare               | 01109.when-revealed                           | 30    |
 | 01109  | Bomb Scare               | revealed                                      | 30    |
-| 01110  | Hydra Bomber             | 01110.when-revealed                           | 72    |
-| 01110  | Hydra Bomber             | revealed                                      | 50    |
-| 01110  | Hydra Bomber             | activation                                    | 30    |
+| 01110  | Hydra Bomber             | 01110.when-revealed                           | 46    |
+| 01110  | Hydra Bomber             | revealed                                      | 48    |
+| 01110  | Hydra Bomber             | activation                                    | 21    |
 | 01111  | Explosion                | 01111.when-revealed                           | 9     |
 | 01111  | Explosion                | revealed                                      | 20    |
 | 01111  | Explosion                | keyword surge                                 | 6     |
 | 01112  | False Alarm              | 01112.when-revealed                           | 22    |
 | 01112  | False Alarm              | revealed                                      | 38    |
 | 01112  | False Alarm              | keyword surge                                 | 2     |
-| 01113  | Klaw                     | 01113.klaw-forced-interrupt                   | 103   |
+| 01113  | Klaw                     | 01113.klaw-forced-interrupt                   | 101   |
 | 01113  | Klaw                     | 01114.klaw-forced-interrupt                   | 5     |
-| 01113  | Klaw                     | activation                                    | 1948  |
+| 01113  | Klaw                     | activation                                    | 1833  |
 | 01113  | Klaw                     | revealed                                      | 0     |
-| 01116a | Underground Distribution | 01117a.when-revealed                          | 245   |
+| 01116a | Underground Distribution | 01117a.when-revealed                          | 247   |
 | 01118  | Sonic Converter          | 01118.sonic-converter-action                  | 4     |
 | 01118  | Sonic Converter          | revealed                                      | 7     |
-| 01120  | Armored Guard            | revealed                                      | 36    |
-| 01120  | Armored Guard            | activation                                    | 388   |
+| 01120  | Armored Guard            | revealed                                      | 39    |
+| 01120  | Armored Guard            | activation                                    | 389   |
 | 01121  | Weapons Runner           | 01121.boost                                   | 78    |
 | 01121  | Weapons Runner           | revealed                                      | 18    |
 | 01121  | Weapons Runner           | activation                                    | 290   |
@@ -440,9 +439,9 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01122  | Klaw's Vengeance         | 01122.when-revealed-alter-ego                 | 36    |
 | 01122  | Klaw's Vengeance         | 01122.when-revealed-hero                      | 53    |
 | 01122  | Klaw's Vengeance         | revealed                                      | 28    |
-| 01123  | Sonic Boom               | 01123.when-revealed                           | 21    |
+| 01123  | Sonic Boom               | 01123.when-revealed                           | 20    |
 | 01123  | Sonic Boom               | 01123.boost                                   | 21    |
-| 01123  | Sonic Boom               | revealed                                      | 21    |
+| 01123  | Sonic Boom               | revealed                                      | 18    |
 | 01124  | Sound Manipulation       | 01124.when-revealed-alter-ego                 | 11    |
 | 01124  | Sound Manipulation       | 01124.when-revealed-hero                      | 9     |
 | 01124  | Sound Manipulation       | revealed                                      | 23    |
@@ -452,23 +451,23 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01127  | The "Immortal" Klaw      | revealed                                      | 6     |
 | 01128  | The Masters of Evil      | 01128.when-revealed                           | 42    |
 | 01128  | The Masters of Evil      | revealed                                      | 6     |
-| 01129  | Radioactive Man          | 01129.radioactive-man-forced-response         | 20    |
+| 01129  | Radioactive Man          | 01129.radioactive-man-forced-response         | 16    |
 | 01129  | Radioactive Man          | 01129.boost                                   | 20    |
 | 01129  | Radioactive Man          | revealed                                      | 6     |
-| 01129  | Radioactive Man          | activation                                    | 36    |
+| 01129  | Radioactive Man          | activation                                    | 44    |
 | 01130  | Whirlwind                | 01130.whirlwind-forced-interrupt              | 29    |
 | 01130  | Whirlwind                | 01130.boost                                   | 1     |
 | 01130  | Whirlwind                | revealed                                      | 12    |
-| 01130  | Whirlwind                | activation                                    | 39    |
+| 01130  | Whirlwind                | activation                                    | 38    |
 | 01131  | Tiger Shark              | 01131.tiger-shark-forced-response             | 22    |
-| 01131  | Tiger Shark              | 01131.boost                                   | 19    |
-| 01131  | Tiger Shark              | revealed                                      | 10    |
-| 01131  | Tiger Shark              | activation                                    | 460   |
+| 01131  | Tiger Shark              | 01131.boost                                   | 15    |
+| 01131  | Tiger Shark              | revealed                                      | 12    |
+| 01131  | Tiger Shark              | activation                                    | 462   |
 | 01132  | Melter                   | 01132.boost                                   | 7     |
 | 01132  | Melter                   | revealed                                      | 8     |
-| 01132  | Melter                   | activation                                    | 800   |
-| 01133  | Masters of Mayhem        | 01133.when-revealed                           | 26    |
-| 01133  | Masters of Mayhem        | revealed                                      | 16    |
+| 01132  | Melter                   | activation                                    | 803   |
+| 01133  | Masters of Mayhem        | 01133.when-revealed                           | 25    |
+| 01133  | Masters of Mayhem        | revealed                                      | 14    |
 | 01134  | Ultron                   | 01134.ultron-forced-response                  | 151   |
 | 01134  | Ultron                   | 01135.ultron-forced-interrupt                 | 9     |
 | 01134  | Ultron                   | activation                                    | 2063  |
@@ -476,6 +475,7 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01134  | Ultron                   | revealed                                      | 0     |
 | 01137a | The Crimson Cowl         | 01138b.assault-on-norad-forced-response       | 240   |
 | 01137a | The Crimson Cowl         | 01138a.when-revealed                          | 72    |
+| 01137a | The Crimson Cowl         | 01139a.when-revealed                          | 81    |
 | 01141  | Program Transmitter      | revealed                                      | 39    |
 | 01142  | Upgraded Drones          | 01142.upgraded-drones-action                  | 9     |
 | 01142  | Upgraded Drones          | revealed                                      | 18    |
@@ -511,7 +511,7 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01154  | Concussive Blast         | 01154.when-revealed                           | 20    |
 | 01154  | Concussive Blast         | 01154.boost                                   | 9     |
 | 01154  | Concussive Blast         | revealed                                      | 19    |
-| 01155  | Affairs of State         | 01155.obligation                              | 15    |
+| 01155  | Affairs of State         | 01155.obligation                              | 19    |
 | 01155  | Affairs of State         | revealed                                      | 10    |
 | 01156  | Usurp the Throne         | revealed                                      | 12    |
 | 01157  | Killmonger               | revealed                                      | 8     |
@@ -540,7 +540,8 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01166  | Highway Robbery          | 01166.when-revealed                           | 55    |
 | 01166  | Highway Robbery          | 01166.when-defeated                           | 16    |
 | 01166  | Highway Robbery          | revealed                                      | 11    |
-| 01167  | Vulture                  | activation                                    | 13    |
+| 01167  | Vulture                  | revealed                                      | 40    |
+| 01167  | Vulture                  | activation                                    | 16    |
 | 01168  | Sweeping Swoop           | 01168.when-revealed                           | 18    |
 | 01168  | Sweeping Swoop           | 01168.boost                                   | 3     |
 | 01168  | Sweeping Swoop           | revealed                                      | 45    |
@@ -577,27 +578,27 @@ Sources: battle-fuzz, deck-audit-aggression, deck-audit-black-panther, deck-audi
 | 01181  | Madame Hydra             | 01181.madame-hydra-forced-response            | 9     |
 | 01181  | Madame Hydra             | revealed                                      | 6     |
 | 01181  | Madame Hydra             | activation                                    | 14    |
-| 01182  | Hydra Soldier            | 01182.when-defeated                           | 6     |
-| 01182  | Hydra Soldier            | revealed                                      | 10    |
-| 01182  | Hydra Soldier            | activation                                    | 9     |
+| 01182  | Hydra Soldier            | 01182.when-defeated                           | 12    |
+| 01182  | Hydra Soldier            | revealed                                      | 14    |
+| 01182  | Hydra Soldier            | activation                                    | 12    |
 | 01183  | The Doomsday Chair       | 01183.when-revealed                           | 16    |
 | 01183  | The Doomsday Chair       | revealed                                      | 12    |
 | 01184  | M.O.D.O.K.               | activation                                    | 399   |
 | 01185  | Biomechanical Upgrades   | 01185.biomechanical-upgrades-forced-interrupt | 3     |
 | 01185  | Biomechanical Upgrades   | revealed                                      | 11    |
 | 01185  | Biomechanical Upgrades   | keyword surge                                 | 4     |
-| 01186  | Advance                  | 01186.when-revealed                           | 79    |
-| 01186  | Advance                  | revealed                                      | 118   |
-| 01187  | Assault                  | 01187.when-revealed-alter-ego                 | 19    |
-| 01187  | Assault                  | 01187.when-revealed-hero                      | 19    |
-| 01187  | Assault                  | revealed                                      | 36    |
+| 01186  | Advance                  | 01186.when-revealed                           | 70    |
+| 01186  | Advance                  | revealed                                      | 109   |
+| 01187  | Assault                  | 01187.when-revealed-alter-ego                 | 16    |
+| 01187  | Assault                  | 01187.when-revealed-hero                      | 16    |
+| 01187  | Assault                  | revealed                                      | 35    |
 | 01187  | Assault                  | keyword surge                                 | 11    |
 | 01188  | Caught Off Guard         | 01188.when-revealed                           | 44    |
 | 01188  | Caught Off Guard         | revealed                                      | 43    |
 | 01188  | Caught Off Guard         | keyword surge                                 | 4     |
 | 01189  | Gang-Up                  | 01189.when-revealed-alter-ego                 | 26    |
 | 01189  | Gang-Up                  | 01189.when-revealed-hero                      | 26    |
-| 01189  | Gang-Up                  | revealed                                      | 66    |
+| 01189  | Gang-Up                  | revealed                                      | 68    |
 | 01189  | Gang-Up                  | keyword surge                                 | 18    |
 | 01190  | Shadow of the Past       | 01190.when-revealed                           | 71    |
 | 01190  | Shadow of the Past       | revealed                                      | 28    |
@@ -698,6 +699,7 @@ makes; "beat" leaves nothing in the state to see, so a beat must name its card.
 | abilityResolved                | beat        | the ability fired                                                                   |
 | abilityUseRecorded             | bookkeeping | a use limit counted                                                                 |
 | accelerationTokenAdded         | state       | checked as the change it makes                                                      |
+| activationAwaitsAbility        | bookkeeping | the activation waits for a question the dock asks                                   |
 | activationBlocked              | beat        | an activation blocked                                                               |
 | activationCancelled            | beat        | an activation cancelled                                                             |
 | activationSkipped              | beat        | an activation skipped                                                               |
@@ -804,4 +806,4 @@ makes; "beat" leaves nothing in the state to see, so a beat must name its card.
 | villainStageRevealed           | state       | checked as the change it makes                                                      |
 | windowOpened                   | bookkeeping | a timing window: what is used in it is checked                                      |
 
-Event types met with no rule yet: activationAwaitsAbility.
+Event types met with no rule yet: none.
