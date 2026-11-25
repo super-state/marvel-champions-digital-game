@@ -178,6 +178,7 @@ export const EVENT_RULES: Record<string, Rule> = {
   damageBeyondZeroLost: book("damage past the last hit point: the card is defeated"),
   deckStacked: book("set-up only"),
   setupOptionApplied: book("set-up only"),
+  boostIconsCounted: book('the attack\'s numbers line says the boost ("2 SCH · 1 boost")'),
   targetChosen: book("the player's answer, or the only one there was: what it does to the card is checked"),
   optionChosen: book("the player's answer, or the only one there was: what it does is checked"),
   // Checked as the state change they make.
@@ -261,6 +262,20 @@ export const EVENT_RULES: Record<string, Rule> = {
   leavePlayBlocked: beat("a card kept in play"),
   basicPowerNotMade: beat("a basic power not made"),
   encounterCardPassed: beat("an encounter card passed on"),
+};
+
+/** The events that make each kind of change to a card: the change is the doing of whoever was resolving then. */
+const CAUSES: Record<string, readonly string[]> = {
+  zone: ["cardMoved", "cardDrawn", "cardDiscardedFromHand", "cardDiscardedFromPlay", "cardDiscardedFromDeck"],
+  faceup: ["cardTurnedFaceup", "cardTurnedFacedown", "encounterCardRevealed", "boostCardFlipped", "cardMoved"],
+  damage: ["damageDealt", "damagePlaced", "damageHealed"],
+  threat: ["threatPlaced", "threatRemoved"],
+  statuses: ["statusGiven", "statusRemoved"],
+  counters: ["counterAdded", "counterRemoved", "countersMoved"],
+  exhausted: ["cardExhausted", "cardReadied"],
+  attachedTo: ["cardMoved", "cardDetached", "permanentAttachmentRehosted"],
+  controller: ["controllerChanged"],
+  tucked: ["cardMoved", "tuckedCardSpent"],
 };
 
 /** Meta fields of a beat that never count as naming a card. */
@@ -355,8 +370,8 @@ function idsOf(e: GameEvent, known: GameState["instances"]): string[] {
   const walk = (value: unknown, depth: number) => {
     if (typeof value === "string") {
       if (value in known) ids.push(value);
-    } else if (depth < 3 && Array.isArray(value)) value.forEach((v) => walk(v, depth + 1));
-    else if (depth < 3 && value && typeof value === "object")
+    } else if (depth < 6 && Array.isArray(value)) value.forEach((v) => walk(v, depth + 1));
+    else if (depth < 6 && value && typeof value === "object")
       for (const [k, v] of Object.entries(value)) if (k !== "type") walk(v, depth + 1);
   };
   walk(e, 0);
@@ -432,6 +447,8 @@ interface Pending {
   readonly id: string;
   readonly frames: Set<string>;
   shown: { cls: ShownClass; how: string; unnamed: boolean } | null;
+  /** Something besides the engine's machinery happened while its frames were open. */
+  acted: boolean;
 }
 
 /** What a game's watcher keeps between moves: whose each stack frame is, and the abilities still resolving. */
@@ -519,6 +536,7 @@ export function judge(
         id: e.instanceId,
         frames: new Set(),
         shown: null,
+        acted: false,
       };
       memory.pending.push(justResolved);
       rowOf(justResolved.row).fired++;
@@ -538,20 +556,36 @@ export function judge(
       stack.push({ frameId: e.frameId, owner });
     }
     ownerAt.push(e.type === "abilityResolved" ? { instanceId: e.instanceId, what: e.abilityId } : current());
+    // Anything of substance while an ability's frames are open is it acting (its effects may be in later moves).
+    if (
+      e.type !== "framePushed" &&
+      e.type !== "framePopped" &&
+      e.type !== "triggerEvent" &&
+      e.type !== "abilityResolved"
+    )
+      for (const pending of memory.pending) if (stack.some((f) => pending.frames.has(f.frameId))) pending.acted = true;
     if (e.type === "framePopped") {
       const at = stack.findIndex((f) => f.frameId === e.frameId);
       if (at >= 0) stack.splice(at, 1);
     }
   }
-  /** The row a card's change belongs to: whoever was resolving at the first event naming it. */
-  const firstMention = new Map<string, number>();
+  /**
+   * The row a card's change belongs to: whoever was resolving at the last event of the kind that makes that change
+   * and names the card (a status given, a card moved), else at the first event naming it at all.
+   */
+  const mentions = new Map<string, number[]>();
   events.forEach((e, i) => {
-    for (const id of idsOf(e, known)) if (!firstMention.has(id)) firstMention.set(id, i);
+    for (const id of idsOf(e, known)) mentions.set(id, [...(mentions.get(id) ?? []), i]);
   });
-  const rowFor = (id: string) => {
-    const at = firstMention.get(id);
-    return rowKey(after, at === undefined ? null : (ownerAt[at] ?? null));
+  const rowFor = (id: string, change?: string) => {
+    const at = mentions.get(id) ?? [];
+    const causes = change ? CAUSES[change] : undefined;
+    const cause = causes ? [...at].reverse().find((i) => causes.includes(events[i]!.type)) : undefined;
+    const index = cause ?? at[0];
+    return rowKey(after, index === undefined ? null : (ownerAt[index] ?? null));
   };
+  /** Whoever was resolving last in this move: what the move as a whole did (a hand size changed) is theirs. */
+  const lastOwner = [...ownerAt].reverse().find((o) => o) ?? null;
 
   // 1. Events with nothing in the state to see, and events of no known kind. An ability that resolved is judged after
   // the changes (2), since what it did may be what shows it.
@@ -615,13 +649,13 @@ export function judge(
       if (was.tucked.length !== is.tucked.length) changes.push("tucked");
     }
     if (!changes.length) continue;
-    const row = rowFor(id);
     const shownByBeat = byBeat(id);
     const cardBefore = cardIn(snapBefore, id);
     const cardAfter = cardIn(snapAfter, id);
     const placeBefore = placeIn(snapBefore, id);
     const placeAfter = placeIn(snapAfter, id);
     for (const change of changes) {
+      const row = rowFor(id, change);
       const what =
         change === "zone"
           ? `${change} ${zoneBefore}→${zoneAfter}`
@@ -721,15 +755,22 @@ export function judge(
       results.push({ row: rowFor(id), kind: `${part} changed`, cls: shown?.cls ?? "silent", how: shown?.how ?? "" });
     }
   }
-  // The hand size.
+  // The hand size: the hero's own (Iron Man's grows with each Tech upgrade), shown nowhere on the table. A change of
+  // form is the identity card turning over; a game that has just ended clears everything away.
   const player = after.players[0];
   const sameFace = before.players[0]?.identity.form === player?.identity.form;
   if (
     player &&
     sameFace &&
+    !after.outcome &&
     handSize(before, player.playerId, CORE_DEPS) !== handSize(after, player.playerId, CORE_DEPS)
   )
-    results.push({ row: "rules | game rules", kind: "hand size changed", cls: "silent", how: "" });
+    results.push({
+      row: `${cardOf(after, player.identity.instanceId)?.id ?? "?"} | hand size`,
+      kind: `hand size changed (by ${lastOwner ? rowKey(after, lastOwner).replace(" | ", " ") : "game rules"})`,
+      cls: "silent",
+      how: "",
+    });
 
   // The abilities resolving: a beat names the card, or what it did shows on the table (the card itself unnamed: counted
   // apart in the ledger), or nothing shows at all. Judged once its last frame is gone, in whichever move that is.
@@ -748,7 +789,8 @@ export function judge(
     if ([...pending.frames].some((frame) => open.has(frame))) return true;
     results.push({
       row: pending.row,
-      kind: "the ability fired",
+      // Fired and did nothing (Assault's alter-ego half while the hero is in hero form): reported apart.
+      kind: pending.acted || pending.shown ? "the ability fired" : "the ability fired and did nothing",
       cls: pending.shown?.cls ?? "silent",
       how: pending.shown?.how ?? "",
     });
