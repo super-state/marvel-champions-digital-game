@@ -15,6 +15,10 @@
 import { expect, test, vi } from "vitest";
 import * as engine from "@mc/engine";
 import { BattleModel, type BattleBeat, type BattleChoice, type DealOptions } from "./model.js";
+import { watchThisFile } from "./shown-check.js";
+
+// Watched for anything happening unseen (`shown-check.ts`).
+watchThisFile({ gate: true });
 
 type State = engine.GameState;
 type Id = engine.InstanceId;

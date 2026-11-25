@@ -1,6 +1,10 @@
 import { expect, test, vi } from "vitest";
 import * as engine from "@mc/engine";
 import { BattleModel, type BattleBeat, type BattleCard, type BattleSnapshot } from "./model.js";
+import { watchThisFile } from "./shown-check.js";
+
+// Watched for anything happening unseen (`shown-check.ts`).
+watchThisFile({ gate: true });
 
 // ---------------------------------------------------------------------------------------------------------------
 // Setup helpers (engine state rewriting, as effect-presentation.test.ts does) and a player-driver around BattleModel.
