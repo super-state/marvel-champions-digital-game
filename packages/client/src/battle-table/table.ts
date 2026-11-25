@@ -1900,9 +1900,10 @@ export class BattleTable {
 
   /**
    * A minion put into play without being revealed (Klaw's main scheme discards until it finds one): it comes off the
-   * encounter discard pile, where the search left it, to its place on the table.
+   * encounter discard pile, where the search left it, to its place on the table. `from`: where the player picked it on
+   * screen (a search's panel), so it flies from the card they chose onto the table instead.
    */
-  bringInEnemy(card: TableCard): void {
+  bringInEnemy(card: TableCard, from?: { left: number; top: number; width: number; height: number }): void {
     const state = this.#state;
     if (!state || state.enemyCards.some((c) => c.id === card.id)) return;
     this.setCards({
@@ -1912,10 +1913,21 @@ export class BattleTable {
     });
     const root = this.#pieces.get(card.id)?.root;
     if (!root) return;
-    root.position.copy(this.#encounterDiscardSlot.position);
-    root.position.y += 0.15;
-    root.scale.copy(this.#encounterDiscardSlot.scale);
-    root.rotation.copy(this.#encounterDiscardSlot.rotation);
+    if (from) {
+      // Held up facing the player, exactly over the card picked in the panel, as raised as a revealed card.
+      const view = this.#viewport.getBoundingClientRect();
+      const x = from.left + from.width / 2 - view.left;
+      const y = from.top + from.height / 2 - view.top;
+      const center = this.#point(x, y, 1.75);
+      root.position.copy(center);
+      root.scale.setScalar(this.#point(x + from.width, y, 1.75).x - center.x);
+      root.rotation.set(this.#camera.rotation.x, 0, 0);
+    } else {
+      root.position.copy(this.#encounterDiscardSlot.position);
+      root.position.y += 0.15;
+      root.scale.copy(this.#encounterDiscardSlot.scale);
+      root.rotation.copy(this.#encounterDiscardSlot.rotation);
+    }
     this.#startFlight(card.id, "place");
     this.#requestFrame();
   }

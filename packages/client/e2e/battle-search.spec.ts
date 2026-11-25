@@ -49,7 +49,15 @@ test("Masters of Mayhem's search shows the minions as cards to read, pick and co
   });
   expect(reached).toBe(true);
 
+  // The card is revealed and read first, like any other (Adam, 2026-11-25): the search waits for its Continue.
   const row = page.locator(".dock-cards");
+  await expect(page.locator("#dock")).not.toHaveAttribute("data-search", "");
+  await expect(row).toBeHidden();
+  expect(await moves(page)).toEqual(["Continue (after reading Masters of Mayhem)"]);
+  await expect(page.locator("#dock-primary")).toHaveText("Continue");
+  // The revealed card holds the keyboard, as it does for any reveal: Enter reads on.
+  await expect(page.locator("#read-reveal")).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(row).toBeVisible();
   const cards = row.locator(".dock-card");
   await expect(cards).toHaveCount(4);
@@ -66,6 +74,11 @@ test("Masters of Mayhem's search shows the minions as cards to read, pick and co
   await page.keyboard.press("Enter");
   await expect(cards.first()).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#dock-primary")).toHaveText("Confirm");
+
+  // Picking the end card doesn't push the row wider than the panel: its tick sits inside the card (Adam, 2026-11-25).
+  await cards.last().click();
+  await expect(cards.last()).toHaveAttribute("aria-pressed", "true");
+  expect(await row.evaluate((node) => node.scrollWidth - node.clientWidth)).toBe(0);
 
   const melter = page.locator('.dock-card[aria-label^="Melter"]');
   const confirmBox = await page.locator("#dock-primary").boundingBox();
