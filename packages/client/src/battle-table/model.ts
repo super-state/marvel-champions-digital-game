@@ -491,13 +491,21 @@ function apply(state: GameState, command: Command) {
   return result;
 }
 
+/** A card's own abilities (an identity's are on its faces, so it has none here). */
+function playedAbilityRefs(card: ReturnType<typeof cardOf>): readonly { id: string }[] {
+  return card && "abilities" in card ? (card.abilities as readonly { id: string }[]) : [];
+}
+
 /**
  * "Use Maria Hill to each player draws 1 card": the helper's "Use X to <verb>" reads only when the ability's words
  * start with a verb ("Use Spider-Woman to confuse the villain"); one that starts with who does it takes a colon.
  */
 function readableEffect(effect: string | null): string | null {
   return (
-    effect?.replace(/^Use ((?:(?! to ).)+) to ((?:each|every|all|you|your|that|the|a|an)\b.*)$/, "Use $1: $2") ?? null
+    effect
+      ?.replace(/^Use ((?:(?! to ).)+) to ((?:each|every|all|you|your|that|the|a|an)\b.*)$/, "Use $1: $2")
+      // A name that ends in its own ? or !, as "Do You Even Lift?" does, is quoted as the card prints it.
+      .replace(/^Use ([^“:]+?[?!])( to |: )/, "Use “$1”$2") ?? null
   );
 }
 
@@ -578,6 +586,7 @@ function attachQuestion(
 export const HEROES = [
   { id: "spider-man", name: "Spider-Man", starterDeckId: "core-spider-man-justice" },
   { id: "captain-marvel", name: "Captain Marvel", starterDeckId: "core-captain-marvel-leadership" },
+  { id: "she-hulk", name: "She-Hulk", starterDeckId: "core-she-hulk-aggression" },
 ] as const;
 export type HeroId = (typeof HEROES)[number]["id"];
 
@@ -1460,6 +1469,13 @@ export class BattleModel {
           interrupt: e.instanceId,
           text: `${name(e.instanceId)} interrupts`,
         });
+      } else if (e.type === "threatPrevented" && e.amount > 0) {
+        // Threat that never lands ("I Object!") leaves no threat change behind: the log says it was kept off.
+        this.#beats.push({
+          enemy,
+          actor: e.schemeInstanceId,
+          text: `${e.amount} threat kept off ${schemeName(e.schemeInstanceId)}`,
+        });
       } else if (e.type === "damagePrevented" && e.preventerInstanceId && e.amount > 0) {
         this.#beats.push({
           enemy,
@@ -1968,7 +1984,7 @@ export class BattleModel {
     const costDiscard = this.#costDiscard;
     const choice = costDiscard
       ? {
-          id: `cost:${costDiscard.entry.action.kind === "useAbility" ? costDiscard.entry.action.abilityId : ""}`,
+          id: `cost:${costDiscard.entry.action.kind === "useAbility" ? costDiscard.entry.action.abilityId : this.#subject}`,
           prompt: `Discard ${costDiscard.min === costDiscard.max ? costDiscard.min : `${costDiscard.min} to ${costDiscard.max}`} to pay`,
           sourceTitle: faceUpName(state, this.#subject as InstanceId),
           options: costDiscard.candidates.map((id) => ({ id, label: faceUpName(state, id), cardId: id })),
@@ -2047,7 +2063,9 @@ export class BattleModel {
                         {
                           id: option.optionId,
                           cardId: ref.instanceId,
-                          question: `${verb} with ${name}?`,
+                          // A name that ends in its own ? or ! ("Do You Even Lift?", "I Object!") is quoted, as
+                          // the card prints it, rather than given a second mark.
+                          question: /[?!]$/.test(name) ? `${verb} with “${name}”` : `${verb} with ${name}?`,
                           effect: readableEffect(triggerEffectOf(state, option, player.playerId, CORE_DEPS)),
                         },
                       ];
@@ -2185,7 +2203,38 @@ export class BattleModel {
       this.#view = null;
       return true;
     }
+    if (!entry.targets.length && this.#askCostDiscard(entry)) return true;
     return this.#openPayment(entry, entry.targets[0] ?? null);
+  }
+
+  /**
+   * A cost that discards from the hand and nothing else to pay (Alpha Flight Station's "choose and discard 1 card",
+   * Legal Practice's "choose and discard up to 5 cards"): the player picks the cards on the hand, as at the end of the
+   * turn, rather than the engine's own example picking them. Only the cards the engine lets the cost take (a filter, a
+   * card that can't be chosen), and as many as it allows. False when the play or ability has no such cost.
+   */
+  #askCostDiscard(entry: LegalAction): boolean {
+    if (entry.needsPayment) return false;
+    const source =
+      entry.action.kind === "useAbility" || entry.action.kind === "playCard" ? entry.action.instanceId : null;
+    if (!source) return false;
+    // A card played from hand: only when the play itself discards (the engine's example names a discard pick), not a
+    // discard printed on a later ability of the card (Alpha Flight Station made free by Helicarrier costs no discard).
+    if (entry.example.type === "playCard" && !entry.example.costChoices?.discard) return false;
+    const cost =
+      entry.action.kind === "useAbility"
+        ? CORE_DEPS.abilities[entry.action.abilityId]?.cost
+        : playedAbilityRefs(cardOf(this.#game, source))
+            .map((ref) => CORE_DEPS.abilities[ref.id])
+            .find((ability) => ability?.trigger.kind === "action" && ability.cost?.discardFromHand)?.cost;
+    const discard = cost?.discardFromHand;
+    if (!discard) return false;
+    const candidates = handDiscardCandidates(this.#game, CORE_DEPS, source, this.#game.players[0]!.playerId, cost);
+    const max = Math.min(discard.max ?? candidates.length, candidates.length);
+    this.#costDiscard = { entry, candidates, min: discard.min, max };
+    this.#subject = source;
+    this.#view = null;
+    return true;
   }
 
   /** An attachment played onto an enemy (Webbed Up, Spider-Tracer): it waits over the villain's side for its host. */
@@ -2379,6 +2428,10 @@ export class BattleModel {
         const counters = getInstance(this.#game, id)?.counters?.energy ?? 0;
         return `Discard it: deal ${Math.min(10, 2 * counters)} damage`;
       }
+      case "01027.focused-rage-action":
+        return "Take 1 damage: draw 1 card";
+      case "01020.hellcat-action":
+        return "Return to your hand";
       case "01068.vision-action":
         return "Spend 1 energy: +2 THW or ATK";
       case "01015.alpha-flight-station-action":
@@ -2483,22 +2536,7 @@ export class BattleModel {
     if (power) return this.#usePower(power);
     const entry = this.#fieldAbilities(id).find((action) => action.kind === kind)?.entry;
     if (!entry || entry.action.kind !== "useAbility") return false;
-    const discard = CORE_DEPS.abilities[entry.action.abilityId]?.cost?.discardFromHand;
-    if (discard && !entry.needsPayment) {
-      // The player picks the cards the cost discards, on the hand, as at the end of the turn.
-      // The cards the engine lets the cost take (a filter, a card that can't be chosen), and as many as it allows.
-      const candidates = handDiscardCandidates(
-        this.#game,
-        CORE_DEPS,
-        entry.action.instanceId,
-        this.#game.players[0]!.playerId,
-        CORE_DEPS.abilities[entry.action.abilityId]?.cost,
-      );
-      this.#costDiscard = { entry, candidates, min: discard.min, max: discard.max ?? candidates.length };
-      this.#subject = entry.action.instanceId;
-      this.#view = null;
-      return true;
-    }
+    if (this.#askCostDiscard(entry)) return true;
     if (entry.needsPayment) {
       const payment = beginPayment(this.#game, this.#game.players[0]!.playerId, entry.action, null, CORE_DEPS);
       if (!payment) return false;
@@ -2582,7 +2620,7 @@ export class BattleModel {
       const { entry, candidates, min, max } = this.#costDiscard;
       if (ids.length < min || ids.length > max || ids.some((id) => !candidates.includes(id as InstanceId)))
         return false;
-      if (entry.example.type !== "useAbility") return false;
+      if (entry.example.type !== "useAbility" && entry.example.type !== "playCard") return false;
       const result = applyCommand(
         this.#game,
         { ...entry.example, costChoices: { ...entry.example.costChoices, discard: ids as InstanceId[] } },

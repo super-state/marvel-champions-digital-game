@@ -48,10 +48,21 @@ const ULTRON_SEEDS: readonly number[] = Array.from(
   (_, i) => 3000 + i * 43,
 );
 
-/** Captain Marvel's deals, against each villain in turn (CAPTAIN_MARVEL_FUZZ_GAMES=250 for the deep run). */
-const CAPTAIN_MARVEL_SEEDS: readonly number[] = Array.from(
-  { length: Number(process.env.CAPTAIN_MARVEL_FUZZ_GAMES ?? 9) },
-  (_, i) => 4000 + i * 47,
+/**
+ * The heroes after Spider-Man, each dealt against each villain in turn from their own seeds. A hero added to `HEROES`
+ * gets a line here. `HERO_FUZZ_GAMES=250` is the deep run (each hero); `CAPTAIN_MARVEL_FUZZ_GAMES` and the like set
+ * one hero's count (0 leaves that hero out).
+ */
+const HERO_SEEDS: readonly { hero: HeroId; first: number; env: string }[] = [
+  { hero: "captain-marvel", first: 4000, env: "CAPTAIN_MARVEL_FUZZ_GAMES" },
+  { hero: "she-hulk", first: 6000, env: "SHE_HULK_FUZZ_GAMES" },
+];
+const HERO_GAMES = HERO_SEEDS.flatMap(({ hero, first, env }) =>
+  Array.from({ length: Number(process.env[env] ?? process.env.HERO_FUZZ_GAMES ?? 9) }, (_, i) => ({
+    hero,
+    seed: first + i * 47,
+    i,
+  })),
 );
 const VILLAIN_ROTA: readonly VillainId[] = ["rhino", "klaw", "ultron"];
 
@@ -1027,15 +1038,16 @@ test.each(
 );
 
 test.each(
-  CAPTAIN_MARVEL_SEEDS.map((seed, i) => ({
+  HERO_GAMES.map(({ hero, seed, i }) => ({
+    hero,
     seed,
     policy: POLICIES[i % POLICIES.length]!,
     villain: VILLAIN_ROTA[i % VILLAIN_ROTA.length]!,
   })).filter((g) => !process.env.FUZZ_ONLY || String(g.seed) === process.env.FUZZ_ONLY),
 )(
-  "fuzz game as Captain Marvel against $villain, seed $seed ($policy)",
-  ({ seed, policy, villain }) => {
-    const game = playGame(seed, policy, villain, "captain-marvel");
+  "fuzz game as $hero against $villain, seed $seed ($policy)",
+  ({ hero, seed, policy, villain }) => {
+    const game = playGame(seed, policy, villain, hero);
     results.push(game);
   },
   60_000,
