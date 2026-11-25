@@ -7,6 +7,7 @@ import { loadWithRetry } from "./picture-retry.js";
 import { revealAside, type ScreenBox } from "./dock-spot.js";
 import { TokenKit, placeTokens } from "./tokens3d.js";
 import { tuckPath } from "./tuck-path.js";
+import { arrangeHand, moveInHand, slotAt, type HandSlots } from "./hand-order.js";
 
 export interface TableCard {
   readonly attachedTo?: string | null;
@@ -718,6 +719,12 @@ export class BattleTable {
   readonly #flights = new Map<string, Flight>();
   #discardDeal: { ids: string[]; spent: Set<string>; started: number; landed: number; done(): void } | null = null;
   #press: { id: string; pointer: number; x: number; y: number; dragging: boolean } | null = null;
+  /** The player's own order for the hand (`hand-order.ts`), as the hand last stood. */
+  #handOrder: string[] = [];
+  /** Where the hand's slots stood at the last layout, for finding the slot under a dragged card. */
+  #handSlots: HandSlots | null = null;
+  /** The slot a hand card dragged along the hand would be filed in: the rest of the hand opens a gap there. */
+  #dropSlot: number | null = null;
 
   constructor(host: HTMLElement, viewport: HTMLElement, handlers: Handlers) {
     this.#viewport = viewport;
@@ -829,6 +836,9 @@ export class BattleTable {
   }
 
   setCards(state: TableCards): void {
+    // The hand is shown in the player's own order, if they have dragged it into one.
+    state = { ...state, hand: arrangeHand(state.hand, this.#handOrder) };
+    this.#handOrder = state.hand.map((card) => card.id);
     const previous = this.#state?.staged?.id;
     if (this.#state?.discardOpen !== state.discardOpen) this.#hovered = null;
     const previousHand = this.#state?.hand;
@@ -1564,7 +1574,7 @@ export class BattleTable {
     this.#revealing = this.#aside = this.#actor = this.#power = this.#powerHost = null;
     this.#powerWaiting = this.#revealHeld = false;
     this.#actionShadow.removeFromParent();
-    this.#hovered = this.#zoom = this.#press = this.#discardDeal = null;
+    this.#hovered = this.#zoom = this.#press = this.#discardDeal = this.#dropSlot = null;
     this.#windup = this.#strike = this.#interrupt = this.#wave = this.#flicker = this.#deflection = null;
     for (const id of [...this.#pieces.keys()]) this.#dropPiece(id);
     for (const vapour of this.#vapours.splice(0)) this.#releaseVapour(vapour);
@@ -3124,7 +3134,10 @@ export class BattleTable {
       }
     });
     row.forEach((card, i) => posePermanent(card, centers[i]!, 0.08 + (i === 0 ? upgrades.length * 0.035 : 0)));
-    const hand = state.hand.filter((card) => card.id !== state.staged?.id);
+    const held = state.hand.filter((card) => card.id !== state.staged?.id);
+    // A card being dragged along the hand: the others make room for it at the slot under it.
+    const dragged = this.#press?.dragging && this.#dropSlot !== null ? this.#press.id : null;
+    const hand = dragged ? moveInHand(held, dragged, this.#dropSlot!) : held;
     const handLeft = 14;
     // A phone's hand overlaps more so each card stays big enough to read; a hovered card lifts clear.
     const spread = w < 550 ? 0.6 : 1.03;
@@ -3170,13 +3183,14 @@ export class BattleTable {
     // card panel. Not while paying or picking from the hand, where the whole hand is up and a card only lifts a step.
     const zoomWidth = cardWidth * 1.45;
     this.#zoom = null;
+    const handCenter = Math.max(w * 0.5, handLeft + cardWidth * (0.5 + center * spread));
+    this.#handSlots = { center: handCenter, count: hand.length, step: cardWidth * spread };
     hand.forEach((card, i) => {
       const offset = i - center;
       const outward = center ? offset / center : 0;
       const hovered = this.#hovered === card.id && !this.#press?.dragging;
       const raised = hovered || state.selected.includes(card.id);
       const zoomed = hovered && sunk && !lifted && !this.#question && !state.selected.includes(card.id);
-      const handCenter = Math.max(w * 0.5, handLeft + cardWidth * (0.5 + center * spread));
       const restX = handCenter + offset * cardWidth * spread;
       const restY = baseline + outward ** 2 * cardWidth * 0.045;
       // Grown from its slot but kept on screen.
@@ -4523,13 +4537,38 @@ export class BattleTable {
     const piece = this.#pieces.get(press.id);
     if (!piece) return;
     press.dragging = true;
-    if (piece.card.playable === false && !this.#state?.paymentSources) return;
     const rect = this.#renderer.domElement.getBoundingClientRect();
-    piece.root.position.copy(this.#point(event.clientX - rect.left, event.clientY - rect.top - this.#extension, 1.9));
+    // Any card can be dragged along the hand to file it in a new slot, even one that can't be played now; only a
+    // playable one goes up towards the table (and an unplayable one held above the hand stays at the hand's top).
+    const over = this.#overPlayArea(event);
+    const slot = over || !this.#handSlots ? null : slotAt(event.clientX - rect.left, this.#handSlots);
+    if (slot !== this.#dropSlot) {
+      this.#dropSlot = slot;
+      this.#layout();
+    }
+    const canPlay = piece.card.playable !== false || !!this.#state?.paymentSources;
+    const y = event.clientY - rect.top - this.#extension;
+    const top = this.#handTop.resting;
+    piece.root.position.copy(this.#point(event.clientX - rect.left, canPlay ? y : Math.max(y, top), 1.9));
     piece.root.rotation.set(this.#camera.rotation.x, 0, 0);
     this.#renderer.domElement.style.cursor = "var(--cursor-held)";
     this.#requestFrame();
   };
+
+  /**
+   * Over the table rather than the hand: a hand card let go here is played, not filed in a new slot. The table ends
+   * at two thirds of the way down, or at the top of the hand where the hand stands higher (a phone, a raised hand).
+   */
+  #overPlayArea(event: PointerEvent): boolean {
+    const rect = this.#renderer.domElement.getBoundingClientRect();
+    const edge = Math.min(this.#height * 0.68, this.#handTop.resting - 12);
+    return (
+      event.clientX >= rect.left &&
+      event.clientX <= rect.right &&
+      event.clientY >= rect.top &&
+      event.clientY < rect.top + this.#extension + edge
+    );
+  }
 
   readonly #down = (event: PointerEvent): void => {
     // A touch has no hover, so don't let an old mouse position aim the hand tilt.
@@ -4548,15 +4587,23 @@ export class BattleTable {
   readonly #up = (event: PointerEvent): void => {
     const press = this.#press;
     if (!press || press.pointer !== event.pointerId) return;
-    const rect = this.#renderer.domElement.getBoundingClientRect();
-    const playArea =
-      event.clientX >= rect.left &&
-      event.clientX <= rect.right &&
-      event.clientY >= rect.top &&
-      event.clientY < rect.top + this.#extension + this.#height * 0.68;
+    const playArea = this.#overPlayArea(event);
     const activate = press.dragging
       ? playArea
       : Math.hypot(event.clientX - press.x, event.clientY - press.y) < 9 || this.#hit(event) === press.id;
+    // Let go along the hand: the card stays in the slot the hand opened for it.
+    const state = this.#state;
+    if (press.dragging && !playArea && this.#dropSlot !== null && state?.hand.some((card) => card.id === press.id)) {
+      const others = state.hand.filter((card) => card.id !== state.staged?.id);
+      const shown = moveInHand(others, press.id, this.#dropSlot);
+      // Cards not shown in the hand row (one being paid for) keep their places around it.
+      const hand = arrangeHand(
+        state.hand,
+        shown.map((card) => card.id),
+      );
+      this.#handOrder = hand.map((card) => card.id);
+      this.#state = { ...state, hand };
+    }
     this.#abort(event);
     if (activate) this.#handlers.onPick(press.id);
     if (event.pointerType === "touch") this.#notifyHover(null);
@@ -4565,6 +4612,7 @@ export class BattleTable {
   readonly #abort = (event: PointerEvent): void => {
     if (this.#press?.pointer !== event.pointerId) return;
     this.#press = null;
+    this.#dropSlot = null;
     const canvas = this.#renderer.domElement;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     canvas.style.cursor = this.#hovered ? "var(--cursor-hand)" : "var(--cursor-arrow)";
