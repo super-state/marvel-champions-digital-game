@@ -69,8 +69,8 @@ export interface DeckScreenOptions {
   readonly store?: DeckStore;
   /** The builder's Back button's words ("‹ Heroes" on the page). */
   readonly backLabel?: string;
-  /** In the room: the builder has been left (Back, or the deck deleted). */
-  readonly onExit?: () => void;
+  /** In the room: the builder has been left (Back, or the deck deleted), with the deck it last saved, if any. */
+  readonly onExit?: (savedId: string | null) => void;
 }
 
 export interface DeckScreen {
@@ -169,6 +169,7 @@ export function createDeckScreen(host: HTMLElement, options: DeckScreenOptions):
   host.innerHTML = TEMPLATE;
   const store = options.store ?? browserDeckStore();
   const inRoom = options.mode === "room";
+  const touchScreen = matchMedia("(pointer: coarse)").matches;
   const offeredHeroes = BUILDER_HEROES.filter(
     (hero) => !options.heroes || options.heroes.includes(hero.identityCardId),
   );
@@ -471,7 +472,9 @@ export function createDeckScreen(host: HTMLElement, options: DeckScreenOptions):
           event.stopPropagation();
           openZoom(entry.cardId);
         });
-        return h("div", { class: "binder-slot", role: "listitem" }, tile, zoom);
+        // In the room the table's controller steps through every button on the page, so the magnifier (a touch control) is
+        // only there on a touch screen; the mouse has the hover panel, the keys F and the pad Y.
+        return h("div", { class: "binder-slot", role: "listitem" }, tile, inRoom && !touchScreen ? null : zoom);
       }),
     );
 
@@ -723,10 +726,11 @@ export function createDeckScreen(host: HTMLElement, options: DeckScreenOptions):
   function goToHeroes(): void {
     if (inRoom) {
       // In the room the heroes are the bench's own deck boxes: hand back to it.
+      const savedId = builder?.savedId ?? null;
       builder = null;
       hidePanel();
       closeZoom();
-      options.onExit?.();
+      options.onExit?.(savedId && store.get(savedId) ? savedId : null);
       return;
     }
     const hero = builder?.draft.identityCardId ?? chosenHero;

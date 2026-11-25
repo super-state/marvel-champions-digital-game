@@ -11,7 +11,9 @@
  *
  * Only villains this player has opened are offered: on the test site the ones the room's locks leave open, on Adam's
  * own table all of them. The module starts as the villain's recommended one (and follows the villain until another is
- * picked); the deck is the hero's starter deck until saved decks come (room plan 0.9.0).
+ * picked). The deck slot offers the hero's starter deck and every deck saved for them at the bench, the one chosen being
+ * the hero's chosen deck (`decks/chosen-deck.ts`, shared with the bench); a deck the table can't deal yet is shown with
+ * why, and can't be picked (`decks/deal-gate.ts`). Picking a hero at the bench picks them here too (`followHero`).
  */
 import * as THREE from "three";
 import {
@@ -27,7 +29,11 @@ import {
 import { canvas, halftone, loadImage, texture } from "../canvas.js";
 import { CAM_GAME, setPose } from "../camera.js";
 import { lerp, span } from "../motion.js";
-import { ROOM } from "../room.js";
+import { ROOM, say } from "../room.js";
+import { STARTER, chooseDeck, chosenDeck } from "../../decks/chosen-deck.js";
+import { dealVerdict } from "../../decks/deal-gate.js";
+import { BUILDER_HEROES } from "../../decks/deck-model.js";
+import { browserDeckStore } from "../../decks/deck-store.js";
 import { beginPlay, play } from "./campaign-play.js";
 import { CAMPAIGNS, CARDS, frontPrint, type Campaign } from "./campaign-prints.js";
 import { fitNarrow, furniturePlace } from "./place.js";
@@ -379,6 +385,36 @@ interface Option {
   label: string;
   /** A short line under it (the module the villain recommends). */
   tag?: string;
+  /** Why it can't be picked now (a saved deck the table can't deal yet). */
+  held?: string;
+}
+
+const deckStore = browserDeckStore();
+/** The hero's saved decks, each with why the table can't deal it yet (none when it can). */
+function savedDecks(hero: HeroId) {
+  const starterDeckId = heroOf(hero).starterDeckId;
+  const identity = BUILDER_HEROES.find((each) => each.starterDeckId === starterDeckId)?.identityCardId;
+  return deckStore
+    .list()
+    .filter((deck) => deck.identityCardId === identity)
+    .map((deck) => {
+      const verdict = dealVerdict(deck);
+      return { deck, held: verdict.ok ? undefined : verdict.reason };
+    });
+}
+/** The hero's chosen deck, if the table can deal it; otherwise their starter deck. */
+function deckChoice(hero: HeroId): string {
+  const chosen = chosenDeck(hero);
+  return savedDecks(hero).some(({ deck, held }) => deck.id === chosen && !held) ? chosen : STARTER;
+}
+
+/** The hero picked at the bench is the tray's hero too. */
+export function followHero(hero: HeroId) {
+  if (built.hero === hero) return;
+  built.hero = hero;
+  save();
+  paint();
+  for (const each of ["hero", "deck"] as const) paintPiece(each);
 }
 
 function optionsOf(slot: Slot): Option[] {
@@ -396,12 +432,19 @@ function optionsOf(slot: Slot): Option[] {
     case "hero":
       return HEROES.map((h) => ({ value: h.id, label: h.name }));
     case "deck":
-      return [{ value: heroOf(built.hero).starterDeckId, label: deckName(built.hero) }];
+      return [
+        { value: STARTER, label: deckName(built.hero) },
+        ...savedDecks(built.hero).map(({ deck, held }) => ({
+          value: deck.id,
+          label: deck.name,
+          ...(held ? { tag: "Not dealt yet", held } : {}),
+        })),
+      ];
   }
 }
 
 const valueOf = (slot: Slot): string =>
-  slot === "deck" ? heroOf(built.hero).starterDeckId : slot === "module" ? built.module : built[slot];
+  slot === "deck" ? deckChoice(built.hero) : slot === "module" ? built.module : built[slot];
 
 function choose(slot: Slot, value: string) {
   if (slot === "villain") {
@@ -412,6 +455,14 @@ function choose(slot: Slot, value: string) {
     modulePicked = built.module !== recommendedModule(built.villain);
   } else if (slot === "difficulty") built.difficulty = value as Difficulty;
   else if (slot === "hero") built.hero = value as HeroId;
+  else if (slot === "deck") {
+    const held = savedDecks(built.hero).find(({ deck }) => deck.id === value)?.held;
+    if (held) {
+      say(held);
+      return;
+    }
+    chooseDeck(built.hero, value);
+  }
   save();
   paint();
   // Its piece hops as it changes (and the module's and deck's, which follow the villain and the hero).
@@ -439,6 +490,10 @@ function paint() {
         button.dataset.value = option.value;
         button.setAttribute("aria-pressed", String(option.value === valueOf(slot)));
         button.textContent = option.label;
+        if (option.held) {
+          button.setAttribute("aria-disabled", "true");
+          button.title = option.held;
+        }
         if (option.tag) {
           const tag = document.createElement("small");
           tag.textContent = option.tag;

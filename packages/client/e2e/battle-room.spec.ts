@@ -101,12 +101,12 @@ test.describe("battle table: the room", () => {
   });
 
   test("?room= starts at a place, even one still to come", async ({ page }) => {
-    await page.goto("/battle/?room=decks");
-    await at(page, "decks");
-    await expect(room(page).getByRole("heading", { name: "Heroes & Decks" })).toBeVisible();
+    await page.goto("/battle/?room=trophies");
+    await at(page, "trophies");
+    await expect(room(page).getByRole("heading", { name: "Trophies & Stats" })).toBeVisible();
     await expect(
       room(page)
-        .locator('[data-for="decks"]')
+        .locator('[data-for="trophies"]')
         .getByText(/^Coming soon/),
     ).toBeVisible();
     await room(page).getByRole("button", { name: "Back" }).click();
