@@ -1015,6 +1015,11 @@ let queued = -1;
 let s = 0;
 let target = 0;
 let hovered = -1;
+/**
+ * How far the camera leans after the pointer, eased: following the pointer straight jolted the whole shelf sideways
+ * the first time the mouse moved after the page loaded (Adam, 2026-11-25: "the boxes still shake when they load up").
+ */
+let sway = 0;
 const pointer = new THREE.Vector2(-9, -9);
 const raycaster = new THREE.Raycaster();
 let toastTimer = 0;
@@ -1136,7 +1141,8 @@ function pose(time: number, dt: number) {
   const pull = lerp(pullBack, Math.max(1, 1.1 / camera.aspect), c);
   const near = camera.position.distanceTo(aim);
   camera.position.sub(aim).multiplyScalar(pull).add(aim);
-  camera.position.x += (1 - c) * (pointer.x > -2 ? pointer.x * 0.35 : 0);
+  sway = lerp(sway, pointer.x > -2 ? pointer.x : 0, 1 - Math.exp(-dt * 3));
+  camera.position.x += (1 - c) * sway * 0.35;
   // Play: the camera swings round to the game table's own angle.
   const toGame = outro ? span(outro.u, 0, 1.2) : 0;
   // The fog starts as far beyond the boxes as it does on a wide screen, however far a narrow one pulls the camera
