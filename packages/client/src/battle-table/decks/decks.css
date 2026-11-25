@@ -40,7 +40,10 @@ button {
   font: inherit;
   color: inherit;
 }
-:focus-visible {
+:focus-visible,
+/* A pad or the keyboard moves the focus by script, which the browser may not mark :focus-visible after a click. */
+:root[data-input="pad"] :focus,
+:root[data-input="keys"] :focus {
   outline: 3px solid var(--gold);
   outline-offset: 3px;
 }
@@ -106,7 +109,9 @@ button {
     box-shadow 200ms;
 }
 .hero-box:hover,
-.hero-box:focus-visible {
+.hero-box:focus-visible,
+:root[data-input="pad"] .hero-box:focus,
+:root[data-input="keys"] .hero-box:focus {
   transform: translateY(-4px);
 }
 .hero-box[aria-pressed="true"] {
@@ -382,7 +387,9 @@ button {
     opacity: 0;
   }
   .binder-slot:hover .zoom-btn,
-  .zoom-btn:focus-visible {
+  .zoom-btn:focus-visible,
+  :root[data-input="pad"] .zoom-btn:focus,
+  :root[data-input="keys"] .zoom-btn:focus {
     opacity: 1;
   }
 }

@@ -24,6 +24,7 @@ import {
 } from "./model.js";
 import { answerRemote, createPlayer, type Player, type RemoteChannel } from "./play.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
+import type { PlaceId, RoomSetting } from "./room/index.js";
 import {
   addRecordButton,
   finishGame,
@@ -3986,7 +3987,7 @@ undoButton.onclick = () => {
 restart.textContent = "New game";
 restart.onclick = () => {
   if (gameMenu.open) gameMenu.close();
-  void showShelf();
+  void showShelf("campaign");
 };
 menuButton.onclick = () => {
   if (!gameMenu.open) gameMenu.showModal();
@@ -4050,6 +4051,11 @@ document.addEventListener(
 );
 /** Escape, or a controller's B: put away the topmost thing. An open dialog handles its own. */
 function back() {
+  // Over the room, Back is the room's: one step back towards its doorway.
+  if (shelfUp) {
+    room?.back();
+    return;
+  }
   if (gameMenu.open || gameOver.open) return;
   if (pinnedId) {
     pinCard(null);
@@ -4469,7 +4475,7 @@ const AT_TABLE = "battle-at-table";
 let shelfUp = false;
 function opensOnShelf(): boolean {
   const params = new URLSearchParams(location.search);
-  if (params.has("open")) return true;
+  if (params.has("open") || params.has("room")) return true;
   if (["seed", "scene", "villain", "remote", "studio"].some((key) => params.has(key))) return false;
   try {
     return !sessionStorage.getItem(AT_TABLE);
@@ -4490,7 +4496,37 @@ function tableInert(inert: boolean) {
   for (const child of document.body.children)
     if (child instanceof HTMLElement && child.id !== "shelf") child.inert = inert;
 }
-async function showShelf() {
+/** The room, once loaded. */
+let room: typeof import("./room/index.js") | null = null;
+/** The table's own menu settings, for the room's radio. */
+function roomSettings(): RoomSetting[] {
+  return [
+    {
+      label: "Card panel",
+      options: [
+        { value: "left", label: "Left" },
+        { value: "right", label: "Right" },
+      ],
+      value: () => arena.getAttribute("data-rail") ?? "right",
+      choose: (value) => setSidebarSide(value === "left" ? "left" : "right"),
+    },
+    {
+      label: "Sound",
+      options: [
+        { value: "on", label: "On" },
+        { value: "off", label: "Off" },
+      ],
+      value: () => (sfx.enabled ? "on" : "off"),
+      choose: (value) => {
+        sfx.enabled = value === "on";
+        paintSound();
+        sfx.play("confirm");
+      },
+    },
+  ];
+}
+/** Puts the room up over the table: at its doorway, or at `at` (New game goes straight to the boxes). */
+async function showShelf(at?: PlaceId) {
   shelfUp = true;
   // No game on the shelf yet: the tab says the game's name, not the last matchup.
   document.title = "Marvel Champions";
@@ -4504,24 +4540,29 @@ async function showShelf() {
       location.reload();
       return;
     }
-    const { openShelf } = await import("./room/index.js");
+    room = await import("./room/index.js");
     shelfDrawn();
-    await openShelf({
-      lock: lockReason,
-      deal: (villain) => {
-        setVillainChoice(villain);
-        rememberAtTable(villain);
-        start();
+    await room.openShelf(
+      {
+        lock: lockReason,
+        settings: roomSettings,
+        player: () => playerReady.then((profile) => profile?.name ?? null),
+        deal: (villain) => {
+          setVillainChoice(villain);
+          rememberAtTable(villain);
+          start();
+        },
+        table: () => table ?? null,
+        shown: () => {
+          shelfUp = false;
+          tableInert(false);
+          // The mulligan's blur and question waited for the shelf to go; the table may be standing still by now.
+          placeLabels();
+          dockTitle.focus({ preventScroll: true });
+        },
       },
-      table: () => table ?? null,
-      shown: () => {
-        shelfUp = false;
-        tableInert(false);
-        // The mulligan's blur and question waited for the shelf to go; the table may be standing still by now.
-        placeLabels();
-        dockTitle.focus({ preventScroll: true });
-      },
-    });
+      at,
+    );
   } catch (error) {
     // No shelf (it failed to load): the table deals as it always has.
     console.error(error);
