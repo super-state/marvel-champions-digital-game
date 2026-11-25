@@ -6,6 +6,7 @@
  *   POST /api/me       { name }: become a player (from the shared invite link) or change your name
  *   POST /api/games    a finished game (saved, or updated when the same game ends again)
  *   GET  /api/record   this player's record
+ *   GET  /api/games    this player's finished games, facts and all (the record's achievements are worked out from them)
  *   GET  /admin        every player, their record and link; POST adds a player or switches a link off/on
  */
 import {
@@ -13,6 +14,7 @@ import {
   allPlayers,
   cleanName,
   createPlayer,
+  finishedGameOf,
   gamesOf,
   parseGameReport,
   playerByToken,
@@ -135,6 +137,11 @@ export async function handleApi(request: Request, db: D1Like | undefined, who: V
             lost: versus.filter((g) => g.result === "loss").length,
           },
         });
+      }
+
+      case "GET /api/games": {
+        if (!db || !who.player) return json({ error: "Not signed in." }, 403);
+        return json({ games: (await gamesOf(db, who.player.id)).map(finishedGameOf) });
       }
 
       case "GET /api/record": {

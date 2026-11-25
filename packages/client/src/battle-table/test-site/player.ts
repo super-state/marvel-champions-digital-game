@@ -3,16 +3,24 @@
  * and their record. The server side is players.ts and site-api.ts.
  *
  * Only builds made by `pnpm table:ship` (the ones carrying `VITE_TABLE_VERSION`) ask the site who is playing. Adam's
- * own dev table and the browser tests never do: there, nothing is saved and every villain is open.
+ * own dev table and the browser tests never do: there every villain is open, and the record is kept in this browser's
+ * storage instead (`record/home.ts`).
  *
  * - First open from the shared invite link: "What's your name?". That makes them a player, with their own link.
  * - On a phone: the table is built for a laptop or a bigger screen, so it offers to email the link to themselves.
  * - The shelf seals a villain that isn't unlocked yet ("Beat Rhino to unlock").
  * - Each finished game is sent once; an ending undone and played out again updates the same game.
  * - The game-over dialog says how they stand against that villain, and when a villain has just unlocked.
- * - "My record" in the menu: their wins and losses overall, per villain and per hero, their latest games, their link.
+ * - "My record" in the menu ("Record" on any other table): their wins and losses overall, per villain and per hero,
+ *   their best, every achievement, their latest games and their link (`record/board.ts`).
+ * - A game that earns achievements says so in a pop-up (`record/popup.ts`).
  */
 import "./player.css";
+import { browserHome, siteHome, type GameReport, type RecordHome } from "../record/home.js";
+import type { GameFacts } from "../record/game.js";
+import { newlyEarned } from "../record/achievements.js";
+import { recordRows } from "../record/board.js";
+import { announceAchievements } from "../record/popup.js";
 
 export interface Profile {
   saving: boolean;
@@ -23,37 +31,9 @@ export interface Profile {
   admin: boolean;
 }
 
-interface Tally {
-  played: number;
-  won: number;
-  lost: number;
-}
-interface PlayerRecord {
-  name: string;
-  link: string;
-  total: Tally;
-  byVillain: { villain: string; name: string; tally: Tally }[];
-  byHero: { hero: string; tally: Tally }[];
-  recent: {
-    when: number;
-    hero: string;
-    villain: string;
-    result: "win" | "loss";
-    reason: string;
-    rounds: number;
-    version: string;
-    minutes: number;
-  }[];
-}
-
 const VERSION: string | undefined = import.meta.env.VITE_TABLE_VERSION;
 const CHAIN = ["rhino", "klaw", "ultron"] as const;
 const NAMES: Record<string, string> = { rhino: "Rhino", klaw: "Klaw", ultron: "Ultron" };
-const REASONS: Record<string, string> = {
-  villainDefeated: "Villain beaten",
-  mainSchemeCompleted: "Scheme completed",
-  allPlayersDefeated: "Hero knocked out",
-};
 
 let profile: Profile | null = null;
 /** The unlocks the shelf was drawn with: when they change, the shelf has to be drawn again. */
@@ -254,22 +234,27 @@ export interface GameHandle {
   startedAt: number;
   /** The ending last sent, so the same ending isn't sent twice. */
   sent: string | null;
+  /** Undo was used in this game (`main.ts` sets it): one of the record's facts. */
+  undone: boolean;
+}
+
+/**
+ * Where the record is kept: the test site's database for a player signed in there, this browser's storage everywhere
+ * else (Adam's own table). Null on the test site before the player has a name (they are asked it before any deal).
+ */
+export function recordHome(): RecordHome | null {
+  // A shipped build keeps its games on the site or nowhere (a site that can't be reached never quietly saves here).
+  if (!VERSION) return browserHome();
+  return profile?.saving && profile.name ? siteHome() : null;
 }
 
 /** A newly dealt game, to be saved when it ends; null when nothing is being saved. */
 export function startGame(villain: string): GameHandle | null {
   // The last game's line under the game-over text goes with it.
   document.getElementById("game-over-record")?.remove();
-  if (!profile?.saving || !profile.name) return null;
+  if (!recordHome()) return null;
   const id = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return { id, villain, startedAt: Date.now(), sent: null };
-}
-
-interface Saved {
-  saved: boolean;
-  unlocked?: string[];
-  newlyUnlocked?: string[];
-  versus?: { won: number; lost: number };
+  return { id, villain, startedAt: Date.now(), sent: null, undone: false };
 }
 
 /**
@@ -278,25 +263,36 @@ interface Saved {
  */
 export async function finishGame(
   game: GameHandle | null,
-  outcome: { result: "win" | "loss"; reason: string; rounds: number; hero: string; deck: string[] },
+  outcome: {
+    result: "win" | "loss";
+    reason: string;
+    rounds: number;
+    hero: string;
+    deck: string[];
+    facts: GameFacts | null;
+  },
 ): Promise<void> {
-  if (!game) return;
-  const ending = `${outcome.result}/${outcome.reason}/${outcome.rounds}`;
+  const home = recordHome();
+  if (!game || !home) return;
+  // The facts too: an ending undone and played out the same way still differs in them (Undo was used, the last blow).
+  const ending = JSON.stringify([outcome.result, outcome.reason, outcome.rounds, outcome.facts]);
   if (game.sent === ending) return;
   game.sent = ending;
-  const saved = await postJson<Saved>("/api/games", {
+  const report: GameReport = {
     id: game.id,
     villain: game.villain,
     startedAt: game.startedAt,
-    version: VERSION,
+    version: VERSION ?? "dev",
     ...outcome,
-  });
+  };
+  const saved = await home.save(report);
   const line = document.getElementById("game-over-record") ?? make("p", "outcome-record");
   line.id = "game-over-record";
   document.getElementById("game-over-detail")?.after(line);
-  if (!saved?.saved) {
+  if (!saved.saved) {
     game.sent = null;
-    line.textContent = "This game couldn't be saved to your record.";
+    line.textContent =
+      home.where === "site" ? "This game couldn't be saved to your record." : "This browser isn't keeping a record.";
     return;
   }
   if (profile && saved.unlocked) profile.unlocked = saved.unlocked;
@@ -314,31 +310,14 @@ export async function finishGame(
     };
     line.append(make("br"), news, go);
   }
+  // What this game earned (worked out from every game, so whatever was earned before is never announced again).
+  const games = await home.games();
+  if (games && game.sent === ending) announceAchievements(newlyEarned(games, game.id));
 }
 
-const pct = (t: Tally) => (t.played ? `${Math.round((t.won / t.played) * 100)}%` : "–");
-const when = (ms: number) =>
-  new Date(ms).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-
-function table(head: string[], rows: (string | HTMLElement)[][]): HTMLTableElement {
-  const t = make("table", "player-table");
-  const tr = make("tr");
-  for (const h of head) tr.append(make("th", "", h));
-  t.append(tr);
-  for (const row of rows) {
-    const r = make("tr");
-    for (const cell of row) {
-      const td = make("td");
-      td.append(cell);
-      r.append(td);
-    }
-    t.append(r);
-  }
-  return t;
-}
-
-/** Opens "My record". */
+/** Opens the record: the player's games, their best, and every achievement. */
 export async function openRecord(): Promise<void> {
+  const home = recordHome();
   const d = dialog("player-record");
   d.classList.add("player-record");
   const close = make("button", "btn btn-primary", "Close");
@@ -348,76 +327,33 @@ export async function openRecord(): Promise<void> {
   d.append(make("p", "eyebrow", "Your record"), make("p", "player-note", "Loading…"));
   d.showModal();
 
-  const record = await getJson<PlayerRecord>("/api/record");
-  d.replaceChildren(make("p", "eyebrow", "Your record"), make("h2", "", record?.name ?? "Your record"));
-  if (!record) {
+  const games = home ? await home.games() : null;
+  const title = home?.where === "site" ? (profile?.name ?? "Your record") : "Record";
+  d.replaceChildren(make("p", "eyebrow", "Your record"), make("h2", "", title));
+  if (!games) {
     d.append(make("p", "player-note", "Your record couldn't be loaded just now."), close);
     return;
   }
-  const stats = make("div", "player-stats");
-  for (const [label, value] of [
-    ["Played", String(record.total.played)],
-    ["Won", String(record.total.won)],
-    ["Lost", String(record.total.lost)],
-    ["Win rate", pct(record.total)],
-  ] as const) {
-    const box = make("div", "player-stat");
-    box.append(make("b", "", value), make("span", "", label));
-    stats.append(box);
-  }
-  d.append(stats);
-
-  const villains = CHAIN.map((id) => {
-    const row = record.byVillain.find((v) => v.villain === id);
-    const t = row?.tally ?? { played: 0, won: 0, lost: 0 };
-    const lock = lockReason(id);
-    return [NAMES[id]!, lock ?? String(t.won), lock ? "" : String(t.lost), lock ? "" : pct(t)];
-  });
-  d.append(make("h3", "", "Against each villain"), table(["Villain", "Won", "Lost", "Win rate"], villains));
-  if (record.byHero.length)
+  d.append(...recordRows(games, lockReason));
+  if (home?.where === "browser")
+    d.append(make("p", "player-note record-where", "Kept in this browser: games played here count."));
+  if (profile?.link)
     d.append(
-      make("h3", "", "As each hero"),
-      table(
-        ["Hero", "Won", "Lost", "Win rate"],
-        record.byHero.map((h) => [h.hero, String(h.tally.won), String(h.tally.lost), pct(h.tally)]),
+      make("h3", "", "Your link"),
+      make(
+        "p",
+        "player-note",
+        "It's your login on any computer: open it there and your games and unlocks come with you.",
       ),
+      linkActions(profile.link),
     );
-  d.append(make("h3", "", "Latest games"));
-  if (record.recent.length) {
-    d.append(
-      table(
-        ["When", "Game", "Result", "How", "Rounds", "Time"],
-        record.recent.map((g) => {
-          const result = make("span", g.result === "win" ? "won" : "lost", g.result === "win" ? "Won" : "Lost");
-          return [
-            when(g.when),
-            `${g.hero} vs ${g.villain}`,
-            result,
-            REASONS[g.reason] ?? g.reason,
-            String(g.rounds),
-            `${g.minutes} min`,
-          ];
-        }),
-      ),
-    );
-  } else d.append(make("p", "player-note", "No games yet: finish one and it shows up here."));
-
-  d.append(
-    make("h3", "", "Your link"),
-    make(
-      "p",
-      "player-note",
-      "It's your login on any computer: open it there and your games and unlocks come with you.",
-    ),
-    linkActions(record.link),
-    close,
-  );
+  d.append(close);
 }
 
-/** Adds "My record" to the game menu, for a player on the test site. */
+/** Adds the record to the game menu: "My record" for a player on the test site, "Record" on any other table. */
 export function addRecordButton(menuActions: Element | null, beforeOpen?: () => void): void {
-  if (!menuActions || !profile?.saving || !profile.name || document.getElementById("menu-record")) return;
-  const button = make("button", "btn btn-secondary", "My record");
+  if (!menuActions || !recordHome() || document.getElementById("menu-record")) return;
+  const button = make("button", "btn btn-secondary", profile?.saving ? "My record" : "Record");
   button.type = "button";
   button.id = "menu-record";
   button.onclick = () => {

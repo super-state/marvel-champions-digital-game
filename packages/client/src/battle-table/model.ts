@@ -709,7 +709,11 @@ export class BattleModel {
     aimed: Set<string>;
     effectAttack: { enemy: string; activity: string } | null;
     dronesDefeated: Map<string, string>;
+    /** How many of `#events` there were before this move. */
+    events: number;
   }[] = [];
+  /** Every engine event of this game's moves so far, undone moves left out: the saved record reads it (`record/`). */
+  #events: GameEvent[] = [];
 
   /**
    * The cards defeated as Drones that still lie in the discard pile, and their names: a question about that defeat
@@ -762,6 +766,16 @@ export class BattleModel {
     return this.#setup;
   }
 
+  /** The game as the engine has it now (read only: the saved record works its facts out from it, `record/`). */
+  get game(): GameState {
+    return this.#game;
+  }
+
+  /** The engine's events of every move this game, undone moves left out (read only, for the saved record). */
+  get events(): readonly GameEvent[] {
+    return this.#events;
+  }
+
   get canUndo(): boolean {
     return this.#history.length > 0;
   }
@@ -781,6 +795,7 @@ export class BattleModel {
     this.#aimed = previous.aimed;
     this.#effectAttack = previous.effectAttack;
     this.#dronesDefeated = previous.dronesDefeated;
+    this.#events.length = previous.events;
     this.#setGame(previous.game, []);
     return true;
   }
@@ -802,6 +817,7 @@ export class BattleModel {
       modules: options.modules ?? [recommendedModule(this.#matchup.villain)],
     };
     this.#history = [];
+    this.#events = [];
     this.#villainActivity = "";
     this.#aimed = new Set();
     this.#effectAttack = null;
@@ -838,6 +854,7 @@ export class BattleModel {
       aimed: new Set(this.#aimed),
       effectAttack: this.#effectAttack,
       dronesDefeated: new Map(this.#dronesDefeated),
+      events: this.#events.length,
     });
     const events = [...result.events];
     for (;;) {
@@ -1600,6 +1617,7 @@ export class BattleModel {
           });
       }
     }
+    this.#events.push(...events);
     this.#setGame(result.state, drawn);
   }
 
