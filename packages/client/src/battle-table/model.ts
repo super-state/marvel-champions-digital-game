@@ -242,7 +242,29 @@ export interface BattleChoice {
    * 2026-11-25: a playtester was confused when the attack "went straight to the guard one").
    */
   guard?: { blocked: string[]; guards: string[] };
+  /**
+   * Options that are cards in a deck, a discard pile or set aside, which the table doesn't show face up: each one's
+   * face and the pile it is in. The table lays them out as cards to read before choosing (Masters of Mayhem searching
+   * the encounter deck for a Masters of Evil minion; any search of the player's own deck). Absent when none are.
+   */
+  searched?: { id: string; card: BattleCard; from: string }[];
 }
+
+/** What the table calls each pile a question can offer cards from (`BattleChoice.searched`). */
+const PILE_NAMES: Partial<Record<NonNullable<ReturnType<typeof locateCard>>["kind"], string>> = {
+  deck: "Your deck",
+  discard: "Your discard pile",
+  setAside: "Set aside",
+  separateDeck: "Deck",
+  separateDiscard: "Discard pile",
+  encounterDeck: "Encounter deck",
+  encounterDiscard: "Encounter discard pile",
+  encounterSetAside: "Set aside",
+  scenarioDeck: "Deck",
+  scenarioDiscard: "Discard pile",
+  victoryDisplay: "Victory display",
+  removedFromGame: "Out of the game",
+};
 
 export interface BattleBeat {
   text: string;
@@ -1808,6 +1830,23 @@ export class BattleModel {
     this.#setGame(result.state, drawn);
   }
 
+  /**
+   * The cards a question offers from a pile the table doesn't lay out face up (a deck, a discard pile, set aside):
+   * each card's face and which pile it is in, so the player sees what they are choosing (`BattleChoice.searched`).
+   */
+  #searched(options: BattleChoice["options"]): BattleChoice["searched"] {
+    const state = this.#game;
+    const found: NonNullable<BattleChoice["searched"]> = [];
+    for (const { cardId } of options) {
+      if (!cardId || found.some((each) => each.id === cardId)) continue;
+      const zone = locateCard(state, cardId as InstanceId);
+      const from = zone ? PILE_NAMES[zone.kind] : undefined;
+      if (!from) continue;
+      found.push({ id: cardId, card: this.#shownCard(cardId as InstanceId), from });
+    }
+    return found.length ? found : undefined;
+  }
+
   /** A card shown faceup a moment as it moves between hidden places (a set-aside card shuffled into a deck). */
   #shownCard(id: InstanceId): BattleCard {
     const card = cardOf(this.#game, id);
@@ -2261,6 +2300,7 @@ export class BattleModel {
     ]);
     enemyIds.delete(villain.instanceId);
     for (const host of enemyIds) for (const id of getInstance(state, host)?.attachments ?? []) enemyIds.add(id);
+    const searched = choice ? this.#searched(choice.options) : undefined;
     this.#view = {
       beats: this.#beats,
       choiceSource: pending ? (choiceSourceOf(state, pending)?.instanceId ?? null) : null,
@@ -2319,7 +2359,7 @@ export class BattleModel {
         .filter((id) => !enemyIds.has(id))
         .map((id) => this.#card(id)),
       payment,
-      choice,
+      choice: choice && searched ? { ...choice, searched } : choice,
       turn: state.outcome
         ? "finished"
         : state.step.phase === "villain"

@@ -626,3 +626,41 @@ describe("Guard (Adam, 2026-11-25: the attack went straight to the guard minion 
     expect(battle.snapshot().choice?.prompt).not.toBe("Choose an enemy to attack");
   });
 });
+
+describe("Searching a deck (Adam, 2026-11-25: Masters of Mayhem listed names, and the cards couldn't be read)", () => {
+  test("a search's cards come with their faces and the pile each is in", () => {
+    const battle = new BattleModel();
+    battle.reset({ seed: 7, villain: "klaw", arrange: arrangeScene("klawsearch")! });
+    expect(battle.endTurn()).toBe(true);
+    // Answer everything before Masters of Mayhem's search: discard down, pass Spider-Sense, don't defend.
+    for (let i = 0; i < 12 && !battle.snapshot().choice?.searched; i++) {
+      const choice = battle.snapshot().choice;
+      if (!choice) break;
+      if (choice.offers?.length) battle.chooseMany([]);
+      else if (choice.discardFromHand) battle.chooseMany(choice.options.slice(0, choice.min).map((o) => o.id));
+      else battle.choose(choice.options.find((o) => !o.cardId)?.id ?? null);
+    }
+    const choice = battle.snapshot().choice!;
+    expect(choice.searched?.map((found) => found.card.name).sort()).toEqual([
+      "Melter",
+      "Radioactive Man",
+      "Tiger Shark",
+      "Whirlwind",
+    ]);
+    for (const found of choice.searched!) {
+      expect(found.from).toMatch(/^Encounter (deck|discard pile)$/);
+      expect(found.card.art).not.toBe("");
+      expect(choice.options.some((option) => option.cardId === found.id)).toBe(true);
+    }
+    const melter = choice.searched!.find((found) => found.card.name === "Melter")!;
+    expect(battle.choose(choice.options.find((option) => option.cardId === melter.id)!.id)).toBe(true);
+    expect(battle.snapshot().enemyCards.some((card) => card.name === "Melter")).toBe(true);
+  });
+
+  test("a question about cards on the table has no searched cards", () => {
+    const battle = new BattleModel();
+    battle.reset({ seed: 7, arrange: arrangeScene("guard")! });
+    battle.heroAction("basicAttack");
+    expect(battle.snapshot().choice?.searched).toBeUndefined();
+  });
+});
