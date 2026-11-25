@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * Tidying the hand (a friend's ask, 2026-11-25, "like Magic Arena"): drag a hand card along the hand and let go low,

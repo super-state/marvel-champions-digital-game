@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * Choosing a card found in a deck (Adam, 2026-11-25: Masters of Mayhem listed the Masters of Evil minions by name and

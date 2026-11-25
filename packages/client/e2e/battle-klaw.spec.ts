@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * Klaw on the 3D table (table 0.1.0): the campaign shelf's Klaw box deals Klaw, Klaw's main scheme turns

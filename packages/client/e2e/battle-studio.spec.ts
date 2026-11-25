@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./battle-test";
 
 /**
  * The Sound Studio (`battle/studio.html`, dev server only): browse to a folder, give "Hit" a file from it, shape it,

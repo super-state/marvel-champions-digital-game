@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * A card picture whose first requests fail is asked for again (`picture-retry.ts`), on the table's 3D cards and in the

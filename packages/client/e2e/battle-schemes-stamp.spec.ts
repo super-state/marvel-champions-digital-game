@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./battle-test";
 
 /**
  * The villain scheming is called out on its card, like threat placed and an encounter card dealt: in alter-ego form

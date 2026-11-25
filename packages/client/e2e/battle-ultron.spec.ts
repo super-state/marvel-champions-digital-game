@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * Ultron on the 3D table (table 0.2.0): the campaign shelf's Ultron box deals Ultron, a Drone (a player's card put into

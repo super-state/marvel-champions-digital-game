@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * A crowded table late in the game (`?scene=ultronpiles`: six minions in two rows, four cards beside Ultron, a tall

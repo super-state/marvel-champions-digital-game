@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./battle-test";
 
 /**
  * Asked "Defend?", the player weighs how much health the hero and each ally has left, so their health badges stay out

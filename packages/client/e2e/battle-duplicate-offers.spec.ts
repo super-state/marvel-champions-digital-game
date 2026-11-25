@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * Two copies of a reaction card in hand on the 3D battle table (`src/battle-table/offer-queue.ts`): the question is

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./battle-test";
 
 /**
  * The campaign shelf (the room's Campaign place) is the way into a game: from the room's doorway to the boxes, where

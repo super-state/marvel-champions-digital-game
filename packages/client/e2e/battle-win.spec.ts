@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * A driven win for every hero the table deals (`HEROES` in `model.ts`): the dev-only `finish` scene puts Rhino on his
