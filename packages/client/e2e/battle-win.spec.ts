@@ -80,6 +80,15 @@ test.describe("battle table: a driven win for every hero", () => {
         localStorage.removeItem(key);
         localStorage.removeItem("battle-mat");
       }, KEY);
+      // Every achievement toast's words, as each one shows (they come one at a time and go by themselves).
+      await page.addInitScript(() => {
+        const seen: string[] = [];
+        (window as unknown as { __toasts: string[] }).__toasts = seen;
+        new MutationObserver(() => {
+          const text = document.getElementById("achievement-toast")?.textContent?.trim();
+          if (text && seen.at(-1) !== text) seen.push(text);
+        }).observe(document, { subtree: true, childList: true, characterData: true });
+      });
       // Before the win, as a friend sees it: Klaw waits for Rhino.
       const room = page.locator("#shelf");
       const picks = room.locator(".shelf-picks button");
@@ -102,12 +111,17 @@ test.describe("battle table: a driven win for every hero", () => {
       await expect(page.locator("#game-over-stamp")).toHaveText("Defeated");
       await expect(page.locator("#game-over-kicker")).toHaveText(`${hero.name} vs. Rhino`);
       await expect(page.locator("#game-over-record")).toHaveText("You against Rhino on Standard: 1 won, 0 lost.");
-      // Its achievements, Beat Rhino among them.
-      const popup = page.locator("#achievement-popup");
-      await expect(popup).toContainText("Beat Rhino");
-      await expect(popup).toContainText(`Win as ${hero.name}`);
-      await page.keyboard.press("Escape");
-      await expect(popup).toHaveCount(0);
+      // Its achievements, Beat Rhino among them: toasts one at a time (`record/popup.ts`), each read as it shows.
+      await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __toasts?: string[] }).__toasts ?? []), {
+          timeout: 60_000,
+        })
+        .toEqual(
+          expect.arrayContaining([
+            expect.stringContaining("Beat Rhino"),
+            expect.stringContaining(`Win as ${hero.name}`),
+          ]),
+        );
 
       // The game in this browser's record, with its hero, deck and ending.
       const saved = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!).games, KEY);
