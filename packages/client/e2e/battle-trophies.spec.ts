@@ -5,6 +5,9 @@ import { frames, installPad, PAD, setButton } from "./pad-e2e-helpers.js";
  * Trophies & Stats in the room (`src/battle-table/room/places/trophy-cabinet.ts`): the cabinet's achievements read
  * from this browser's record, the record board, and the mats. A record with one win against Rhino (and a loss to Klaw)
  * is laid in this browser's storage first: Beat Rhino is earned and gives the Rhino mat, Beat Klaw is not.
+ *
+ * These run on Adam's own table (the dev server), where everything is open (`access.ts`); the locks are checked the
+ * way he checks them, looking at it as a friend would (`?friend=1`).
  */
 
 const room = (page: Page) => page.locator("#shelf");
@@ -100,7 +103,7 @@ test.describe("battle table: trophies and mats", () => {
   }) => {
     test.setTimeout(240_000);
     await seedRecord(page);
-    await page.goto("/battle/");
+    await page.goto("/battle/?friend=1");
     await openMenu(page);
     const trophiesChoice = room(page).getByRole("button", { name: /^Trophies & Stats/ });
     await expect(trophiesChoice).not.toHaveAttribute("aria-disabled", "true");
@@ -135,9 +138,10 @@ test.describe("battle table: trophies and mats", () => {
     await rhinoMat.click();
     await expect(rhinoMat).toHaveAttribute("aria-pressed", "true");
 
-    // Dealt, the table's mat is Rhino's.
+    // Dealt, the table's mat is Rhino's. (As a friend, Ultron's box is sealed: Klaw hasn't been beaten.)
     await page.keyboard.press("Escape");
     await at(page, "title");
+    await expect(room(page).locator(".shelf-picks button", { hasText: "Ultron (Beat Klaw to unlock)" })).toHaveCount(1);
     await dealRhino(page);
     await expect(page.locator("#board-viewport")).toHaveAttribute("data-mat", "rhino", { timeout: 30_000 });
 
@@ -157,12 +161,53 @@ test.describe("battle table: trophies and mats", () => {
     await expect(page.locator("#board-viewport")).toHaveAttribute("data-mat", "night", { timeout: 30_000 });
   });
 
+  test("Adam's own table: every mat and villain open, the achievements still his real ones; the radio's friend switch", async ({
+    page,
+  }) => {
+    test.setTimeout(150_000);
+    await seedRecord(page);
+    await page.goto("/battle/?room=trophies");
+    await at(page, "trophies");
+    await expect(room(page).getByText("4 of 32 earned")).toBeVisible();
+    await expect(room(page).getByRole("button", { name: "Beat Klaw, not earned yet" })).toHaveCount(1);
+    // Not earned, but open to choose here.
+    const klawMat = room(page).locator('.trophies-mat[data-mat="klaw"]');
+    await expect(klawMat).not.toHaveAttribute("aria-disabled", "true");
+    await expect(klawMat).toContainText("Open on your table");
+    await klawMat.click();
+    await expect(klawMat).toHaveAttribute("aria-pressed", "true");
+    // Every villain's box is open.
+    await page.keyboard.press("Escape");
+    await at(page, "title");
+    await choose(page, /^Campaign/);
+    await at(page, "campaign");
+    await expect(room(page).getByRole("button", { name: "Open Ultron" })).toBeVisible();
+
+    // The radio's switch: seen as a friend, the Klaw mat is locked again and gives way to the default.
+    await page.keyboard.press("Escape");
+    await at(page, "title");
+    await choose(page, /^Settings/);
+    await at(page, "settings");
+    const asFriend = room(page).getByRole("group", { name: "See it as a friend" });
+    await asFriend.getByRole("button", { name: "On" }).click();
+    await at(page, "settings");
+    await expect(
+      room(page).getByRole("group", { name: "See it as a friend" }).getByRole("button", { name: "On" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await at(page, "title");
+    await choose(page, /^Trophies & Stats/);
+    await at(page, "trophies");
+    await expect(room(page).locator('.trophies-mat[data-mat="klaw"]')).toHaveAttribute("aria-disabled", "true");
+    await expect(room(page).locator('.trophies-mat[data-mat="night"]')).toHaveAttribute("aria-pressed", "true");
+  });
+
   test.describe("by controller", () => {
     test("A goes to the cabinet, the D-pad reads the achievements, B comes back", async ({ page }) => {
       test.setTimeout(150_000);
       await seedRecord(page);
       await installPad(page);
-      await page.goto("/battle/");
+      await page.goto("/battle/?friend=1");
       await at(page, "title");
       await nudge(page, PAD.a);
       await expect(page.getByRole("navigation", { name: "Main menu" })).toBeVisible();
