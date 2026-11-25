@@ -314,3 +314,78 @@ export class Player {
 }
 
 export const beat = (p: Player, f: (b: BattleBeat) => boolean) => p.beats.findIndex(f);
+
+// Encounter cards: stacking the encounter deck, the hero's nemesis set, a villain phase played out.
+
+/** Stack the encounter deck from anywhere (deck, discard, the hero's set-aside nemesis set), first = next to be drawn. */
+export const stack =
+  (...codes: string[]): Setup =>
+  (state) => {
+    const key = engine.activeEncounterDeckId(state);
+    const piles = engine.activeEncounterDeck(state);
+    const p = state.players[0]!;
+    const used: Id[] = [];
+    for (const code of codes) {
+      const id = [...piles.deck, ...piles.discard, ...p.setAside, ...state.encounterSetAside].find(
+        (i) => codeOf(state, i) === code && !used.includes(i),
+      );
+      if (!id) throw Error(`no ${code} to stack`);
+      used.push(id);
+    }
+    const strip = (list: readonly Id[]) => list.filter((i) => !used.includes(i));
+    return {
+      ...state,
+      players: [{ ...p, setAside: strip(p.setAside) }],
+      encounterSetAside: strip(state.encounterSetAside),
+      encounterDecks: {
+        ...state.encounterDecks,
+        [key]: { ...piles, deck: [...used, ...strip(piles.deck)], discard: strip(piles.discard) },
+      },
+    };
+  };
+
+/** Put a card of the hero's set-aside nemesis set into play: a side scheme by the villain (with threat), a minion engaged. */
+export const nemesisInPlay =
+  (code: string, threat = 0): Setup =>
+  (state) => {
+    const p = state.players[0]!;
+    const id = p.setAside.find((i) => codeOf(state, i) === code);
+    if (!id) throw Error(`no ${code} set aside`);
+    const scheme = engine.cardOf(state, id)?.type === "side_scheme";
+    return {
+      ...state,
+      players: [
+        { ...p, setAside: p.setAside.filter((i) => i !== id), playArea: scheme ? p.playArea : [...p.playArea, id] },
+      ],
+      villainArea: scheme ? [...state.villainArea, id] : state.villainArea,
+      instances: {
+        ...state.instances,
+        [id]: { ...state.instances[id]!, faceup: true, ...(scheme ? { threat } : { engagedWith: p.playerId }) },
+      },
+    };
+  };
+
+/** Rhino's boost card first (Advance: no boost icons), then the card under test, then inert fillers. */
+export const villainPhaseDeals = (...codes: string[]) => stack("01104", ...codes, "01108", "01101");
+
+/**
+ * End the turn and play out the villain phase, keeping the questions it asks with their options' words. `answer` picks
+ * an option by its words; a question it doesn't pick for (-1) gets the driver's default, and attacks go undefended.
+ */
+export function villainPhase(p: Player, answer: (labels: string[]) => number = () => -1) {
+  const asked: { prompt: string; source?: string | undefined; labels: string[] }[] = [];
+  p.mark();
+  p.end();
+  p.drive({
+    defend: () => "decline",
+    pick: (choice) => {
+      const labels = choice.options.map((o) => o.label);
+      asked.push({ prompt: choice.prompt, source: choice.sourceTitle, labels });
+      if (choice.defense || choice.discardFromHand || choice.mulligan) return undefined;
+      if (choice.ordered) return choice.options.map((o) => o.id);
+      const at = answer(labels);
+      return at >= 0 ? [choice.options[at]!.id] : undefined;
+    },
+  });
+  return asked;
+}
