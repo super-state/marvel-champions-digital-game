@@ -31,6 +31,19 @@ export interface TableSiteEnv {
   readonly ADMIN_KEY?: string | undefined;
   /** The players and their games (players.ts); unset, the table plays and saves nothing. */
   readonly DB?: D1Like | undefined;
+  /**
+   * A fine-grained GitHub token, Issues only, on the game's repo: the site files bug reports with it as they arrive
+   * (file-report.ts). Unset, they wait in the database for `pnpm table:reports`. Adam puts it in himself:
+   * `wrangler pages secret put REPORTS_GITHUB_TOKEN --project-name champions-table`.
+   */
+  readonly REPORTS_GITHUB_TOKEN?: string | undefined;
+  /** GitHub's API address, only for a local test (`wrangler dev --var GITHUB_API:...`). */
+  readonly GITHUB_API?: string | undefined;
+}
+
+/** The Worker's own context: work that carries on after the answer has gone. */
+export interface SiteContext {
+  waitUntil(work: Promise<unknown>): void;
 }
 
 export const INVITE_COOKIE = "mc_table_invite";
@@ -83,7 +96,11 @@ export function redirect(location: string, extra: Record<string, string> = {}): 
 }
 
 /** Answers one request to the test site. */
-export async function handleTableSiteRequest(request: Request, env: TableSiteEnv): Promise<Response> {
+export async function handleTableSiteRequest(
+  request: Request,
+  env: TableSiteEnv,
+  ctx?: SiteContext,
+): Promise<Response> {
   const url = new URL(request.url);
   const key = env.INVITE_KEY ?? "";
 
@@ -132,7 +149,11 @@ export async function handleTableSiteRequest(request: Request, env: TableSiteEnv
   if (!invited && !admin && !player) return locked();
 
   const who = { invited, admin, player };
-  if (url.pathname.startsWith("/api/")) return handleApi(request, env.DB, who);
+  if (url.pathname.startsWith("/api/"))
+    return handleApi(request, env.DB, who, {
+      github: env.REPORTS_GITHUB_TOKEN ? { token: env.REPORTS_GITHUB_TOKEN, api: env.GITHUB_API } : undefined,
+      defer: ctx ? (work) => ctx.waitUntil(work) : undefined,
+    });
   if (url.pathname === "/admin") {
     if (!admin) return locked();
     return handleAdmin(request, env.DB);

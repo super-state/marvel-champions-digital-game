@@ -1,7 +1,8 @@
 /**
  * A player's bug report as a GitHub issue on the game's repo (super-state/marvel-champions-digital-game, public: Adam
  * chose it, 2026-11-25). Used by the dev server (`vite-battle-report.ts`, Adam's own table) and by the filing script
- * for the test site's reports (`scripts/file-table-reports.mjs`), so both file the same way.
+ * for the test site's reports (`scripts/file-table-reports.mjs`), and by the test site itself as a report arrives
+ * (`test-site/file-report.ts`), so all three file the same way.
  *
  * The player's words are untrusted: they go in a fenced block, labelled as theirs, where GitHub shows them as typed
  * (no @mentions pinging anyone, no links, no markup), and later sessions reading the issue see them as a report, not
@@ -57,8 +58,11 @@ const when = (ms: number) =>
     minute: "2-digit",
   });
 
-/** The issue's text. `stateLink` is the gist holding the engine state, when it could be made. */
-export function issueBody(report: ReportRecord, stateLink?: string): string {
+/**
+ * The issue's text. `stateLink` is where the engine state is: a gist (the script, the dev table), or with `behindLogin`
+ * the copy the test site keeps with the report, which only Adam's admin login opens (test-site/file-report.ts).
+ */
+export function issueBody(report: ReportRecord, stateLink?: string, { behindLogin = false } = {}): string {
   const m = report.moment;
   const where = m.version ? `test site v${plain(m.version)}` : "the dev table";
   const game = m.inGame
@@ -90,9 +94,11 @@ export function issueBody(report: ReportRecord, stateLink?: string): string {
     "",
     `**Device** ${device}`,
     "",
-    stateLink
-      ? `**Engine state** at that moment: [${plain(report.id)}.json](${stateLink})`
-      : "**Engine state**: kept with the report (not attached).",
+    !stateLink
+      ? "**Engine state**: kept with the report (not attached)."
+      : behindLogin
+        ? `**Engine state** at that moment: [${plain(report.id)}.json](${stateLink}), kept with the report on the test site (opens with Adam's admin login).`
+        : `**Engine state** at that moment: [${plain(report.id)}.json](${stateLink})`,
   ];
   const log = m.log.length ? fenced(m.log.join("\n"), "text") : "";
   let body = parts.join("\n");
