@@ -104,3 +104,36 @@ test("after Ultron attacks, the top card of the deck can become a Drone", async 
   await expect.poll(() => count(page, "deck-count")).toBe(deck - 1);
   expect(droneLines(await look(page))).toBe(2);
 });
+
+test("a Drone arriving mid-move doesn't count the threat after it twice on the scheme", async ({ page }) => {
+  // A player's report (2026-11-25): on Assault on NORAD a Drone came in, then Ultron schemed, and the main scheme
+  // showed 8/10 until the move ended at the true 5/10. The Drone redrew every label from the finished game, and the
+  // threat still to come was added on top of it.
+  test.setTimeout(180_000);
+  await open(page, "/battle/?scene=ultronassault&seed=7");
+  await page.evaluate(() => {
+    const seen: number[] = [];
+    (window as unknown as { __threatSeen: number[] }).__threatSeen = seen;
+    new MutationObserver(() => {
+      const pill = document.querySelector<HTMLElement>(".scheme-threat[data-target='10']");
+      const n = Number(pill?.dataset.count);
+      if (pill && seen.at(-1) !== n) seen.push(n);
+    }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-count"] });
+  });
+  let text = await play(page, "End Turn");
+  // Emergency would stop Ultron's scheme in a question of its own: discard it so the threat lands in the Drone's move.
+  if ((await moves(page)).includes("Pick Emergency")) text = await play(page, "Pick Emergency");
+  const keep = (await moves(page)).find((m) => m === "Keep hand" || m.startsWith("Discard"));
+  text = await play(page, keep!);
+  expect(text).toContain("Assault on NORAD: Choose one");
+  const before = await page.evaluate(() => (window as unknown as { __threatSeen: number[] }).__threatSeen.length);
+  text = await play(page, "Choose Put the top card of your deck into play as a Drone minion");
+  expect(text).toMatch(/Ultron places \d+ threat on Assault on NORAD/);
+  const real = Number(text.match(/Assault on NORAD \(main scheme, threat (\d+)\//)![1]);
+  const shown = await page.evaluate(
+    (from) => (window as unknown as { __threatSeen: number[] }).__threatSeen.slice(from),
+    before,
+  );
+  expect(shown.at(-1)).toBe(real);
+  expect(Math.max(...shown)).toBe(real);
+});
