@@ -49,6 +49,8 @@ export { decks, freePlay, trophies };
 export { mountFreePlay };
 /** Fills Trophies & Stats (once, after the room has loaded). */
 export { mountTrophies, type TrophySource } from "./places/trophy-cabinet.js";
+/** Fills the bench: the heroes' deck boxes, their decks, and the deck builder (once, after the room has loaded). */
+export { mountBench } from "./places/decks.js";
 
 const places: Record<PlaceId, Place> = {
   title: titlePlace,

@@ -23,6 +23,7 @@ import {
   recommendedModule,
   VILLAINS,
   type BattleCard,
+  type BuiltDeck,
   type DealOptions,
   type HeroId,
   type VillainId,
@@ -30,6 +31,9 @@ import {
 import { answerRemote, createPlayer, type Player, type RemoteChannel } from "./play.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
 import { gameOnTable } from "./record/facts.js";
+import { STARTER, chosenDeck } from "./decks/chosen-deck.js";
+import { dealVerdict } from "./decks/deal-gate.js";
+import { browserDeckStore } from "./decks/deck-store.js";
 import type { PlaceId, RoomGame, RoomSetting } from "./room/index.js";
 import {
   addRecordButton,
@@ -3836,6 +3840,8 @@ function initialHero(): HeroId {
 const heroChoice: HeroId = initialHero();
 /** The hero of the game on the table. */
 let heroDealt: HeroId = heroChoice;
+/** The name of the deck the hero was dealt, when it is one built at the bench (null for their starter deck). */
+let deckDealt: string | null = null;
 
 // ── Which difficulty and modules ──────────────────────────────────────────────────────────────────────────────────
 // Standard with the villain's recommended module, unless the address asks otherwise for that page (`?difficulty=expert`,
@@ -3857,7 +3863,24 @@ let encounterChoice: Pick<DealOptions, "difficulty" | "modules"> = addressEncoun
 // until a campaign box deals one of its own. Kept for this tab (`battle-free-play`), beside `battle-at-table`, so the
 // reload that a code change brings deals it again. An address naming a hero or the encounter wins over it.
 const FREE_PLAY = "battle-free-play";
-/** Free Play's hero, while its game is the one dealt (a campaign deals `heroChoice`). */
+/**
+ * The hero's chosen deck (`decks/chosen-deck.ts`: the bench or Free Play's deck slot), as the deal takes it, when the
+ * table can deal it (`decks/deal-gate.ts`); otherwise the starter deck, and a note saying why when a chosen deck was
+ * held back (deleted, no longer legal, or of an aspect not yet on the table).
+ */
+function chosenBuiltDeck(hero: HeroId): { deck?: BuiltDeck; note?: string } {
+  const id = chosenDeck(hero);
+  if (id === STARTER) return {};
+  const saved = browserDeckStore().get(id);
+  if (!saved) return {};
+  const verdict = dealVerdict(saved);
+  if (verdict.ok) return { deck: verdict.deck };
+  return {
+    note: `${saved.name} couldn't be dealt (${verdict.reason}), so ${heroName(hero)} plays their starter deck.`,
+  };
+}
+
+/** Free Play's hero, while its game is the one dealt (a campaign deals the hero chosen at the bench). */
 let freePlayHero: HeroId | null = null;
 function chooseFreePlay(game: RoomGame | null) {
   freePlayHero = game?.hero ?? null;
@@ -3888,11 +3911,15 @@ function chooseFreePlay(game: RoomGame | null) {
   }
 })();
 
-/** What the game on the table was dealt with beyond its matchup, in words: "Expert · Legions of Hydra" ("" for neither). */
+/**
+ * What the game on the table was dealt with beyond its matchup, in words: a deck built at the bench, then "Expert ·
+ * Legions of Hydra" ("" for none of them).
+ */
 function encounterNote(): string {
   const { difficulty, modules } = model.encounter;
   const recommended = modules.length === 1 && modules[0] === recommendedModule(villainDealt);
   return [
+    ...(deckDealt ? [deckDealt] : []),
     ...(difficulty === "expert" ? ["Expert"] : []),
     ...(recommended ? [] : modules.map((id) => MODULES.find((module) => module.id === id)!.name)),
   ].join(" · ");
@@ -3951,10 +3978,17 @@ function deal() {
   const sceneName = params.get("scene") ?? "";
   const arrange = import.meta.env.DEV ? arrangeScene(sceneName) : undefined;
   const villain = arrange ? sceneVillain(sceneName) : villainChoice;
-  // The scenes are laid out with Spider-Man's cards.
-  const hero = arrange ? "spider-man" : (freePlayHero ?? heroChoice);
-  model.reset(arrange ? { hero, villain, seed, arrange } : { hero, villain, seed, mulligan: true, ...encounterChoice });
+  // The scenes are laid out with Spider-Man's cards. Otherwise the hero chosen now (the bench may have changed it since
+  // the page opened), with their chosen deck when the table can deal it.
+  const hero = arrange ? "spider-man" : (freePlayHero ?? initialHero());
+  const deck = arrange ? null : chosenBuiltDeck(hero);
+  model.reset(
+    arrange
+      ? { hero, villain, seed, arrange }
+      : { hero, villain, seed, mulligan: true, ...encounterChoice, ...(deck?.deck ? { deck: deck.deck } : {}) },
+  );
   heroDealt = hero;
+  deckDealt = deck?.deck?.name ?? null;
   villainDealt = villain;
   // A set-up or a chosen shuffle is a check, not a game: it never goes on a record.
   gameSaved = arrange || seedFromUrl() !== undefined ? null : startGame(villain);
@@ -3964,6 +3998,10 @@ function deal() {
   for (const note of model.setupNotes) {
     story.push(note);
     pushFeed({ text: note, icon: "deck", tone: "villain" });
+  }
+  if (deck?.note) {
+    story.push(deck.note);
+    pushFeed({ text: deck.note, icon: "deck", tone: "hero" });
   }
   paintFeed();
   state = model.snapshot();
@@ -4640,6 +4678,7 @@ async function showShelf(at?: PlaceId) {
       room.mountFreePlay();
       // Trophies & Stats reads the record (this browser's, or the test site's) each time the camera gets there.
       room.mountTrophies({ games: async () => (await recordHome()?.games()) ?? null });
+      room.mountBench();
     }
     shelfDrawn();
     await room.openShelf(

@@ -1,0 +1,123 @@
+/* Heroes & Decks, at the bench (decks.ts): the hero, their decks, New deck. In the room's own card, like Free Play's. */
+.room-contents.bench {
+  position: absolute;
+  left: 28px;
+  top: clamp(104px, 16vh, 140px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(440px, calc(100% - 56px));
+  max-height: calc(100% - 200px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 16px 18px;
+  border-radius: var(--r-lg);
+  background: var(--glass);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-2);
+}
+.bench-row {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: start;
+  gap: 8px;
+  color: var(--text-2);
+  font: 700 14px var(--font-ui);
+}
+.bench-label {
+  padding-top: 9px;
+}
+.bench-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.bench-options .btn-option {
+  width: auto;
+  min-height: 38px;
+  padding: 7px 12px;
+}
+.bench-title {
+  margin: 4px 0 0;
+  color: var(--text);
+  font: 800 15px var(--font-ui);
+}
+.bench-decks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bench-deck {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.bench-deck .bench-pick {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  width: auto;
+  min-height: 46px;
+  padding: 7px 12px;
+  text-align: left;
+  white-space: normal;
+}
+.bench-pick strong {
+  font: 800 14px var(--font-ui);
+}
+.bench-pick small {
+  color: var(--text-2);
+  font: 600 12px / 1.3 var(--font-ui);
+}
+.bench-pick[aria-disabled="true"] {
+  opacity: 0.62;
+  cursor: var(--cursor-arrow, default);
+}
+.bench-pick[aria-disabled="true"] small {
+  color: var(--threat);
+}
+.bench-deck .bench-edit {
+  min-height: 46px;
+  padding: 0 12px;
+}
+.bench-new {
+  align-self: flex-start;
+}
+.bench-line {
+  margin: 2px 0 0;
+  color: var(--text);
+  font: 600 14px / 1.35 var(--font-ui);
+}
+:root[data-input="pad"] .bench .btn:focus {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  .room-contents.bench {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    top: auto;
+    bottom: 68px;
+    max-height: calc(100% - 150px);
+    padding: 12px 14px;
+    gap: 8px;
+  }
+  .bench-row {
+    grid-template-columns: 44px 1fr;
+    font-size: 13px;
+  }
+  .bench-options .btn-option {
+    min-height: 32px;
+    padding: 4px 9px;
+    font-size: 13px;
+  }
+  .bench-deck .bench-pick,
+  .bench-deck .bench-edit {
+    min-height: 40px;
+  }
+}
