@@ -6,6 +6,7 @@
  *   POST /api/me       { name }: become a player (from the shared invite link) or change your name
  *   POST /api/games    a finished game (saved, or updated when the same game ends again)
  *   GET  /api/record   this player's record
+ *   POST /api/reports  a bug report from the menu's "Report a bug": the player's words and the moment (reports.ts)
  *   GET  /admin        every player, their record and link; POST adds a player or switches a link off/on
  */
 import {
@@ -27,6 +28,9 @@ import {
   type GameRow,
   type PlayerRow,
 } from "./players.js";
+
+import { parseReport, REPORT_LIMIT } from "../report/moment.js";
+import { latestReports, saveReport, type ReportRow } from "./reports.js";
 
 export { ADMIN_COOKIE, ADMIN_PREFIX, PLAYER_COOKIE, PLAYER_PREFIX } from "./players.js";
 import { PLAYER_COOKIE, PLAYER_PREFIX } from "./players.js";
@@ -81,11 +85,11 @@ async function me(db: D1Like | undefined, who: Visitor, origin: string): Promise
   };
 }
 
-async function readJson(request: Request): Promise<unknown> {
+async function readJson(request: Request, limit = 20_000): Promise<unknown> {
   // Only a JSON body: a form posted from another site can't send one (and SameSite cookies keep it out anyway).
   if (!(request.headers.get("content-type") ?? "").includes("application/json")) return null;
   const text = await request.text();
-  if (text.length > 20_000) return null;
+  if (text.length > limit) return null;
   try {
     return JSON.parse(text);
   } catch {
@@ -137,6 +141,21 @@ export async function handleApi(request: Request, db: D1Like | undefined, who: V
         });
       }
 
+      case "POST /api/reports": {
+        if (!db) return json({ error: "Reports can't be kept on this site yet." }, 503);
+        // A report with the engine state is far bigger than the other calls' bodies: its own cap.
+        const report = parseReport(await readJson(request, REPORT_LIMIT));
+        if (!report) return json({ error: "Type what happened first (and keep it short of a novel)." }, 400);
+        const sender = who.player
+          ? { key: who.player.id, name: who.player.name }
+          : who.admin
+            ? { key: "admin", name: "Adam (admin)" }
+            : { key: "invited", name: "Someone on the invite link" };
+        const saved = await saveReport(db, sender, report);
+        if (!saved) return json({ error: "That's a lot of reports in an hour: try again a bit later." }, 429);
+        return json({ saved: true, id: saved.id });
+      }
+
       case "GET /api/record": {
         if (!db || !who.player) return json({ error: "Not signed in." }, 403);
         const games = await gamesOf(db, who.player.id);
@@ -180,7 +199,15 @@ const wl = (games: readonly GameRow[]) => {
   return games.length ? `${won}–${games.length - won}` : "–";
 };
 
-export function adminPage(players: readonly PlayerRow[], games: readonly GameRow[], origin: string, added?: string) {
+type ReportLine = Omit<ReportRow, "moment"> & { version: string | null; game: string };
+
+export function adminPage(
+  players: readonly PlayerRow[],
+  games: readonly GameRow[],
+  origin: string,
+  added?: string,
+  reports: readonly ReportLine[] = [],
+) {
   const names = new Map(players.map((p) => [p.id, p.name]));
   const rows = players
     .map((p) => {
@@ -213,6 +240,14 @@ export function adminPage(players: readonly PlayerRow[], games: readonly GameRow
         <td>${g.rounds}</td><td>${Math.max(0, Math.round((g.ended_at - g.started_at) / 60000))} min</td><td>v${esc(g.version)}</td></tr>`,
     )
     .join("");
+  const reportRows = reports
+    .map(
+      (r) => `<tr><td>${esc(when(r.at))}</td><td>${esc(r.from_name)}</td>
+        <td class="words">${esc(r.text.length > 400 ? `${r.text.slice(0, 400)}…` : r.text)}</td>
+        <td>${esc(r.game ?? "")}</td><td>${r.version ? `v${esc(r.version)}` : "–"}</td>
+        <td>${r.issue ? `<a href="${esc(r.issue)}">On GitHub</a>` : `<small>Not filed yet</small>`}</td></tr>`,
+    )
+    .join("");
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Players</title>
 <style>
@@ -234,6 +269,7 @@ export function adminPage(players: readonly PlayerRow[], games: readonly GameRow
   tr.added td { background: #10263d; } tr.off td { opacity: .5; }
   td.win { color: #7bd88f; } td.loss { color: #ff8a80; }
   .empty { color: #8a9bb0; }
+  td.words { white-space: pre-wrap; min-width: 280px; max-width: 520px; }
 </style>
 <main>
   <h1>Players</h1>
@@ -250,6 +286,12 @@ export function adminPage(players: readonly PlayerRow[], games: readonly GameRow
   <div class="scroll"><table>
     <tr><th>When</th><th>Player</th><th>Match</th><th>Result</th><th>How</th><th>Rounds</th><th>Time</th><th>Version</th></tr>
     ${latest || `<tr><td colspan="8" class="empty">No games yet.</td></tr>`}
+  </table></div>
+  <h2>Bug reports</h2>
+  <p class="lead">Sent from the menu's Report a bug, with the moment on the table. <code>pnpm table:reports</code> files new ones on GitHub.</p>
+  <div class="scroll"><table>
+    <tr><th>When</th><th>From</th><th>What they wrote</th><th>Game</th><th>Version</th><th>Issue</th></tr>
+    ${reportRows || `<tr><td colspan="6" class="empty">No reports yet.</td></tr>`}
   </table></div>
 </main>
 <script>
@@ -299,6 +341,6 @@ export async function handleAdmin(request: Request, db: D1Like | undefined): Pro
     if ((action === "off" || action === "on") && id) await setDisabled(db, id, action === "off");
     return Response.redirect(`${url.origin}/admin`, 303);
   }
-  const [players, games] = await Promise.all([allPlayers(db), allGames(db)]);
-  return html(adminPage(players, games, url.origin, url.searchParams.get("added") ?? undefined));
+  const [players, games, reports] = await Promise.all([allPlayers(db), allGames(db), latestReports(db)]);
+  return html(adminPage(players, games, url.origin, url.searchParams.get("added") ?? undefined, reports));
 }

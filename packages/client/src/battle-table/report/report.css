@@ -1,0 +1,58 @@
+/* "Report a bug" inside the table's menu (report.ts): the menu's own choices give way to a box to type in. */
+#menu[data-reporting] {
+  width: min(460px, calc(100% - 32px));
+  text-align: left;
+}
+#menu[data-reporting] > :not(.report-panel) {
+  display: none;
+}
+.menu-foot {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line, rgb(255 255 255 / 8%));
+}
+.menu-report {
+  width: 100%;
+}
+.report-title {
+  margin: 0 0 6px;
+  font: italic 900 24px/1.1 var(--font-ui);
+  letter-spacing: -0.01em;
+}
+.report-help {
+  margin: 0 0 14px;
+  color: var(--text-2);
+  font: 500 14px/1.45 var(--font-ui);
+}
+.report-text {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 130px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgb(4 7 12 / 55%);
+  color: var(--text);
+  font: 500 15px/1.45 var(--font-ui);
+}
+.report-text:focus-visible {
+  outline: 2px solid var(--focus, #ffd23f);
+  outline-offset: 2px;
+}
+.report-status {
+  min-height: 1.45em;
+  margin: 10px 0 0;
+  color: var(--text-2);
+  font: 600 14px/1.45 var(--font-ui);
+}
+.report-status[data-error] {
+  color: #ff8a80;
+}
+.report-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}

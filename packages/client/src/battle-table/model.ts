@@ -639,6 +639,8 @@ export class BattleModel {
   #subject: InstanceId | null = null;
   #targetPick: LegalAction | null = null;
   #view: BattleSnapshot | null = null;
+  /** The shuffle this game was dealt with: with the matchup, it deals the same game again (a bug report keeps it). */
+  #seed = PRACTICE_SEED;
 
   #beats: BattleBeat[] = [];
   #villainActivity = "";
@@ -733,7 +735,18 @@ export class BattleModel {
     return true;
   }
 
+  /** The shuffle the game on the table was dealt with. */
+  get seed(): number {
+    return this.#seed;
+  }
+
+  /** The engine's own state of the game this moment, for a bug report: plain data, never changed in place. */
+  get engineState(): GameState {
+    return this.#game;
+  }
+
   reset(options: DealOptions = {}): void {
+    this.#seed = options.seed ?? PRACTICE_SEED;
     this.#history = [];
     this.#villainActivity = "";
     this.#aimed = new Set();
