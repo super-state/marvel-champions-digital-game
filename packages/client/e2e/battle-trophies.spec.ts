@@ -137,6 +137,8 @@ test.describe("battle table: trophies and mats", () => {
     const rhinoMat = room(page).locator('.trophies-mat[data-mat="rhino"]');
     await rhinoMat.click();
     await expect(rhinoMat).toHaveAttribute("aria-pressed", "true");
+    // It lies on the room's table, the one the next game is dealt on.
+    await expect(room(page)).toHaveAttribute("data-table-mat", "rhino");
 
     // Dealt, the table's mat is Rhino's. (As a friend, Ultron's box is sealed: Klaw hasn't been beaten.)
     await page.keyboard.press("Escape");
