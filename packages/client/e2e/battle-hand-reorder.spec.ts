@@ -98,5 +98,26 @@ for (const [size, viewport] of [
     await page.mouse.up();
     await expect.poll(async () => (await settledHand(page)).map((card) => card.id)).toEqual(expected);
     expect((await moves(page)).sort()).toEqual([...movesBefore].sort());
+
+    // Dragged up onto the table instead, a playable card is still played: the table asks how to pay for it.
+    const playable = await page.evaluate(
+      () =>
+        [...document.querySelectorAll<HTMLElement>("#anchors .anchor.in-hand")].find((label) =>
+          (label.getAttribute("aria-label") ?? "").startsWith("Play "),
+        )?.dataset.card,
+    );
+    expect(playable).toBeTruthy();
+    const card = (await settledHand(page)).find((item) => item.id === playable)!;
+    await page.mouse.move(card.x, y);
+    await page.mouse.down();
+    for (let step = 1; step <= 12; step++)
+      await page.mouse.move(
+        card.x + ((viewport.width / 2 - card.x) * step) / 12,
+        y + ((viewport.height * 0.3 - y) * step) / 12,
+      );
+    await page.mouse.up();
+    await expect
+      .poll(async () => (await moves(page)).some((move) => move.startsWith("Pay with")), { timeout: 15_000 })
+      .toBe(true);
   });
 }

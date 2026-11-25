@@ -8,7 +8,7 @@ import { revealAside, type ScreenBox } from "./dock-spot.js";
 import { TokenKit, placeTokens } from "./tokens3d.js";
 import { currentMat, MAT_CHANGED, matLook, type MatId, type MatLook } from "./mats.js";
 import { tuckPath } from "./tuck-path.js";
-import { arrangeHand, moveInHand, slotAt, type HandSlots } from "./hand-order.js";
+import { arrangeHand, moveInHand, rememberOrder, slotAt, type HandSlots } from "./hand-order.js";
 import { type CardRect, type FlightPose, type FlightRoute, flightPose, routeFlight } from "./flight-route.js";
 
 export interface TableCard {
@@ -820,7 +820,7 @@ export class BattleTable {
   readonly #flights = new Map<string, Flight>();
   #discardDeal: { ids: string[]; spent: Set<string>; started: number; landed: number; done(): void } | null = null;
   #press: { id: string; pointer: number; x: number; y: number; dragging: boolean } | null = null;
-  /** The player's own order for the hand (`hand-order.ts`), as the hand last stood. */
+  /** The player's own order for the hand (`hand-order.ts`), cards out of the hand for now included. */
   #handOrder: string[] = [];
   /** Where the hand's slots stood at the last layout, for finding the slot under a dragged card. */
   #handSlots: HandSlots | null = null;
@@ -939,7 +939,10 @@ export class BattleTable {
   setCards(state: TableCards): void {
     // The hand is shown in the player's own order, if they have dragged it into one.
     state = { ...state, hand: arrangeHand(state.hand, this.#handOrder) };
-    this.#handOrder = state.hand.map((card) => card.id);
+    this.#handOrder = rememberOrder(
+      this.#handOrder,
+      state.hand.map((card) => card.id),
+    );
     const previous = this.#state?.staged?.id;
     if (this.#state?.discardOpen !== state.discardOpen) this.#hovered = null;
     const previousHand = this.#state?.hand;
@@ -1684,6 +1687,7 @@ export class BattleTable {
     this.#powerWaiting = this.#revealHeld = false;
     this.#actionShadow.removeFromParent();
     this.#hovered = this.#zoom = this.#press = this.#discardDeal = this.#dropSlot = null;
+    this.#handOrder = [];
     this.#windup = this.#strike = this.#interrupt = this.#wave = this.#flicker = this.#deflection = null;
     for (const id of [...this.#pieces.keys()]) this.#dropPiece(id);
     for (const vapour of this.#vapours.splice(0)) this.#releaseVapour(vapour);
@@ -4798,7 +4802,10 @@ export class BattleTable {
         state.hand,
         shown.map((card) => card.id),
       );
-      this.#handOrder = hand.map((card) => card.id);
+      this.#handOrder = rememberOrder(
+        this.#handOrder.filter((id) => id !== press.id),
+        hand.map((card) => card.id),
+      );
       this.#state = { ...state, hand };
     }
     this.#abort(event);
