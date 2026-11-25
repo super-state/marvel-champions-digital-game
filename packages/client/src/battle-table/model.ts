@@ -2495,9 +2495,10 @@ export class BattleModel {
             SCHEME_ICON_TEXT[icon] ? [SCHEME_ICON_TEXT[icon]] : [],
           )
         : [];
-    // Traits it has gained for now (Rocket Boots' Aerial): what cards that ask for a trait read.
+    // Traits the hero has gained for now (Rocket Boots' Aerial): what cards that ask for a trait read. The hero only: a
+    // villain's traits are on its stages, not its card, so every one of them would read as gained.
     const printedTraits = ((face as { traits?: readonly unknown[] } | undefined)?.traits ?? []).map(String);
-    const gained = traitsOf(state, id as InstanceId, CORE_DEPS)
+    const gained = (id === identity.instanceId ? traitsOf(state, id as InstanceId, CORE_DEPS) : [])
       .map(String)
       .filter((trait) => !printedTraits.includes(trait))
       .map((trait) => `Now ${trait.charAt(0) + trait.slice(1).toLowerCase()}`);
