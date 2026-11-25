@@ -426,7 +426,8 @@ function paintDockCards(list: readonly DockCard[]) {
       button = make("button", "dock-card");
       button.type = "button";
       button.dataset.option = card.id;
-      button.dataset.card = card.cardId;
+      // Not `data-card`: that names a card on the table, which the controller steers to by its place there.
+      button.dataset.found = card.cardId;
       const picture = make("img", "");
       picture.alt = "";
       picture.draggable = false;
@@ -435,7 +436,10 @@ function paintDockCards(list: readonly DockCard[]) {
         if (event.pointerType !== "touch") hoverCard(card.cardId);
       };
       button.onpointerleave = () => hoverCard(null);
-      button.onfocus = () => hoverCard(card.cardId);
+      // The keyboard or a controller arriving on a card reads it; the bar focusing its first card for a mouse does not.
+      button.onfocus = () => {
+        if (padActive() || button!.matches(":focus-visible")) hoverCard(card.cardId);
+      };
       button.onblur = () => hoverCard(null);
     }
     button.onclick = (event) => {
@@ -561,7 +565,11 @@ function paintDock(view: DockView): boolean {
   // A new question takes the keyboard focus so it is read out and answerable from the keyboard.
   const pressing = [dock, turnCorner, railTurn, undoCorner].some((home) => home.contains(document.activeElement));
   if (asked && !presenting && !pressing) {
-    const first = view.options?.length ? dockOptions.querySelector<HTMLElement>("button") : null;
+    const first = view.options?.length
+      ? dockOptions.querySelector<HTMLElement>("button")
+      : view.cards?.length
+        ? dockCards.querySelector<HTMLElement>("button")
+        : null;
     (first ?? dockTitle).focus({ preventScroll: true });
   }
   placeDock();
@@ -4740,7 +4748,7 @@ function previewSpot(id: string) {
  * every screen size, since the card panel may be folded away or show another card.
  */
 function searchedSpot(card: BattleCard) {
-  const button = dockCards.querySelector<HTMLElement>(`[data-card="${CSS.escape(card.id)}"]`);
+  const button = dockCards.querySelector<HTMLElement>(`[data-found="${CSS.escape(card.id)}"]`);
   if (!card.art || !button || dockCards.hidden) return null;
   const field = playfield.getBoundingClientRect();
   const box = button.getBoundingClientRect();
