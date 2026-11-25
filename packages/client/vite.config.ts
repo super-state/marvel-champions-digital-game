@@ -4,6 +4,7 @@ import { bundleMode, cardArtPlugin, cardLanguageOf, carriedLanguagesOf, servedLa
 import { marvelcdbImportPlugin } from "./vite-marvelcdb-import.js";
 import { releaseHistoryPlugin } from "./vite-release-history.js";
 import { battlePlayPlugin } from "./vite-battle-play.js";
+import { battleReportPlugin } from "./vite-battle-report.js";
 import { soundStudioPlugin } from "./vite-sound-studio.js";
 
 /**
@@ -50,7 +51,14 @@ export default defineConfig(({ command }) => ({
       ).join(","),
     ),
   },
-  plugins: [cardArtPlugin(), marvelcdbImportPlugin(), releaseHistoryPlugin(), soundStudioPlugin(), battlePlayPlugin()],
+  plugins: [
+    cardArtPlugin(),
+    marvelcdbImportPlugin(),
+    releaseHistoryPlugin(),
+    soundStudioPlugin(),
+    battlePlayPlugin(),
+    battleReportPlugin(),
+  ],
   worker: { format: "es" },
   build: {
     target: "es2022",

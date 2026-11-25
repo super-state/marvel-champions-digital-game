@@ -48,6 +48,8 @@ import {
   type GameHandle,
 } from "./test-site/player.js";
 import { spreadPlates, type Obstacle, type Plate, type PlateShift } from "./plate-spread.js";
+import { installReport } from "./report/report.js";
+import { momentOf } from "./report/capture.js";
 import { eventLook, offerDoes, spotOf, waitsOnDock, type GlowTone, type Spot } from "./spotlight.js";
 import {
   BattleTable,
@@ -4133,6 +4135,31 @@ menuButton.onclick = () => {
   if (!gameMenu.open) gameMenu.showModal();
 };
 element<HTMLButtonElement>("menu-resume").onclick = () => gameMenu.close();
+// Report a bug, in the menu: the player's words and the moment on the table (report/).
+installReport({
+  menu: gameMenu,
+  capture: () =>
+    momentOf(
+      {
+        snapshot: model.snapshot(),
+        state: model.engineState,
+        inGame: !shelfUp,
+        hero: heroName(heroDealt),
+        villain: villainName(villainDealt),
+        difficulty: model.encounter.difficulty,
+        modules: model.encounter.modules.map((id) => MODULES.find((each) => each.id === id)?.name ?? id),
+        seed: model.seed,
+        story,
+        asking: [dockTitle.textContent, instruction.textContent]
+          .map((text) => text?.trim())
+          .filter(Boolean)
+          .join(" · "),
+        version: import.meta.env.VITE_TABLE_VERSION ?? null,
+      },
+      window,
+      document.documentElement.dataset.input ?? "mouse",
+    ),
+});
 // Which side the card reader and log sit on, remembered on this device.
 function setSidebarSide(side: "left" | "right") {
   arena.setAttribute("data-rail", side);
