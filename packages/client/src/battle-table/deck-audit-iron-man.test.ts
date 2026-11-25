@@ -340,3 +340,8 @@ test("01174 Electromagnetic Backlash: the five cards are named with the card, th
   const discard = p.beats.find((b) => b.milled?.length === 5);
   expect(discard?.text).toMatch(/^Electromagnetic Backlash: discard the top 5 cards of your deck \(/);
 });
+
+test("only the hero's card lists traits gained for now: a villain's own traits are not 'gained'", () => {
+  const p = scenario();
+  expect(p.battle.cardFacts(p.snap.villain.id)).not.toMatch(/\bNow /);
+});

@@ -2,8 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 /**
  * The record on a table with no test site behind it (Adam's own): a finished game is kept in this browser's storage,
- * with its facts; a game that earns an achievement says so in a pop-up (only what that game earned, never one earned
- * before); a key puts the pop-up away without closing the game-over panel; and the menu's Record lists it all.
+ * with its facts; a game that earns an achievement says so in a toast over everything (only what that game earned,
+ * never one earned before), which goes by itself and leaves the game-over panel open; and the menu's Record lists it all.
  *
  * Nine losses are in the record before the game, so losing this one is the tenth ("Lose 10 games"). An unseeded deal:
  * a seeded one is never saved.
@@ -67,11 +67,15 @@ test("a finished game goes into this browser's record, and the tenth loss earns 
     .toBe(true);
 
   await loseTheGame(page);
-  const popup = page.locator("#achievement-popup");
-  await expect(popup).toBeVisible();
-  await expect(popup).toContainText("Achievement unlocked");
-  await expect(popup).toContainText("Keep at it");
-  await expect(popup).not.toContainText("Beat Klaw");
+  // The toast: over everything, one at a time, and only what this game earned.
+  const toast = page.locator("#achievement-toast .achievement-toast");
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText("Achievement unlocked");
+  await expect(toast).toContainText("Keep at it");
+  await expect(toast).not.toContainText("Beat Klaw");
+  // In the top layer, above the modal game-over panel, and it takes no clicks: the panel's buttons still work under it.
+  expect(await page.locator("#achievement-toast").evaluate((el) => el.matches(":popover-open"))).toBe(true);
+  await expect(page.locator("dialog#game-over")).toHaveAttribute("open", "");
 
   const saved = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!).games, KEY);
   expect(saved).toHaveLength(11);
@@ -83,9 +87,8 @@ test("a finished game goes into this browser's record, and the tenth loss earns 
     facts: { v: 1, difficulty: "standard", modules: ["bomb_scare"], heroId: "01001a", deckSize: 40, undo: false },
   });
 
-  // A key puts it away, and only it: the game-over panel stays.
-  await page.keyboard.press("Escape");
-  await expect(popup).toHaveCount(0);
+  // It goes by itself, and the game-over panel stays.
+  await expect(toast).toHaveCount(0, { timeout: 15_000 });
   await expect(page.locator("dialog#game-over")).toHaveAttribute("open", "");
 
   // The menu's Record lists the games and the achievements.
