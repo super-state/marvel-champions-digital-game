@@ -1563,9 +1563,13 @@ test("Guard (Hydra Mercenary) + 01005 Swinging Web Kick: the attack event can on
   p.battle.pick(p.card("Swinging Web Kick").id);
   p.spend("Strength", "Haymaker");
   p.run(() => p.battle.pay());
-  // one legal target: no prompt, the guard takes the 8 (HP 3) and dies
-  expect(p.snap.choice?.options.map((o) => o.cardId) ?? [guard.id]).toEqual([guard.id]);
-  if (p.snap.choice) p.choose({ card: guard.id });
+  // One legal target, still asked, saying why Rhino isn't one (Adam, 2026-11-25).
+  expect(p.snap.choice?.prompt).toBe("Choose an enemy to attack");
+  expect(p.snap.choice?.options.map((o) => o.cardId)).toEqual([guard.id]);
+  expect(p.snap.choice?.guard).toEqual({ blocked: [p.snap.villain.id], guards: [guard.id] });
+  expect(p.snap.choice?.explanation).toBe("Hydra Mercenary has Guard: Rhino can't be attacked until it is defeated.");
+  // The guard takes the 8 (HP 3) and dies.
+  p.choose({ card: guard.id });
   expect(p.snap.villainHp).toBe(rhinoHp);
   expect(p.has("Hydra Mercenary", "enemyCards")).toBe(false);
 });
@@ -1576,6 +1580,10 @@ test("Guard (Hydra Mercenary): the hero's basic attack is forced onto the guard"
   const guard = p.card("Hydra Mercenary", "enemyCards");
   const rhinoHp = p.snap.villainHp;
   expect(p.run(() => p.battle.heroAction("basicAttack"))).toBe(true);
+  // Asked anyway, with the guard as the only answer, so the table can say why Rhino is out of reach (Adam, 2026-11-25).
+  expect(p.snap.choice?.options.map((o) => o.cardId)).toEqual([guard.id]);
+  expect(p.snap.choice?.guard?.guards).toEqual([guard.id]);
+  p.choose({ card: guard.id });
   expect(p.snap.choice).toBeNull();
   expect(p.snap.villainHp).toBe(rhinoHp);
   expect(p.card("Hydra Mercenary", "enemyCards").markers).toContainEqual({ name: "damage", count: 2 });
