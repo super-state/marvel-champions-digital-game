@@ -27,7 +27,7 @@ function momentOfModel(model: BattleModel, story: string[] = ["Spider-Man plays 
       inGame: true,
       hero: "Spider-Man",
       villain: "Rhino",
-      difficulty: model.encounter.difficulty,
+      difficulty: "standard",
       modules: ["Bomb Scare"],
       seed: model.seed,
       story,

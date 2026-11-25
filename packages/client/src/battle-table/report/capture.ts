@@ -53,7 +53,8 @@ export function momentOf(reading: TableReading, page: PageFacts, input: string):
     seed: reading.seed,
     round: s.round,
     turn: s.turn,
-    setup: s.setup,
+    // 0.2.x has no setup flag: the only setup step a player sees is the opening-hand mulligan.
+    setup: s.choice?.mulligan ?? false,
     outcome: s.outcome ? `${s.outcome.result}: ${s.outcome.reason}` : null,
     heroHp: s.heroHp,
     villainHp: s.villainHp,
