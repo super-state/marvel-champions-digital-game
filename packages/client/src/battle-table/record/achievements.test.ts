@@ -194,3 +194,23 @@ describe("the stats", () => {
     expect(room.stats.total.won).toBe(1);
   });
 });
+
+describe("each achievement's symbol", () => {
+  test("names a card the Core Set has, or an icon the table draws", async () => {
+    const { CORE_CARDS } = await import("@mc/content");
+    // The table's icons (icons.ts) these use; its set is not exported, so the names are checked against its source.
+    const source = (await import("node:fs")).readFileSync(new URL("../icons.ts", import.meta.url), "utf8");
+    const ICON_NAMES = [...source.matchAll(/^  ([a-z-]+): \[/gm)].map((m) => m[1]);
+    for (const a of achievementsOf([])) {
+      if (a.symbol.cardId)
+        expect(
+          CORE_CARDS.some((c) => c.id === a.symbol.cardId),
+          a.id,
+        ).toBe(true);
+      expect(ICON_NAMES, a.id).toContain(a.symbol.icon);
+    }
+    // The villain and hero ones show that villain's and hero's own card.
+    expect(achievementsOf([]).find((a) => a.id === "beat-rhino")!.symbol.cardId).toBe("01094");
+    expect(achievementsOf([]).find((a) => a.id === "win-as-spider-man")!.symbol.cardId).toBe("01001a");
+  });
+});

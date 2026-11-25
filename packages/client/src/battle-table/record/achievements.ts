@@ -31,6 +31,27 @@ export interface Achievement {
   readonly earnedAt: number | null;
   /** What earning it gives (`mat:rhino`): an id only for now. */
   readonly reward: string;
+  /** What it shows: the card it is about, or an emblem. */
+  readonly symbol: AchievementSymbol;
+}
+
+/**
+ * The picture of an achievement: the card it is about (the villain beaten, the hero won with, a card of the module),
+ * else an emblem drawn from the table's icons (`icons.ts` names), on a colour that says what kind it is.
+ */
+export interface AchievementSymbol {
+  readonly cardId: string | null;
+  readonly icon: string;
+  readonly tone:
+    | "gold"
+    | "hero"
+    | "villain"
+    | "expert"
+    | "trying"
+    | "aggression"
+    | "justice"
+    | "leadership"
+    | "protection";
 }
 
 export interface Tally {
@@ -79,32 +100,49 @@ export interface TrophyRoom {
 
 const cardName = (id: string) => CORE_CARDS.find((card) => card.id === id)?.name ?? id;
 
-export const VILLAINS: readonly { readonly id: string; readonly name: string; readonly module: string }[] =
-  CORE_SCENARIOS.map((s) => ({
-    id: s.id as string,
-    name: cardName(s.villainCardId),
-    module: (s.recommendedModularSetIds[0] ?? "") as string,
-  }));
+export const VILLAINS: readonly {
+  readonly id: string;
+  readonly name: string;
+  readonly module: string;
+  readonly cardId: string;
+}[] = CORE_SCENARIOS.map((s) => ({
+  id: s.id as string,
+  name: cardName(s.villainCardId),
+  module: (s.recommendedModularSetIds[0] ?? "") as string,
+  cardId: s.villainCardId as string,
+}));
 
 /** The Core Set's five heroes, once each (Captain Marvel has two starter decks). */
 export const HEROES: readonly { readonly id: string; readonly name: string }[] = [
   ...new Set(CORE_STARTER_DECKS.map((d) => d.identityCardId as string)),
 ].map((id) => ({ id, name: cardName(id) }));
 
-export const ASPECTS: readonly { readonly id: string; readonly name: string }[] = [
-  { id: "aggression", name: "Aggression" },
-  { id: "justice", name: "Justice" },
-  { id: "leadership", name: "Leadership" },
-  { id: "protection", name: "Protection" },
+export const ASPECTS: readonly {
+  readonly id: "aggression" | "justice" | "leadership" | "protection";
+  readonly name: string;
+  readonly icon: string;
+}[] = [
+  { id: "aggression", name: "Aggression", icon: "attack" },
+  { id: "justice", name: "Justice", icon: "thwart" },
+  { id: "leadership", name: "Leadership", icon: "hero" },
+  { id: "protection", name: "Protection", icon: "tough" },
 ];
 
-export const MODULES: readonly { readonly id: string; readonly name: string }[] = [
+/** A card that stands for an encounter set: its first minion, else its first card. */
+const cardOfSet = (set: string) => {
+  const cards = CORE_CARDS.filter(
+    (card) => "encounterSetIds" in card && (card.encounterSetIds as readonly string[]).includes(set),
+  );
+  return ((cards.find((card) => card.type === "minion") ?? cards[0])?.id ?? null) as string | null;
+};
+
+export const MODULES: readonly { readonly id: string; readonly name: string; readonly cardId: string | null }[] = [
   { id: "bomb_scare", name: "Bomb Scare" },
   { id: "masters_of_evil", name: "Masters of Evil" },
   { id: "under_attack", name: "Under Attack" },
   { id: "legions_of_hydra", name: "Legions of Hydra" },
   { id: "the_doomsday_chair", name: "The Doomsday Chair" },
-];
+].map((m) => ({ ...m, cardId: cardOfSet(m.id) }));
 
 // ── What a game is known to have been ────────────────────────────────────────────────────────────────────────────
 
@@ -174,6 +212,7 @@ type Rule =
   | { readonly kind: "cover"; readonly key: (g: Known) => string | null; readonly keys: readonly string[] };
 
 interface Definition {
+  readonly symbol: AchievementSymbol;
   readonly id: string;
   readonly family: Family;
   readonly name: string;
@@ -194,6 +233,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: `Beat ${v.name}`,
     how: `Win a game against ${v.name}.`,
     reward: `mat:${v.id}`,
+    symbol: { cardId: v.cardId, icon: "villain", tone: "villain" },
     rule: one((g) => g.won && g.game.villain === v.id),
   })),
   {
@@ -204,6 +244,7 @@ export const DEFINITIONS: readonly Definition[] = [
       .join(", ")
       .replace(/, ([^,]*)$/, " and $1")}.`,
     reward: "mat:all-villains",
+    symbol: { cardId: null, icon: "villain", tone: "villain" },
     rule: { kind: "cover", key: (g) => (g.won ? g.game.villain : null), keys: VILLAINS.map((v) => v.id) },
   },
   ...VILLAINS.map((v): Definition => ({
@@ -212,6 +253,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: `Beat ${v.name} on Expert`,
     how: `Win a game against ${v.name} on Expert.`,
     reward: `mat:${v.id}-expert`,
+    symbol: { cardId: v.cardId, icon: "villain", tone: "expert" },
     rule: one((g) => g.won && g.game.villain === v.id && g.difficulty === "expert"),
   })),
   {
@@ -220,6 +262,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: "Beat all three on Expert",
     how: "Beat every villain on Expert.",
     reward: "mat:all-villains-expert",
+    symbol: { cardId: null, icon: "villain", tone: "expert" },
     rule: {
       kind: "cover",
       key: (g) => (g.won && g.difficulty === "expert" ? g.game.villain : null),
@@ -233,6 +276,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: `Win as ${h.name}`,
     how: `Win a game as ${h.name}.`,
     reward: `mat:${h.name.toLowerCase().replace(/[^a-z]+/g, "-")}`,
+    symbol: { cardId: h.id, icon: "hero", tone: "hero" },
     rule: one((g) => g.won && g.heroId === h.id),
   })),
   ...ASPECTS.map((a): Definition => ({
@@ -241,6 +285,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: `Win with ${a.name}`,
     how: `Win a game with ${/^[AEIOU]/.test(a.name) ? "an" : "a"} ${a.name} deck.`,
     reward: `mat:aspect-${a.id}`,
+    symbol: { cardId: null, icon: a.icon, tone: a.id },
     rule: one((g) => g.won && g.aspects.includes(a.id)),
   })),
   {
@@ -249,6 +294,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: "Every hero against every villain",
     how: `Win with each of the ${HEROES.length} heroes against each of the ${VILLAINS.length} villains.`,
     reward: "mat:every-hero",
+    symbol: { cardId: null, icon: "hero", tone: "gold" },
     rule: {
       kind: "cover",
       key: (g) => (g.won && g.heroId ? `${g.heroId}/${g.game.villain}` : null),
@@ -262,6 +308,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: `Win with ${m.name}`,
     how: `Win a game with the ${m.name} module in the encounter deck.`,
     reward: `decor:${slug(m.id)}`,
+    symbol: { cardId: m.cardId, icon: "scheme", tone: "villain" },
     rule: one((g) => g.won && g.modules.includes(m.id)),
   })),
   // Decks
@@ -271,6 +318,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: "Win with your own deck",
     how: "Win a game with a deck you built.",
     reward: "deckbox:built",
+    symbol: { cardId: null, icon: "deck", tone: "hero" },
     rule: one((g) => g.won && g.built === true),
   },
   {
@@ -279,6 +327,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: "Win with 50 cards",
     how: "Win a game with a 50-card deck.",
     reward: "deckbox:fifty",
+    symbol: { cardId: null, icon: "draw", tone: "hero" },
     rule: one((g) => g.won && g.deckSize === 50),
   },
   // Feats
@@ -288,6 +337,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: "Hanging on",
     how: "Win with your hero on 1 hit point.",
     reward: "tokens:last-stand",
+    symbol: { cardId: null, icon: "heart", tone: "gold" },
     rule: one((g) => g.won && g.heroHp === 1),
   },
   {
@@ -296,6 +346,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: "Quick work",
     how: "Win in 5 rounds or fewer.",
     reward: "tokens:quick",
+    symbol: { cardId: null, icon: "energy", tone: "gold" },
     rule: one((g) => g.won && g.game.rounds <= 5),
   },
   {
@@ -304,6 +355,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: "On your own",
     how: "Win without playing an ally.",
     reward: "tokens:solo",
+    symbol: { cardId: null, icon: "hero", tone: "gold" },
     rule: one((g) => g.won && g.alliesPlayed === 0),
   },
   {
@@ -312,6 +364,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: "No take-backs",
     how: "Win without using Undo.",
     reward: "tokens:no-undo",
+    symbol: { cardId: null, icon: "check", tone: "gold" },
     rule: one((g) => g.won && g.undo === false),
   },
   // For trying
@@ -321,6 +374,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: "Keep at it",
     how: "Lose 10 games.",
     reward: "silly:trophy",
+    symbol: { cardId: null, icon: "defeated", tone: "trying" },
     rule: { kind: "count", test: (g) => !g.won, need: 10 },
   },
   {
@@ -329,6 +383,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: "That was quick",
     how: "Lose in round 1.",
     reward: "silly:sign",
+    symbol: { cardId: null, icon: "undo", tone: "trying" },
     rule: one((g) => !g.won && g.game.rounds <= 1),
   },
   {
@@ -337,6 +392,7 @@ export const DEFINITIONS: readonly Definition[] = [
     name: "Out-schemed",
     how: "Lose to the main scheme 5 times.",
     reward: "silly:clock",
+    symbol: { cardId: null, icon: "threat", tone: "trying" },
     rule: { kind: "count", test: (g) => !g.won && g.game.reason === "mainSchemeCompleted", need: 5 },
   },
 ];
@@ -375,6 +431,7 @@ function judge(def: Definition, games: readonly Known[]): Achievement {
     earned: earnedAt !== null,
     earnedAt,
     reward: def.reward,
+    symbol: def.symbol,
   };
 }
 
