@@ -536,6 +536,18 @@ test("01103 Shocker: Peter Parker in alter-ego form is not a hero, so he takes n
   expect(run.beats.some((b) => b.hit?.target === heroId(battle))).toBe(false);
 });
 
+test("01103 Shocker dealt after another card's When Revealed is dealt, not brought in by it", () => {
+  // Explosion surges with Bomb Scare not in play and the deal brings Shocker; then Shocker's own When Revealed resolves
+  // before the next card. Neither later card was revealed by an ability, so neither banner says "<card> brings in"
+  // (seen in a game: "Shocker brings in Stampede", when Stampede was Breakin' & Takin's hazard card).
+  const battle = scenario({ top: ["01105", "01111", "01103", "01101"] });
+  toHero(battle);
+  const run = endTurn(battle);
+  const shocker = at(run, "Shocker revealed", (b) => b.reveal?.name === "Shocker");
+  expect(run.beats[shocker]!.reveal!.broughtBy).toBeUndefined();
+  expect(run.beats.filter((b) => b.reveal?.broughtBy).map((b) => b.reveal!.name)).toEqual([]);
+});
+
 // ===============================================================================================================
 // 01104 Hard to Keep Down, 01105 "I'm Tough!"
 // ===============================================================================================================
