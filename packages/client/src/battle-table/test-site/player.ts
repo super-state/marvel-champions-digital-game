@@ -18,6 +18,7 @@
 import "./player.css";
 import { browserHome, siteHome, type GameReport, type RecordHome } from "../record/home.js";
 import type { GameFacts } from "../record/game.js";
+import { packGame, type SavedGame } from "../record/replay-pack.js";
 import { newlyEarned } from "../record/achievements.js";
 import { recordRows } from "../record/board.js";
 import { announceAchievements } from "../record/popup.js";
@@ -271,6 +272,8 @@ export async function finishGame(
     hero: string;
     deck: string[];
     facts: GameFacts | null;
+    /** The whole game (deal, moves and log), kept on the test site to play it again; null for a dev set-up. */
+    whole: SavedGame | null;
   },
 ): Promise<void> {
   const home = recordHome();
@@ -279,12 +282,15 @@ export async function finishGame(
   const ending = JSON.stringify([outcome.result, outcome.reason, outcome.rounds, outcome.facts]);
   if (game.sent === ending) return;
   game.sent = ending;
+  const { whole, ...summary } = outcome;
   const report: GameReport = {
     id: game.id,
     villain: game.villain,
     startedAt: game.startedAt,
     version: VERSION ?? "dev",
-    ...outcome,
+    ...summary,
+    // Packed only for the site (this browser's record keeps the summary): a game too big to pack saves without it.
+    ...(home.where === "site" && whole ? { replay: await packGame(whole) } : {}),
   };
   const saved = await home.save(report);
   const line = document.getElementById("game-over-record") ?? make("p", "outcome-record");

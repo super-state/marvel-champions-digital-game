@@ -416,7 +416,12 @@ export interface BattleBeat {
   round?: number;
   gameEnded?: true;
   activate?: { card: string; hero: string };
-  threat?: { scheme: string; delta: number };
+  /**
+   * Threat placed on or removed from a scheme: `delta` is the change, `to` the scheme's threat once it has landed. The
+   * table shows `to` rather than adding `delta` to what it shows, so a label redrawn mid-move (a Drone arriving) can
+   * never count the same threat twice.
+   */
+  threat?: { scheme: string; delta: number; to: number };
   hit?: { source: string | null; target: string; amount: number; tough?: boolean };
 }
 
@@ -739,6 +744,26 @@ export interface BuiltDeck {
   readonly cards: readonly string[];
 }
 
+/** The deal a replay starts from: `DealOptions` without a dev set-up, as plain data. */
+export interface ReplayDeal {
+  hero: HeroId;
+  villain: VillainId;
+  difficulty: Difficulty;
+  modules: ModuleId[];
+  seed: number;
+  /** Dealt stopping at the opening hand (the table always does): the mulligan answer is the first move. */
+  mulligan: boolean;
+  /** The deck built at the bench, or null for the hero's starter deck. */
+  deck: BuiltDeck | null;
+}
+
+/** A game as a replay: the deal and the player's moves in order, undone ones left out (`record/replay.ts`). */
+export interface GameReplay {
+  v: 1;
+  deal: ReplayDeal;
+  moves: Command[];
+}
+
 export interface DealOptions {
   // The game: who plays against whom.
   /** Which hero, with their starter deck: Spider-Man unless chosen otherwise. */
@@ -898,9 +923,21 @@ export class BattleModel {
     dronesDefeated: Map<string, string>;
     /** How many of `#events` there were before this move. */
     events: number;
+    /** How many of `#moves` there were before this move. */
+    moves: number;
   }[] = [];
   /** Every engine event of this game's moves so far, undone moves left out: the saved record reads it (`record/`). */
   #events: GameEvent[] = [];
+  /**
+   * The player's moves this game as the engine got them, undone moves left out: with the deal they play the same game
+   * again (`record/replay.ts`, the saved game kept on the test site). The forced single-option answers `#accept` makes
+   * itself are not here: replaying through the model makes them again.
+   */
+  #moves: Command[] = [];
+  /** The command the last `#apply`/`#try` sent, which `#accept` keeps once the move goes in. */
+  #sent: Command | null = null;
+  /** The deal this game came from, for the replay; null for a dev set-up (`arrange`), which a replay can't redo. */
+  #dealt: ReplayDeal | null = null;
 
   /**
    * The cards defeated as Drones that still lie in the discard pile, and their names: a question about that defeat
@@ -983,6 +1020,7 @@ export class BattleModel {
     this.#effectAttack = previous.effectAttack;
     this.#dronesDefeated = previous.dronesDefeated;
     this.#events.length = previous.events;
+    this.#moves.length = previous.moves;
     this.#setGame(previous.game, []);
     return true;
   }
@@ -1016,6 +1054,19 @@ export class BattleModel {
     };
     this.#history = [];
     this.#events = [];
+    this.#moves = [];
+    this.#sent = null;
+    this.#dealt = options.arrange
+      ? null
+      : {
+          hero: this.#matchup.hero,
+          villain: this.#matchup.villain,
+          difficulty: this.#encounter.difficulty,
+          modules: [...this.#encounter.modules],
+          seed: this.#seed,
+          mulligan: options.mulligan === true,
+          deck: options.deck ?? null,
+        };
     this.#villainActivity = "";
     this.#aimed = new Set();
     this.#effectAttack = null;
@@ -1042,7 +1093,43 @@ export class BattleModel {
     this.#clearPayment();
   }
 
+  /** Sends a command to the engine (throwing when it refuses), remembering it for the replay once it goes in. */
+  #apply(command: Command): ReturnType<typeof apply> {
+    const result = apply(this.#game, command);
+    this.#sent = command;
+    return result;
+  }
+
+  /** Sends a command to the engine, which may refuse it; one it takes is remembered for the replay once it goes in. */
+  #try(command: Command): ReturnType<typeof applyCommand> {
+    const result = applyCommand(this.#game, command, CORE_DEPS);
+    this.#sent = result.ok ? command : null;
+    return result;
+  }
+
+  /**
+   * The game so far as a replay: the deal and every move, undone ones left out. Null for a dev set-up (`?scene=`),
+   * whose arranged table no deal makes again.
+   */
+  get replay(): GameReplay | null {
+    return this.#dealt ? { v: 1, deal: this.#dealt, moves: [...this.#moves] } : null;
+  }
+
+  /**
+   * Plays a move kept in a replay (`record/replay.ts`): exactly as the table played it, beats and all. False when the
+   * engine refuses it, which means the replay isn't this game's (or this code isn't the code it was played on).
+   */
+  replayMove(command: Command): boolean {
+    const result = this.#try(command);
+    if (!result.ok) return false;
+    this.#accept(result);
+    return true;
+  }
+
   #accept(result: ReturnType<typeof apply>): void {
+    // The move as the player made it, for the replay (the forced answers below are the engine's, made again on replay).
+    const sent = this.#sent;
+    this.#sent = null;
     // Engine states are immutable. Automatic effects and forced single-target choices belong to this move.
     this.#history.push({
       game: this.#game,
@@ -1053,7 +1140,9 @@ export class BattleModel {
       effectAttack: this.#effectAttack,
       dronesDefeated: new Map(this.#dronesDefeated),
       events: this.#events.length,
+      moves: this.#moves.length,
     });
+    if (sent) this.#moves.push(sent);
     const events = [...result.events];
     for (;;) {
       const choice = result.state.pendingChoice;
@@ -1212,6 +1301,10 @@ export class BattleModel {
       if (earlier.type === "damageDealt" || earlier.type === "damagePlaced") break;
       if (earlier.type === "cardMoved") clearedAway.add(earlier);
     }
+    // Each scheme's threat as these events go by, from the game before the move: every threat beat carries the number
+    // its scheme should read once it lands.
+    const threatNow = new Map<string, number>();
+    const threatOf = (id: string) => threatNow.get(id) ?? getInstance(this.#game, id as InstanceId)?.threat ?? 0;
     for (const e of events) {
       if (e.type === "roundStarted") {
         round = e.round;
@@ -1281,6 +1374,7 @@ export class BattleModel {
             : {}),
         });
       } else if (e.type === "mainSchemeAdvanced" && !e.schemeInstanceId) {
+        threatNow.set(mainId, 0);
         const card = cardOf(result.state, mainId);
         const stage = card?.type === "main_scheme" ? card.stages[e.stageIndex] : undefined;
         const from = mainStageName;
@@ -1746,8 +1840,13 @@ export class BattleModel {
               ? `${name(e.sourceInstanceId)} places ${e.amount} threat on ${schemeName(e.schemeInstanceId)}`
               : `${schemeName(e.schemeInstanceId)} gains ${e.amount} threat`
             : `Remove ${e.amount} threat from ${schemeName(e.schemeInstanceId)}`,
-          threat: { scheme: e.schemeInstanceId, delta: placed ? e.amount : -e.amount },
+          threat: {
+            scheme: e.schemeInstanceId,
+            delta: placed ? e.amount : -e.amount,
+            to: Math.max(0, threatOf(e.schemeInstanceId) + (placed ? e.amount : -e.amount)),
+          },
         });
+        threatNow.set(e.schemeInstanceId, this.#beats.at(-1)!.threat!.to);
       } else if (enemy) {
         switch (e.type) {
           case "enemyActivated":
@@ -2520,7 +2619,7 @@ export class BattleModel {
     if (!opened) {
       // A free play has no resource picker. Keep the chosen attachment host and validate the empty payment.
       if (entry.example.type !== "playCard") return false;
-      const result = applyCommand(this.#game, { ...entry.example, attachToInstanceId: target, payment: [] }, CORE_DEPS);
+      const result = this.#try({ ...entry.example, attachToInstanceId: target, payment: [] });
       if (!result.ok) return false;
       this.#accept(result);
       return true;
@@ -2562,7 +2661,7 @@ export class BattleModel {
     if (!this.#payment) return !!this.snapshot().payment?.canPay && this.chooseMany(this.#windowPicks);
     const command = this.#priced()?.command;
     if (!command) return false;
-    this.#accept(apply(this.#game, command));
+    this.#accept(this.#apply(command));
     return true;
   }
 
@@ -2865,7 +2964,7 @@ export class BattleModel {
       this.#subject = entry.action.instanceId;
       this.#payment = payment;
       this.#view = null;
-    } else this.#accept(apply(this.#game, entry.example));
+    } else this.#accept(this.#apply(entry.example));
     return true;
   }
 
@@ -2957,7 +3056,7 @@ export class BattleModel {
     if (entry.targets.length > 1 || (entry.targets.length === 1 && this.#guardBlocked(entry))) {
       this.#targetPick = entry;
       this.#view = null;
-    } else this.#accept(apply(this.#game, entry.example));
+    } else this.#accept(this.#apply(entry.example));
     return true;
   }
 
@@ -2969,7 +3068,7 @@ export class BattleModel {
   endTurn(): boolean {
     const command = this.#endTurnCommand();
     if (!command) return false;
-    this.#accept(apply(this.#game, command));
+    this.#accept(this.#apply(command));
     return true;
   }
 
@@ -2981,8 +3080,7 @@ export class BattleModel {
       const command = entry.example;
       if (command.type === "basicAttack" || command.type === "basicThwart") {
         this.#accept(
-          apply(
-            this.#game,
+          this.#apply(
             command.type === "basicAttack"
               ? { ...command, targetInstanceId: target }
               : { ...command, schemeInstanceId: target },
@@ -3020,11 +3118,10 @@ export class BattleModel {
       if (ids.length < min || ids.length > max || ids.some((id) => !candidates.includes(id as InstanceId)))
         return false;
       if (entry.example.type !== "useAbility" && entry.example.type !== "playCard") return false;
-      const result = applyCommand(
-        this.#game,
-        { ...entry.example, costChoices: { ...entry.example.costChoices, discard: ids as InstanceId[] } },
-        CORE_DEPS,
-      );
+      const result = this.#try({
+        ...entry.example,
+        costChoices: { ...entry.example.costChoices, discard: ids as InstanceId[] },
+      });
       if (!result.ok) return false;
       this.#costDiscard = null;
       this.#subject = null;
@@ -3040,16 +3137,12 @@ export class BattleModel {
     ) {
       return false;
     }
-    const result = applyCommand(
-      this.#game,
-      {
-        type: "resolveChoice",
-        choiceId: choice.choiceId,
-        playerId: choice.playerId,
-        selectedOptionIds: ids,
-      },
-      CORE_DEPS,
-    );
+    const result = this.#try({
+      type: "resolveChoice",
+      choiceId: choice.choiceId,
+      playerId: choice.playerId,
+      selectedOptionIds: ids,
+    });
     if (!result.ok) return false;
     this.#accept(result);
     return true;

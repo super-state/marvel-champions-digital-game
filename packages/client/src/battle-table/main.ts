@@ -1,6 +1,6 @@
 import { statHue } from "../tokens.js";
 import { searchQuestion } from "./search-question.js";
-import { plainQuestion, type PlainQuestion } from "./question-check.js";
+import { plainQuestion, tagsQuestion, type PlainQuestion } from "./question-check.js";
 import "./design.css";
 import "./battle.css";
 import { padActive, startController } from "./pad/controller.js";
@@ -627,6 +627,8 @@ interface FeedLine {
 let feed: FeedLine[] = [];
 /** The whole story, oldest first, for the play hook (`play.ts`): the player's moves and every beat the game played. */
 const story: string[] = [];
+/** Where the game on the table starts in `story` (the page keeps one story across games): its log is kept with it. */
+let storyFrom = 0;
 function pushFeed(line: FeedLine) {
   if (!line.text || feed[0]?.text === line.text) return;
   feed = [line, ...feed].slice(0, 6);
@@ -1688,6 +1690,7 @@ function showOutcome(outcome: Snapshot["outcome"]) {
       reason: outcome.reason,
       rounds: state.round,
       ...gameOnTable(model.game, model.events, gameSaved.undone),
+      whole: model.replay ? { v: 1, replay: model.replay, log: story.slice(storyFrom) } : null,
     });
   element("game-over-title").textContent = won ? "Victory" : "Defeat";
   element("game-over-detail").textContent = detail;
@@ -1752,6 +1755,28 @@ function throwConfetti() {
   }
 }
 
+/**
+ * Dev and tests only: once a move's beats have all played, every health and threat number on the table must already
+ * read what the game says. A number that only comes right when the table redraws afterwards was wrong on screen while
+ * the beats played (the Ultron report of 2026-11-25: 8/10 shown, 5/10 real). Logged as "[table drift]", which fails
+ * every 3D table browser test (`e2e/battle-test.ts`).
+ */
+function checkShownNumbers() {
+  if (!import.meta.env.DEV || discardOpen || studioPlaying) return;
+  const wrong: string[] = [];
+  for (const card of [state.hero, state.villain, ...state.enemyCards, ...state.inPlay]) {
+    const label = labels.get(card.id);
+    if (!label?.isConnected) continue;
+    const pill = label.querySelector<HTMLElement>(".scheme-threat");
+    if (pill && card.threat !== null && Number(pill.dataset.count) !== card.threat)
+      wrong.push(`${card.name} shows ${pill.dataset.count} threat, the game has ${card.threat}`);
+    const hp = card.id === state.hero.id ? state.heroHp : card.id === state.villain.id ? state.villainHp : card.hp;
+    if (label.dataset.hp !== undefined && hp !== undefined && Number(label.dataset.hp) !== hp)
+      wrong.push(`${card.name} shows ${label.dataset.hp} HP, the game has ${hp}`);
+  }
+  if (wrong.length) console.error(`[table drift] ${wrong.join("; ")}`);
+}
+
 function synchronizeLabels() {
   const visible = discardOpen
     ? viewedPile()
@@ -1814,7 +1839,11 @@ function synchronizeLabels() {
     else label.removeAttribute("aria-pressed");
     const hero = card.id === state.hero.id;
     const enemy = card.id === state.villain.id;
-    const hp = hero ? state.heroHp : enemy ? state.villainHp : card.hp;
+    // While a move's beats are still playing, a card keeps the health it shows, as a scheme keeps its threat (below):
+    // the snapshot already holds the damage the hits still to come will take off one by one.
+    const shownHp = stage.dataset.resolving && label.dataset.hp !== undefined ? Number(label.dataset.hp) : undefined;
+    const finalHp = hero ? state.heroHp : enemy ? state.villainHp : card.hp;
+    const hp = finalHp !== undefined && shownHp !== undefined ? shownHp : finalHp;
     const inHand = !discardOpen && displayedHand.some((item) => item.id === card.id);
     label.className =
       "anchor" + (discardOpen ? " discard-card" : hero ? " identity" : enemy ? " enemy" : inHand ? " in-hand" : "");
@@ -3757,7 +3786,9 @@ async function present(beats: Snapshot["beats"]) {
       activationRing(beat.threat.scheme);
       const counter = labels.get(beat.threat.scheme)?.querySelector<HTMLElement>(".scheme-threat");
       if (counter) {
-        const n = Math.max(0, Number(counter.dataset.count) + beat.threat.delta);
+        // The scheme reads what the move leaves it at after this beat (`to`), never what it showed plus the change: a
+        // label redrawn mid-move then can't count the same threat twice.
+        const n = beat.threat.to ?? Math.max(0, Number(counter.dataset.count) + beat.threat.delta);
         updateThreatLabel(counter, n);
         table?.setThreat(beat.threat.scheme, n);
       }
@@ -3817,6 +3848,7 @@ async function present(beats: Snapshot["beats"]) {
   impact.hidden = true;
   announcement.hidden = true;
   setSpot(null);
+  checkShownNumbers();
   delete stage.dataset.resolving;
   anchors.inert = false;
   presenting = false;
@@ -4010,7 +4042,10 @@ function render() {
   else if (dockFocus && blurWasHidden) requestAnimationFrame(() => dockFocus && (focusBlur.dataset.ready = ""));
   choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
   const asked = paintDock(dockView());
-  if (import.meta.env.DEV) tagPlainQuestion(state.choice ? plainQuestion(state, model.game) : null);
+  if (import.meta.env.DEV) {
+    const found = state.choice ? plainQuestion(state, model.game) : null;
+    tagPlainQuestion(tagsQuestion(found) ? found : null);
+  }
   // A question about the hand sends a ripple through it, so the eye goes where the answer is.
   if (asked && (state.choice?.discardFromHand || state.choice?.mulligan)) table?.waveHand();
   // A question darkens the table around what it is about: the attacker (red), or what an interrupt would change.
@@ -4329,6 +4364,7 @@ function deal() {
   // is there to follow a win onto the record. Without it, opening the scene on Adam's table adds no win to his record.
   const recorded = scene.recorded && params.get("record") === "1";
   gameSaved = (arrange && !recorded) || seedFromUrl() !== undefined ? null : startGame(villain);
+  storyFrom = story.length;
   paintMatchup();
   // The table opens with what the scenario's setup already did (Ultron's Drones environment and the first Drone off
   // the player's deck): the log says so, so nothing on it is there unexplained.
@@ -5124,6 +5160,20 @@ else begin();
 // beats where it can), so the sound fires at its real place; the table is put back from the game state afterwards.
 async function studioDemo(name: string): Promise<boolean> {
   if (!table || presenting) return false;
+  // The Sound Studio plays made-up beats (a hit, threat) that the game never had: the numbers they move are not checked.
+  studioPlaying = true;
+  try {
+    return await studioScene(name);
+  } finally {
+    studioPlaying = false;
+  }
+}
+
+/** True while the Sound Studio plays a made-up moment on the table (`studioDemo`). */
+let studioPlaying = false;
+
+async function studioScene(name: string): Promise<boolean> {
+  if (!table) return false;
   const hero = state.hero.id;
   const villain = state.villain.id;
   const scheme = state.enemyCards.find((card) => card.type === "main_scheme")?.id ?? villain;

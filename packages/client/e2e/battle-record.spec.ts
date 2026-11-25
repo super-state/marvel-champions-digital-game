@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * The record on a table with no test site behind it (Adam's own): a finished game is kept in this browser's storage,

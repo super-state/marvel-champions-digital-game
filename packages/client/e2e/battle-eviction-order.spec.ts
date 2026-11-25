@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * Eviction Notice answered with "Exhaust Peter Parker" plays out one step at a time (Adam, 2026-11-22): the card lands

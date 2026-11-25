@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./battle-test";
 
 /**
  * Keys on the 3D battle table: Enter presses the yellow button on screen (here Keep hand, then End Turn), a quick

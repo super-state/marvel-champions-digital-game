@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * Klaw's Masters of Mayhem asks "Order the enemies" (scene `klawmasters`): each minion picked wears its place on its

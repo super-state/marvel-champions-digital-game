@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * The play hook (`src/battle-table/play.ts`): `__battlePlay` lets Claude play the 3D table through the page. `look()`

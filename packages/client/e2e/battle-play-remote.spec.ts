@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./battle-test";
 
 /**
  * Remote play (`vite-battle-play.ts`, `answerRemote` in `src/battle-table/play.ts`): a battle page opened with
