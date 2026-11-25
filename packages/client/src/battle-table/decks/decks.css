@@ -79,7 +79,7 @@ body.decks-page {
   inset: 0;
   z-index: 40;
   overflow-y: auto;
-  background: linear-gradient(180deg, #0a1018f2, #070c12fa);
+  background: linear-gradient(180deg, #0a1018fa, #070c12fd);
   color: var(--text);
   font-family: var(--font-ui);
   text-align: left;

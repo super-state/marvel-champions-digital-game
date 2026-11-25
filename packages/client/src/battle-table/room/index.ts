@@ -47,6 +47,8 @@ export type { PlaceContents, PlaceId } from "./places/place.js";
 export { decks, freePlay, trophies };
 /** Fills Free Play's tray (once, after the room has loaded). */
 export { mountFreePlay };
+/** Fills the bench: the heroes' deck boxes, their decks, and the deck builder (once, after the room has loaded). */
+export { mountBench } from "./places/decks.js";
 
 const places: Record<PlaceId, Place> = {
   title: titlePlace,

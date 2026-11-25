@@ -149,7 +149,8 @@ test("build a legal deck by keyboard alone", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(page.locator("#zoom")).not.toHaveAttribute("open", "");
 
-  // F shows the focused card full size; Escape closes it.
+  // F shows the focused card full size; Escape closes it. (The focus is back on a card once the last one closed.)
+  await expect(page.locator(":focus")).toHaveClass(/binder-card/);
   await page.keyboard.press("f");
   await expect(page.locator("#zoom")).toHaveAttribute("open", "");
   await page.keyboard.press("Escape");

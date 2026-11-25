@@ -1,0 +1,214 @@
+import { expect, test, type Page } from "@playwright/test";
+import { frames, installPad, PAD, setButton } from "./pad-e2e-helpers.js";
+
+/**
+ * Heroes & Decks at the room's bench (`src/battle-table/room/places/decks.ts`): walked to by keyboard and by a fake
+ * Xbox pad, a hero picked, a deck built in the deck builder laid over the room and saved, and a game dealt with it.
+ */
+
+const room = (page: Page) => page.locator("#shelf");
+const builder = (page: Page) => page.locator('.decks[data-mode="room"]');
+
+async function at(page: Page, place: string): Promise<void> {
+  await expect(room(page)).toHaveAttribute("data-place", place, { timeout: 30_000 });
+  await expect(room(page)).not.toHaveAttribute("data-moving", "", { timeout: 30_000 });
+}
+
+const focused = (page: Page) =>
+  page.evaluate(() => {
+    const active = document.activeElement as HTMLElement | null;
+    return active?.getAttribute("aria-label") || active?.textContent?.trim() || active?.tagName || "";
+  });
+
+/** Presses an arrow until the focus is on a control whose name matches. */
+async function keyTo(page: Page, key: string, name: RegExp, max = 8): Promise<void> {
+  for (let i = 0; i < max && !name.test(await focused(page)); i++) await page.keyboard.press(key);
+  expect(await focused(page)).toMatch(name);
+}
+
+async function nudge(page: Page, index: number): Promise<void> {
+  await setButton(page, index, true);
+  await frames(page, 3);
+  await setButton(page, index, false);
+  await frames(page, 3);
+}
+
+async function padTo(page: Page, direction: number, name: RegExp, max = 8): Promise<void> {
+  for (let i = 0; i < max && !name.test(await focused(page)); i++) await nudge(page, direction);
+  expect(await focused(page)).toMatch(name);
+}
+
+/** Enter twice on each card of the builder's open page, stepping on with Tab, from its first card. */
+async function twoOfEach(page: Page): Promise<void> {
+  const count = await builder(page).locator(".binder-card").count();
+  for (let i = 0; i < count; i++) {
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Tab");
+  }
+}
+
+test.describe("battle table: Heroes & Decks at the bench", () => {
+  test("by keyboard: pick Captain Marvel, build her a Justice deck, and deal a game with it", async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.goto("/battle/");
+    await at(page, "title");
+    await page.keyboard.press("x");
+    await expect(page.getByRole("navigation", { name: "Main menu" })).toBeVisible();
+    await page.waitForTimeout(400);
+    // The bench is open now: no longer "Coming soon".
+    await keyTo(page, "ArrowDown", /^Heroes & Decks/);
+    expect(await focused(page)).not.toMatch(/Coming soon/);
+    await page.keyboard.press("Enter");
+    await at(page, "decks");
+    const bench = room(page).locator('[data-for="decks"]');
+
+    // A deck box for each hero the table deals; Captain Marvel picked by the arrows.
+    await expect(bench.locator(".bench-hero")).toHaveText(["Spider-Man", "Captain Marvel"]);
+    await expect.poll(() => focused(page)).toBe("Spider-Man");
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => focused(page)).toBe("Captain Marvel");
+    await page.keyboard.press("Enter");
+    await expect(bench.getByRole("button", { name: "Captain Marvel", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(await page.evaluate(() => localStorage.getItem("battle-hero"))).toBe("captain-marvel");
+    await expect(bench.locator(".bench-pick")).toHaveText([/Starter deck.*Leadership, as printed/]);
+
+    // New deck: the builder over the room, with only the aspects the table has been checked with.
+    await keyTo(page, "ArrowDown", /^New deck$/);
+    await page.keyboard.press("Enter");
+    await expect(builder(page)).toBeVisible();
+    await expect(builder(page).locator("#tray-total")).toHaveText("15 cards (40 to 50)");
+    await page.keyboard.press("PageUp");
+    await expect(builder(page).locator(".aspect-chip")).toHaveText(["Justice", "Leadership"]);
+    await page.keyboard.press("ArrowUp");
+    await expect.poll(() => focused(page)).toBe("Justice");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await expect(page.locator(":focus")).toHaveClass(/binder-card/);
+    await twoOfEach(page);
+    await page.keyboard.press("PageDown");
+    await twoOfEach(page);
+    await expect(builder(page).locator("#legality")).toHaveText(/Legal deck: 4\d cards\./);
+
+    // Named and saved; Escape leaves the name, Escape again returns to the bench.
+    await builder(page).locator("#deck-name").click();
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.type("Carol's Justice");
+    await page.keyboard.press("Enter");
+    await expect(builder(page).locator("#builder-notice")).toHaveText("Saved as “Carol's Justice”.");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await expect(builder(page)).toBeHidden();
+    await at(page, "decks");
+    // The deck just built is the one she plays.
+    await expect(bench.locator(".bench-pick", { hasText: "Carol's Justice" })).toHaveAttribute("aria-pressed", "true");
+    await expect(bench.locator(".bench-line")).toHaveText(
+      "Campaign and Free Play deal Captain Marvel with Carol's Justice.",
+    );
+
+    // Back to the doorway, Campaign, Rhino, Play: the game is dealt with her deck.
+    await page.keyboard.press("Escape");
+    await at(page, "title");
+    await keyTo(page, "ArrowUp", /^Campaign/);
+    await page.keyboard.press("Enter");
+    await at(page, "campaign");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#shelf-play")).toHaveText("Play vs Rhino", { timeout: 30_000 });
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#matchup")).toHaveText("Captain Marvel vs. Rhino · Carol's Justice", {
+      timeout: 60_000,
+    });
+    const look = await page.evaluate(() =>
+      (window as unknown as { __battlePlay: { wait(): Promise<string> } }).__battlePlay.wait(),
+    );
+    expect(look).toMatch(/Carol Danvers/);
+  });
+
+  test("a saved deck the table can't deal yet is shown, says why, and can't be picked", async ({ page }) => {
+    // She-Hulk's starter list saved under Captain Marvel's name would be illegal; an Aggression deck for Captain Marvel
+    // is the case the table can't deal yet: her own 15 cards and the Aggression cards.
+    await page.goto("/battle/decks.html?hero=01010a&deck=new");
+    await page.keyboard.press("PageUp");
+    await page.getByRole("radio", { name: "Aggression" }).click();
+    await page.getByLabel("Deck name").fill("Carol smashes");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.locator("#builder-notice")).toHaveText(/Saved as “Carol smashes”/);
+    await page.goto("/battle/?room=decks");
+    await at(page, "decks");
+    const bench = room(page).locator('[data-for="decks"]');
+    await bench.getByRole("button", { name: "Captain Marvel", exact: true }).click();
+    const held = bench.locator(".bench-pick", { hasText: "Carol smashes" });
+    await expect(held).toHaveAttribute("aria-disabled", "true");
+    await expect(held).toContainText("Aggression cards aren't on the 3D table yet.");
+    // It only looks held back: a click still says why (forced past Playwright's aria-disabled check).
+    await held.click({ force: true });
+    await expect(held).toHaveAttribute("aria-pressed", "false");
+    await expect(room(page).getByRole("status")).toContainText("can't be dealt");
+  });
+
+  test.describe("by controller", () => {
+    test("A to the bench, the D-pad one step at a time, A picks, the builder's A / X / Y / LB / RB, B back", async ({
+      page,
+    }) => {
+      test.setTimeout(180_000);
+      await installPad(page);
+      await page.goto("/battle/");
+      await at(page, "title");
+      await nudge(page, PAD.a);
+      await expect(page.getByRole("navigation", { name: "Main menu" })).toBeVisible();
+      await page.waitForTimeout(400);
+      await padTo(page, PAD.down, /^Heroes & Decks/);
+      await nudge(page, PAD.a);
+      await at(page, "decks");
+      await expect.poll(() => focused(page)).toBe("Spider-Man");
+      // One nudge, one step: the table's controller moves the focus, and nothing else does.
+      await nudge(page, PAD.right);
+      await expect.poll(() => focused(page)).toBe("Captain Marvel");
+      await page.waitForTimeout(300);
+      await nudge(page, PAD.a);
+      const bench = room(page).locator('[data-for="decks"]');
+      await expect(bench.getByRole("button", { name: "Captain Marvel", exact: true })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await padTo(page, PAD.down, /^New deck$/);
+      await nudge(page, PAD.a);
+      await expect(builder(page)).toBeVisible();
+
+      // In the builder: one nudge moves one card along.
+      const cards = builder(page).locator(".binder-card");
+      await expect(page.locator(":focus")).toHaveAttribute(
+        "data-deck-card",
+        (await cards.nth(0).getAttribute("data-deck-card"))!,
+      );
+      await nudge(page, PAD.right);
+      await expect(page.locator(":focus")).toHaveAttribute(
+        "data-deck-card",
+        (await cards.nth(1).getAttribute("data-deck-card"))!,
+      );
+      const total = builder(page).locator("#tray-total");
+      await nudge(page, PAD.a);
+      await expect(total).toHaveText("16 cards (40 to 50)");
+      await nudge(page, PAD.x);
+      await expect(total).toHaveText("15 cards (40 to 50)");
+      await nudge(page, PAD.y);
+      await expect(builder(page).locator("#zoom")).toHaveAttribute("open", "");
+      await nudge(page, PAD.b);
+      await expect(builder(page).locator("#zoom")).not.toHaveAttribute("open", "");
+      await nudge(page, PAD.lb);
+      await expect(builder(page).getByRole("tab", { name: "Aspect" })).toHaveAttribute("aria-selected", "true");
+      await nudge(page, PAD.rb);
+      await expect(builder(page).getByRole("tab", { name: "Basic" })).toHaveAttribute("aria-selected", "true");
+
+      // B: nothing changed, so straight back to the bench, still at the bench.
+      await nudge(page, PAD.b);
+      await expect(builder(page)).toBeHidden();
+      await at(page, "decks");
+      await expect.poll(() => focused(page)).toBe("New deck");
+    });
+  });
+});
