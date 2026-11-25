@@ -145,7 +145,8 @@ export function headTo(view: (out: Pose) => void, options: { fade?: boolean; now
  * Moves the camera on by `dt` seconds and puts it in place; says whether it has just arrived. Returns the blur to
  * draw the frame with.
  */
-export function stepCamera(dt: number, fog: THREE.Fog): { blur: number; arrived: boolean } {
+const stepped = { blur: 1, arrived: false };
+export function stepCamera(dt: number, fog: THREE.Fog): { readonly blur: number; readonly arrived: boolean } {
   let arrived = false;
   if (toward) toward(target);
   if (k < 1) {
@@ -162,5 +163,7 @@ export function stepCamera(dt: number, fog: THREE.Fog): { blur: number; arrived:
   }
   fog.near = current.fogNear;
   fog.far = current.fogFar;
-  return { blur: current.blur, arrived };
+  stepped.blur = current.blur;
+  stepped.arrived = arrived;
+  return stepped;
 }

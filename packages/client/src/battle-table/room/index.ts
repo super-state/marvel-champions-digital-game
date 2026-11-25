@@ -42,7 +42,9 @@ import { buildRoom, renderFrame, resize, root, say, scene } from "./room.js";
 
 export type { ShelfHost } from "./places/campaign-play.js";
 export type { RoomSetting } from "./places/settings.js";
-export type { PlaceId } from "./places/place.js";
+export type { PlaceContents, PlaceId } from "./places/place.js";
+/** The places still to be filled, for their tasks to `mount` once the room has loaded (`places/place.ts`). */
+export { decks, freePlay, trophies };
 
 const places: Record<PlaceId, Place> = {
   title: titlePlace,
@@ -52,10 +54,11 @@ const places: Record<PlaceId, Place> = {
   trophies,
   settings: settingsPlace,
 };
+const allPlaces: readonly Place[] = Object.values(places);
 /** The title menu, in order. */
 const MENU: readonly PlaceId[] = ["campaign", "free-play", "decks", "trophies", "settings"];
 const isPlace = (id: string | null): id is PlaceId => !!id && id in places;
-const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const lessMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
 /** Where the camera is (or, while `heading` is set, where it was). */
 let here: PlaceId = "title";
@@ -64,7 +67,7 @@ let heading: PlaceId | null = null;
 configureTitle({ choices: () => MENU.map((id) => places[id]), go: (id) => void go(id) });
 
 function showPanel(id: PlaceId | null) {
-  for (const place of Object.values(places)) place.panel.hidden = place.id !== id;
+  for (const place of allPlaces) place.panel.hidden = place.id !== id;
 }
 
 /**
@@ -85,9 +88,21 @@ async function go(id: PlaceId, options: { force?: boolean; now?: boolean } = {})
   heading = id;
   root.dataset.place = id;
   root.dataset.moving = "";
-  await place.build();
+  try {
+    await place.build();
+  } catch (error) {
+    // Its things couldn't be built (a picture or a font failed to load): stay where the camera is, still usable.
+    console.error(error);
+    heading = null;
+    root.dataset.place = here;
+    delete root.dataset.moving;
+    showPanel(here);
+    places[here].enter();
+    say(`${place.label} couldn't be opened. Try again in a moment.`);
+    return;
+  }
   if (id === "title") titlePlace.cameFrom(here);
-  headTo((out) => place.view(out), { fade: reducedMotion(), now: !!options.now });
+  headTo((out) => place.view(out), { fade: lessMotion.matches, now: !!options.now });
   if (options.now) arrive();
 }
 
@@ -120,13 +135,17 @@ addEventListener(
     if (root.hidden) return;
     event.stopPropagation();
     if (waitingForPress()) {
-      // Any key is "any button"; the modifier keys alone and Tab (moving round the page) are not.
-      if (["Shift", "Control", "Alt", "Meta", "Tab"].includes(event.key)) return;
+      // Any key is "any button". The modifier keys alone, Tab (moving round the page), the F keys and the browser's
+      // own shortcuts (Ctrl+R) are not, and still do what they do.
+      if (["Shift", "Control", "Alt", "Meta", "Tab"].includes(event.key) || /^F\d+$/.test(event.key)) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
       event.preventDefault();
       showMenu();
       return;
     }
     if (menuKey(event)) return;
+    // A place's own keys (a mounted place's binder, say) come before Escape's step back.
+    if (!heading && places[here].key?.(event)) return;
     if (event.key === "Escape") {
       event.preventDefault();
       back();
@@ -166,7 +185,7 @@ function frame(now: number) {
   }
   if (padPressed() && waitingForPress()) showMenu();
   const time = now / 1000;
-  for (const place of Object.values(places)) place.step(dt, time);
+  for (const place of allPlaces) place.step(dt, time);
   const { blur, arrived } = stepCamera(dt, scene.fog as Fog);
   if (arrived) arrive();
   fade.style.opacity = String(fadeAmount());
@@ -206,12 +225,15 @@ export async function openShelf(over: ShelfHost, start?: PlaceId): Promise<void>
   void over.player?.().then(showPlayer, () => showPlayer(null));
   await (built ??= Promise.resolve().then(buildShell));
   resize();
+  // Whatever place the room was left at (the boxes, after Play) lets go of the pointer and the keys.
+  places[here].leave();
   resetCampaign();
-  resetTitle();
   here = "title";
   heading = null;
   padHeld = true;
   const first = startingPlace(start);
+  // The doorway asks for a button press each time the room opens on it; New game, at the boxes, leaves the menu up.
+  if (first === "title") resetTitle();
   if (first === "campaign") {
     await campaignPlace.build();
     openFromAddress();

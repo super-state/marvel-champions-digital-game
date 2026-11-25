@@ -41,7 +41,7 @@ let lean: Place | null = null;
 /** The place the camera last came back from: its choice takes the focus. */
 let cameFrom: PlaceId | null = null;
 let atPress = true;
-const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const lessMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
 export function configureTitle(next: TitleHooks) {
   hooks = next;
@@ -178,7 +178,7 @@ export const titlePlace: Place & { cameFrom(id: PlaceId): void } = {
   },
   step(dt) {
     doorway(wanted, camera.aspect);
-    if (lean && !reducedMotion()) {
+    if (lean && !lessMotion.matches) {
       lean.view(towards);
       lerpPose(wanted, wanted, towards, LEAN);
       // The doorway sees the whole room sharp, leaning or not.

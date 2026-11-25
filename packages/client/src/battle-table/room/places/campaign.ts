@@ -430,28 +430,36 @@ function pose(time: number, dt: number) {
   }
 }
 
+/** The hover tag's half width, measured when its text changes; where it points, worked out each frame. */
+let tagHalf = 0;
+const tagAt = new THREE.Vector3();
 function placeHoverTag() {
   if (hovered < 0 || chosen >= 0) {
     hoverTag.hidden = true;
     return;
   }
   const box = boxes[hovered]!;
-  const top = new THREE.Vector3(0, 0, -H / 2).applyMatrix4(box.group.matrixWorld);
+  const top = tagAt.set(0, 0, -H / 2).applyMatrix4(box.group.matrixWorld);
   top.y += 0.25;
   top.project(camera);
-  // Kept on the screen: a box at the edge of a phone's view would push its tag off it.
-  const half = hoverTag.offsetWidth / 2 + 8;
-  hoverTag.style.left = `${Math.min(innerWidth - half, Math.max(half, ((top.x + 1) / 2) * innerWidth))}px`;
-  hoverTag.style.top = `${((1 - top.y) / 2) * innerHeight}px`;
-  hoverTag.textContent = box.campaign.open
+  const text = box.campaign.open
     ? `Campaign ${box.campaign.number} · ${box.campaign.name}`
     : `${box.campaign.name} · ${box.campaign.lock ?? "coming soon"}`;
-  hoverTag.hidden = false;
+  if (hoverTag.textContent !== text || hoverTag.hidden) {
+    hoverTag.textContent = text;
+    hoverTag.hidden = false;
+    tagHalf = hoverTag.offsetWidth / 2 + 8;
+  }
+  // Kept on the screen: a box at the edge of a phone's view would push its tag off it.
+  const half = tagHalf;
+  hoverTag.style.left = `${Math.min(innerWidth - half, Math.max(half, ((top.x + 1) / 2) * innerWidth))}px`;
+  hoverTag.style.top = `${((1 - top.y) / 2) * innerHeight}px`;
 }
 
 /** Back to the room as it first stands: every box on the shelf, nothing in flight. */
 export function reset() {
   resetPlay();
+  queued = -1;
   chosen = -1;
   s = target = 0;
   hovered = -1;
@@ -546,11 +554,11 @@ export function openFromAddress() {
  * The keyboard's (and a pad's) way to the boxes, and a screen reader's: a see-through button over each box, which
  * lifts its box while it has the focus. The pointer passes through them to the room, which picks boxes itself.
  */
+const corner = new THREE.Vector3();
 function placePicks() {
-  const buttons = picks.querySelectorAll<HTMLElement>("button");
-  const corner = new THREE.Vector3();
+  const buttons = picks.children;
   boxes.forEach((box, i) => {
-    const button = buttons[i];
+    const button = buttons[i] as HTMLElement | undefined;
     if (!button) return;
     let left = Infinity;
     let right = -Infinity;
@@ -592,6 +600,7 @@ export const campaignPlace: Place = {
   leave() {
     active = false;
     hovered = -1;
+    queued = -1;
     hoverTag.hidden = true;
     renderer.domElement.style.cursor = "default";
   },

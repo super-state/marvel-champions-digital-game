@@ -201,7 +201,7 @@ function finishOutro() {
   root.hidden = true;
   // The shelf's own address settings (an opened box, a pressed Play) have had their turn: a reload opens the table.
   const params = new URLSearchParams(location.search);
-  for (const key of ["open", "play", "at", "hold"]) params.delete(key);
+  for (const key of ["open", "play", "at", "hold", "room"]) params.delete(key);
   const query = params.toString();
   history.replaceState(history.state, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
   play.host.shown();

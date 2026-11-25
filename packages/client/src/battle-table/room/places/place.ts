@@ -6,19 +6,23 @@
  *
  * Three places stand as plain furniture until their task fills them: the deck bench (`decks.ts`), the trophy cabinet
  * and record board (`trophies.ts`) and the Free Play setup tray (`free-play.ts`). Their menu choices say "Coming soon"
- * and the camera doesn't go there (`?room=decks` still does, for checks). To fill one, `mount` it from the module that
- * opens the room, before the room is opened:
+ * and the camera doesn't go there (`?room=decks` still does, for checks). To fill one, `mount` it once the room has
+ * loaded and before it opens: `main.ts` loads the room on demand (`await import("./room/index.js")`), so importing a
+ * place's file statically would pull the whole room into the table's first load.
  *
- *   import { decks } from "./room/places/decks.js";
- *   decks.mount({
+ *   const room = await import("./room/index.js");
+ *   room.decks.mount({
+ *     line: "Pick a hero, build a deck", // under its name on the title menu
  *     build(group, panel) {
- *       // The first time the camera heads to the bench: things into `group` (it stands at the bench), buttons
- *       // into `panel` (laid over the picture there). May return a promise; the camera waits for it.
+ *       // The first time the camera heads to the bench: its things into `group` (in the room's own coordinates:
+ *       // the bench's spot is `BENCH` in decks.ts), its buttons into `panel` (laid over the picture there). May
+ *       // return a promise; the camera waits for it, and a failure leaves the camera where it was.
  *     },
  *     enter() {}, // the camera has arrived
  *     leave() {}, // it is leaving
  *     back: () => false, // Escape or B here: true if something was put away, false to go back to the doorway
- *     step(dt, time) {}, // each frame while here
+ *     key: (event) => false, // a key while here (the room stops every key reaching the page): true if used
+ *     step(dt, time) {}, // each frame once built, wherever the camera is (it may be seen from the doorway)
  *   });
  */
 import * as THREE from "three";
@@ -46,13 +50,21 @@ export interface Place {
   leave(): void;
   /** Escape or B while here: true if something was put away, false to go back towards the doorway. */
   back(): boolean;
+  /**
+   * A key while here. The room stops every key at the window before it reaches the page (none reach the table under
+   * it), so a place's own listeners on its panel never hear them: it handles them here, and says if it used one.
+   */
+  key?(event: KeyboardEvent): boolean;
   /** Each frame, wherever the camera is. */
   step(dt: number, time: number): void;
 }
 
 /** What a later task gives a furniture place to fill it. */
 export interface PlaceContents {
+  /** The short line under its name on the title menu. */
+  line?: string;
   build(group: THREE.Group, panel: HTMLElement): void | Promise<void>;
+  key?(event: KeyboardEvent): boolean;
   enter?(): void;
   leave?(): void;
   back?(): boolean;
@@ -130,7 +142,7 @@ export function furniturePlace(spec: {
     id: spec.id,
     label: spec.label,
     get line() {
-      return contents ? "" : "Coming soon";
+      return contents ? (contents.line ?? "") : "Coming soon";
     },
     panel,
     ready: () => contents !== null,
@@ -145,6 +157,7 @@ export function furniturePlace(spec: {
     enter: () => contents?.enter?.(),
     leave: () => contents?.leave?.(),
     back: () => contents?.back?.() ?? false,
+    key: (event) => contents?.key?.(event) ?? false,
     step(dt, time) {
       if (contents && built) contents.step?.(dt, time);
     },
