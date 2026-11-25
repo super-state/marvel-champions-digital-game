@@ -799,7 +799,7 @@ export function judge(
 
   // The abilities resolving: a beat names the card, or what it did shows on the table (the card itself unnamed: counted
   // apart in the ledger), or nothing shows at all. Judged once its last frame is gone, in whichever move that is.
-  const open = new Set(after.stack.map((frame) => frame.frameId));
+  const open = new Set<string>(after.stack.map((frame) => frame.frameId));
   for (const pending of memory.pending) {
     if (pending.shown?.cls === "table") continue;
     const named = byBeat(pending.id);
