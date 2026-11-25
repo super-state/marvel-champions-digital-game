@@ -425,6 +425,18 @@ const SCENES: Record<string, Scene> = {
     play: [{ code: "01002" }],
     encounterTop: ["01186", "01188", "01133"],
   },
+  /**
+   * As klawmasters with no minion engaged: Masters of Mayhem has nobody to attack, so it searches the encounter deck
+   * and discard pile for a Masters of Evil minion and the player picks one, seeing each card (Adam, 2026-11-25: the
+   * names alone didn't say what the minions do).
+   */
+  klawsearch: {
+    scenario: "klaw",
+    clearMinions: true,
+    hero: { form: "hero" },
+    play: [{ code: "01002" }],
+    encounterTop: ["01186", "01188", "01133"],
+  },
   /** Sonic Boom comes up in alter-ego form with the resources in hand: spend [energy][mental][physical] or exhaust everything. */
   klawsonic: {
     scenario: "klaw",
