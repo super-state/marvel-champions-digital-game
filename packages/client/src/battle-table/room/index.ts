@@ -234,11 +234,10 @@ export async function openShelf(over: ShelfHost, start?: PlaceId): Promise<void>
   const first = startingPlace(start);
   // The doorway asks for a button press each time the room opens on it; New game, at the boxes, leaves the menu up.
   if (first === "title") resetTitle();
-  if (first === "campaign") {
-    await campaignPlace.build();
-    openFromAddress();
-  }
   await go(first, { force: true, now: true });
+  // `?open=klaw` opens a box (and `&play` presses Play) once the camera stands at the boxes: Play's swing round to the
+  // table starts from there.
+  if (first === "campaign") openFromAddress();
   if (first === "title") {
     // The boxes stand on the table, seen from the doorway: build them once the title is up.
     if (!boxesBuilt()) setTimeout(() => void campaignPlace.build(), 0);

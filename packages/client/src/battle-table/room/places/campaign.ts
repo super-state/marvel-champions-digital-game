@@ -591,7 +591,12 @@ export const campaignPlace: Place = {
   panel,
   ready: () => true,
   view,
-  build: () => (built ??= build()),
+  // A build that failed (a picture or a font didn't load) is tried again next time, not kept.
+  build: () =>
+    (built ??= build().catch((error: unknown) => {
+      built = null;
+      throw error;
+    })),
   enter() {
     active = true;
     if (chosen >= 0 && s === OPENED) playButton.focus({ preventScroll: true });
