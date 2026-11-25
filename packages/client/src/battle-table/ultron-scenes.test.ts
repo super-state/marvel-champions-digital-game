@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { arrangeScene, sceneNames, sceneVillain } from "./debug-scenes.js";
-import { BattleModel, type BattleSnapshot } from "./model.js";
+import { BattleModel, EITHER_OTHERWISE, EITHER_SPEND, type BattleSnapshot } from "./model.js";
 
 type Beat = BattleSnapshot["beats"][number];
 
@@ -195,17 +195,43 @@ describe("Ultron on the table (seed 7 unless a test says otherwise)", () => {
     expect(drones(view)).toHaveLength(before + 1);
   });
 
-  test("ultronboost: Android Efficiency's boost names itself on its spend question, and the picks wear no cost label", () => {
-    // Adam, 2026-11-25: the question read "Villain phase" and he looked for it on Ultron's own text.
+  test("ultronboost: Android Efficiency's boost names itself and asks its either-or in two steps", () => {
+    // Adam, 2026-11-25: the question read "Villain phase" and he looked for it on Ultron's own text; then: "split like
+    // any other question card ... if they choose resource it should reveal on the board anything ... they can use as
+    // resources and then if they back out or cancel it takes them to the choice again".
     const battle = deal("ultronboost");
-    const beats = untilAsked(battle, /^Spend 1 energy, or /);
-    const choice = battle.snapshot().choice!;
+    const beats = untilAsked(battle, /^Choose one$/);
+    let choice = battle.snapshot().choice!;
     expect(choice.sourceTitle).toBe("Android Efficiency · Boost");
-    expect(choice.spend).toBe(true);
+    expect(choice.eitherOr).toBe("choose");
+    expect(choice.options).toEqual([
+      { id: EITHER_SPEND, label: "Spend 1 energy", cardId: null },
+      {
+        id: EITHER_OTHERWISE,
+        label: "Put the top card of the deck into play facedown, engaged with you as a Drone minion",
+        cardId: null,
+      },
+    ]);
     // The boost card turned over during the attack is the one asking: the table holds it up while it does.
     const boost = beats.find((beat) => beat.reveal?.boost)?.reveal;
     expect(boost?.name).toBe("Android Efficiency");
     expect(battle.snapshot().choiceSource).toBe(boost!.id);
+
+    // "Spend 1 energy": the cards that can pay are the picks, and it can be backed out of.
+    expect(battle.choose(EITHER_SPEND)).toBe(true);
+    choice = battle.snapshot().choice!;
+    expect(choice).toMatchObject({ eitherOr: "spend", prompt: "Spend 1 energy", canCancel: true, spend: true });
+    expect(choice.options.length).toBeGreaterThan(0);
+    expect(choice.options.every((option) => option.cardId)).toBe(true);
+    expect(battle.snapshot().choiceSource).toBe(boost!.id);
+    battle.cancel();
+    expect(battle.snapshot().choice?.eitherOr).toBe("choose");
+
+    // The other half: a Drone comes off the top of the deck.
+    const before = drones(battle.snapshot()).length;
+    expect(battle.choose(EITHER_OTHERWISE)).toBe(true);
+    expect(battle.snapshot().beats.some((beat) => beat.droneIn?.from === "deck")).toBe(true);
+    expect(drones(battle.snapshot())).toHaveLength(before + 1);
   });
 
   test("ultronattack: choosing threat puts no Drone in from Ultron and the main scheme gains that 1 threat", () => {
@@ -390,7 +416,7 @@ describe("Ultron on the table (seed 7 unless a test says otherwise)", () => {
     expect(
       asked.some((q) =>
         q.startsWith(
-          "Spend 1 energy, or put the top card of the deck into play facedown, engaged with you as a Drone minion?",
+          "Choose one [Spend 1 energy | Put the top card of the deck into play facedown, engaged with you as a Drone minion]",
         ),
       ),
     ).toBe(true);

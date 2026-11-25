@@ -14,7 +14,14 @@
  */
 import { expect, test, vi } from "vitest";
 import * as engine from "@mc/engine";
-import { BattleModel, type BattleBeat, type BattleChoice, type DealOptions } from "./model.js";
+import {
+  BattleModel,
+  EITHER_OTHERWISE,
+  EITHER_SPEND,
+  type BattleBeat,
+  type BattleChoice,
+  type DealOptions,
+} from "./model.js";
 import { watchThisFile } from "./shown-check.js";
 
 // Watched for anything happening unseen (`shown-check.ts`).
@@ -630,7 +637,8 @@ test("01123 Sonic Boom: Spend takes only picks that pay it; picks that don't wou
   // Spider-Man, so Klaw attacks (with his two boost cards) instead of scheming his main scheme over.
   toHero(battle);
   expect(battle.endTurn()).toBe(true);
-  const sonicBoom = (choice: BattleChoice) => /^Spend .+, or exhaust each character you control\?$/.test(choice.prompt);
+  // Sonic Boom's either-or, asked in two steps (`BattleChoice.eitherOr`): its two halves first.
+  const sonicBoom = (choice: BattleChoice) => choice.eitherOr === "choose";
   // Answer everything else the usual way until Sonic Boom asks.
   for (let i = 0; i < 20 && snap(battle).choice && !sonicBoom(snap(battle).choice!); i++) {
     const choice = snap(battle).choice!;
@@ -641,16 +649,23 @@ test("01123 Sonic Boom: Spend takes only picks that pay it; picks that don't wou
         : choice.options.slice(0, choice.min).map((o) => o.id);
     expect(battle.chooseMany(picks)).toBe(true);
   }
+  expect(snap(battle).choice!.options.map((o) => o.label)).toEqual([
+    "Spend 1 energy, 1 mental, 1 physical",
+    "Exhaust each character you control",
+  ]);
+  expect(battle.choose(EITHER_SPEND)).toBe(true);
   const choice = snap(battle).choice!;
-  expect(choice.prompt).toBe("Spend 1 energy, 1 mental, 1 physical, or exhaust each character you control?");
+  expect(choice).toMatchObject({ eitherOr: "spend", prompt: "Spend 1 energy, 1 mental, 1 physical" });
   // One card can't pay three types: refused, and the question stays (the engine would take it as not spending and
-  // exhaust everyone with the card kept). Nothing picked is the "or", taken as it says.
+  // exhaust everyone with the card kept).
   const one = [choice.options[0]!.id];
   expect(battle.spendPays(one)).toBe(false);
   expect(battle.chooseMany(one)).toBe(false);
   expect(snap(battle).choice?.id).toBe(choice.id);
-  expect(battle.spendPays([])).toBe(true);
-  expect(battle.chooseMany([])).toBe(true);
+  // Back to the two halves; the other one is the "or", taken as it says.
+  battle.cancel();
+  expect(snap(battle).choice?.eitherOr).toBe("choose");
+  expect(battle.choose(EITHER_OTHERWISE)).toBe(true);
   expect(snap(battle).hero.exhausted).toBe(true);
 });
 
