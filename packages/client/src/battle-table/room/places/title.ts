@@ -1,15 +1,21 @@
 /**
  * The title: the camera stands in the doorway with the whole room in view, under the game's name and the player's
  * (when the test site knows it). "Press any button" (a key, a click, a tap, any button on a pad) brings up the menu:
- * a real button for each place, laid over the picture. Pointing at or focusing a choice leans the camera a little
- * towards its place; choosing it glides there (`index.ts`). A place that isn't built yet says "Coming soon".
+ * a real button for each place, laid over the picture. Highlighting a choice (the keys, a pad, a tap, or the pointer
+ * resting on it) glides the whole camera to that place's own view, the one you get after choosing it, with the menu
+ * still over it (Adam, 2026-11-25: "move the whole camera to the positions of the things that we will actually see");
+ * choosing it then opens the place's panel without a second move, and Back comes back to the menu at that view. A new
+ * highlight turns the glide from wherever the camera is, so going quickly down the menu never queues glides up; with
+ * "reduce motion" the camera cuts instead. A place that isn't built yet says "Coming soon".
  */
 import { camera, copyPose, lerpPose, newPose, setPose, type Pose } from "../camera.js";
+import { root } from "../room.js";
 import { fitNarrow, makePanel, type Place, type PlaceId } from "./place.js";
 
-/** How far a pointed-at choice leans the camera towards its place, and how quickly it eases there. */
-const LEAN = 0.17;
-const LEAN_RATE = 3.2;
+/** How quickly the camera follows the highlighted choice to its place's view (an ease that can turn mid-way). */
+const GLIDE_RATE = 2.8;
+/** The pointer rests on a choice this long before the camera goes: brushing across others on the way doesn't swing the room. */
+const HOVER_SETTLE_MS = 220;
 /** A press that brings up the menu can't also choose from it: the menu waits this long after it appears. */
 const MENU_GUARD_MS = 350;
 
@@ -36,8 +42,9 @@ interface TitleHooks {
 }
 let hooks: TitleHooks | null = null;
 let shownAt = 0;
-/** The choice the camera leans towards (pointed at, or focused), or null. */
+/** The highlighted choice, whose place's view the camera is at or on its way to; null in the doorway. */
 let lean: Place | null = null;
+let hoverTimer = 0;
 /** The place the camera last came back from: its choice takes the focus. */
 let cameFrom: PlaceId | null = null;
 let atPress = true;
@@ -59,6 +66,7 @@ export function resetTitle() {
   press.hidden = false;
   menu.hidden = true;
   lean = null;
+  clearTimeout(hoverTimer);
   cameFrom = null;
   panel.dataset.stage = "press";
 }
@@ -98,21 +106,19 @@ function paintMenu() {
       if (performance.now() - shownAt < MENU_GUARD_MS) return;
       hooks?.go(place.id);
     };
-    const leanHere = () => (lean = place);
-    // Pointing at a choice also takes the focus there, so one choice is lit at a time and Enter takes the one pointed at.
+    // The highlight is the focus: the keys, a pad and a tap move it at once, and the camera goes with it. The pointer
+    // takes the focus once it has rested a moment, so one choice is lit at a time and Enter takes the one pointed at.
+    button.addEventListener("focus", () => {
+      lean = place;
+      // Its things are built now, so the camera arrives at them (the bench's deck boxes), not at bare furniture.
+      if (ready) void place.build().catch(() => {});
+    });
     button.addEventListener("pointerenter", (event) => {
-      if (event.pointerType === "mouse") button.focus({ preventScroll: true });
+      if (event.pointerType !== "mouse") return;
+      clearTimeout(hoverTimer);
+      hoverTimer = window.setTimeout(() => button.focus({ preventScroll: true }), HOVER_SETTLE_MS);
     });
-    const leanOff = () => {
-      if (lean === place) lean = null;
-    };
-    button.addEventListener("pointerenter", leanHere);
-    button.addEventListener("focus", leanHere);
-    button.addEventListener("pointerleave", () => {
-      // The keyboard's choice keeps the lean when the pointer moves off.
-      if (document.activeElement !== button) leanOff();
-    });
-    button.addEventListener("blur", leanOff);
+    button.addEventListener("pointerleave", () => clearTimeout(hoverTimer));
     menu.append(button);
   }
 }
@@ -148,10 +154,12 @@ function doorway(out: Pose, aspect: number): Pose {
 
 const smooth = newPose();
 const wanted = newPose();
-const towards = newPose();
 let settled = false;
 
-export const titlePlace: Place & { cameFrom(id: PlaceId): void } = {
+/** How far apart two poses stand: their positions and what they look at. */
+const apart = (a: Pose, b: Pose) => a.pos.distanceTo(b.pos) + a.at.distanceTo(b.at);
+
+export const titlePlace: Place & { cameFrom(id: PlaceId): void; resumeFrom(pose: Pose): void } = {
   id: "title",
   label: "Marvel Champions",
   line: "",
@@ -173,7 +181,7 @@ export const titlePlace: Place & { cameFrom(id: PlaceId): void } = {
     }
   },
   leave() {
-    lean = null;
+    clearTimeout(hoverTimer);
   },
   back() {
     // At "press any button", Back is a press like any other; at the menu there is nowhere further back to go.
@@ -181,17 +189,23 @@ export const titlePlace: Place & { cameFrom(id: PlaceId): void } = {
     return true;
   },
   step(dt) {
-    doorway(wanted, camera.aspect);
-    if (lean && !lessMotion.matches) {
-      lean.view(towards);
-      lerpPose(wanted, wanted, towards, LEAN);
-      // The doorway sees the whole room sharp, leaning or not.
-      wanted.blur = 0;
-    }
-    if (!settled) {
+    // The highlighted choice's place, seen as it is seen once chosen; the doorway before anything is highlighted.
+    if (lean) lean.view(wanted);
+    else doorway(wanted, camera.aspect);
+    if (!settled || lessMotion.matches) {
       copyPose(smooth, wanted);
       settled = true;
-    } else lerpPose(smooth, smooth, wanted, 1 - Math.exp(-dt * LEAN_RATE));
+    } else lerpPose(smooth, smooth, wanted, 1 - Math.exp(-dt * GLIDE_RATE));
+    // For checks: which view the menu's camera is at or heading to, and whether it has got there.
+    if (!panel.hidden) {
+      root.dataset.view = lean?.id ?? "doorway";
+      root.toggleAttribute("data-view-settled", apart(smooth, wanted) < 0.05);
+    }
+  },
+  resumeFrom(pose) {
+    // Coming back from a place: the menu's camera starts where the camera is, not where it was when it left.
+    copyPose(smooth, pose);
+    settled = true;
   },
   cameFrom(id) {
     cameFrom = id;
