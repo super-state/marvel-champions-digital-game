@@ -1,5 +1,15 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { BattleModel, formWhenRevealed, whenRevealedMissesHeroes, type BattleSnapshot } from "./model.js";
+import * as engine from "@mc/engine";
+import {
+  BattleModel,
+  formWhenRevealed,
+  isModuleId,
+  MODULES,
+  recommendedModule,
+  VILLAINS,
+  whenRevealedMissesHeroes,
+  type BattleSnapshot,
+} from "./model.js";
 import { arrangeScene } from "./debug-scenes.js";
 
 describe("Peter Parker and Rhino's practice turn", () => {
@@ -508,5 +518,75 @@ describe("the hero the deal takes", () => {
     }
     expect(battle.snapshot().turn).toBe("player");
     expect(label()).toBe("Change to Carol Danvers");
+  });
+});
+
+describe("the difficulty and modules the deal takes", () => {
+  /** The engine state the deal opens on, and the encounter sets of every card in it. */
+  function dealt(options: Parameters<BattleModel["reset"]>[0]) {
+    let opening: engine.GameState | null = null;
+    const battle = new BattleModel();
+    battle.reset({
+      ...options,
+      arrange: (state) => {
+        opening = state;
+        return state;
+      },
+    });
+    const state = opening! as engine.GameState;
+    const sets = new Set(
+      Object.keys(state.instances).flatMap(
+        (id) => engine.cardOf(state, id as engine.InstanceId)?.encounterSetIds ?? [],
+      ),
+    );
+    return { battle, state, sets };
+  }
+
+  test("is Standard with the villain's recommended module unless chosen otherwise, exactly as before", () => {
+    for (const [villain, module] of [
+      ["rhino", "bomb_scare"],
+      ["klaw", "masters_of_evil"],
+      ["ultron", "under_attack"],
+    ] as const) {
+      const plain = dealt({ villain, seed: 41 });
+      const spelt = dealt({ villain, seed: 41, difficulty: "standard", modules: [module] });
+      expect(plain.state).toEqual(spelt.state);
+      expect(plain.battle.encounter).toEqual({ difficulty: "standard", modules: [module] });
+      expect(plain.state.villains[0]!.stageIndex).toBe(0);
+      expect(plain.sets.has("expert")).toBe(false);
+      expect(plain.sets.has(module)).toBe(true);
+    }
+  });
+
+  test("Expert starts the villain at stage II, ends at III, and adds the Expert set", () => {
+    for (const villain of ["rhino", "klaw", "ultron"] as const) {
+      const { battle, state, sets } = dealt({ villain, seed: 41, difficulty: "expert" });
+      expect(state.villains[0]!.stageIndex).toBe(1);
+      expect(state.villains[0]!.lastStageIndex).toBe(2);
+      expect(sets.has("expert")).toBe(true);
+      expect(battle.encounter.difficulty).toBe("expert");
+      expect(battle.snapshot().villain.name).toBe(VILLAINS.find((each) => each.id === villain)!.name);
+    }
+  });
+
+  test("a chosen module replaces the recommended one", () => {
+    for (const module of ["legions_of_hydra", "the_doomsday_chair"] as const) {
+      const { battle, sets } = dealt({ villain: "klaw", seed: 41, difficulty: "expert", modules: [module] });
+      expect(sets.has(module)).toBe(true);
+      expect(sets.has("masters_of_evil")).toBe(false);
+      expect(battle.encounter).toEqual({ difficulty: "expert", modules: [module] });
+    }
+  });
+
+  test("every module is a Core Set module, and every villain's recommended one is among them", () => {
+    expect(MODULES.map((module) => module.id)).toEqual([
+      "bomb_scare",
+      "masters_of_evil",
+      "under_attack",
+      "legions_of_hydra",
+      "the_doomsday_chair",
+    ]);
+    for (const villain of VILLAINS) expect(isModuleId(recommendedModule(villain.id))).toBe(true);
+    expect(isModuleId("expert")).toBe(false);
   });
 });

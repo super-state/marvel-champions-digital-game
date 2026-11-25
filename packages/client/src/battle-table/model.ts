@@ -558,11 +558,11 @@ export function isHeroId(id: unknown): id is HeroId {
   return HEROES.some((hero) => hero.id === id);
 }
 
-/** The villains the table can deal, each a Core Set scenario. */
+/** The villains the table can deal, each a Core Set scenario, with the module its scenario recommends. */
 export const VILLAINS = [
-  { id: "rhino", name: "Rhino" },
-  { id: "klaw", name: "Klaw" },
-  { id: "ultron", name: "Ultron" },
+  { id: "rhino", name: "Rhino", module: "bomb_scare" },
+  { id: "klaw", name: "Klaw", module: "masters_of_evil" },
+  { id: "ultron", name: "Ultron", module: "under_attack" },
 ] as const;
 export type VillainId = (typeof VILLAINS)[number]["id"];
 
@@ -570,12 +570,40 @@ export function isVillainId(id: unknown): id is VillainId {
   return VILLAINS.some((villain) => villain.id === id);
 }
 
+/** The Core Set's five modular encounter sets: a game adds one (its villain's recommended one unless chosen). */
+export const MODULES = [
+  { id: "bomb_scare", name: "Bomb Scare" },
+  { id: "masters_of_evil", name: "Masters of Evil" },
+  { id: "under_attack", name: "Under Attack" },
+  { id: "legions_of_hydra", name: "Legions of Hydra" },
+  { id: "the_doomsday_chair", name: "The Doomsday Chair" },
+] as const;
+export type ModuleId = (typeof MODULES)[number]["id"];
+
+export function isModuleId(id: unknown): id is ModuleId {
+  return MODULES.some((module) => module.id === id);
+}
+
+/** Standard or Expert (RRG v1.8 p. 28): Expert adds the Expert set and starts the villain at stage II. */
+export type Difficulty = "standard" | "expert";
+
+export function isDifficulty(id: unknown): id is Difficulty {
+  return id === "standard" || id === "expert";
+}
+
+/** The module the villain's scenario recommends: what a game adds unless another is chosen. */
+export const recommendedModule = (villain: VillainId): ModuleId => VILLAINS.find((each) => each.id === villain)!.module;
+
 export interface DealOptions {
   // The game: who plays against whom.
   /** Which hero, with their starter deck: Spider-Man unless chosen otherwise. */
   hero?: HeroId;
   /** Which scenario: Rhino unless chosen otherwise. */
   villain?: VillainId;
+  /** Standard unless chosen otherwise. */
+  difficulty?: Difficulty;
+  /** The modular encounter sets: the villain's recommended one unless chosen otherwise. */
+  modules?: readonly ModuleId[];
 
   // How it is dealt.
   /** The shuffle. Every seed is a different, repeatable deal. */
@@ -611,6 +639,8 @@ function setupNotesOf(state: GameState, events: readonly GameEvent[]): string[] 
 function openingTurn({
   hero = "spider-man",
   villain = "rhino",
+  difficulty,
+  modules,
   seed = PRACTICE_SEED,
   mulligan: ask = false,
   arrange,
@@ -622,6 +652,8 @@ function openingTurn({
     coreScenario(villain, {
       seed,
       players: [{ starterDeckId: HEROES.find((each) => each.id === hero)!.starterDeckId }],
+      ...(difficulty ? { difficulty } : {}),
+      ...(modules ? { modularSetIds: modules } : {}),
     }),
     CORE_DEPS,
   );
@@ -655,6 +687,10 @@ export class BattleModel {
   #costDiscard: { entry: LegalAction; candidates: readonly InstanceId[]; min: number; max: number } | null = null;
   #view: BattleSnapshot | null = null;
   #matchup: { hero: HeroId; villain: VillainId } = { hero: "spider-man", villain: "rhino" };
+  #encounter: { difficulty: Difficulty; modules: readonly ModuleId[] } = {
+    difficulty: "standard",
+    modules: [recommendedModule("rhino")],
+  };
 
   #beats: BattleBeat[] = [];
   #villainActivity = "";
@@ -754,8 +790,17 @@ export class BattleModel {
     return this.#matchup;
   }
 
+  /** The difficulty and modules of the game on the table, as it was dealt. */
+  get encounter(): { difficulty: Difficulty; modules: readonly ModuleId[] } {
+    return this.#encounter;
+  }
+
   reset(options: DealOptions = {}): void {
     this.#matchup = { hero: options.hero ?? "spider-man", villain: options.villain ?? "rhino" };
+    this.#encounter = {
+      difficulty: options.difficulty ?? "standard",
+      modules: options.modules ?? [recommendedModule(this.#matchup.villain)],
+    };
     this.#history = [];
     this.#villainActivity = "";
     this.#aimed = new Set();
