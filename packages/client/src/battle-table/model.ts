@@ -1,4 +1,4 @@
-import { CORE_DEPS, coreScenario } from "@mc/cards";
+import { CORE_DEPS, coreScenario, type CorePlayer } from "@mc/cards";
 import {
   RESOURCE_TYPES,
   applyCommand,
@@ -26,6 +26,7 @@ import {
   type ResourceType,
   type TriggerEvent,
 } from "@mc/engine";
+import { CORE_STARTER_DECKS, type CoreAspect } from "@mc/content";
 import { artFor, CARD_BACKS, standInArt } from "../art/art-source.js";
 import { abilityLabelOf, abilityShortLabelOf } from "../view/ability-label.js";
 import {
@@ -627,10 +628,22 @@ export function isDifficulty(id: unknown): id is Difficulty {
 /** The module the villain's scenario recommends: what a game adds unless another is chosen. */
 export const recommendedModule = (villain: VillainId): ModuleId => VILLAINS.find((each) => each.id === villain)!.module;
 
+/** A deck the player built, as the deal takes it: the hero's identity, the chosen aspects and one card id per copy. */
+export interface BuiltDeck {
+  /** The saved deck's id and name, carried to the game so its record can say which deck played. */
+  readonly id: string;
+  readonly name: string;
+  readonly identityCardId: string;
+  readonly aspects: readonly CoreAspect[];
+  readonly cards: readonly string[];
+}
+
 export interface DealOptions {
   // The game: who plays against whom.
   /** Which hero, with their starter deck: Spider-Man unless chosen otherwise. */
   hero?: HeroId;
+  /** A deck built at the bench (`decks/`), dealt in place of the hero's starter deck. It must be the hero's, and legal. */
+  deck?: BuiltDeck;
   /** Which scenario: Rhino unless chosen otherwise. */
   villain?: VillainId;
   /** Standard unless chosen otherwise. */
@@ -669,8 +682,24 @@ function setupNotesOf(state: GameState, events: readonly GameEvent[]): string[] 
   return notes;
 }
 
+/** The hero's seat: their starter deck, or the deck built for them (`coreScenario` refuses one that isn't legal). */
+function seatOf(hero: HeroId, deck: BuiltDeck | undefined): CorePlayer {
+  const starterDeckId = HEROES.find((each) => each.id === hero)!.starterDeckId;
+  if (!deck) return { starterDeckId };
+  const identity = CORE_STARTER_DECKS.find((each) => each.id === starterDeckId)?.identityCardId;
+  if (deck.identityCardId !== identity) throw Error(`The deck "${deck.name}" is not a deck for ${hero}.`);
+  return {
+    identityCardId: deck.identityCardId,
+    deck: deck.cards,
+    aspects: deck.aspects,
+    deckId: deck.id,
+    deckName: deck.name,
+  };
+}
+
 function openingTurn({
   hero = "spider-man",
+  deck,
   villain = "rhino",
   difficulty,
   modules,
@@ -684,7 +713,7 @@ function openingTurn({
   const created = createGame(
     coreScenario(villain, {
       seed,
-      players: [{ starterDeckId: HEROES.find((each) => each.id === hero)!.starterDeckId }],
+      players: [seatOf(hero, deck)],
       ...(difficulty ? { difficulty } : {}),
       ...(modules ? { modularSetIds: modules } : {}),
     }),

@@ -8,6 +8,7 @@
  */
 import * as THREE from "three";
 import { matPrint, type BattleTable } from "../../table.js";
+import { currentMat, matLook } from "../../mats.js";
 import type { Difficulty, HeroId, ModuleId, VillainId } from "../../model.js";
 import { anisotropy } from "../canvas.js";
 import type { RoomSetting } from "./settings.js";
@@ -122,11 +123,13 @@ let mat: {
   roll: THREE.Mesh;
   far: [THREE.Vector3, THREE.Vector3];
   near: [THREE.Vector3, THREE.Vector3];
+  /** Lets go of the mat choice's change listener. */
+  stop: () => void;
 } | null = null;
 
 function buildMat(corners: Corners) {
   // The table's own mat print, lying in this room's light like the cloth it is, so it reads as a mat on the wood.
-  const { texture: print, reshape } = matPrint(() => {});
+  const { texture: print, reshape, stop } = matPrint(() => {});
   reshape(corners[0]!.distanceTo(corners[1]!) / corners[0]!.distanceTo(corners[3]!));
   print.anisotropy = anisotropy();
   const geometry = new THREE.BufferGeometry();
@@ -141,13 +144,14 @@ function buildMat(corners: Corners) {
   scene.add(flat);
   const roll = new THREE.Mesh(
     new THREE.CylinderGeometry(1, 1, 1, 36, 1),
-    new THREE.MeshStandardMaterial({ color: 0x152032, roughness: 0.8 }),
+    // The roll is the back of the chosen mat's cloth.
+    new THREE.MeshStandardMaterial({ color: new THREE.Color(matLook(currentMat()).back), roughness: 0.8 }),
   );
   roll.castShadow = true;
   roll.frustumCulled = false;
   roll.visible = false;
   scene.add(roll);
-  mat = { flat, roll, far: [corners[0]!, corners[1]!], near: [corners[3]!, corners[2]!] };
+  mat = { flat, roll, far: [corners[0]!, corners[1]!], near: [corners[3]!, corners[2]!], stop };
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -221,6 +225,7 @@ function finishOutro() {
 /** Clears away what the last Play left in the room (the rolled-out mat). */
 export function resetPlay() {
   if (mat) {
+    mat.stop();
     scene.remove(mat.flat, mat.roll);
     mat.flat.geometry.dispose();
     mat.flat.material.map?.dispose();
