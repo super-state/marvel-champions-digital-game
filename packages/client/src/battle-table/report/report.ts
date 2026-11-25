@@ -3,7 +3,7 @@
  * the moment... submitted into GitHub issues"). The menu turns into a box to type in; Send posts the words with the
  * moment (`capture.ts`) to `/api/reports`:
  *
- * - on the test site, the site keeps it (site-api.ts) and `pnpm table:reports` files it as a GitHub issue;
+ * - on the test site, the site keeps it (site-api.ts) and files it as a GitHub issue itself (file-report.ts);
  * - on Adam's own dev table, the dev server files it straight away (`vite-battle-report.ts`).
  *
  * It lives inside the menu dialog rather than a dialog of its own, so the table's keys (Enter, Ctrl+Space, Ctrl+Z) and

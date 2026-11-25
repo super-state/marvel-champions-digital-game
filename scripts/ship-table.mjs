@@ -30,6 +30,9 @@
  * Each ship makes it if it's missing and binds it to the Pages project as DB: the deploy runs from a folder holding a
  * Pages wrangler.json with that binding (Pages takes a config file's bindings as the project's; its secrets stay).
  * Adam's players page needs the second secret ADMIN_KEY (`/admin/<ADMIN_KEY>`), put the same way as INVITE_KEY.
+ * Bug reports are filed on GitHub by the site itself with a third, REPORTS_GITHUB_TOKEN (a fine-grained token, Issues
+ * only, on super-state/marvel-champions-digital-game, made and put in by Adam); without it they wait for
+ * `pnpm table:reports`. A changed secret reaches the site with the next deploy.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -101,6 +104,8 @@ const secrets = execFileSync("node", [wrangler, "pages", "secret", "list", "--pr
 });
 if (!/\bADMIN_KEY\b/.test(secrets))
   console.warn("ship-table: ADMIN_KEY isn't set, so the players page (/admin) can't be opened yet");
+if (!/\bREPORTS_GITHUB_TOKEN\b/.test(secrets))
+  console.warn("ship-table: REPORTS_GITHUB_TOKEN isn't set, so bug reports wait for `pnpm table:reports`");
 const pagesDir = path.join(scratch, "pages");
 mkdirSync(pagesDir);
 writeFileSync(

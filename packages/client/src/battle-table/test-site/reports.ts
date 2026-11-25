@@ -1,7 +1,8 @@
 /**
  * Bug reports sent from the test site's table ("Report a bug" in the menu, `report/`), kept in the site's D1 database
- * beside the players (players.ts) until `pnpm table:reports` (scripts/file-table-reports.mjs) files each one as a
- * GitHub issue and notes the issue here. Adam's players page lists them too, filed or not.
+ * beside the players (players.ts). The site files each one as a GitHub issue as it arrives (file-report.ts) and notes
+ * the issue here; one it couldn't file waits for `pnpm table:reports` (scripts/file-table-reports.mjs). Adam's players
+ * page lists them too, filed or not.
  *
  * A report holds the player's words, who sent it and the moment on the table (the engine state included, so it can be
  * a few hundred KB). A player can send at most `HOURLY_LIMIT` an hour, so a stuck key can't fill the database.
@@ -97,4 +98,16 @@ export async function latestReports(
     .bind(limit)
     .all<Omit<ReportRow, "moment"> & { version: string | null; game: string }>();
   return results;
+}
+
+/** The engine state kept with a report, as JSON text; null when there is no such report or it has none. */
+export async function reportState(db: D1Like, id: string): Promise<string | null> {
+  await ensureReports(db);
+  const row = await db
+    .prepare(
+      "SELECT json_extract(moment, '$.state') IS NOT NULL AS has, json(json_extract(moment, '$.state')) AS state FROM reports WHERE id = ?",
+    )
+    .bind(id)
+    .first<{ has: number; state: string | null }>();
+  return row?.has ? (row.state ?? null) : null;
 }
