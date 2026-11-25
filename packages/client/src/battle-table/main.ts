@@ -1,4 +1,5 @@
 import { statHue } from "../tokens.js";
+import { searchQuestion } from "./search-question.js";
 import "./design.css";
 import "./battle.css";
 import { padActive, startController } from "./pad/controller.js";
@@ -114,6 +115,8 @@ let revealWindowHeld: string | null = null;
 let releaseHeld: string | null = null;
 /** A revealed card whose own question was just answered, standing aside: it fires before the answer's beats play. */
 let answeredHeld: string | null = null;
+/** Revealed cards whose When Revealed fired before their question was asked (a search), so it isn't fired again. */
+const firedBeforeAsking = new Set<string>();
 /** The reveal of the card held up, kept for moves whose own beats don't carry it (paying for a reaction to it). */
 let heldReveal: Beat["reveal"] = undefined;
 /** How long the table takes to darken where it fades in (`.fade-in` in battle.css). */
@@ -265,6 +268,8 @@ function cards() {
     ...state.encounterDiscard,
     // Last: a card on its way to the hand (Black Cat's pick-up) is named before it gets there.
     ...state.hand,
+    // Cards a question found in a deck or discard pile: named, and read when pointed at in the bar.
+    ...(state.choice?.searched?.map((found) => found.card) ?? []),
   ];
 }
 
@@ -322,6 +327,18 @@ interface DockOption {
   order?: number;
   onClick(): void;
 }
+/** A card in the bar's row of searched cards: its picture, and which pile it was found in. */
+interface DockCard {
+  /** The option it answers. */
+  id: string;
+  cardId: string;
+  name: string;
+  art: string;
+  from: string;
+  pressed: boolean;
+  order?: number;
+  onClick(): void;
+}
 interface DockView {
   tone: "hero" | "villain";
   /** True while the game waits for the player's answer. */
@@ -332,6 +349,8 @@ interface DockView {
   title: string;
   help?: string | null;
   options?: readonly DockOption[];
+  /** Cards offered from a deck or discard pile, laid out face up to read before choosing (`BattleChoice.searched`). */
+  cards?: readonly DockCard[];
   meter?: { paid: number; required: number; balance: string } | null;
   primary?: DockButton | null;
   secondary?: DockButton | null;
@@ -360,6 +379,75 @@ function paintButton(button: HTMLButtonElement, spec: DockButton | null | undefi
   };
 }
 
+/**
+ * The bar's row of searched cards (Masters of Mayhem's Masters of Evil minions, a search of the player's own deck):
+ * each card face up with the pile it came from. Pointing at one (or focusing it) shows it full size, as a table card
+ * does; pressing it picks it, and the bar's Confirm takes it (Adam, 2026-11-25: "had the list of names but couldn't
+ * preview the cards to know what they did"). The buttons are kept from paint to paint, so the one under the pointer
+ * or the keyboard stays put.
+ */
+const dockCards = make("div", "dock-cards");
+dockCards.setAttribute("role", "group");
+dockCards.setAttribute("aria-label", "Cards to choose from");
+dockCards.hidden = true;
+element("dock-options").before(dockCards);
+function paintDockCards(list: readonly DockCard[]) {
+  dockCards.hidden = !list.length;
+  const keep = new Set(list.map((card) => card.id));
+  for (const button of [...dockCards.children] as HTMLElement[])
+    if (!keep.has(button.dataset.option ?? "")) button.remove();
+  list.forEach((card, i) => {
+    let button = dockCards.querySelector<HTMLButtonElement>(`[data-option="${CSS.escape(card.id)}"]`);
+    if (!button) {
+      button = make("button", "dock-card");
+      button.type = "button";
+      button.dataset.option = card.id;
+      // Not `data-card`: that names a card on the table, which the controller steers to by its place there.
+      button.dataset.found = card.cardId;
+      const picture = make("img", "");
+      picture.alt = "";
+      picture.draggable = false;
+      button.append(picture);
+      button.onpointerenter = (event) => {
+        if (event.pointerType !== "touch") hoverCard(card.cardId);
+      };
+      button.onpointerleave = () => hoverCard(null);
+      // The keyboard or a controller arriving on a card reads it; the bar focusing its first card for a mouse does not.
+      button.onfocus = () => {
+        if (padActive() || button!.matches(":focus-visible")) hoverCard(card.cardId);
+      };
+      button.onblur = () => hoverCard(null);
+    }
+    button.onclick = (event) => {
+      if (!discarding && !presenting && (event.detail === 0 || settled())) card.onClick();
+    };
+    const picture = button.querySelector("img")!;
+    if (picture.getAttribute("src") !== card.art) picture.src = card.art;
+    button.setAttribute("aria-pressed", String(card.pressed));
+    button.setAttribute("aria-label", `${card.name}, from ${card.from.toLowerCase()}`);
+    button.querySelector(".pick-order")?.remove();
+    if (card.order !== undefined) button.append(orderBadge(card.order));
+    if (dockCards.children[i] !== button) dockCards.insertBefore(button, dockCards.children[i] ?? null);
+  });
+}
+
+/** The picked card of a one-card search, until Confirm: a press only picks it, so it can be read first. */
+let searchPick: { choice: string; option: string } | null = null;
+function searchPicked(choice: Choice): string | null {
+  return searchPick?.choice === choice.id && choice.options.some((option) => option.id === searchPick!.option)
+    ? searchPick.option
+    : null;
+}
+
+/** Where on screen each card just taken from a search was, so it flies from there onto the table (Adam, 2026-11-25). */
+let foundAt = new Map<string, DOMRect>();
+function markFound(option: string) {
+  const button = [...dockCards.children].find((node) => (node as HTMLElement).dataset.option === option);
+  const art = button?.querySelector("img");
+  const id = (button as HTMLElement | undefined)?.dataset.found;
+  foundAt = id && art ? new Map([[id, art.getBoundingClientRect()]]) : new Map();
+}
+
 /** Paint the turn bar; true when it now asks a question it was not asking before. */
 function paintDock(view: DockView): boolean {
   dock.dataset.tone = view.tone;
@@ -370,6 +458,8 @@ function paintDock(view: DockView): boolean {
     turnMark.replaceChildren(icon(side));
   }
   dock.toggleAttribute("data-asking", view.asking);
+  // A search lays its cards out full size: the bar opens into a panel in the middle of the table (`.dock[data-search]`).
+  dock.toggleAttribute("data-search", !!view.cards?.length);
   // On a wider screen the bar shows only when there is something to press: a question, Continue, Play again. What
   // the game is doing (the villain phase, an ability resolving) plays out on the table and goes in the log.
   const pressable = [view.primary, view.secondary].some((button) => button && !button.endTurn && !button.disabled);
@@ -452,13 +542,18 @@ function paintDock(view: DockView): boolean {
     dockOptions
       .querySelector<HTMLElement>(`[data-option="${CSS.escape(focusedOption)}"]`)
       ?.focus({ preventScroll: true });
+  paintDockCards(view.cards ?? []);
   paintButton(dockPrimary, view.primary);
   paintButton(dockSecondary, view.secondary);
   paintFeed();
   // A new question takes the keyboard focus so it is read out and answerable from the keyboard.
   const pressing = [dock, turnCorner, railTurn, undoCorner].some((home) => home.contains(document.activeElement));
   if (asked && !presenting && !pressing) {
-    const first = view.options?.length ? dockOptions.querySelector<HTMLElement>("button") : null;
+    const first = view.options?.length
+      ? dockOptions.querySelector<HTMLElement>("button")
+      : view.cards?.length
+        ? dockCards.querySelector<HTMLElement>("button")
+        : null;
     (first ?? dockTitle).focus({ preventScroll: true });
   }
   placeDock();
@@ -703,14 +798,23 @@ function choiceView(choice: Choice): DockView {
     };
   }
   const multiple = choice.max > 1;
-  const listed = choice.options.filter((option) => !onTable(option.cardId) || actionCard === option.cardId);
+  // Cards found in a deck or discard pile are laid out as cards in the bar, not buttons with their names.
+  const searched = new Map((choice.searched ?? []).map((found) => [found.id, found]));
+  const listed = choice.options.filter(
+    (option) => (!onTable(option.cardId) || actionCard === option.cardId) && !searched.has(option.cardId ?? ""),
+  );
+  const searchCards = choice.options.filter((option) => searched.has(option.cardId ?? ""));
+  const picked = searchCards.length && !multiple ? searchPicked(choice) : null;
   const source =
     choice.sourceTitle?.replace(/ · When Revealed$/, "") ??
     (nameOf(state.choiceSource) ||
       // A revealed card standing aside beside the villain while it asks (Sonic Boom) is in none of the zones.
       parkedViews.get(state.choiceSource ?? "")?.name ||
       (state.turn === "enemy" ? "Villain phase" : state.turn === "ending" ? "End of turn" : staged?.name || ""));
-  const heading = /^choose one[.:]?$/i.test(choice.prompt.trim()) ? "Choose one" : choice.prompt;
+  // A search's question says only what to choose, and at most one plain line on where the card goes
+  // (`searchQuestion`; Adam, 2026-11-25).
+  const asked = choice.searched?.length ? searchQuestion(choice.prompt, choice.max) : null;
+  const heading = asked?.title ?? (/^choose one[.:]?$/i.test(choice.prompt.trim()) ? "Choose one" : choice.prompt);
   const eitherOr = /^Spend .+, or .+\?$/.test(choice.prompt);
   const order = pickOrder(choice, choicePicks);
   return {
@@ -724,6 +828,8 @@ function choiceView(choice: Choice): DockView {
         }
       : null,
     title: heading,
+    // Guard keeping the villain out of reach says so under the question (`BattleChoice.guard`).
+    help: choice.guard ? (choice.explanation ?? null) : (asked?.help ?? null),
     options: listed.map((option) => ({
       id: option.id,
       label: option.label,
@@ -732,18 +838,50 @@ function choiceView(choice: Choice): DockView {
       ...(order.has(option.id) ? { order: order.get(option.id)! } : {}),
       onClick: () => selectChoice(option.id),
     })),
-    primary: multiple
-      ? {
-          // An either-or payment ("Spend 1 physical, or put the top card of the deck into play ... as a Drone
-          // minion?"): the button says which half pressing it now takes, where a bare "Confirm" with nothing picked
-          // hid that it means the "or".
-          label: eitherOr ? (n ? `Spend ${n}` : "Don’t spend") : n ? `Confirm ${n}` : "Confirm",
-          icon: "next",
-          disabled: n < choice.min || discarding,
-          attention: n >= choice.min,
-          onClick: confirmChoice,
-        }
-      : null,
+    cards: searchCards.map((option) => {
+      const found = searched.get(option.cardId!)!;
+      return {
+        id: option.id,
+        cardId: found.id,
+        name: found.card.name,
+        art: found.card.art,
+        from: found.from,
+        pressed: multiple ? choicePicks.has(option.id) : picked === option.id,
+        ...(order.has(option.id) ? { order: order.get(option.id)! } : {}),
+        onClick: () => {
+          sfx.play("select");
+          selectChoice(option.id);
+        },
+      };
+    }),
+    primary:
+      !multiple && searchCards.length
+        ? {
+            // One card from a search: pressing a card picks it (so it can be read first); this takes it.
+            // Always "Confirm": the picked card shows itself, and the button keeps its size (Adam, 2026-11-25).
+            label: "Confirm",
+            icon: "check",
+            disabled: !picked || discarding,
+            attention: !!picked,
+            onClick: () => {
+              if (!picked) return;
+              searchPick = null;
+              markFound(picked);
+              choose(picked);
+            },
+          }
+        : multiple
+          ? {
+              // An either-or payment ("Spend 1 physical, or put the top card of the deck into play ... as a Drone
+              // minion?"): the button says which half pressing it now takes, where a bare "Confirm" with nothing picked
+              // hid that it means the "or".
+              label: eitherOr ? (n ? `Spend ${n}` : "Don’t spend") : n ? `Confirm ${n}` : "Confirm",
+              icon: "next",
+              disabled: n < choice.min || discarding,
+              attention: n >= choice.min,
+              onClick: confirmChoice,
+            }
+          : null,
     secondary: choice.canCancel
       ? { label: "Cancel", onClick: cancel }
       : !multiple && choice.canSkip
@@ -816,6 +954,10 @@ let overMenu = false;
 function hoverCard(id: string | null) {
   // A soft tick as the pointer comes onto a new card, one for the hand and one for the table (Adam, 2026-11-24).
   if (id && id !== pointedCard) sfx.play(inHand(id) ? "hover-hand" : "hover-table");
+  if (id !== pointedCard) {
+    if (id && state.choice?.guard?.blocked.includes(id)) showGuardHint(id, true);
+    else dropGuardHint();
+  }
   pointedCard = id;
   showHovered();
 }
@@ -1020,6 +1162,12 @@ function pick(id: string) {
     return;
   }
   if (state.choice) {
+    if (state.choice.guard?.blocked.includes(id)) {
+      sfx.play("error");
+      guardHintAt = 0;
+      showGuardHint(id);
+      return;
+    }
     const targets = state.choice.options.filter((option) => option.cardId === id);
     if (targets.length === 1) {
       sfx.play("select");
@@ -1221,6 +1369,13 @@ function selectChoice(id: string) {
   actionCard = null;
   const choice = state.choice;
   if (discarding || !choice) return;
+  // A card from a search is only picked here; the bar's Confirm takes it, so it can be read first (`paintDockCards`).
+  const cardId = choice.options.find((option) => option.id === id)?.cardId;
+  if (choice.max <= 1 && choice.searched?.some((found) => found.id === cardId)) {
+    searchPick = { choice: choice.id, option: id };
+    render();
+    return;
+  }
   if (!choice.discardFromHand && !choice.mulligan && choice.max <= 1) {
     choose(id);
     return;
@@ -1258,6 +1413,90 @@ function hpPill(hp: number): HTMLElement {
   pill.append(icon("heart"), make("b", "", String(hp)));
   pill.toggleAttribute("data-low", hp <= 3);
   return pill;
+}
+
+/** A guard minion's shield on its plate: while it is engaged, the villain can't be attacked. */
+function guardPill(): HTMLElement {
+  const pill = make("span", "stat-pill");
+  pill.dataset.kind = "guard";
+  pill.title = "Guard: while this minion is engaged with you, you can't attack the villain";
+  pill.append(icon("guard"));
+  return pill;
+}
+
+/** Why the villain can't be attacked during a guard pick, in a few words: "Hydra Mercenary has Guard". */
+function guardReason(): string {
+  const names = (state.choice?.guard?.guards ?? []).map(nameOf);
+  const villain = nameOf(state.choice?.guard?.blocked[0] ?? null) || "The villain";
+  if (!names.length) return "";
+  const who = names.length === 1 ? `${names[0]} has` : `${names.slice(0, -1).join(", ")} and ${names.at(-1)} have`;
+  return `Can't attack ${villain}: ${who} Guard`;
+}
+
+/**
+ * The player points at or clicks the villain while guard keeps it out of reach: "Guard" stamped, with its shield, on
+ * the minion(s) stopping it (Adam, 2026-11-25: "it says guard over the thing with guard is enough"; no words over the
+ * villain). Pointing holds the stamps until the pointer leaves him ("that should stay there while hovered over the
+ * card"); a click or a tap stamps them a moment.
+ */
+let guardHeld: HTMLElement[] = [];
+let guardHintAt = 0;
+function showGuardHint(villain: string, held = false) {
+  const guard = state.choice?.guard;
+  if (!guard?.blocked.includes(villain)) return;
+  if (!held) {
+    // Already held over the minions: they stay as they are.
+    if (guardHeld.some((node) => node.isConnected)) return;
+    const now = performance.now();
+    if (now - guardHintAt < 900) return;
+    guardHintAt = now;
+    for (const id of guard.guards) stampCard(id, "Guard", "guard");
+    return;
+  }
+  dropGuardHint();
+  const anchors = table?.anchors() ?? [];
+  for (const id of guard.guards) {
+    const anchor = anchors.find((point) => point.id === id);
+    if (!anchor) continue;
+    const node = make("div", "card-stamp", "Guard");
+    node.dataset.tone = "guard";
+    node.dataset.card = id;
+    node.prepend(icon("guard"));
+    node.style.left = anchor.x + "px";
+    node.style.top = anchor.y + "px";
+    node.style.setProperty("--float-size", Math.round(Math.min(78, Math.max(40, anchor.width * 0.62))) + "px");
+    stage.append(node);
+    guardHeld.push(node);
+    if (!reducedMotion())
+      node.animate(
+        [
+          { transform: "scale(2.4)", opacity: 0 },
+          { transform: "scale(.92)", opacity: 1, offset: 0.6 },
+          { transform: "scale(1)", opacity: 1 },
+        ],
+        { duration: 300, easing: "cubic-bezier(.2,.8,.3,1)" },
+      );
+  }
+}
+
+/** The held stamps go once the pointer leaves the villain, or the question they explain is over. */
+function dropGuardHint() {
+  for (const node of guardHeld) node.remove();
+  guardHeld = [];
+}
+
+/** Guard minions already called out: each is stamped "Guard" once as it comes onto the table. */
+const guardsCalled = new Set<string>();
+function announceGuards() {
+  if (presenting || flying) return;
+  const placed = new Set(table?.anchors().map((anchor) => anchor.id) ?? []);
+  const now = state.enemyCards.filter((card) => card.guard).map((card) => card.id);
+  for (const id of [...guardsCalled]) if (!now.includes(id)) guardsCalled.delete(id);
+  for (const id of now) {
+    if (guardsCalled.has(id) || !placed.has(id)) continue;
+    guardsCalled.add(id);
+    stampCard(id, "Guard", "guard");
+  }
 }
 
 function threatPill(count: number, target: number | null, lock?: string): HTMLElement {
@@ -1495,12 +1734,18 @@ function synchronizeLabels() {
         label.append(chip);
       }
     } else {
-      // Picking a defender, the plate is just the health: the card shows who it is and the dock asks the question
-      // (Adam, 2026-11-22: "All the player needs is their health").
-      if ((source || target) && !handPick && !state.choice?.defense)
+      // A pick's plate is just the health, threat or shield: the card shows who it is and the dock asks the question
+      // (Adam, 2026-11-22: "All the player needs is their health"; 2026-11-25, of whom to attack: "the heart and the
+      // guard symbol are enough"). Only a card with nothing else to show (a support, an upgrade) is named.
+      if ((source || target) && !handPick && !state.choice?.defense && hp === undefined && card.threat === null)
         label.append(make("span", "plate-name", card.name));
       if (!discardOpen && hp !== undefined) label.append(hpPill(hp));
+      if (!discardOpen && card.guard) label.append(guardPill());
     }
+    // Picking whom to attack while guard keeps the villain out of reach: the guard minion's shield pulses.
+    label.toggleAttribute("data-guarding", !!state.choice?.guard?.guards.includes(card.id));
+    // The villain guard protects stays pointable during that pick, to say why it can't be chosen.
+    if (state.choice?.guard?.blocked.includes(card.id)) label.setAttribute("aria-description", guardReason());
     if (hp === undefined || discardOpen || inHand) delete label.dataset.hp;
     else label.dataset.hp = String(hp);
     if (card.threat !== null && onTable(card.id))
@@ -1720,6 +1965,34 @@ async function pickFromHandAtRandom(beat: Beat, ids: readonly string[], stamp: s
   table.spotlightHand(ids);
   for (const id of ids) stampCard(id, stamp, "surge");
   await sleep(reducedMotion() ? 500 : 900);
+}
+
+/** A revealed card held up at full size, the table soft around it, until the player has read it and pressed Continue. */
+async function waitToBeRead(beat: Beat, reveal: NonNullable<Beat["reveal"]>) {
+  readReveal.setAttribute("aria-label", `Continue after reading ${reveal.name}`);
+  readReveal.hidden = false;
+  // Known before the bar asks, so its Continue leaves the table where it is.
+  revealFocus = reveal.id;
+  narrate(beat, null, {
+    eyebrow: { text: revealedBy(reveal), icon: "forced", tone: "villain" },
+    title: reveal.name,
+    help: appliesHelp(reveal),
+    primary: { label: "Continue", icon: "next", attention: true, onClick: () => readReveal.click() },
+  });
+  readReveal.focus({ preventScroll: true });
+  table?.holdReveal(true);
+  // The table goes soft around the revealed card while it waits to be read.
+  focusBlur.hidden = false;
+  placeLabels();
+  requestAnimationFrame(() => (focusBlur.dataset.ready = ""));
+  await new Promise<void>((resolve) => readReveal.addEventListener("click", () => resolve(), { once: true }));
+  table?.holdReveal(false);
+  revealFocus = null;
+  delete focusBlur.dataset.ready;
+  focusBlur.hidden = !handQuestion();
+  focusBlur.style.clipPath = "";
+  revealHint.hidden = readReveal.hidden = true;
+  narrate(beat, null);
 }
 
 /** How a revealed card is introduced: dealt and turned over, or brought in by another card (your nemesis, by Shadow). */
@@ -2424,9 +2697,10 @@ async function threatStep(beat: Beat, scheme: string, amount: number) {
   await sleep(reducedMotion() ? 500 : 1300);
 }
 
-function stampCard(id: string, text: string, tone?: "status" | "confused" | "tough" | "surge" | "boost") {
+function stampCard(id: string, text: string, tone?: "status" | "confused" | "tough" | "surge" | "boost" | "guard") {
   const node = make("div", "card-stamp", text);
   if (tone) node.dataset.tone = tone;
+  if (tone === "guard") node.prepend(icon("guard"));
   floatOver(id, node, 1100, [
     { transform: "scale(2.4)", opacity: 0 },
     { transform: "scale(.92)", opacity: 1, offset: 0.16 },
@@ -2663,7 +2937,8 @@ async function present(beats: Snapshot["beats"]) {
       // in the air).
       const id = answeredHeld;
       answeredHeld = null;
-      if (!reducedMotion() && table?.parkedEncounters().includes(id)) {
+      // A card whose When Revealed already fired before it asked (a search) doesn't fire a second time.
+      if (!firedBeforeAsking.delete(id) && !reducedMotion() && table?.parkedEncounters().includes(id)) {
         await sleep(450);
         // Named as it was revealed: once removed from the game it is in none of the piles the final state lists.
         await whenRevealedFires(beat, { id, name: parkedViews.get(id)?.name ?? nameOf(id) }, "Resolve");
@@ -2909,7 +3184,9 @@ async function present(beats: Snapshot["beats"]) {
       const card = state.enemyCards.find((c) => c.id === beat.entersPlay);
       narrate(beat, feedLineOf(beat));
       if (card) {
-        table?.bringInEnemy(card);
+        const from = reducedMotion() ? undefined : foundAt.get(card.id);
+        foundAt.delete(card.id);
+        table?.bringInEnemy(card, from);
         sfx.play("deal");
         await sleep(reducedMotion() ? 200 : 700);
         synchronizeLabels();
@@ -3221,7 +3498,7 @@ async function present(beats: Snapshot["beats"]) {
         !beat.reveal.boost &&
         !beat.reveal.quick &&
         !state.outcome &&
-        !(state.choice?.sourceTitle && state.choiceSource === beat.reveal.id);
+        !(state.choice?.sourceTitle && state.choiceSource === beat.reveal.id && !state.choice.searched?.length);
       if (willHold) table?.holdReveal(true);
       table?.revealEncounter(beat.reveal);
       sfx.play("flip");
@@ -3242,6 +3519,14 @@ async function present(beats: Snapshot["beats"]) {
       }
       heldReveal = beat.reveal;
       if (state.choice?.sourceTitle && state.choiceSource === beat.reveal.id) {
+        if (state.choice.searched?.length) {
+          // A search fills the screen with the cards it finds, so the card it comes from is read and fires first,
+          // like any other reveal, and only then is the player asked (Adam, 2026-11-25: Masters of Mayhem's panel
+          // came up before the card had been seen).
+          await waitToBeRead(beat, beat.reveal);
+          await whenRevealedFires(beat, beat.reveal);
+          firedBeforeAsking.add(beat.reveal.id);
+        }
         heldEncounter = beat.reveal.id;
         readingCard = null;
         continue;
@@ -3268,32 +3553,7 @@ async function present(beats: Snapshot["beats"]) {
           title: beat.reveal.name,
         });
         await sleep(reducedMotion() ? 700 : beat.reveal.broughtBy ? 1900 : 1150);
-      } else {
-        readReveal.setAttribute("aria-label", `Continue after reading ${beat.reveal.name}`);
-        readReveal.hidden = false;
-        // Known before the bar asks, so its Continue leaves the table where it is.
-        revealFocus = beat.reveal.id;
-        narrate(beat, null, {
-          eyebrow: { text: revealedBy(beat.reveal), icon: "forced", tone: "villain" },
-          title: beat.reveal.name,
-          help: appliesHelp(beat.reveal),
-          primary: { label: "Continue", icon: "next", attention: true, onClick: () => readReveal.click() },
-        });
-        readReveal.focus({ preventScroll: true });
-        table?.holdReveal(true);
-        // The table goes soft around the revealed card while it waits to be read.
-        focusBlur.hidden = false;
-        placeLabels();
-        requestAnimationFrame(() => (focusBlur.dataset.ready = ""));
-        await new Promise<void>((resolve) => readReveal.addEventListener("click", () => resolve(), { once: true }));
-        table?.holdReveal(false);
-        revealFocus = null;
-        delete focusBlur.dataset.ready;
-        focusBlur.hidden = !handQuestion();
-        focusBlur.style.clipPath = "";
-        revealHint.hidden = readReveal.hidden = true;
-        narrate(beat, null);
-      }
+      } else await waitToBeRead(beat, beat.reveal);
       readingCard = null;
       setWidePreview(false);
       const permanent = state.enemyCards.find((c) => c.id === beat.reveal!.id);
@@ -3560,6 +3820,8 @@ function render() {
   discardFan.hidden = !discardOpen;
   syncBoostTags();
   synchronizeLabels();
+  announceGuards();
+  if (!state.choice?.guard) dropGuardHint();
   element("board-viewport").toggleAttribute("data-paying", !!state.payment);
   pile.disabled = !state.discard.length || flying || discarding || !!state.payment;
   pile.setAttribute("aria-expanded", String(discardOpen && !viewingEncounterDiscard));
@@ -3775,6 +4037,8 @@ function deal() {
   choicePicks.clear();
   staged = null;
   heldEncounter = revealWindowHeld = releaseHeld = answeredHeld = null;
+  firedBeforeAsking.clear();
+  foundAt.clear();
   heldReveal = undefined;
   readingCard = null;
   aimTarget = null;
@@ -3845,6 +4109,8 @@ function deal() {
 }
 
 function start() {
+  // A new game calls out its guard minions afresh (instance ids repeat from game to game).
+  guardsCalled.clear();
   pinCard(null);
   table?.holdReveal(false);
   try {
@@ -4265,6 +4531,11 @@ function placeHoverCard() {
  */
 function previewSpot(id: string) {
   const folded = roomy.matches && arena.hasAttribute("data-collapsed");
+  // The villain guard keeps out of reach, pointed at while picking whom to attack: its big picture would cover the
+  // guard minion's "Guard" call-out, which is what the player needs to see (`showGuardHint`).
+  if (state.choice?.guard?.blocked.includes(id)) return null;
+  // A searched card is already full size in the search panel: no second picture.
+  if (state.choice?.searched?.some((each) => each.id === id)) return null;
   const card = folded && !inHand(id) ? cards().find((item) => item.id === id) : undefined;
   const point = card?.art && table ? table.anchors().find((anchor) => anchor.id === id) : undefined;
   if (!card || !point) return null;
@@ -4302,7 +4573,8 @@ function previewSpot(id: string) {
  * from) and whenever the bar changes size. Folding away it keeps its spot, so it fades out where it was.
  */
 function placeDock() {
-  if (!roomy.matches || !table) {
+  // The search panel sits in the middle of the table, placed by its own style.
+  if (!roomy.matches || !table || dock.hasAttribute("data-search")) {
     for (const property of ["top", "left", "bottom", "translate"]) dock.style.removeProperty(property);
     return;
   }

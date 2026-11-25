@@ -4,10 +4,13 @@ import {
   applyCommand,
   activeEncounterDeck,
   activeAbilityRefs,
+  canAttack,
   cardOf,
+  hasKeyword,
   characterProfile,
   createGame,
   getInstance,
+  locateCard,
   handSize,
   legalActions,
   paymentOptionsPool,
@@ -134,6 +137,11 @@ export interface BattleCard {
    * lock, and a thwart never offers it.
    */
   threatLock?: string;
+  /**
+   * A minion engaged with the player that has guard now: while it is there the player cannot attack the villain (RRG
+   * 1.8 "Guard", p. 21). The table wears a shield on its plate, and calls "Guard" out as it arrives.
+   */
+  guard?: true;
 }
 
 export interface BattlePayment {
@@ -217,7 +225,56 @@ export interface BattleChoice {
    * first. The table numbers the picked cards as they are picked (`pick-order.ts`).
    */
   ordered?: boolean;
+  /**
+   * Picking whom to attack while guard stops an attack on the villain: the villains the player cannot attack, and the
+   * guard minions stopping it. The pick is asked even when the guard minion is the only enemy left to attack, so the
+   * player sees why the villain is out of reach rather than the attack going to the minion by itself (Adam,
+   * 2026-11-25: a playtester was confused when the attack "went straight to the guard one").
+   */
+  guard?: { blocked: string[]; guards: string[] };
+  /**
+   * Options that are cards in a deck, a discard pile or set aside, which the table doesn't show face up: each one's
+   * face and the pile it is in. The table lays them out as cards to read before choosing (Masters of Mayhem searching
+   * the encounter deck for a Masters of Evil minion; any search of the player's own deck). Absent when none are.
+   */
+  searched?: { id: string; card: BattleCard; from: string }[];
 }
+
+/** What the table calls each pile a question can offer cards from (`BattleChoice.searched`). */
+/**
+ * Whether an ability's effects choose `slot` as an enemy its controller can attack (`TargetQuery.attackableBy` over
+ * enemies, as `anAttackableEnemy` writes it): the pick of an attack that guard can narrow. Walks the whole effect tree,
+ * since the step may sit inside a "choose one" or a sequence.
+ */
+function asksAttackableEnemy(effects: unknown, slot: string): boolean {
+  if (Array.isArray(effects)) return effects.some((effect) => asksAttackableEnemy(effect, slot));
+  if (!effects || typeof effects !== "object") return false;
+  const step = effects as { kind?: unknown; slot?: unknown; query?: { attackableBy?: unknown; categories?: unknown } };
+  if (
+    step.kind === "chooseTarget" &&
+    step.slot === slot &&
+    step.query?.attackableBy &&
+    Array.isArray(step.query.categories) &&
+    step.query.categories.some((category) => category === "enemy" || category === "villain")
+  )
+    return true;
+  return Object.values(effects).some((value) => asksAttackableEnemy(value, slot));
+}
+
+const PILE_NAMES: Partial<Record<NonNullable<ReturnType<typeof locateCard>>["kind"], string>> = {
+  deck: "Your deck",
+  discard: "Your discard pile",
+  setAside: "Set aside",
+  separateDeck: "Deck",
+  separateDiscard: "Discard pile",
+  encounterDeck: "Encounter deck",
+  encounterDiscard: "Encounter discard pile",
+  encounterSetAside: "Set aside",
+  scenarioDeck: "Deck",
+  scenarioDiscard: "Discard pile",
+  victoryDisplay: "Victory display",
+  removedFromGame: "Out of the game",
+};
 
 export interface BattleBeat {
   text: string;
@@ -725,7 +782,9 @@ export class BattleModel {
         ) ||
         choice.minSelections !== 1 ||
         choice.maxSelections !== 1 ||
-        choice.options.length !== 1
+        choice.options.length !== 1 ||
+        // An attack card guard narrows to its minion still asks, to say why the villain can't be chosen.
+        this.#attackPickGuard(result.state, choice)
       )
         break;
       const only = choice.options[0]!;
@@ -1479,6 +1538,23 @@ export class BattleModel {
     this.#setGame(result.state, drawn);
   }
 
+  /**
+   * The cards a question offers from a pile the table doesn't lay out face up (a deck, a discard pile, set aside):
+   * each card's face and which pile it is in, so the player sees what they are choosing (`BattleChoice.searched`).
+   */
+  #searched(options: BattleChoice["options"]): BattleChoice["searched"] {
+    const state = this.#game;
+    const found: NonNullable<BattleChoice["searched"]> = [];
+    for (const { cardId } of options) {
+      if (!cardId || found.some((each) => each.id === cardId)) continue;
+      const zone = locateCard(state, cardId as InstanceId);
+      const from = zone ? PILE_NAMES[zone.kind] : undefined;
+      if (!from) continue;
+      found.push({ id: cardId, card: this.#shownCard(cardId as InstanceId), from });
+    }
+    return found.length ? found : undefined;
+  }
+
   /** A card shown faceup a moment as it moves between hidden places (a set-aside card shuffled into a deck). */
   #shownCard(id: InstanceId): BattleCard {
     const card = cardOf(this.#game, id);
@@ -1586,6 +1662,9 @@ export class BattleModel {
       name: shortIdentityNameOf(state, id) ?? faceUpName(state, id),
       ...(card?.type === "minion" || card?.type === "ally"
         ? { hp: Math.max(0, remainingHitPoints(state, id, CORE_DEPS) ?? 0) }
+        : {}),
+      ...(card?.type === "minion" && instance?.engagedWith && hasKeyword(state, id, "guard", CORE_DEPS)
+        ? { guard: true as const }
         : {}),
       reverseArt:
         id === state.players[0]!.identity.instanceId
@@ -1732,6 +1811,7 @@ export class BattleModel {
                 ? "Choose a scheme to thwart"
                 : "Choose a card to attach to",
           options: this.#targetPick.targets.map((id) => ({ id, label: faceUpName(state, id), cardId: id })),
+          ...this.#guardChoice(this.#targetPick),
           canSkip: false,
           canCancel: true,
           min: 1,
@@ -1764,6 +1844,9 @@ export class BattleModel {
                   explanation: revealed.rulesText.split(/\n+/)[0]!.replace(/^When Revealed\s*:\s*/i, ""),
                 }
               : {}),
+            // An attack card's enemy pick that guard narrows (Swinging Web Kick with Hydra Mercenary out): why the
+            // villain isn't among the answers.
+            ...this.#guardFields(this.#attackPickGuard(state, pending)),
             ...(trigger && pending.prompt.kind === "chooseTriggers"
               ? {
                   // A merged window's headline names the first condition its options answer; spotlight that one.
@@ -1830,6 +1913,7 @@ export class BattleModel {
     ]);
     enemyIds.delete(villain.instanceId);
     for (const host of enemyIds) for (const id of getInstance(state, host)?.attachments ?? []) enemyIds.add(id);
+    const searched = choice ? this.#searched(choice.options) : undefined;
     this.#view = {
       beats: this.#beats,
       choiceSource: pending ? (choiceSourceOf(state, pending)?.instanceId ?? null) : null,
@@ -1881,7 +1965,7 @@ export class BattleModel {
         .filter((id) => !enemyIds.has(id))
         .map((id) => this.#card(id)),
       payment,
-      choice,
+      choice: choice && searched ? { ...choice, searched } : choice,
       turn: state.outcome
         ? "finished"
         : state.step.phase === "villain"
@@ -2135,8 +2219,85 @@ export class BattleModel {
     return entry ? this.#usePower(entry) : false;
   }
 
+  /**
+   * Guard keeping an attack off the villain (RRG 1.8 "Guard", p. 21: "The engaged player cannot attack any villain";
+   * other minions stay attackable): the villains `attacker` can't reach for guard alone among those not `offered`,
+   * and the guard minions engaged with the player. Null when guard is not what keeps the villain out.
+   */
+  #guardFacts(
+    state: GameState,
+    attacker: InstanceId,
+    offered: readonly string[],
+    basic: boolean,
+  ): { blocked: InstanceId[]; guards: InstanceId[] } | null {
+    const blocked = state.villains
+      .filter((villain) => !villain.defeated)
+      .map((villain) => villain.instanceId)
+      .filter(
+        (id) =>
+          !offered.includes(id) &&
+          canAttack(state, attacker, id, CORE_DEPS, basic, true) &&
+          !canAttack(state, attacker, id, CORE_DEPS, basic),
+      );
+    if (!blocked.length) return null;
+    const playerId = state.players[0]!.playerId;
+    const guards = state.players[0]!.playArea.filter(
+      (id) =>
+        shownType(state, id) === "minion" &&
+        getInstance(state, id)?.engagedWith === playerId &&
+        hasKeyword(state, id, "guard", CORE_DEPS),
+    );
+    return guards.length ? { blocked, guards } : null;
+  }
+
+  /** A basic attack that guard narrows (`#guardFacts`). Null for any other power. */
+  #guardBlocked(entry: LegalAction): { blocked: InstanceId[]; guards: InstanceId[] } | null {
+    if (entry.action.kind !== "basicAttack") return null;
+    return this.#guardFacts(this.#game, entry.action.instanceId, entry.targets, true);
+  }
+
+  /**
+   * An attack card's or ability's enemy pick (Swinging Web Kick, "(attack): Deal 8 damage to an enemy") that guard
+   * narrows: the engine's `chooseTarget` step for it asks for an enemy the player's identity can attack
+   * (`attackableBy`), so a villain left out of it is left out by guard. Null for any other question.
+   */
+  #attackPickGuard(state: GameState, choice: NonNullable<GameState["pendingChoice"]>) {
+    if (choice.prompt.kind !== "chooseTarget") return null;
+    // The prompt names no ability; the effects frame asking it does.
+    const frame = state.stack.find((each) => each.frameId === choice.frameId);
+    const abilityId =
+      choice.prompt.abilityId ?? (frame && "abilityId" in frame ? (frame.abilityId as string | undefined) : undefined);
+    const ability = abilityId ? CORE_DEPS.abilities[abilityId as keyof typeof CORE_DEPS.abilities] : undefined;
+    if (!ability || !asksAttackableEnemy(ability.effects, choice.prompt.slot)) return null;
+    const offered = choice.options.flatMap((option) => (option.ref.kind === "card" ? [option.ref.instanceId] : []));
+    return this.#guardFacts(state, state.players[0]!.identity.instanceId, offered, false);
+  }
+
+  /** The guard fields of a question (`BattleChoice.guard`), with the reason said in words. */
+  #guardFields(
+    guard: { blocked: InstanceId[]; guards: InstanceId[] } | null,
+  ): Pick<BattleChoice, "guard" | "explanation" | "prompt"> | Record<string, never> {
+    if (!guard) return {};
+    const state = this.#game;
+    const guards = guard.guards.map((id) => faceUpName(state, id));
+    const villain = faceUpName(state, guard.blocked[0]!);
+    const who =
+      guards.length === 1 ? `${guards[0]} has` : `${guards.slice(0, -1).join(", ")} and ${guards.at(-1)} have`;
+    return {
+      prompt: "Choose an enemy to attack",
+      guard,
+      explanation: `${who} Guard: ${villain} can't be attacked until ${guards.length === 1 ? "it is" : "they are"} defeated.`,
+    };
+  }
+
+  /** The attack pick's guard fields, for a basic attack. */
+  #guardChoice(entry: LegalAction) {
+    return this.#guardFields(this.#guardBlocked(entry));
+  }
+
   #usePower(entry: LegalAction): boolean {
-    if (entry.targets.length > 1) {
+    // Guard narrowing the attack to its minion still asks: the pick shows why the villain can't be chosen.
+    if (entry.targets.length > 1 || (entry.targets.length === 1 && this.#guardBlocked(entry))) {
       this.#targetPick = entry;
       this.#view = null;
     } else this.#accept(apply(this.#game, entry.example));
