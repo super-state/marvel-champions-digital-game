@@ -174,25 +174,50 @@ How the room is built (for whoever builds 0.3.0):
   fast on a phone.
 - A browser test with `battle` in its name walks the room with keyboard and controller.
 
-## Who is building what (started 2026-11-24)
+## Where it has got to (25 Nov 2026)
 
-Four tasks at once, each in its own project copy and its own session, on Opus 5.5. A fifth waits.
+| Step  | What                    | State                                                                                                                                      | Pull requests |
+| ----- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------- |
+| 0.3.0 | The room and title      | In: `room/`, the title in the doorway, the menu, Campaign, the radio. The table opens in the doorway.                                      | 127, 133, 134 |
+| 0.3.0 | The record ("do early") | In: more facts per game (one added column on the test site), a record on Adam's own table too.                                             | 128           |
+| 0.4.0 | Free Play               | In: the deal takes difficulty and modules; Expert and the two modules audited; the tray in the room.                                       | 136, 137, 138 |
+| 0.5.0 | Trophies & Stats        | Half in: 32 achievements, the stats, the pop-up and a Record list in the game menu. The cabinet, the board and the mats are next.          | 128           |
+| 0.6.0 | Captain Marvel          | In: `?hero=captain-marvel`, her audit (64 tests with Leadership), played against all three villains. Choosing a hero at the bench is next. | 125, 131, 135 |
+| 0.9.0 | The deck builder        | Built on its own page (`battle/decks.html`), not linked from the game. Opening it at the bench is next.                                    | 126, 129, 132 |
 
-| Task                                      | Owns                                                                                                                                                               | Leaves alone                                 |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
-| The room and title                        | `boxes/` (becoming `room/`), the part of `main.ts` that opens the shelf (`showShelf`, `begin`)                                                                     | the deal, the record, the cards              |
-| Captain Marvel and hero choice            | `model.ts` (the deal and its options), the hero's audit tests, Spider-Man's name wherever it is assumed                                                            | the `finishGame` call in `main.ts`; `boxes/` |
-| The record and achievements               | `test-site/players.ts`, `test-site/site-api.ts`, a new `record/` folder, the `finishGame` call in `main.ts` (reading the hero and deck from the game, not by name) | `model.ts`, `boxes/`                         |
-| The deck builder                          | a new `decks/` folder and its own page                                                                                                                             | `main.ts`, `model.ts`, `table.ts`, `boxes/`  |
-| Waiting: Expert and the two other modules | starts once the hero task has landed its change to the deal's options in `model.ts`                                                                                |                                              |
+Still to check, by a person or a later task:
+
+- A real controller and a real phone in the room; how fast the title appears on a phone.
+- A win as Captain Marvel (her three test games were lost, by the play, not the table).
+- That Cloudflare's database accepts the record's column check when a version is next shipped (it falls back to adding
+  the column and ignoring "already there").
+- `battle-record.spec.ts` after the last merges, and the whole release check (`pnpm table:check`) before any version
+  is shipped: nothing here has been through it yet.
+- Deck pairings no starter deck has, played through on the table.
+
+What Captain Marvel taught about sizing: about 3 hours for a hero, a quarter of it waiting on checks. Every problem was
+in how the table shows things (abilities her deck uses that Spider-Man's never did, and wording), none in the rules.
+
+## Who is building what (round two, from 25 Nov 2026)
+
+| Task                                   | Owns                                                                                                                       | Leaves alone                                          |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| She-Hulk                               | her entry in `HEROES` (`model.ts`), `deck-audit-she-hulk.test.ts`, the Aggression cards' audit, table fixes her cards need | `room/`, `decks/`, `record/`                          |
+| Trophies & Stats in the room, and mats | `room/places/trophies.ts`, the mat's print in `table.ts` (`matPrint`) and the setting that picks a mat                     | `model.ts`, `decks/`, the hero audits                 |
+| Heroes & Decks at the bench            | `room/places/decks.ts`, `decks/`, and one small addition to the deal's options in `model.ts` (a built deck)                | `record/`, `room/places/trophies.ts`, the hero audits |
+| Waiting: Black Panther                 | starts when a place frees up; same shape as She-Hulk, with the Protection cards                                            |                                                       |
+| Waiting: Iron Man                      | after Black Panther or She-Hulk                                                                                            |                                                       |
 
 - `main.ts`, `model.ts` and `table.ts` are shared and large: small pull requests, merged often, and the main line
   merged into the branch before each push.
-- This PC (Nimbus) has 16 GB of memory and little disk. While working, run only the test file being changed. Anything
-  heavy (a push with its check, the type check, a whole test run) takes its turn through
-  `bash scripts/heavy-turn.sh <command>`. No production builds, no kept test recordings.
-- Each task previews on its own port (5201 the room, 5202 the hero, 5203 the record, 5204 the deck builder), never
-  5173 (Adam's own table), and does not commit a changed `.claude/launch.json`.
+- This PC (Nimbus) has 16 GB of memory and little disk: four tasks at once is the ceiling. While working, run only the
+  test file being changed. Anything heavy (a push with its check, the type check, a whole test run) takes its turn
+  through `bash scripts/heavy-turn.sh <command>`; `VITEST_MAX_WORKERS=3` in front of a push keeps its check inside
+  the memory there is. No production builds, no kept test recordings.
+- Each task previews on its own port, never 5173 (Adam's own table), and does not commit a changed
+  `.claude/launch.json`.
+- The deck builder opens at the bench with only the aspects whose cards have been checked on the table (Justice and
+  Leadership now; Aggression with She-Hulk, Protection with Black Panther).
 
 ## Adam's calls
 

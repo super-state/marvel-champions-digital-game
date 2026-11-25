@@ -6,6 +6,7 @@ import { fitBoard, fitToBox, type BoardFit, type TableBox } from "./board-fit.js
 import { loadWithRetry } from "./picture-retry.js";
 import { revealAside, type ScreenBox } from "./dock-spot.js";
 import { TokenKit, placeTokens } from "./tokens3d.js";
+import { currentMat, MAT_CHANGED, matLook, type MatId, type MatLook } from "./mats.js";
 import { tuckPath } from "./tuck-path.js";
 import { type CardRect, type FlightPose, type FlightRoute, flightPose, routeFlight } from "./flight-route.js";
 
@@ -386,13 +387,89 @@ function faceGeometry(shape: THREE.Shape, width: number, height: number): THREE.
   return geometry;
 }
 
-/** A single cloth print, including the stitched binding. Card scans keep their own sRGB textures. */
+/** A villain mat's own pattern, faint, drawn in fractions of the cloth so any shape of mat gets the same look. */
+function matPattern(ctx: CanvasRenderingContext2D, look: MatLook, width: number, height: number) {
+  if (look.pattern === "none") return;
+  let seed = look.id.length * 977 + 13;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const unit = Math.min(width, height);
+  ctx.save();
+  ctx.strokeStyle = look.ink;
+  ctx.fillStyle = look.ink;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  if (look.pattern === "cracks") {
+    // Rhino: cracked concrete, the cracks running down from the villain's edge and thinning out.
+    ctx.lineWidth = unit * 0.004;
+    for (let i = 0; i < 16; i++) {
+      let x = rand() * width;
+      let y = rand() * height * 0.35;
+      let angle = Math.PI / 2 + (rand() - 0.5) * 1.4;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      const steps = 8 + Math.floor(rand() * 10);
+      for (let step = 0; step < steps; step++) {
+        angle += (rand() - 0.5) * 0.9;
+        x += Math.cos(angle) * unit * 0.035;
+        y += Math.sin(angle) * unit * 0.035;
+        ctx.lineTo(x, y);
+        if (rand() < 0.2) {
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + Math.cos(angle + 1) * unit * 0.04, y + Math.sin(angle + 1) * unit * 0.04);
+          ctx.moveTo(x, y);
+        }
+      }
+      ctx.stroke();
+    }
+  } else if (look.pattern === "waves") {
+    // Klaw: sound rippling out from the villain's edge.
+    for (let i = 1; i < 16; i++) {
+      ctx.lineWidth = unit * (i % 3 === 0 ? 0.006 : 0.0025);
+      ctx.setLineDash(i % 2 ? [] : [unit * 0.02, unit * 0.012]);
+      ctx.beginPath();
+      ctx.ellipse(width / 2, -height * 0.08, unit * 0.075 * i * 1.6, unit * 0.075 * i, 0, 0, Math.PI);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  } else {
+    // Ultron: circuit traces, thicker towards the villain's edge, each ending in a pad.
+    const grid = unit * 0.045;
+    ctx.lineWidth = unit * 0.003;
+    for (let i = 0; i < 60; i++) {
+      let x = Math.round((rand() * width) / grid) * grid;
+      let y = Math.round((rand() * rand() * height * 0.8) / grid) * grid;
+      ctx.beginPath();
+      ctx.arc(x, y, grid * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      for (let leg = 0; leg < 3; leg++) {
+        const run = grid * (1 + Math.floor(rand() * 4));
+        if (rand() < 0.5) x += rand() < 0.5 ? run : -run;
+        else y += run;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y, grid * 0.14, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
 /**
  * The mat's print, drawn at the mat's own proportions (`reshape`, whenever the table settles on a new shape): the
  * rooftop art fills it, cropped rather than stretched, and the stitched border always runs round its edge (Adam,
  * 2026-11-23: the mat "would stretch and fit, keeping its image ... not skewed").
+ *
+ * It is the mat chosen on this device (`mats.ts`): today's night city, or a villain's mat once it is earned, and it is
+ * drawn again when the choice changes (until `stop`). `mark` gets the drawn mat's id as `data-mat`, for checks.
  */
-export function matPrint(redraw: () => void): { texture: THREE.CanvasTexture; reshape: (aspect: number) => void } {
+export function matPrint(
+  redraw: () => void,
+  mark?: HTMLElement,
+): { texture: THREE.CanvasTexture; reshape: (aspect: number) => void; stop: () => void } {
   const canvas = document.createElement("canvas");
   canvas.width = 1536;
   canvas.height = 976;
@@ -400,13 +477,16 @@ export function matPrint(redraw: () => void): { texture: THREE.CanvasTexture; re
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   let loaded: HTMLImageElement | undefined;
+  let drawn: MatId | null = null;
   function paint(art: HTMLImageElement | undefined = loaded) {
     const { width, height } = canvas;
-    ctx.fillStyle = "#1a293b";
+    const look = matLook(currentMat());
+    drawn = look.id;
+    ctx.fillStyle = look.base;
     ctx.fillRect(0, 0, width, height);
     if (art) {
       ctx.save();
-      ctx.globalAlpha = 0.67;
+      ctx.globalAlpha = look.art;
       const scale = Math.max(width / art.width, height / art.height);
       ctx.drawImage(
         art,
@@ -416,15 +496,25 @@ export function matPrint(redraw: () => void): { texture: THREE.CanvasTexture; re
         art.height * scale,
       );
       ctx.restore();
+      if (look.dye) {
+        // The picture dyed the villain's colour.
+        ctx.save();
+        ctx.globalCompositeOperation = "color";
+        ctx.globalAlpha = look.dyeStrength;
+        ctx.fillStyle = look.dye;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+      }
     }
+    matPattern(ctx, look, width, height);
     const wash = ctx.createLinearGradient(0, 0, 0, height);
-    wash.addColorStop(0, "rgba(15, 31, 54, .09)");
-    wash.addColorStop(0.58, "rgba(11, 27, 49, .24)");
-    wash.addColorStop(1, "rgba(6, 16, 29, .77)");
+    wash.addColorStop(0, look.wash[0]);
+    wash.addColorStop(0.58, look.wash[1]);
+    wash.addColorStop(1, look.wash[2]);
     ctx.fillStyle = wash;
     ctx.fillRect(0, 0, width, height);
     ctx.lineWidth = 1;
-    ctx.strokeStyle = "rgba(193, 210, 215, .047)";
+    ctx.strokeStyle = look.weave;
     ctx.beginPath();
     for (let y = 0; y < height; y += 4) {
       ctx.moveTo(0, y);
@@ -437,11 +527,12 @@ export function matPrint(redraw: () => void): { texture: THREE.CanvasTexture; re
     ctx.roundRect(11, 11, width - 22, height - 22, 17);
     ctx.stroke();
     ctx.lineWidth = 1.8;
-    ctx.strokeStyle = "rgba(167, 184, 186, .5)";
+    ctx.strokeStyle = look.stitch;
     ctx.setLineDash([3, 5]);
     ctx.stroke();
     ctx.setLineDash([]);
     texture.needsUpdate = true;
+    if (mark) mark.dataset.mat = look.id;
     redraw();
   }
   paint();
@@ -462,7 +553,11 @@ export function matPrint(redraw: () => void): { texture: THREE.CanvasTexture; re
     texture.dispose();
     paint();
   };
-  return { texture, reshape };
+  const changed = () => {
+    if (currentMat() !== drawn) paint();
+  };
+  addEventListener(MAT_CHANGED, changed);
+  return { texture, reshape, stop: () => removeEventListener(MAT_CHANGED, changed) };
 }
 
 /** The scene presents engine state. Only the UI can decide what picking a particular card does. */
@@ -758,7 +853,7 @@ export class BattleTable {
       new THREE.MeshStandardMaterial({ color: 0x152032, roughness: 0.8 }),
     );
     binding.position.z = -0.105;
-    const { texture: print, reshape } = matPrint(this.#requestFrame);
+    const { texture: print, reshape } = matPrint(this.#requestFrame, this.#viewport);
     this.#reshapeMat = reshape;
     print.anisotropy = Math.min(4, this.#renderer.capabilities.getMaxAnisotropy());
     this.#cloth.map = print;
