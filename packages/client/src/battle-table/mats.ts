@@ -17,8 +17,9 @@ export interface MatLook {
   readonly name: string;
   /** The achievement reward that earns it (`mat:rhino`); null for the mat everyone has. */
   readonly reward: string | null;
-  /** The cloth under everything. */
+  /** The cloth under everything, and the back of the cloth (the roll as it unrolls from the box). */
   readonly base: string;
+  readonly back: string;
   /** How strongly the rooftop picture shows, the colour it is dyed, and how strongly. */
   readonly art: number;
   readonly dye: string | null;
@@ -41,6 +42,7 @@ export const MATS: readonly MatLook[] = [
     name: "Night city",
     reward: null,
     base: "#1a293b",
+    back: "#152032",
     art: 0.67,
     dye: null,
     dyeStrength: 0,
@@ -56,6 +58,7 @@ export const MATS: readonly MatLook[] = [
     name: "Rhino",
     reward: "mat:rhino",
     base: "#18201a",
+    back: "#121a13",
     art: 0.5,
     dye: "#4b5a45",
     dyeStrength: 0.8,
@@ -71,6 +74,7 @@ export const MATS: readonly MatLook[] = [
     name: "Klaw",
     reward: "mat:klaw",
     base: "#150b1d",
+    back: "#100816",
     art: 0.45,
     dye: "#4a1c62",
     dyeStrength: 0.5,
@@ -86,6 +90,7 @@ export const MATS: readonly MatLook[] = [
     name: "Ultron",
     reward: "mat:ultron",
     base: "#211812",
+    back: "#19110c",
     art: 0.5,
     dye: "#8a4b22",
     dyeStrength: 0.72,

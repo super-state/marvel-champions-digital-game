@@ -145,7 +145,7 @@ function buildMat(corners: Corners) {
   const roll = new THREE.Mesh(
     new THREE.CylinderGeometry(1, 1, 1, 36, 1),
     // The roll is the back of the chosen mat's cloth.
-    new THREE.MeshStandardMaterial({ color: new THREE.Color(matLook(currentMat()).base), roughness: 0.8 }),
+    new THREE.MeshStandardMaterial({ color: new THREE.Color(matLook(currentMat()).back), roughness: 0.8 }),
   );
   roll.castShadow = true;
   roll.frustumCulled = false;
