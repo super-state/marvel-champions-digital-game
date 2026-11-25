@@ -463,7 +463,8 @@ function watch(move: CommittedMove) {
         appendFileSync(
           process.env.SHOWN_DEBUG_FILE ?? "shown-debug.log",
           `[shown] ${result.row} | ${result.kind} | ${result.cls}
-  events: ${events.map((e) => (e.type === "framePushed" ? `push(${e.description})` : e.type)).join(" ")}
+  stack before: ${before.stack.map((f) => `${f.frameId}:${f.kind}`).join(" ")}
+  events: ${events.map((e) => (e.type === "framePushed" ? `push(${e.frameId}:${e.description})` : e.type === "framePopped" ? `pop(${e.frameId})` : e.type === "abilityResolved" ? `resolved(${e.abilityId})` : e.type)).join(" ")}
   beats: ${JSON.stringify(beats)}
 `,
         );
@@ -503,7 +504,8 @@ export function judge(
   // Who is resolving at each event: the innermost frame that is an ability, a reveal, a play or an activation.
   // An ability's effects run in an "effects" frame pushed once it has resolved, often after a question, in a later move:
   // that frame is the ability's (remembered by its id across moves).
-  const stack: { frameId: string; owner: Owner | null }[] = before.stack.map((frame) => ({
+  // The engine lists its stack top first; this list is bottom first, pushed onto at its end.
+  const stack: { frameId: string; owner: Owner | null }[] = [...before.stack].reverse().map((frame) => ({
     frameId: frame.frameId,
     owner: memory.frameOwners.get(frame.frameId) ?? ownerOfFrame(frame),
   }));
@@ -520,6 +522,9 @@ export function judge(
       };
       memory.pending.push(justResolved);
       rowOf(justResolved.row).fired++;
+      // Still open (its target asked for after it resolved: Mockingbird's stun): its effects are its own frame's.
+      for (const f of stack)
+        if (f.owner?.instanceId === e.instanceId && f.owner.what === e.abilityId) justResolved.frames.add(f.frameId);
     }
     if (e.type === "framePushed") {
       let owner = ownerOfDescription(e.description);
@@ -573,7 +578,10 @@ export function judge(
         : e.type === "lastingEffectEnded"
           ? lastingBefore.get(e.id)
           : undefined;
-    const subject = lasting ? idsOf(lasting as unknown as GameEvent, known) : idsOf(e, known);
+    const named = lasting ? idsOf(lasting as unknown as GameEvent, known) : idsOf(e, known);
+    // Naming no card of its own (a cost reduction for the next card): it is the resolving card's doing.
+    const owner = ownerAt[i]?.instanceId;
+    const subject = named.length || !owner ? named : [owner];
     if (lasting && subject.length) row = rowKey(after, { instanceId: subject[0]!, what: "lasting effect" });
     const judged = subject.map((id) => byBeat(id, rule.fields)).filter((s) => s !== null);
     let shown: { cls: ShownClass; how: string } | null = judged.find((s) => s.cls === "table") ?? judged[0] ?? null;
