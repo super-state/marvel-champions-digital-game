@@ -58,6 +58,24 @@ export const deckTop =
     return { ...state, players: [{ ...p, deck: [...top, ...p.deck.filter((i) => !top.includes(i))] }] };
   };
 
+/** Put these codes in the player's discard pile, the last one on top (Pepper Potts reads the top card). */
+export const discardTop =
+  (...codes: string[]): Setup =>
+  (state) => {
+    const p = state.players[0]!;
+    const moved: Id[] = [];
+    for (const code of codes) {
+      const id = [...p.deck, ...p.hand].find((i) => codeOf(state, i) === code && !moved.includes(i));
+      if (!id) throw Error(`no ${code} for the discard pile`);
+      moved.push(id);
+    }
+    const strip = (list: readonly Id[]) => list.filter((i) => !moved.includes(i));
+    return {
+      ...state,
+      players: [{ ...p, deck: strip(p.deck), hand: strip(p.hand), discard: [...strip(p.discard), ...moved] }],
+    };
+  };
+
 /** Stack the encounter deck (first = next to be drawn: the boost card before the dealt card). */
 export const encounterTop =
   (...codes: string[]): Setup =>

@@ -14,6 +14,7 @@ import {
   legalActions,
   locateCard,
   paymentOptionsPool,
+  traitsOf,
   satisfies,
   combineRequirements,
   readsOverpaid,
@@ -581,6 +582,26 @@ const SCHEME_ICON_TEXT: Record<string, string> = {
  * The question for an encounter attachment's host, when the engine leaves the pick to the player (two minions tied on
  * Biomechanical Upgrades' "highest printed hit points"): it names the card and gives its "Attach to" rule.
  */
+/**
+ * The question for a pick among cards one of the player's abilities turned up (Futurist: "Choose cards" said nothing):
+ * "Choose a card to add to your hand", titled "Tony Stark · Futurist", with the ability's words.
+ */
+function pickQuestion(
+  state: GameState,
+  pending: NonNullable<GameState["pendingChoice"]>,
+): Partial<Pick<BattleChoice, "prompt" | "sourceTitle" | "explanation">> {
+  const panel = choiceSourcePanelOf(state, pending, state.players[0]!.playerId, CORE_DEPS);
+  const ability = panel?.abilityLine?.split(" — ")[1];
+  if (!panel || !ability) return {};
+  const from = panel.rulesText.indexOf(`${ability} — `);
+  const said = from < 0 ? undefined : /:\s*([^(]+)/.exec(panel.rulesText.slice(from))?.[1]?.trim();
+  return {
+    ...(said && /\badd (?:1|one) to your hand\b/i.test(said) ? { prompt: "Choose a card to add to your hand" } : {}),
+    sourceTitle: `${panel.name} · ${ability}`,
+    ...(said ? { explanation: said } : {}),
+  };
+}
+
 function attachQuestion(
   state: GameState,
   attaching: InstanceId,
@@ -1019,6 +1040,17 @@ export class BattleModel {
       return { ...source, ...(miss ? { miss } : {}) };
     };
     /** Its text discards from a deck ("Discard the top card of your deck for each ...", Black Cat's "top 2 cards"). */
+    /** Its text discards the cards it looked at ("Add 1 to your hand and discard the others", Futurist). */
+    const millsOrDiscardsOthers = (id: InstanceId) => {
+      const card = cardOf(result.state, id) ?? cardOf(this.#game, id);
+      // An identity keeps its text on its faces (Tony Stark's Futurist is on his alter-ego face).
+      const faces = card
+        ? [card, ...["hero", "alterEgo"].map((face) => (card as unknown as Record<string, unknown>)[face])]
+        : [];
+      return faces.some(
+        (face) => !!face && /\bdiscard the others\b/i.test(plainRulesTextOf(face as typeof card & object)),
+      );
+    };
     const millsDeck = (id: InstanceId) => {
       const card = cardOf(result.state, id) ?? cardOf(this.#game, id);
       return !!card && /\bdiscards? the top\b[^.]*\bdeck\b/i.test(plainRulesTextOf(card));
@@ -1327,7 +1359,11 @@ export class BattleModel {
                 ? { millSource: millSourceOf(milling) }
                 : resolving
                   ? { millSource: millSourceOf(resolving) }
-                  : {}),
+                  : // The card whose question this move answers (Tony Stark's Futurist: "add 1 to your hand and discard
+                    // the others"), its ability still under way.
+                    asking && millsOrDiscardsOthers(asking.card)
+                    ? { millSource: millSourceOf({ card: asking.card, label: "Action" }) }
+                    : {}),
           });
       } else if (e.type === "cardMoved" && e.from.kind === "encounterDeck" && e.to.kind === "encounterDiscard") {
         const last = this.#beats.at(-1);
@@ -1411,6 +1447,31 @@ export class BattleModel {
           text: `Overkill: ${e.amount} damage spills onto ${name(e.toInstanceId)}`,
           overkill: { to: e.toInstanceId, amount: e.amount },
         });
+      } else if (
+        e.type === "lastingEffectAdded" &&
+        e.effect.kind === "traitGrant" &&
+        e.effect.trait &&
+        !e.effect.loses
+      ) {
+        // A trait the hero gains for a while (Rocket Boots: "gain the Aerial trait until the end of the phase"): the
+        // log says so, as the hero's card does (`cardFacts`), since other cards ask for it (Supersonic Punch's 8).
+        const hero = result.state.players[0]!.identity.instanceId;
+        const trait = String(e.effect.trait);
+        const until =
+          e.effect.duration.kind === "endOfPhase"
+            ? " until the end of the phase"
+            : e.effect.duration.kind === "endOfRound"
+              ? " until the end of the round"
+              : "";
+        if (
+          traitsOf(result.state, hero, CORE_DEPS).includes(e.effect.trait) &&
+          !traitsOf(this.#game, hero, CORE_DEPS).includes(e.effect.trait)
+        )
+          this.#beats.push({
+            enemy,
+            actor: hero,
+            text: `${name(hero)} gains the ${trait.charAt(0) + trait.slice(1).toLowerCase()} trait${until}`,
+          });
       } else if (e.type === "lastingEffectAdded" && e.effect.kind === "costReduction") {
         this.#beats.push({
           enemy,
@@ -2013,7 +2074,16 @@ export class BattleModel {
       pending && state.step.phase === "villain"
         ? choiceSourcePanelOf(state, pending, player.playerId, CORE_DEPS)
         : null;
-    const revealed = panel?.abilityLine?.startsWith("When Revealed") ? panel : null;
+    // The revealed encounter card asking: its ability named on the panel, or, where the panel can't name it (Electric
+    // Whip Attack's "Choose one"), a card just revealed (not a boost card) whose text opens with When Revealed.
+    const revealed =
+      panel?.abilityLine?.startsWith("When Revealed") ||
+      (panel &&
+        !panel.abilityLine &&
+        /^When Revealed\s*:/i.test(panel.rulesText) &&
+        state.players[0]!.dealtEncounter.includes(panel.instanceId))
+        ? panel
+        : null;
     const trigger = pending && triggerWindowContextOf(state, pending, player.playerId, CORE_DEPS);
     const costDiscard = this.#costDiscard;
     const choice = costDiscard
@@ -2070,6 +2140,13 @@ export class BattleModel {
               ...(revealed
                 ? {
                     sourceTitle: `${revealed.name} · When Revealed`,
+                    // "Choose a target" for "choose and discard an upgrade you control" (Electric Whip Attack): which.
+                    ...(promptTitleOf(pending.prompt, CORE_DEPS, pending, state) === "Choose a target" &&
+                    /\bchoose and discard an? (upgrade|support)\b/i.exec(revealed.rulesText)
+                      ? {
+                          prompt: `Choose ${/\bchoose and discard an? (upgrade|support)\b/i.exec(revealed.rulesText)![1] === "upgrade" ? "an upgrade" : "a support"} to discard`,
+                        }
+                      : {}),
                     explanation: revealed.rulesText.split(/\n+/)[0]!.replace(/^When Revealed\s*:\s*/i, ""),
                   }
                 : {}),
@@ -2077,6 +2154,11 @@ export class BattleModel {
               // with the highest printed hit points", two tied): the question names the card and says its rule.
               ...(!revealed && pending.prompt.kind === "chooseAttachmentTarget"
                 ? attachQuestion(state, pending.prompt.instanceId, pending.options)
+                : {}),
+              // A pick among cards an ability of the player's turned up (Tony Stark's Futurist: "Look at the top 3
+              // cards of your deck. Add 1 to your hand"): the question names the card and the ability, and says it.
+              ...(!revealed && pending.prompt.kind === "chooseCards" && state.step.phase !== "villain"
+                ? pickQuestion(state, pending)
                 : {}),
               ...(trigger && pending.prompt.kind === "chooseTriggers"
                 ? {
@@ -2367,7 +2449,18 @@ export class BattleModel {
         const effect = card ? /→\s*([^.(]+)/.exec(plainRulesTextOf(card))?.[1]?.trim() : undefined;
         if (effect) does = effect;
       }
-      const label =
+      const card = cardOf(this.#game, action.instanceId);
+      const text = card ? plainRulesTextOf(card) : "";
+      // "Choose a player. That player returns …", with one player at the table: what that player does (Stark Tower:
+      // "Return the topmost Tech upgrade in your discard pile to your hand", where the label read "Choose a player").
+      if (/^choose a player\b/i.test(does)) {
+        const that = /That player (\w+?)s? ([^.]+)\./.exec(text);
+        if (that) does = `${that[1]} ${that[2]}`.replace(/\btheir\b/g, "your");
+      }
+      // A cost that hurts the card itself (War Machine: "Exhaust War Machine and deal 2 damage to him →"): the label
+      // says so, as an ally's attack says what it costs.
+      const selfDamage = /\band deal (\d+) damage to (?:him|her|it)\b[^→]*→/i.exec(text)?.[1];
+      const named =
         action.abilityId === "01092.helicarrier-action"
           ? "Next card costs 1 less"
           : action.abilityId === "01091.avengers-mansion-action"
@@ -2381,6 +2474,7 @@ export class BattleModel {
                 short,
               ) ??
               does.charAt(0).toUpperCase() + does.slice(1));
+      const label = selfDamage ? `${named} (takes ${selfDamage} damage)` : named;
       return [{ kind: String(action.abilityId), label, exhausts: !!ability.cost?.exhaustSelf, entry }];
     });
   }
@@ -2437,8 +2531,14 @@ export class BattleModel {
             SCHEME_ICON_TEXT[icon] ? [SCHEME_ICON_TEXT[icon]] : [],
           )
         : [];
+    // Traits it has gained for now (Rocket Boots' Aerial): what cards that ask for a trait read.
+    const printedTraits = ((face as { traits?: readonly unknown[] } | undefined)?.traits ?? []).map(String);
+    const gained = traitsOf(state, id as InstanceId, CORE_DEPS)
+      .map(String)
+      .filter((trait) => !printedTraits.includes(trait))
+      .map((trait) => `Now ${trait.charAt(0) + trait.slice(1).toLowerCase()}`);
     // A printed [energy] icon reads as a word: "Spend a [energy] resource" is "Spend an energy resource".
-    return [stats.join(" "), text.replace(/\ba (?=energy\b)/g, "an "), ...icons].filter(Boolean).join(" · ");
+    return [stats.join(" "), ...gained, text.replace(/\ba (?=energy\b)/g, "an "), ...icons].filter(Boolean).join(" · ");
   }
 
   /**
