@@ -80,14 +80,24 @@ test.describe("battle table: a driven win for every hero", () => {
         localStorage.removeItem(key);
         localStorage.removeItem("battle-mat");
       }, KEY);
-      // Every achievement toast's words, as each one shows (they come one at a time and go by themselves).
+      // Every achievement toast's words, as each one shows (they come one at a time and go by themselves), and for
+      // each whether it covered the "Victory" heading and how long after the game-over panel opened it came.
       await page.addInitScript(() => {
         const seen: string[] = [];
-        (window as unknown as { __toasts: string[] }).__toasts = seen;
+        const checks: { covers: boolean; afterOpen: number }[] = [];
+        let openedAt = 0;
+        Object.assign(window, { __toasts: seen, __toastChecks: checks });
         new MutationObserver(() => {
+          const panel = document.getElementById("game-over") as HTMLDialogElement | null;
+          if (panel?.open && !openedAt) openedAt = performance.now();
           const text = document.getElementById("achievement-toast")?.textContent?.trim();
-          if (text && seen.at(-1) !== text) seen.push(text);
-        }).observe(document, { subtree: true, childList: true, characterData: true });
+          if (!text || seen.at(-1) === text) return;
+          seen.push(text);
+          const t = document.querySelector("#achievement-toast .achievement-toast")!.getBoundingClientRect();
+          const h = document.getElementById("game-over-title")!.getBoundingClientRect();
+          const covers = t.left < h.right && h.left < t.right && t.top < h.bottom && h.top < t.bottom;
+          checks.push({ covers, afterOpen: openedAt ? performance.now() - openedAt : -1 });
+        }).observe(document, { subtree: true, childList: true, characterData: true, attributes: true });
       });
       // Before the win, as a friend sees it: Klaw waits for Rhino.
       const room = page.locator("#shelf");
@@ -122,6 +132,14 @@ test.describe("battle table: a driven win for every hero", () => {
             expect.stringContaining(`Win as ${hero.name}`),
           ]),
         );
+      // "Victory" is seen first and stays in view: the first toast waits for the panel to settle (record/popup.ts
+      // SETTLE_MS), and no toast covers the heading.
+      const checks = await page.evaluate(
+        () => (window as unknown as { __toastChecks: { covers: boolean; afterOpen: number }[] }).__toastChecks,
+      );
+      expect(checks[0]!.afterOpen).toBeGreaterThan(1800);
+      expect(checks.filter((c) => c.covers)).toEqual([]);
+      await expect(page.locator("#game-over-title")).toBeVisible();
 
       // The game in this browser's record, with its hero, deck and ending.
       const saved = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!).games, KEY);

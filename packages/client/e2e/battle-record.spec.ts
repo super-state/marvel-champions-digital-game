@@ -101,3 +101,58 @@ test("a finished game goes into this browser's record, and the tenth loss earns 
   await expect(sheet).toContainText("Keep at it");
   await expect(sheet.locator(".player-stat").first()).toContainText("11");
 });
+
+for (const size of [
+  { name: "a small phone", width: 375, height: 667 },
+  { name: "a short laptop", width: 1280, height: 600 },
+]) {
+  test(`a first win's achievements never cover "Victory" or its buttons, on ${size.name}`, async ({ page }) => {
+    test.setTimeout(150_000);
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await page.addInitScript(() => {
+      if (sessionStorage.getItem("cleared")) return;
+      sessionStorage.setItem("cleared", "1");
+      localStorage.removeItem("mc-table-record");
+    });
+    await page.addInitScript(() => {
+      const checks: { name: string; covers: boolean; afterOpen: number }[] = [];
+      let openedAt = 0;
+      Object.assign(window, { __toastChecks: checks });
+      new MutationObserver(() => {
+        const panel = document.getElementById("game-over") as HTMLDialogElement | null;
+        if (panel?.open && !openedAt) openedAt = performance.now();
+        const name = document.querySelector("#achievement-toast .achievement-toast-name")?.textContent;
+        if (!name || checks.at(-1)?.name === name) return;
+        const t = document.querySelector("#achievement-toast .achievement-toast")!.getBoundingClientRect();
+        const h = document.getElementById("game-over-title")!.getBoundingClientRect();
+        const hit = (b: DOMRect) => t.left < b.right && b.left < t.right && t.top < b.bottom && b.top < t.bottom;
+        const covers = hit(h) || hit(document.querySelector(".game-over-actions")!.getBoundingClientRect());
+        checks.push({ name, covers, afterOpen: openedAt ? performance.now() - openedAt : -1 });
+      }).observe(document, { subtree: true, childList: true, characterData: true, attributes: true });
+    });
+    // The dev-only finish scene: Rhino on his last hit point, one attack wins (and earns several achievements).
+    await page.goto("/battle/?hero=spider-man&scene=finish&record=1&friend=0");
+    await expect
+      .poll(() => page.evaluate(() => !!(window as unknown as { __battlePlay?: PlayHook }).__battlePlay), {
+        timeout: 60_000,
+      })
+      .toBe(true);
+    await page.evaluate(async () => {
+      const hook = (window as unknown as { __battlePlay: PlayHook }).__battlePlay;
+      await hook.wait();
+      await hook.play("Spider-Man: Attack");
+    });
+    await expect(page.locator("#game-over-title")).toHaveText("Victory", { timeout: 30_000 });
+    const checks = () =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __toastChecks: { name: string; covers: boolean; afterOpen: number }[] })
+            .__toastChecks,
+      );
+    await expect.poll(async () => (await checks()).length, { timeout: 60_000 }).toBeGreaterThanOrEqual(4);
+    const seen = await checks();
+    expect(seen[0]!.afterOpen).toBeGreaterThan(1800);
+    expect(seen.filter((c) => c.covers).map((c) => c.name)).toEqual([]);
+    await expect(page.locator("#game-over-title")).toBeInViewport();
+  });
+}

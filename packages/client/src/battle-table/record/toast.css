@@ -19,6 +19,11 @@
   color: var(--text);
   pointer-events: none;
 }
+/* Moved to the top when the bottom would cover the game-over panel's heading (popup.ts `place`). */
+.achievement-toast-layer[data-place="top"] {
+  inset: 0 0 auto 0;
+  padding: max(16px, env(safe-area-inset-top)) 16px 0;
+}
 .achievement-toast-layer:empty {
   display: none;
 }
