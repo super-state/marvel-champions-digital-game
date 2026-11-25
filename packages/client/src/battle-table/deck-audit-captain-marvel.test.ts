@@ -91,6 +91,8 @@ test("01010a Rechannel: in Captain Marvel's menu once she is hurt; pay an energy
   expect(p.battle.heroAction(action.kind)).toBe(true);
   const payment = p.snap.payment!;
   expect(payment, "Rechannel asks for its energy on the payment screen").toBeTruthy();
+  // Once paid, the log says what was used, not just the hero's name.
+  expect(payment.used).toBe("Captain Marvel uses Rechannel");
   // Genius and Strength can't pay an energy cost.
   const available = payment.sources.filter((s) => s.available).map((s) => s.label);
   expect(available).toContain("Energy");

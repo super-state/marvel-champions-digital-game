@@ -1170,7 +1170,8 @@ function pay() {
     // Keep a resolving event on the mat while the player chooses its target.
     staged = !payment.ability && state.choice && payment.subject.type === "event" ? payment.subject : null;
     // An event announces itself when it resolves; a card that stays on the table gets its own line.
-    if (payment.subject.type !== "event") say(`${payment.subject.name} ${payment.ability ? "used" : "played"}`);
+    if (payment.subject.type !== "event")
+      say(payment.used ?? `${payment.subject.name} ${payment.ability ? "used" : "played"}`);
   });
 }
 

@@ -139,6 +139,8 @@ export interface BattleCard {
 
 export interface BattlePayment {
   ability: boolean;
+  /** The log's line once it is paid, for a hero's own named ability: "Captain Marvel uses Rechannel". */
+  used?: string;
   outstanding?: readonly string[];
   subject: BattleCard;
   required: number;
@@ -1772,6 +1774,13 @@ export class BattleModel {
             // An upgrade being paid for already knows its host (Inspired on an ally): it waits by that card.
             subject: { ...this.#card(this.#subject), attachedTo: this.#payment?.target ?? null },
             ability: this.#payment?.action.kind === "useAbility",
+            ...(this.#payment?.action.kind === "useAbility" && this.#subject === player.identity.instanceId
+              ? {
+                  used: `${faceUpName(state, this.#subject)} uses ${
+                    abilityShortLabelOf(state, this.#subject, this.#payment.action.abilityId, CORE_DEPS) ?? "an ability"
+                  }`,
+                }
+              : {}),
             outstanding: priced.outstanding,
             required: priced.required,
             paid: priced.paid,
