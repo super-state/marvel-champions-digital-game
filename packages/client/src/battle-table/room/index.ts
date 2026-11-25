@@ -47,6 +47,8 @@ export type { PlaceContents, PlaceId } from "./places/place.js";
 export { decks, freePlay, trophies };
 /** Fills Free Play's tray (once, after the room has loaded). */
 export { mountFreePlay };
+/** Fills Trophies & Stats (once, after the room has loaded). */
+export { mountTrophies, type TrophySource } from "./places/trophy-cabinet.js";
 
 const places: Record<PlaceId, Place> = {
   title: titlePlace,
