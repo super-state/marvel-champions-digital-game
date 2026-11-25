@@ -6,7 +6,7 @@
  * The player's words are untrusted: they go in a fenced block, labelled as theirs, where GitHub shows them as typed
  * (no @mentions pinging anyone, no links, no markup), and later sessions reading the issue see them as a report, not
  * as instructions. The engine state is too big for an issue (GitHub caps a body at 65,536 characters): it goes in a
- * secret gist the issue links to.
+ * unlisted ("secret") gist the issue links to: anyone with the link can read it.
  *
  * Only type imports, so plain Node can load this file (it strips the types).
  */

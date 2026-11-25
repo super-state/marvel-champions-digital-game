@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,8 +12,9 @@ import { parseReport, REPORT_LIMIT, type ReportRecord } from "./src/battle-table
  * the same script that files the test site's reports (`scripts/file-table-reports.mjs`). On the test site the site
  * itself takes the report (`src/battle-table/test-site/site-api.ts`).
  *
- * The answer comes once the issue is made (a few seconds). A report that couldn't be filed is still kept, and the
- * table says it was sent; `node scripts/file-table-reports.mjs <file>` files it later.
+ * The answer comes once the issue is made (a few seconds). A report that couldn't be filed (GitHub down) is still kept
+ * and the table says it was sent: the script files every kept report that has no issue yet each time it runs, so it
+ * goes with the next report, or with `pnpm table:reports`.
  */
 const here = dirname(fileURLToPath(import.meta.url));
 const FOLDER = join(here, ".battle-reports");
@@ -60,16 +61,20 @@ export function battleReportPlugin(): Plugin {
         mkdirSync(FOLDER, { recursive: true });
         const file = join(FOLDER, `${record.id}.json`);
         writeFileSync(file, JSON.stringify(record));
-        execFile(process.execPath, [SCRIPT, file], { timeout: 60_000 }, (error, stdout, stderr) => {
-          const issue = stdout.trim().split("\n").pop() ?? "";
-          if (error || !issue.startsWith("https://")) {
+        execFile(process.execPath, [SCRIPT, "--local"], { timeout: 120_000 }, (error, stdout, stderr) => {
+          if (stdout.trim()) server.config.logger.info(`Report a bug: ${stdout.trim()}`);
+          let issue: string | undefined;
+          try {
+            issue = (JSON.parse(readFileSync(file, "utf8")) as { issue?: string }).issue;
+          } catch {
+            issue = undefined;
+          }
+          if (!issue) {
             server.config.logger.warn(
-              `Report a bug: kept ${file} but couldn't file it: ${(stderr || String(error)).trim()}`,
+              `Report a bug: kept ${file}, not filed yet: ${(stderr || String(error ?? "")).trim()}`,
             );
             return answer(res, 200, { saved: true, filed: false, id: record.id });
           }
-          writeFileSync(file, JSON.stringify({ ...record, issue }));
-          server.config.logger.info(`Report a bug: ${issue}`);
           answer(res, 200, { saved: true, filed: true, id: record.id, issue });
         });
       });

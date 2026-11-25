@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { BattleModel } from "../model.js";
 import { momentOf, type PageFacts } from "./capture.js";
 import { issueBody, issueTitle } from "./issue.js";
-import { cleanText, parseReport, TEXT_LIMIT, type ReportRecord } from "./moment.js";
+import { cleanText, parseReport, REPORT_LIMIT, TEXT_LIMIT, type ReportRecord } from "./moment.js";
+import { reportBody } from "./report.js";
 
 const page = {
   innerWidth: 1440,
@@ -76,6 +77,20 @@ describe("the moment a report keeps", () => {
     expect("extra" in odd.moment).toBe(false);
     expect(cleanText("a\r\nb\u0000c".padEnd(TEXT_LIMIT + 50, "z")).length).toBe(TEXT_LIMIT);
     expect(cleanText("a\r\nb\u0000c")).toBe("a\nbc");
+  });
+});
+
+describe("sending a report", () => {
+  it("sends the engine state when it fits, and the words and table without it when it doesn't", () => {
+    const moment = momentOfModel(dealt());
+    expect(JSON.parse(reportBody("x", moment)).moment.state).toBeDefined();
+    const heavy = { ...moment, state: "s".repeat(REPORT_LIMIT) };
+    const sent = reportBody("It broke", heavy);
+    expect(sent.length).toBeLessThanOrEqual(REPORT_LIMIT);
+    const back = parseReport(JSON.parse(sent))!;
+    expect(back.text).toBe("It broke");
+    expect(back.moment.hand).toEqual(moment.hand);
+    expect(back.moment.state).toBeUndefined();
   });
 });
 

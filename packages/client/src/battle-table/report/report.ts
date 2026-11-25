@@ -11,7 +11,7 @@
  * stays in the box until it is sent.
  */
 import "./report.css";
-import { TEXT_LIMIT, type ReportMoment } from "./moment.js";
+import { REPORT_LIMIT, TEXT_LIMIT, type ReportMoment } from "./moment.js";
 
 export interface ReportOptions {
   /** The table's menu dialog. */
@@ -27,6 +27,17 @@ function make<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", tex
   return node;
 }
 
+/**
+ * A report as sent. A long game's engine state could pass what the site takes (`REPORT_LIMIT`): then the words and
+ * the table in words go without it, rather than the report being refused.
+ */
+export function reportBody(text: string, moment: ReportMoment): string {
+  const whole = JSON.stringify({ text, moment });
+  if (whole.length <= REPORT_LIMIT) return whole;
+  const { state: _state, ...lighter } = moment;
+  return JSON.stringify({ text, moment: lighter });
+}
+
 /** Sends a report; the answer's words for the player. */
 export async function sendReport(text: string, moment: ReportMoment): Promise<{ ok: boolean; message: string }> {
   try {
@@ -34,7 +45,7 @@ export async function sendReport(text: string, moment: ReportMoment): Promise<{ 
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, moment }),
+      body: reportBody(text, moment),
     });
     const answer = (await response.json().catch(() => ({}))) as { error?: string };
     if (response.ok)
