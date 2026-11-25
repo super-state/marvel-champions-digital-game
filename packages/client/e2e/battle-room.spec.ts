@@ -105,6 +105,93 @@ test.describe("battle table: the room", () => {
     await at(page, "title");
   });
 
+  test.describe("the menu's camera", () => {
+    // The camera glides here (the other specs fade, with reduced motion).
+    test.use({ reducedMotion: "no-preference" });
+
+    test("highlighting each choice takes the camera to its place's own view; choosing it opens there, Back stays", async ({
+      page,
+    }) => {
+      test.setTimeout(150_000);
+      await page.goto("/battle/");
+      await at(page, "title");
+      await expect(room(page)).toHaveAttribute("data-view", "doorway");
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(400);
+      // Down the menu by keyboard: each highlight goes all the way to that place's view.
+      for (const [i, place] of ["campaign", "free-play", "decks", "trophies", "settings"].entries()) {
+        if (i) await page.keyboard.press("ArrowDown");
+        await expect(room(page)).toHaveAttribute("data-view", place);
+        await expect(room(page)).toHaveAttribute("data-view-settled", "", { timeout: 15_000 });
+      }
+      // Quickly up two and down one: no glides queue up, the camera turns for the last one.
+      await page.keyboard.press("ArrowUp");
+      await page.keyboard.press("ArrowUp");
+      await page.keyboard.press("ArrowDown");
+      await expect(room(page)).toHaveAttribute("data-view", "trophies");
+      await expect(room(page)).toHaveAttribute("data-view-settled", "", { timeout: 15_000 });
+      // Choosing it opens the place at once: the camera is already there.
+      const chosen = Date.now();
+      await page.keyboard.press("Enter");
+      await at(page, "trophies");
+      expect(Date.now() - chosen).toBeLessThan(1000);
+      // Back: the menu, still at the cabinet.
+      await page.keyboard.press("Escape");
+      await at(page, "title");
+      await expect(room(page)).toHaveAttribute("data-view", "trophies");
+      await expect(page.getByRole("navigation", { name: "Main menu" })).toBeVisible();
+    });
+
+    test("the pointer settles before the camera goes; a tap on a phone goes in one", async ({ page }) => {
+      test.setTimeout(150_000);
+      await page.goto("/battle/");
+      await at(page, "title");
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(400);
+      await expect(room(page)).toHaveAttribute("data-view", "campaign");
+      // Sweeping the pointer straight down across Free Play, Heroes & Decks and Trophies to Settings: the camera only
+      // ever heads for Settings (every view it heads for is written down as it changes).
+      await page.evaluate(() => {
+        const seen: string[] = [];
+        (window as unknown as { __views: string[] }).__views = seen;
+        const shelf = document.getElementById("shelf")!;
+        new MutationObserver(() => seen.push(shelf.dataset.view ?? "")).observe(shelf, {
+          attributes: true,
+          attributeFilter: ["data-view"],
+        });
+      });
+      const choice = (name: RegExp) => room(page).getByRole("button", { name });
+      const from = (await choice(/^Free Play/).boundingBox())!;
+      const to = (await choice(/^Settings/).boundingBox())!;
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+      await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
+      await expect(room(page)).toHaveAttribute("data-view", "settings");
+      await expect(room(page)).toHaveAttribute("data-view-settled", "", { timeout: 15_000 });
+      const views = await page.evaluate(() => (window as unknown as { __views: string[] }).__views);
+      expect([...new Set(views)].filter((view) => view !== "campaign")).toEqual(["settings"]);
+    });
+
+    test("on a phone, one tap on a choice goes there", async ({ browser }) => {
+      test.setTimeout(150_000);
+      const context = await browser.newContext({
+        viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        isMobile: true,
+      });
+      const page = await context.newPage();
+      await page.goto("/battle/");
+      await at(page, "title");
+      await page.getByRole("button", { name: "Press any button" }).tap();
+      await expect(page.getByRole("navigation", { name: "Main menu" })).toBeVisible();
+      await page.waitForTimeout(400);
+      await room(page)
+        .getByRole("button", { name: /^Settings/ })
+        .tap();
+      await at(page, "settings");
+      await context.close();
+    });
+  });
+
   test.describe("by controller, gliding", () => {
     // The camera glides here, as it does for most players (the other specs fade, with reduced motion).
     test.use({ reducedMotion: "no-preference" });

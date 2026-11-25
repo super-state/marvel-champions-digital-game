@@ -119,6 +119,12 @@ let toward: ((out: Pose) => void) | null = null;
 let k = 1;
 let fading = false;
 
+/** Where the camera stands now. */
+export const currentPose = (): Pose => current;
+
+/** Whether the camera is within a short step of `pose` already (so going there needs no glide). */
+export const closeTo = (pose: Pose): boolean => current.pos.distanceTo(pose.pos) + current.at.distanceTo(pose.at) < 0.8;
+
 /** Whether the camera is on its way somewhere. */
 export const moving = () => k < 1;
 

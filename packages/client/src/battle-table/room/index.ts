@@ -21,7 +21,7 @@
  * The room itself is `room.ts`, the camera `camera.ts`, and each place has its own file in `places/`.
  */
 import type { Fog } from "three";
-import { fadeAmount, headTo, moving, stepCamera } from "./camera.js";
+import { closeTo, currentPose, fadeAmount, headTo, moving, newPose, stepCamera } from "./camera.js";
 import { boxesBuilt, campaignPlace, openFromAddress, reset as resetCampaign } from "./places/campaign.js";
 import { play, stepOutro, type ShelfHost } from "./places/campaign-play.js";
 import { decks } from "./places/decks.js";
@@ -66,6 +66,8 @@ const MENU: readonly PlaceId[] = ["campaign", "free-play", "decks", "trophies", 
 const isPlace = (id: string | null): id is PlaceId => !!id && id in places;
 const lessMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
+/** A spare pose: where the camera is heading. */
+const ahead = newPose();
 /** Where the camera is (or, while `heading` is set, where it was). */
 let here: PlaceId = "title";
 let heading: PlaceId | null = null;
@@ -107,9 +109,15 @@ async function go(id: PlaceId, options: { force?: boolean; now?: boolean } = {})
     say(`${place.label} couldn't be opened. Try again in a moment.`);
     return;
   }
-  if (id === "title" && here !== "title") titlePlace.cameFrom(here);
-  headTo((out) => place.view(out), { fade: lessMotion.matches, now: !!options.now });
-  if (options.now) arrive();
+  if (id === "title" && here !== "title") {
+    titlePlace.cameFrom(here);
+    titlePlace.resumeFrom(currentPose());
+  }
+  // The menu has usually brought the camera to the place's view already: then it opens at once, with no second move.
+  place.view(ahead);
+  const now = !!options.now || closeTo(ahead);
+  headTo((out) => place.view(out), { fade: lessMotion.matches, now });
+  if (now) arrive();
 }
 
 function arrive() {
