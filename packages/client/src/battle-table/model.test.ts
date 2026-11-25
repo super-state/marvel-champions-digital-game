@@ -535,9 +535,10 @@ describe("the difficulty and modules the deal takes", () => {
     });
     const state = opening! as engine.GameState;
     const sets = new Set(
-      Object.keys(state.instances).flatMap(
-        (id) => engine.cardOf(state, id as engine.InstanceId)?.encounterSetIds ?? [],
-      ),
+      Object.keys(state.instances).flatMap((id) => {
+        const card = engine.cardOf(state, id as engine.InstanceId);
+        return card && "encounterSetIds" in card ? (card.encounterSetIds as readonly string[]) : [];
+      }),
     );
     return { battle, state, sets };
   }
