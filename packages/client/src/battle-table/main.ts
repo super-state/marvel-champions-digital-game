@@ -759,6 +759,7 @@ function choiceView(choice: Choice): DockView {
       (state.turn === "enemy" ? "Villain phase" : state.turn === "ending" ? "End of turn" : staged?.name || ""));
   const heading = /^choose one[.:]?$/i.test(choice.prompt.trim()) ? "Choose one" : choice.prompt;
   const eitherOr = /^Spend .+, or .+\?$/.test(choice.prompt);
+  const paysSpend = model.spendPays([...choicePicks]) !== false;
   const order = pickOrder(choice, choicePicks);
   return {
     tone,
@@ -786,8 +787,10 @@ function choiceView(choice: Choice): DockView {
           // hid that it means the "or".
           label: eitherOr ? (n ? `Spend ${n}` : "Don’t spend") : n ? `Confirm ${n}` : "Confirm",
           icon: "next",
-          disabled: n < choice.min || discarding,
-          attention: n >= choice.min,
+          // A spend that can be declined goes through only once the picks pay it: picks that don't would be taken
+          // as not spending, with the "or" happening anyway (Sonic Boom exhausting everyone, the cards kept).
+          disabled: n < choice.min || discarding || !paysSpend,
+          attention: n >= choice.min && paysSpend,
           onClick: confirmChoice,
         }
       : null,

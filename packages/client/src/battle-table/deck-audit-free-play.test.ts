@@ -612,3 +612,57 @@ test("Ultron on Expert: stage III can't be hurt while a Drone is in play, and th
   expect(snap(battle).enemyCards.some((c) => c.name === "Drone")).toBe(true);
   expect(attackTargets(battle)).not.toContain(villainId(battle));
 });
+
+// ===============================================================================================================
+// Found playing Free Play (2026-11-25)
+// ===============================================================================================================
+
+test("01123 Sonic Boom: Spend takes only picks that pay it; picks that don't would exhaust everyone with the cards kept", () => {
+  const battle = scenario({
+    deal: { villain: "klaw" },
+    hand: ["01088", "01089", "01090"],
+    top: ["01124", "01122", "01123"],
+  });
+  // Spider-Man, so Klaw attacks (with his two boost cards) instead of scheming his main scheme over.
+  toHero(battle);
+  expect(battle.endTurn()).toBe(true);
+  const sonicBoom = (choice: BattleChoice) => /^Spend .+, or exhaust each character you control\?$/.test(choice.prompt);
+  // Answer everything else the usual way until Sonic Boom asks.
+  for (let i = 0; i < 20 && snap(battle).choice && !sonicBoom(snap(battle).choice!); i++) {
+    const choice = snap(battle).choice!;
+    const picks = choice.offers?.length
+      ? []
+      : choice.defense
+        ? choice.options.filter((o) => !o.cardId).map((o) => o.id)
+        : choice.options.slice(0, choice.min).map((o) => o.id);
+    expect(battle.chooseMany(picks)).toBe(true);
+  }
+  const choice = snap(battle).choice!;
+  expect(choice.prompt).toBe("Spend 1 energy, 1 mental, 1 physical, or exhaust each character you control?");
+  // One card can't pay three types: refused, and the question stays (the engine would take it as not spending and
+  // exhaust everyone with the card kept). Nothing picked is the "or", taken as it says.
+  const one = [choice.options[0]!.id];
+  expect(battle.spendPays(one)).toBe(false);
+  expect(battle.chooseMany(one)).toBe(false);
+  expect(snap(battle).choice?.id).toBe(choice.id);
+  expect(battle.spendPays([])).toBe(true);
+  expect(battle.chooseMany([])).toBe(true);
+  expect(snap(battle).hero.exhausted).toBe(true);
+});
+
+test("an ally's own damage for attacking is taken, not dealt to itself: 'Jessica Jones takes 1 damage'", () => {
+  const battle = scenario({ inPlay: ["01059"] });
+  const jessica = snap(battle).inPlay.find((c) => c.name === "Jessica Jones")!;
+  const attack = battle.fieldActions(jessica.id).find((a) => /attack/i.test(a.label))!;
+  expect(battle.fieldAction(jessica.id, attack.kind)).toBe(true);
+  const run = drive(battle);
+  const texts = run.beats.map((b) => b.text);
+  expect(texts).toContain("Jessica Jones takes 1 damage");
+  expect(texts.some((t) => /Jessica Jones deals \d+ damage to Jessica Jones/.test(t))).toBe(false);
+});
+
+test("01006 Aunt May: her action says what it does, not only its exhaust cost", () => {
+  const battle = scenario({ inPlay: ["01006"] });
+  const may = snap(battle).inPlay.find((c) => c.name === "Aunt May")!;
+  expect(battle.fieldActions(may.id).map((a) => a.label)).toEqual(["Heal 4 damage from Peter Parker"]);
+});
