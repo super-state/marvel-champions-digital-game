@@ -86,6 +86,7 @@
   --damage: #f04a36;
   --heal: #3fd27f;
   --tough: #49c6dd;
+  --guard: #ffd45a;
   --stunned: #ffb722;
   --confused: #b884ff;
   --boost: #e8464e;
@@ -835,6 +836,60 @@
 .card-stamp[data-tone="boost"] {
   color: var(--boost);
   rotate: 6deg;
+}
+/* "Guard": a shield and the word, level, in the guard gold the minion's plate shield wears. */
+.card-stamp[data-tone="guard"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--guard);
+  rotate: 0deg;
+}
+.card-stamp[data-tone="guard"] .icon {
+  width: 1em;
+  height: 1em;
+}
+/* A guard minion's plate shield: guard stops attacks on the villain while it is engaged. */
+.stat-pill[data-kind="guard"] {
+  padding: 2px 5px;
+  background: linear-gradient(180deg, #4d3d10, #2c2206);
+  color: var(--guard);
+  box-shadow: inset 0 0 0 1px #ffd45a66;
+}
+/* While the attack is being picked, the shield pulses: it is why the villain can't be chosen. */
+.anchor[data-guarding] .stat-pill[data-kind="guard"] {
+  animation: guard-pulse 1.1s ease-in-out infinite;
+}
+@keyframes guard-pulse {
+  50% {
+    box-shadow:
+      inset 0 0 0 1px #ffd45a,
+      0 0 12px 2px #ffd45a99;
+    scale: 1.12;
+  }
+}
+/* Over the villain the player tried to attack: why not, in a word with the guard's shield. */
+.guard-hint {
+  position: absolute;
+  z-index: 6;
+  translate: -50% -50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: var(--r-pill);
+  border: 1px solid #ffd45a88;
+  background: #1c1606f2;
+  color: #fff3cf;
+  pointer-events: none;
+  font: 700 13px/1.25 var(--font-ui);
+  white-space: nowrap;
+  box-shadow: 0 8px 22px #000b;
+}
+.guard-hint .icon {
+  width: 16px;
+  height: 16px;
+  color: var(--guard);
 }
 
 @media (prefers-reduced-motion: reduce) {

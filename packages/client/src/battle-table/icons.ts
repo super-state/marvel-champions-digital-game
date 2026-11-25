@@ -111,6 +111,12 @@ const ICONS = {
   ],
   /** Tough status, and defense. */
   tough: [{ d: "M12 1.8l8.6 3.2v6.2c0 5.5-3.6 10.3-8.6 11.6-5-1.3-8.6-6.1-8.6-11.6V5z" }],
+  /** Guard: a shield with a bar across it, standing in the way of the villain. */
+  guard: [
+    {
+      d: "M12 1.8l8.6 3.2v6.2c0 5.5-3.6 10.3-8.6 11.6-5-1.3-8.6-6.1-8.6-11.6V5zM6.4 9.4v2.4h11.2V9.4z",
+    },
+  ],
   /** Exhausting a card for its ability (turns it sideways). */
   exhaust: [{ d: "M5.2 15.6A7.6 7.6 0 1 1 12.4 20", stroke: 2.4 }, { d: "M2 12.2l3.3 5.4 4.6-4.3z" }],
   /** Undo the last move. */

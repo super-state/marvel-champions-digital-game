@@ -777,6 +777,8 @@ function choiceView(choice: Choice): DockView {
         }
       : null,
     title: heading,
+    // Guard keeping the villain out of reach says so under the question (`BattleChoice.guard`).
+    help: choice.guard ? (choice.explanation ?? null) : null,
     options: listed.map((option) => ({
       id: option.id,
       label: option.label,
@@ -874,6 +876,7 @@ let overMenu = false;
 function hoverCard(id: string | null) {
   // A soft tick as the pointer comes onto a new card, one for the hand and one for the table (Adam, 2026-11-24).
   if (id && id !== pointedCard) sfx.play(inHand(id) ? "hover-hand" : "hover-table");
+  if (id && id !== pointedCard && state.choice?.guard?.blocked.includes(id)) showGuardHint(id);
   pointedCard = id;
   showHovered();
 }
@@ -1078,6 +1081,12 @@ function pick(id: string) {
     return;
   }
   if (state.choice) {
+    if (state.choice.guard?.blocked.includes(id)) {
+      sfx.play("error");
+      guardHintAt = 0;
+      showGuardHint(id);
+      return;
+    }
     const targets = state.choice.options.filter((option) => option.cardId === id);
     if (targets.length === 1) {
       sfx.play("select");
@@ -1319,6 +1328,65 @@ function hpPill(hp: number): HTMLElement {
   pill.append(icon("heart"), make("b", "", String(hp)));
   pill.toggleAttribute("data-low", hp <= 3);
   return pill;
+}
+
+/** A guard minion's shield on its plate: while it is engaged, the villain can't be attacked. */
+function guardPill(): HTMLElement {
+  const pill = make("span", "stat-pill");
+  pill.dataset.kind = "guard";
+  pill.title = "Guard: while this minion is engaged with you, you can't attack the villain";
+  pill.append(icon("guard"));
+  return pill;
+}
+
+/** Why the villain can't be attacked during a guard pick, in a few words: "Hydra Mercenary has Guard". */
+function guardReason(): string {
+  const names = (state.choice?.guard?.guards ?? []).map(nameOf);
+  const villain = nameOf(state.choice?.guard?.blocked[0] ?? null) || "The villain";
+  if (!names.length) return "";
+  const who = names.length === 1 ? `${names[0]} has` : `${names.slice(0, -1).join(", ")} and ${names.at(-1)} have`;
+  return `Can't attack ${villain}: ${who} Guard`;
+}
+
+/**
+ * The player points at or clicks the villain while guard keeps it out of reach: a shield and the reason over the
+ * villain, and "Guard" stamped on the minion(s) stopping it (Adam, 2026-11-25: "highlight the minion and say, with a
+ * shield or something, saying they have guard"). Once per pointing: a pointer resting on the villain doesn't repeat it.
+ */
+let guardHint: HTMLElement | null = null;
+let guardHintAt = 0;
+function showGuardHint(villain: string) {
+  const guard = state.choice?.guard;
+  if (!guard?.blocked.includes(villain)) return;
+  const now = performance.now();
+  if (guardHint?.isConnected && now - guardHintAt < 1200) return;
+  guardHintAt = now;
+  guardHint?.remove();
+  const node = make("div", "guard-hint");
+  node.setAttribute("role", "status");
+  node.append(icon("guard"), make("span", "", guardReason()));
+  guardHint = node;
+  floatOver(villain, node, 2600, [
+    { transform: "translateY(8px) scale(.85)", opacity: 0 },
+    { transform: "none", opacity: 1, offset: 0.1 },
+    { transform: "none", opacity: 1, offset: 0.85 },
+    { transform: "translateY(-6px)", opacity: 0 },
+  ]);
+  for (const id of guard.guards) stampCard(id, "Guard", "guard");
+}
+
+/** Guard minions already called out: each is stamped "Guard" once as it comes onto the table. */
+const guardsCalled = new Set<string>();
+function announceGuards() {
+  if (presenting || flying) return;
+  const placed = new Set(table?.anchors().map((anchor) => anchor.id) ?? []);
+  const now = state.enemyCards.filter((card) => card.guard).map((card) => card.id);
+  for (const id of [...guardsCalled]) if (!now.includes(id)) guardsCalled.delete(id);
+  for (const id of now) {
+    if (guardsCalled.has(id) || !placed.has(id)) continue;
+    guardsCalled.add(id);
+    stampCard(id, "Guard", "guard");
+  }
 }
 
 function threatPill(count: number, target: number | null, lock?: string): HTMLElement {
@@ -1564,7 +1632,12 @@ function synchronizeLabels() {
       if ((source || target) && !handPick && !state.choice?.defense)
         label.append(make("span", "plate-name", card.name));
       if (!discardOpen && hp !== undefined) label.append(hpPill(hp));
+      if (!discardOpen && card.guard) label.append(guardPill());
     }
+    // Picking whom to attack while guard keeps the villain out of reach: the guard minion's shield pulses.
+    label.toggleAttribute("data-guarding", !!state.choice?.guard?.guards.includes(card.id));
+    // The villain guard protects stays pointable during that pick, to say why it can't be chosen.
+    if (state.choice?.guard?.blocked.includes(card.id)) label.setAttribute("aria-description", guardReason());
     if (hp === undefined || discardOpen || inHand) delete label.dataset.hp;
     else label.dataset.hp = String(hp);
     if (card.threat !== null && onTable(card.id))
@@ -2495,9 +2568,10 @@ async function threatStep(beat: Beat, scheme: string, amount: number) {
   await sleep(reducedMotion() ? 500 : 1300);
 }
 
-function stampCard(id: string, text: string, tone?: "status" | "confused" | "tough" | "surge" | "boost") {
+function stampCard(id: string, text: string, tone?: "status" | "confused" | "tough" | "surge" | "boost" | "guard") {
   const node = make("div", "card-stamp", text);
   if (tone) node.dataset.tone = tone;
+  if (tone === "guard") node.prepend(icon("guard"));
   floatOver(id, node, 1100, [
     { transform: "scale(2.4)", opacity: 0 },
     { transform: "scale(.92)", opacity: 1, offset: 0.16 },
@@ -3641,6 +3715,7 @@ function render() {
   discardFan.hidden = !discardOpen;
   syncBoostTags();
   synchronizeLabels();
+  announceGuards();
   element("board-viewport").toggleAttribute("data-paying", !!state.payment);
   pile.disabled = !state.discard.length || flying || discarding || !!state.payment;
   pile.setAttribute("aria-expanded", String(discardOpen && !viewingEncounterDiscard));
@@ -4049,6 +4124,8 @@ function deal() {
 }
 
 function start() {
+  // A new game calls out its guard minions afresh (instance ids repeat from game to game).
+  guardsCalled.clear();
   pinCard(null);
   table?.holdReveal(false);
   try {
@@ -4475,6 +4552,9 @@ function placeHoverCard() {
  */
 function previewSpot(id: string) {
   const folded = roomy.matches && arena.hasAttribute("data-collapsed");
+  // The villain guard keeps out of reach, pointed at while picking whom to attack: its big picture would cover the
+  // guard minion's "Guard" call-out, which is what the player needs to see (`showGuardHint`).
+  if (state.choice?.guard?.blocked.includes(id)) return null;
   const card = folded && !inHand(id) ? cards().find((item) => item.id === id) : undefined;
   const point = card?.art && table ? table.anchors().find((anchor) => anchor.id === id) : undefined;
   if (!card || !point) return null;
