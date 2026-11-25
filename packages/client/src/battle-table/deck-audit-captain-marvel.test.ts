@@ -497,3 +497,15 @@ test("Against Ultron: Hawkeye's offer for a facedown Drone entering play names i
   expect(s.choice!.prompt).not.toMatch(/DRONE/);
   expect(s.choice!.prompt).toMatch(/^Drone entered play/);
 });
+
+test("01015 Alpha Flight Station made free by Helicarrier: played with no discard asked (its discard is its action's)", () => {
+  const p = scenario(inPlay("01092"), handOf("01015", "01088", "01089"));
+  const helicarrier = p.card("Helicarrier", "inPlay");
+  p.run(() => p.battle.fieldAction(helicarrier.id, p.battle.fieldActions(helicarrier.id)[0]!.kind));
+  expect(p.card("Alpha Flight Station").cost).toBe(0);
+  const hand = p.snap.hand.length;
+  expect(p.battle.pick(p.card("Alpha Flight Station").id)).toBe(true);
+  expect(p.snap.choice).toBeNull();
+  expect(p.has("Alpha Flight Station", "inPlay")).toBe(true);
+  expect(p.snap.hand).toHaveLength(hand - 1);
+});

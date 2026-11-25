@@ -186,13 +186,15 @@ test("01050 Hulk wild: in the order physical, energy, mental every result happen
 });
 
 test("01050 Hulk wild: energy first can defeat Hulk himself, and the mental result then finds nothing to discard", () => {
-  const { p } = hulkAttacks("01055", patchCard("01050", { damage: 3 }));
+  // On 4 damage of his 5: the energy result's 1 defeats him (it comes before his consequential damage, RRG 1.8 p. 4).
+  const { p } = hulkAttacks("01055", patchCard("01050", { damage: 4 }));
   const energy = p.snap.choice!.options.find((o) => o.label.startsWith("Energy"))!.id;
   const mental = p.snap.choice!.options.find((o) => o.label.startsWith("Mental"))!.id;
   const physical = p.snap.choice!.options.find((o) => o.label.startsWith("Physical"))!.id;
   p.mark();
   expect(p.run(() => p.battle.chooseMany([energy, mental, physical]))).toBe(true);
-  // 3 damage + 1 consequential + 1 from his own energy result = 5 = his HP.
+  const hulk = p.beats.find((b) => b.text.startsWith("Hulk") && b.defeatedCard)?.defeatedCard;
+  expect(hulk, "Hulk is defeated by his own energy result").toBeTruthy();
   expect(p.has("Hulk", "inPlay")).toBe(false);
   expect(p.has("Hulk", "discard")).toBe(true);
   if (p.snap.choice) p.choose({ label: "Rhino" });

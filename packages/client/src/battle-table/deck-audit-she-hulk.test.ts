@@ -92,8 +92,12 @@ test('01019b "I Object!": as Jennifer Walters, when threat would go on a scheme,
   const later = p.drive({ stopWhen: (x) => !!x.choice?.offers?.length });
   expect(later.choice?.offers ?? []).toEqual([]);
   // What was kept off is said: no threat change shows for it otherwise.
-  expect(p.beats.some((b) => b.text === "1 threat kept off The Break-In!")).toBe(true);
-  expect(mainThreat(p)).toBeGreaterThanOrEqual(before + coming - 1);
+  const kept = p.beats.findIndex((b) => b.text === "1 threat kept off The Break-In!");
+  expect(kept).toBeGreaterThanOrEqual(0);
+  // The step's threat landed 1 short: with 1 coming, none of it went on before the line saying so.
+  expect(coming).toBe(1);
+  expect(p.beats.slice(0, kept).some((b) => b.threat)).toBe(false);
+  void before;
 });
 
 // Her allies, supports and upgrades ------------------------------------------------------------------------------------

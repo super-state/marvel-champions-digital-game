@@ -1439,11 +1439,11 @@ export class BattleModel {
           text: `${name(e.instanceId)} interrupts`,
         });
       } else if (e.type === "threatPrevented" && e.amount > 0) {
-        // Threat that never lands ("I Object!", Emergency) leaves no threat change behind: the log says it was kept off.
+        // Threat that never lands ("I Object!") leaves no threat change behind: the log says it was kept off.
         this.#beats.push({
           enemy,
           actor: e.schemeInstanceId,
-          text: `${e.amount} threat kept off ${name(e.schemeInstanceId)}`,
+          text: `${e.amount} threat kept off ${schemeName(e.schemeInstanceId)}`,
         });
       } else if (e.type === "damagePrevented" && e.preventerInstanceId && e.amount > 0) {
         this.#beats.push({
@@ -1951,7 +1951,7 @@ export class BattleModel {
     const costDiscard = this.#costDiscard;
     const choice = costDiscard
       ? {
-          id: `cost:${costDiscard.entry.action.kind === "useAbility" ? costDiscard.entry.action.abilityId : ""}`,
+          id: `cost:${costDiscard.entry.action.kind === "useAbility" ? costDiscard.entry.action.abilityId : this.#subject}`,
           prompt: `Discard ${costDiscard.min === costDiscard.max ? costDiscard.min : `${costDiscard.min} to ${costDiscard.max}`} to pay`,
           sourceTitle: faceUpName(state, this.#subject as InstanceId),
           options: costDiscard.candidates.map((id) => ({ id, label: faceUpName(state, id), cardId: id })),
@@ -2185,16 +2185,20 @@ export class BattleModel {
     const source =
       entry.action.kind === "useAbility" || entry.action.kind === "playCard" ? entry.action.instanceId : null;
     if (!source) return false;
+    // A card played from hand: only when the play itself discards (the engine's example names a discard pick), not a
+    // discard printed on a later ability of the card (Alpha Flight Station made free by Helicarrier costs no discard).
+    if (entry.example.type === "playCard" && !entry.example.costChoices?.discard) return false;
     const cost =
       entry.action.kind === "useAbility"
         ? CORE_DEPS.abilities[entry.action.abilityId]?.cost
         : playedAbilityRefs(cardOf(this.#game, source))
-            .map((ref) => CORE_DEPS.abilities[ref.id]?.cost)
-            .find((each) => each?.discardFromHand);
+            .map((ref) => CORE_DEPS.abilities[ref.id])
+            .find((ability) => ability?.trigger.kind === "action" && ability.cost?.discardFromHand)?.cost;
     const discard = cost?.discardFromHand;
     if (!discard) return false;
     const candidates = handDiscardCandidates(this.#game, CORE_DEPS, source, this.#game.players[0]!.playerId, cost);
-    this.#costDiscard = { entry, candidates, min: discard.min, max: discard.max ?? candidates.length };
+    const max = Math.min(discard.max ?? candidates.length, candidates.length);
+    this.#costDiscard = { entry, candidates, min: discard.min, max };
     this.#subject = source;
     this.#view = null;
     return true;
