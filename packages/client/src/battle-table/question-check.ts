@@ -67,19 +67,23 @@ export const QUESTION_HANDLING: Record<ChoicePrompt["kind"], "designed" | "dock"
 };
 
 /**
- * Plain questions the driven games meet today, each one either waiting for a design or still to be put to Adam. A key
- * here quiets the test only: the dev table keeps wearing its tag until the question is designed. Never add a key
- * without designing the question or Adam saying the plain version will do; an "unhandled" kind can never go here.
+ * Plain questions the driven games meet today. "accepted": Adam has said the plain version is fine, so the dev table
+ * wears no tag for it either. "needs design": the test lets it through, but the dev table keeps its tag until it is
+ * designed. Never add a key without designing the question or Adam's say; an "unhandled" kind can never go here.
  */
-export const KNOWN_PLAIN: Readonly<Record<string, string>> = {
-  // To confirm with Adam (asked 2026-11-25): the encounter cards' "choose one" (Hydra Bomber, Eviction Notice, Under
-  // Attack, Electric Whip Attack, the obligations) and Nick Fury's. Each button carries that half's own words and
-  // icons, and Adam has played them since 2026-11-22, but nobody designed them as a screen.
-  "chooseOption: buttons only": "the card's own choices as buttons of its words",
-  // Waiting for a design (2026-11-25, on the question map): Wakanda Forever! orders the Special upgrades as buttons
-  // of their names, though the cards are on the table to point at.
-  "orderSpecials: cards as name buttons": "Wakanda Forever!: needs a design",
+export const KNOWN_PLAIN: Readonly<Record<string, { status: "accepted" | "needs design"; note: string }>> = {
+  // Adam, 2026-11-25, shown Hydra Bomber, Eviction Notice and Nick Fury: "these are fine, I've seen them lots. This is
+  // the standard choose an option, this is fine for now." Each button carries that half's own words and icon.
+  "chooseOption: buttons only": { status: "accepted", note: "the standard choose-one: buttons of each option's words" },
+  // On the question map (2026-11-25): Wakanda Forever! orders the Special upgrades as buttons of their names, though
+  // the cards are on the table to point at.
+  "orderSpecials: cards as name buttons": { status: "needs design", note: "Wakanda Forever!'s order" },
 };
+
+/** Whether the dev table tags this question: every plain one, unless Adam has accepted it. */
+export function tagsQuestion(found: PlainQuestion | null): found is PlainQuestion {
+  return !!found && KNOWN_PLAIN[found.key]?.status !== "accepted";
+}
 
 export interface PlainQuestion {
   /** Kind and why, e.g. "orderSpecials: names of cards not on the table". The test's key. */

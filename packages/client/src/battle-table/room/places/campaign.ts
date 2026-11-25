@@ -354,11 +354,24 @@ const scratch = {
   look: new THREE.Object3D(),
 };
 
+/**
+ * How far the camera leans after the pointer, eased: following the pointer straight jolted the whole shelf sideways
+ * the first time the mouse moved after the page loaded, and juddered with every small move after (Adam, 2026-11-25:
+ * "the boxes still shake when they load up").
+ */
+let sway = 0;
+const SWAY_EASE = 3;
+
+function easeSway(dt: number) {
+  const want = active && pointer.x > -2 ? pointer.x : 0;
+  sway = lerp(sway, want, 1 - Math.exp(-dt * SWAY_EASE));
+}
+
 /** Where the camera stands for the shelf now: further in as a box opens, round to the game's angle as Play runs. */
 function view(out: Pose) {
   const outro = play.outro;
   const toGame = outro ? span(outro.u, 0, 1.2) : 0;
-  shelfPose(out, span(s, 0.15, 1.2), toGame, active ? pointer.x : -9, camera.aspect);
+  shelfPose(out, span(s, 0.15, 1.2), toGame, sway, camera.aspect);
 }
 
 /** Stands each box where it is in its opening (and the others where they have been cleared to). */
@@ -620,6 +633,7 @@ export const campaignPlace: Place = {
   step(dt, time) {
     if (!built) return;
     advance(dt);
+    easeSway(dt);
     pose(time, dt);
     if (active) {
       placeHoverTag();
