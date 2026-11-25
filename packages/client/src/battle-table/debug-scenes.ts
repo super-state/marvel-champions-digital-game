@@ -25,7 +25,7 @@ interface Scene {
   villain?: { damage?: number; statuses?: Record<string, number>; lastStage?: boolean };
   /** Dealt for whichever hero the address or the bench chose, not Spider-Man: it uses none of his cards. */
   anyHero?: true;
-  /** Goes on the record like a real game (the driven win checks the record, the mats and the unlocks). */
+  /** Goes on the record like a real game when the address also says `&record=1` (the driven win's browser test). */
   recorded?: true;
   mainThreat?: number;
   /** Player cards in play (allies, supports, upgrades). */
@@ -645,8 +645,9 @@ const SCENES: Record<string, Scene> = {
   },
   /**
    * The finish, for any hero (`?scene=finish&hero=she-hulk`): Rhino on his last hit point, this stage made his last,
-   * the hero in hero form and ready, nothing engaged. One attack wins. It goes on the record as a game does: the
-   * driven win (`e2e/battle-win.spec.ts`) follows it to the victory screen, the record, the mats and the unlocks.
+   * the hero in hero form and ready, nothing engaged. One attack wins. With `&record=1` it goes on the record as a
+   * game does: the driven win (`e2e/battle-win.spec.ts`) follows it to the victory screen, the record and the mats.
+   * Without it, nothing is recorded, so a look at the scene on Adam's own table adds no win to his record.
    */
   finish: {
     anyHero: true,

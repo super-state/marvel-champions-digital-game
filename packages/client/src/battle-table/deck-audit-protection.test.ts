@@ -141,10 +141,10 @@ test("01075 Black Widow: accepting exhausts her, spends the mental card, cancels
   expect(threatBeats(p)).toBe(0);
 });
 
-// FOUND: the cancelled card goes to the encounter discard pile only after the replacement card was revealed and played out
-// (beats: "Reveal Caught Off Guard" ... "Advance goes to the encounter discard pile"). The card says "cancel ... and discard
-// it. Then, reveal another card": Advance's discard should be shown first.
-test.fails("01075 Black Widow: the cancelled card is discarded before the next card is revealed", () => {
+// Found by this audit, now fixed in the engine (`cancelRevealedCard`): the cancelled card went to the encounter discard
+// pile only after the replacement card was revealed and played out. "Cancel ... and discard it. Then, reveal another
+// card": the discard comes first (RRG 1.8 "'Then'", p. 44), so it is in the pile before any reshuffle.
+test("01075 Black Widow: the cancelled card is discarded before the next card is revealed", () => {
   const p = widowAtReveal();
   respond(p, "Black Widow", true);
   p.spend("Genius");
@@ -290,12 +290,12 @@ test("01077 Counter-Punch: the offer's effect says what it does, as a sentence",
   expect(effect).toMatch(/damage to (that enemy|Rhino)/);
 });
 
-// FOUND: the window is titled "Just happened: a defense", with no subject on the event: it names neither who defended nor
-// against whom ("Black Panther defended against Rhino's attack").
-test.fails("01077 Counter-Punch: the response window says who defended against what", () => {
+// Found by this audit, now fixed: the window was titled "Just happened: a defense", naming neither who defended nor
+// against whom.
+test("01077 Counter-Punch: the response window says who defended against what", () => {
   const p = atDefence([punchHand], ["Counter-Punch"]);
   defendWith(p, p.snap.hero.id);
-  expect(p.snap.choice!.prompt).toMatch(/Rhino/);
+  expect(p.snap.choice!.prompt).toBe("Black Panther defended against Rhino's attack");
 });
 
 test("01077 Counter-Punch: declining leaves Rhino with only the retaliation and the card in hand", () => {

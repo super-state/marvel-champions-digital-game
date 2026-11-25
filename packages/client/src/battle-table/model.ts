@@ -9,6 +9,7 @@ import {
   createGame,
   getInstance,
   handDiscardCandidates,
+  isResourcesChoice,
   handSize,
   legalActions,
   locateCard,
@@ -1766,6 +1767,9 @@ export class BattleModel {
     headline = headline?.replace(/\bDRONE\b/g, DRONE_NAME);
     if (!headline || pending.prompt.kind !== "chooseTriggers") return headline;
     const event = answeredEventsOf(this.#game, pending)[0] ?? pending.prompt.event;
+    // The view's words are "Just happened: a defense" (Counter-Punch): name who defended against whom.
+    if (event.kind === "defended")
+      return `${this.#card(event.defenderInstanceId).name} defended against ${this.#card(event.enemyInstanceId).name}'s attack`;
     if (event.kind !== "characterDefeated") return headline;
     const was = this.#dronesDefeated.get(event.instanceId);
     return was && headline.startsWith(was) ? `The ${DRONE_NAME}${headline.slice(was.length)}` : headline;
@@ -1886,10 +1890,13 @@ export class BattleModel {
     const cost = CORE_DEPS.abilities[prompt.abilityId]?.cost;
     // A typed cost ("spend a [mental] resource", Black Widow): only a card with that resource, or a wild one, pays it,
     // and the screen says what is still owed, as the payment for a card from hand does.
+    // A mixed cost (a [mental] and one more of any kind) is left to the engine: any card pays its generic part.
     const typed =
-      cost?.resources && typeof cost.resources === "object" && !("choice" in cost.resources)
+      cost?.resources && typeof cost.resources === "object" && !isResourcesChoice(cost.resources)
         ? Object.entries(cost.resources as Record<string, number>).filter(([type, n]) => type !== "generic" && n > 0)
         : [];
+    if (cost?.resources && !isResourcesChoice(cost.resources) && (cost.resources as Record<string, number>).generic)
+      typed.length = 0;
     const canAdd =
       !sheet.canConfirm ||
       this.#extraSpendMatters(prompt.instanceId) ||
@@ -2474,10 +2481,6 @@ export class BattleModel {
   }
 
   /**
-   * An identity's Action ability by its name and what it does, read from the face showing: "Commander: choose a player
-   * to draw 1 card", "Rechannel: draw 1 card" (its cost is on the payment screen). The name alone says nothing.
-   */
-  /**
    * A question a hero's setup ability asks before the first turn (Black Panther's Foresight: "Search your deck for a
    * Black Panther upgrade and add it to your hand"), named by the ability and what it does; the engine's own title is
    * only "Choose cards".
@@ -2494,7 +2497,9 @@ export class BattleModel {
   /**
    * The engine titles a pick of cards "Choose cards" (Shuri's search of the deck, Ancestral Knowledge's pick from the
    * discard pile): the asking card's own words say what the pick is for ("Search your deck for an upgrade and add it to
-   * your hand"). The turn bar's eyebrow already names the card.
+   * your hand"). The turn bar's eyebrow already names the card. It is the sentence that does the picking (search,
+   * choose, shuffle, return, take): Masters of Mayhem's search for a minion comes after its attack sentence, and a card
+   * with no such sentence keeps the engine's title.
    */
   #chooseCardsTitle(pending: NonNullable<GameState["pendingChoice"]>): string | undefined {
     if (pending.prompt.kind !== "chooseCards") return undefined;
@@ -2503,12 +2508,16 @@ export class BattleModel {
     if (!card || card.type === "hero_identity") return undefined;
     const sentence = plainRulesTextOf(card)
       .replace(/^[^:]*:\s*/, "")
-      .replace(/^(?:After|When|If)\b[^,]*,\s*/i, "")
-      .split(/\.(?:\s|$)/)[0]!
-      .trim();
+      .split(/\.(?:\s|$)/)
+      .map((part) => part.replace(/^(?:Then,\s*)?(?:(?:After|When|If)\b[^,]*,\s*)?/i, "").trim())
+      .find((part) => /\b(?:search|choose|shuffle|return|take)\b/i.test(part));
     return sentence ? sentence.charAt(0).toUpperCase() + sentence.slice(1) : undefined;
   }
 
+  /**
+   * An identity's Action ability by its name and what it does, read from the face showing: "Commander: choose a player
+   * to draw 1 card", "Rechannel: draw 1 card" (its cost is on the payment screen). The name alone says nothing.
+   */
   #identityAbilityLabel(name: string): string {
     const identity = this.#game.players[0]!.identity;
     const card = cardOf(this.#game, identity.instanceId) as unknown as Record<string, unknown> | undefined;

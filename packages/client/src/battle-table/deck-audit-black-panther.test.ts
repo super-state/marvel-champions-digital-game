@@ -93,8 +93,7 @@ test("01040a identity: T'Challa changes to Black Panther and back; Retaliate 1 h
   expect(p.snap.heroActions.find((a) => a.kind === "changeForm")?.label).toBe("Change to Black Panther");
   p.form();
   expect(p.snap.hero.name).toBe("Black Panther");
-  const asked = villainPhase(p);
-  void asked;
+  villainPhase(p);
   const retaliate = beat(p, (b) => b.hit?.source === p.snap.hero.id && b.hit.target === p.snap.villain.id);
   expect(retaliate).toBeGreaterThanOrEqual(0);
   expect(p.beats[retaliate]!.hit!.amount).toBe(1);

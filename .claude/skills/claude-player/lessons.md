@@ -132,6 +132,19 @@ cards work in one form only, what each status does and the hand limit.
 - **An auto-player loses these games:** it passed Emergency and "I Object!" at 6/7 and lost. Play the villain phase's
   offers by hand. `seen 2×`
 
+### Black Panther (Protection starter deck) — 0 wins, 3 losses (one each against Rhino, Klaw, Ultron)
+
+- **Foresight comes first:** the game opens on "Choose" a Black Panther upgrade (after the mulligan). Take Vibranium
+  Suit or Panther Claws first, Energy Daggers next: Wakanda Forever! fires every upgrade's special. `seen 3×`
+- **Every loss was the scheme.** Rhino in round 4, Klaw in round 4 (Defense Network's Crisis locked Secret
+  Rendezvous while three minions schemed), Ultron in round 6 (Countdown to Oblivion). His THW is 2 and Protection
+  has few thwarts: use Nick Fury's 2 threat and Black Panther's own thwart before the villain's damage. `seen 3×`
+- **An auto-player wastes Wakanda Forever!** as a payment card (twice its wild resource). Hold it in hand for the
+  turn his upgrades are all down, and play the villain phase by hand. `seen 2×`
+- **Retaliate 1 and Counter-Punch keep paying off when he defends:** Black Panther defended Klaw's and Ultron's
+  attacks for 0 damage and hit back each time; a Drone fell to Retaliate alone. Defend as Black Panther. `seen 3×`
+- **Killmonger comes in with Shadow of the Past** (Rhino game, round 2): keep a big hit or an ally for him. `seen 1×`
+
 ### Built decks from the bench (Spider-Man with Leadership, Captain Marvel with Justice) — 0 wins, 2 losses (Rhino)
 
 - **Both took Rhino's first stage fast, then lost in stage two to two attacks plus a Stampede in one phase.** Spider-Man
@@ -182,6 +195,13 @@ cards work in one form only, what each status does and the hand limit.
   block with allies and Backflip; pay Upgraded Drones off at once; save both Kicks for Ultron (II).
 
 ## Recent games
+
+- 2026-11-25 · Black Panther (Protection) vs Ultron · lost in round 6, Countdown to Oblivion · auto-played; Shuri and
+  Nick Fury came down, Retaliate broke the Drones, but Ultron's Drone Factory and Assault on NORAD outran his THW 2.
+- 2026-11-25 · Black Panther (Protection) vs Klaw · lost in round 4, Secret Rendezvous · auto-played; Defense Network's
+  Crisis locked the main scheme while Tiger Shark, Weapons Runner and Armored Guard schemed.
+- 2026-11-25 · Black Panther (Protection) vs Rhino · lost in round 4, The Break-In! · auto-played; Killmonger came in
+  with Shadow of the Past, and Wakanda Forever! went as a payment card.
 
 - 2026-11-25 · Captain Marvel (Justice, built at the bench) vs Rhino · lost in round 6, knocked out · stage one fell
   in round 5 (Photonic Blast through the Armored Rhino Suit, Nick Fury, Mockingbird); then Assault, Gang-Up and Stampede

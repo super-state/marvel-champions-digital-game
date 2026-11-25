@@ -3992,8 +3992,10 @@ function deal() {
   deckDealt = deck?.deck?.name ?? null;
   villainDealt = villain;
   // A set-up or a chosen shuffle is a check, not a game: it never goes on a record.
-  // The finish scene is the exception: it is there to follow a win onto the record.
-  gameSaved = (arrange && !scene.recorded) || seedFromUrl() !== undefined ? null : startGame(villain);
+  // The finish scene is the exception when the address asks for it (`&record=1`, the driven win's browser test): it
+  // is there to follow a win onto the record. Without it, opening the scene on Adam's table adds no win to his record.
+  const recorded = scene.recorded && params.get("record") === "1";
+  gameSaved = (arrange && !recorded) || seedFromUrl() !== undefined ? null : startGame(villain);
   paintMatchup();
   // The table opens with what the scenario's setup already did (Ultron's Drones environment and the first Drone off
   // the player's deck): the log says so, so nothing on it is there unexplained.

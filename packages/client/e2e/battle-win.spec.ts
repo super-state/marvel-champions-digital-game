@@ -61,7 +61,13 @@ async function lastBlow(page: Page, hero: string) {
 
 test.describe("battle table: a driven win for every hero", () => {
   test("the heroes are read from model.ts", () => {
-    expect(HEROES.map((h) => h.id)).toEqual(expect.arrayContaining(["spider-man", "captain-marvel", "she-hulk"]));
+    // Every entry of HEROES matched the pattern: one reflowed onto several lines would otherwise drop out unseen.
+    const source = readFileSync(new URL("../src/battle-table/model.ts", import.meta.url), "utf8");
+    const entries = /export const HEROES[^=]*=\s*\[([\s\S]*?)\] as const;/.exec(source)![1]!.match(/\bid:/g)!.length;
+    expect(HEROES).toHaveLength(entries);
+    expect(HEROES.map((h) => h.id)).toEqual(
+      expect.arrayContaining(["spider-man", "captain-marvel", "she-hulk", "black-panther"]),
+    );
   });
 
   for (const hero of HEROES) {
@@ -74,7 +80,7 @@ test.describe("battle table: a driven win for every hero", () => {
         localStorage.removeItem(key);
         localStorage.removeItem("battle-mat");
       }, KEY);
-      await page.goto(`/battle/?hero=${hero.id}&scene=finish`);
+      await page.goto(`/battle/?hero=${hero.id}&scene=finish&record=1`);
       await hook(page);
       await expect(page).toHaveTitle(new RegExp(`^${hero.name} vs\\. Rhino`));
 
