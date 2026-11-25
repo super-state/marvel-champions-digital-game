@@ -149,16 +149,26 @@ test.describe("battle table: the room", () => {
       await page.keyboard.press("Enter");
       await page.waitForTimeout(400);
       await expect(room(page)).toHaveAttribute("data-view", "campaign");
-      // Brushing down across Free Play and Heroes & Decks on the way to Settings: the camera only goes to Settings.
+      // Sweeping the pointer straight down across Free Play, Heroes & Decks and Trophies to Settings: the camera only
+      // ever heads for Settings (every view it heads for is written down as it changes).
+      await page.evaluate(() => {
+        const seen: string[] = [];
+        (window as unknown as { __views: string[] }).__views = seen;
+        const shelf = document.getElementById("shelf")!;
+        new MutationObserver(() => seen.push(shelf.dataset.view ?? "")).observe(shelf, {
+          attributes: true,
+          attributeFilter: ["data-view"],
+        });
+      });
       const choice = (name: RegExp) => room(page).getByRole("button", { name });
-      for (const name of [/^Free Play/, /^Heroes & Decks/]) {
-        await choice(name).hover();
-        await page.waitForTimeout(60);
-        await expect(room(page)).toHaveAttribute("data-view", "campaign");
-      }
-      await choice(/^Settings/).hover();
+      const from = (await choice(/^Free Play/).boundingBox())!;
+      const to = (await choice(/^Settings/).boundingBox())!;
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+      await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
       await expect(room(page)).toHaveAttribute("data-view", "settings");
       await expect(room(page)).toHaveAttribute("data-view-settled", "", { timeout: 15_000 });
+      const views = await page.evaluate(() => (window as unknown as { __views: string[] }).__views);
+      expect([...new Set(views)].filter((view) => view !== "campaign")).toEqual(["settings"]);
     });
 
     test("on a phone, one tap on a choice goes there", async ({ browser }) => {

@@ -198,8 +198,10 @@ export const titlePlace: Place & { cameFrom(id: PlaceId): void; resumeFrom(pose:
     } else lerpPose(smooth, smooth, wanted, 1 - Math.exp(-dt * GLIDE_RATE));
     // For checks: which view the menu's camera is at or heading to, and whether it has got there.
     if (!panel.hidden) {
-      root.dataset.view = lean?.id ?? "doorway";
-      root.toggleAttribute("data-view-settled", apart(smooth, wanted) < 0.05);
+      const view = lean?.id ?? "doorway";
+      if (root.dataset.view !== view) root.dataset.view = view;
+      const there = apart(smooth, wanted) < 0.05;
+      if (root.hasAttribute("data-view-settled") !== there) root.toggleAttribute("data-view-settled", there);
     }
   },
   resumeFrom(pose) {
