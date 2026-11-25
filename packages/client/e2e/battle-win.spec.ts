@@ -132,7 +132,7 @@ test.describe("battle table: a driven win for every hero", () => {
       // The campaign moves on, as a friend sees it: Klaw is open, Ultron still waits for Klaw.
       await page.goto("/battle/?friend=1&room=title");
       await expect(room).toHaveAttribute("data-place", "title", { timeout: 60_000 });
-      await expect(picks.filter({ hasText: /^Klaw/ })).toHaveCount(1);
+      await expect(picks.filter({ hasText: "Open Klaw" })).toHaveCount(1);
       await expect(picks.filter({ hasText: "Klaw (Beat Rhino to unlock)" })).toHaveCount(0);
       await expect(picks.filter({ hasText: "Ultron (Beat Klaw to unlock)" })).toHaveCount(1);
 
