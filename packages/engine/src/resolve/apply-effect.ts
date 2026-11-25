@@ -3714,8 +3714,25 @@ export function applyEffect(ctx: Ctx, effect: EffectSpec, context: EffectContext
         markPreThenUnresolved(ctx, frame.frameId, "nothingToCancel", reveal?.instanceId);
         return;
       }
-      setFrame(ctx, all ? { ...reveal, effectsCancelled: true } : { ...reveal, whenRevealedCancelled: true });
+      // "Cancel the effects of that card and discard it. Then, reveal another card" (Black Widow 01075): the discard is
+      // pre-"then" text and resolves first (RRG 1.8 "'Then'", p. 44; "Ability", p. 4), so a faceup card being revealed
+      // into play is in the encounter discard pile before the next reveal and any reshuffle it causes (RRG 1.8
+      // "Encounter Deck", p. 17). A new face or a card found in play is never discarded (RRG 1.8 "Cancel", p. 13), and
+      // a card cancelled while still facedown ("would reveal") is discarded once revealed, as before.
+      const discardNow =
+        all &&
+        frame.event?.kind === "encounterCardRevealing" &&
+        !reveal.newFace &&
+        !reveal.foundInPlay &&
+        !!getInstance(ctx.state, reveal.instanceId);
+      setFrame(
+        ctx,
+        all
+          ? { ...reveal, effectsCancelled: true, ...(discardNow ? { cancelDiscarded: true as const } : {}) }
+          : { ...reveal, whenRevealedCancelled: true },
+      );
       emit(ctx, { type: "revealCancelled", instanceId: reveal.instanceId, scope: all ? "allEffects" : "whenRevealed" });
+      if (discardNow) moveCard(ctx, reveal.instanceId, discardZoneFor(ctx.state, reveal.instanceId), "top");
       return;
     }
     case "placeDamage": {

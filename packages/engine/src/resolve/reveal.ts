@@ -309,7 +309,8 @@ export function executeRevealFrame(ctx: Ctx, frame: Frame<"reveal">): void {
         // p. 44; "Resolve", p. 37: an ability all of whose effects are cancelled is not considered to have resolved).
         markPreThenUnresolved(ctx, frame.preThenOf, "revealCancelled", frame.instanceId);
         // RRG "Cancel": a canceled card is still revealed; it is discarded and nothing else happens.
-        if (getInstance(ctx.state, frame.instanceId))
+        // Already discarded by the cancel itself (`cancelDiscarded`): not again, it may since have been reshuffled.
+        if (!frame.cancelDiscarded && getInstance(ctx.state, frame.instanceId))
           moveCard(ctx, frame.instanceId, discardZoneFor(ctx.state, frame.instanceId), "top");
         setFrame(ctx, { ...frame, stage: "finish" });
         return;

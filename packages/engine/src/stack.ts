@@ -961,6 +961,11 @@ export type StackFrame =
       readonly whenRevealedCancelled: boolean;
       /** "Cancel the effects of that card and discard it": it is still revealed, nothing else happens. */
       readonly effectsCancelled: boolean;
+      /**
+       * The cancel already moved the faceup card to its discard pile, before the canceller's "Then, reveal another
+       * card" (`cancelRevealedCard`), so the reveal does not discard it again. Absent otherwise.
+       */
+      readonly cancelDiscarded?: true;
       /** "This card gains surge" resolved while it was being revealed. */
       readonly surgeGained: boolean;
       /**

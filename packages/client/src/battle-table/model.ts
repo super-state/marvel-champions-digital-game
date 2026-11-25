@@ -9,6 +9,7 @@ import {
   createGame,
   getInstance,
   handDiscardCandidates,
+  isResourcesChoice,
   handSize,
   legalActions,
   locateCard,
@@ -383,6 +384,8 @@ export interface BattleSnapshot {
   payment: BattlePayment | null;
   choice: BattleChoice | null;
   turn: "player" | "ending" | "enemy" | "finished";
+  /** The game is still being set up (the mulligan, a hero's setup ability such as Black Panther's Foresight). */
+  setup: boolean;
   round: number;
   outcome: GameState["outcome"];
   canEndTurn: boolean;
@@ -502,11 +505,22 @@ function playedAbilityRefs(card: ReturnType<typeof cardOf>): readonly { id: stri
  * start with a verb ("Use Spider-Woman to confuse the villain"); one that starts with who does it takes a colon.
  */
 function readableEffect(effect: string | null): string | null {
+  if (!effect) return null;
+  const lower = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
   return (
     effect
-      ?.replace(/^Use ((?:(?! to ).)+) to ((?:each|every|all|you|your|that|the|a|an)\b.*)$/, "Use $1: $2")
+      // A paragraph the helper left whole, trigger and all ("Use Counter-Punch: Response (attack): After your hero
+      // defends against an attack, deal damage …"): from what it does.
+      .replace(
+        /^Use ([^:,]+?): (?:Hero |Alter-Ego )?(?:Forced )?(?:Interrupt|Response)(?: \([^)]*\))?:\s*(?:(?:After|When)\b[^,]*,\s*)?(.*)$/,
+        (_, name: string, rest: string) => `Use ${name} to ${lower(rest)}`,
+      )
+      // The cost before the arrow is the card's own business ("exhaust Black Widow and spend a mental resource →",
+      // "discard Indomitable →"): the sentence says what using it does.
+      .replace(/^Use ([^:,]+?) to [^→]*→\s*(.*)$/, (_, name: string, rest: string) => `Use ${name} to ${lower(rest)}`)
+      .replace(/^Use ((?:(?! to )[^:,])+) to ((?:each|every|all|you|your|that|the|a|an)\b.*)$/, "Use $1: $2")
       // A name that ends in its own ? or !, as "Do You Even Lift?" does, is quoted as the card prints it.
-      .replace(/^Use ([^“:]+?[?!])( to |: )/, "Use “$1”$2") ?? null
+      .replace(/^Use ([^“:]+?[?!])( to |: )/, "Use “$1”$2")
   );
 }
 
@@ -1819,6 +1833,9 @@ export class BattleModel {
     headline = headline?.replace(/\bDRONE\b/g, DRONE_NAME);
     if (!headline || pending.prompt.kind !== "chooseTriggers") return headline;
     const event = answeredEventsOf(this.#game, pending)[0] ?? pending.prompt.event;
+    // The view's words are "Just happened: a defense" (Counter-Punch): name who defended against whom.
+    if (event.kind === "defended")
+      return `${this.#card(event.defenderInstanceId).name} defended against ${this.#card(event.enemyInstanceId).name}'s attack`;
     if (event.kind !== "characterDefeated") return headline;
     const was = this.#dronesDefeated.get(event.instanceId);
     return was && headline.startsWith(was) ? `The ${DRONE_NAME}${headline.slice(was.length)}` : headline;
@@ -1937,6 +1954,15 @@ export class BattleModel {
     if (!choice || (prompt?.kind !== "payForCard" && prompt?.kind !== "payForAbility")) return null;
     const sheet = paymentSheetView(state, choice, this.#windowPicks, CORE_DEPS)!;
     const cost = CORE_DEPS.abilities[prompt.abilityId]?.cost;
+    // A typed cost ("spend a [mental] resource", Black Widow): only a card with that resource, or a wild one, pays it,
+    // and the screen says what is still owed, as the payment for a card from hand does.
+    // A mixed cost (a [mental] and one more of any kind) is left to the engine: any card pays its generic part.
+    const typed =
+      cost?.resources && typeof cost.resources === "object" && !isResourcesChoice(cost.resources)
+        ? Object.entries(cost.resources as Record<string, number>).filter(([type, n]) => type !== "generic" && n > 0)
+        : [];
+    if (cost?.resources && !isResourcesChoice(cost.resources) && (cost.resources as Record<string, number>).generic)
+      typed.length = 0;
     const canAdd =
       !sheet.canConfirm ||
       this.#extraSpendMatters(prompt.instanceId) ||
@@ -1953,14 +1979,16 @@ export class BattleModel {
         icons: RESOURCE_TYPES.flatMap((type) => Array<ResourceType>(pool?.[type] ?? 0).fill(type)),
         selected: this.#windowPicks.includes(option.optionId),
         available:
-          canAdd ||
           this.#windowPicks.includes(option.optionId) ||
-          (option.ref.kind === "ability" && CORE_DEPS.abilities[option.ref.abilityId]?.overpayOnly === true),
+          ((canAdd ||
+            (option.ref.kind === "ability" && CORE_DEPS.abilities[option.ref.abilityId]?.overpayOnly === true)) &&
+            (!typed.length || !!pool?.wild || typed.some(([type]) => (pool?.[type as ResourceType] ?? 0) > 0))),
         kind: option.optionId.startsWith("hand:") ? "handCard" : "resourceAbility",
       });
     }
     return {
       ability: prompt.kind === "payForAbility",
+      ...(typed.length && !sheet.canConfirm ? { outstanding: typed.map(([type, n]) => `${n} ${type}`) } : {}),
       subject: this.#card(prompt.instanceId),
       required: prompt.kind === "payForAbility" && prompt.chosenResources ? prompt.chosenResources.min : sheet.cost,
       paid: sheet.paid,
@@ -2093,6 +2121,8 @@ export class BattleModel {
               id: pending.choiceId,
               prompt:
                 this.#droneHeadline(trigger?.headline, pending) ??
+                this.#setupAbilityTitle(pending) ??
+                this.#chooseCardsTitle(pending) ??
                 eitherOrTitle(state, pending) ??
                 promptTitleOf(pending.prompt, CORE_DEPS, pending, state),
               ...(pending.prompt.kind === "declareDefender"
@@ -2165,17 +2195,22 @@ export class BattleModel {
                 label:
                   pending.prompt.kind === "orderWhenRevealed"
                     ? whenRevealedStepLabel(state, pending.prompt.instanceId, option.optionId, option.label ?? "")
-                    : option.ref.kind === "ability"
-                      ? (abilityShortLabelOf(state, option.ref.instanceId, option.ref.abilityId, CORE_DEPS) ??
-                        `Use ${faceUpName(state, option.ref.instanceId)}`)
-                      : option.ref.kind === "card" && pending.prompt.kind === "declareDefender"
-                        ? "Defend"
-                        : pending.prompt.kind === "declareDefender" && option.optionId === "decline"
-                          ? "Don’t defend"
-                          : optionLabelOf(state, option),
-                // Every step of a revealed card's order is that one card: buttons, not the card picked twice.
+                    : // Wakanda Forever!'s sequence: each step is a different upgrade's "Special", named by the card.
+                      pending.prompt.kind === "orderSpecials" && option.ref.kind === "ability"
+                      ? faceUpName(state, option.ref.instanceId)
+                      : option.ref.kind === "ability"
+                        ? (abilityShortLabelOf(state, option.ref.instanceId, option.ref.abilityId, CORE_DEPS) ??
+                          `Use ${faceUpName(state, option.ref.instanceId)}`)
+                        : option.ref.kind === "card" && pending.prompt.kind === "declareDefender"
+                          ? "Defend"
+                          : pending.prompt.kind === "declareDefender" && option.optionId === "decline"
+                            ? "Don’t defend"
+                            : optionLabelOf(state, option),
+                // Every step of a revealed card's order is that one card: buttons, not the card picked twice. The
+                // steps of Wakanda Forever! are upgrades tucked under the hero, too far under to pick in order: buttons.
                 cardId:
                   pending.prompt.kind !== "orderWhenRevealed" &&
+                  pending.prompt.kind !== "orderSpecials" &&
                   (option.ref.kind === "card" || option.ref.kind === "ability")
                     ? option.ref.instanceId
                     : null,
@@ -2275,6 +2310,7 @@ export class BattleModel {
             ? "player"
             : "ending",
       round: state.round,
+      setup: state.step.phase === "setup",
       outcome: state.outcome,
       canEndTurn: !!this.#endTurnCommand(),
     };
@@ -2548,6 +2584,40 @@ export class BattleModel {
       default:
         return null;
     }
+  }
+
+  /**
+   * A question a hero's setup ability asks before the first turn (Black Panther's Foresight: "Search your deck for a
+   * Black Panther upgrade and add it to your hand"), named by the ability and what it does; the engine's own title is
+   * only "Choose cards".
+   */
+  #setupAbilityTitle(pending: NonNullable<GameState["pendingChoice"]>): string | undefined {
+    if (this.#game.step.phase !== "setup" || pending.prompt.kind === "mulligan") return undefined;
+    const identity = this.#game.players[0]!.identity;
+    const card = cardOf(this.#game, identity.instanceId) as unknown as Record<string, unknown> | undefined;
+    const face = card?.[identity.form === "hero" ? "hero" : "alterEgo"] as Parameters<typeof plainRulesTextOf>[0];
+    const name = face ? /([A-Z][\w' -]*?) — Setup:/.exec(plainRulesTextOf(face))?.[1] : undefined;
+    return name ? this.#identityAbilityLabel(name) : undefined;
+  }
+
+  /**
+   * The engine titles a pick of cards "Choose cards" (Shuri's search of the deck, Ancestral Knowledge's pick from the
+   * discard pile): the asking card's own words say what the pick is for ("Search your deck for an upgrade and add it to
+   * your hand"). The turn bar's eyebrow already names the card. It is the sentence that does the picking (search,
+   * choose, shuffle, return, take): Masters of Mayhem's search for a minion comes after its attack sentence, and a card
+   * with no such sentence keeps the engine's title.
+   */
+  #chooseCardsTitle(pending: NonNullable<GameState["pendingChoice"]>): string | undefined {
+    if (pending.prompt.kind !== "chooseCards") return undefined;
+    const source = choiceSourceOf(this.#game, pending)?.instanceId;
+    const card = source ? cardOf(this.#game, source) : undefined;
+    if (!card || card.type === "hero_identity") return undefined;
+    const sentence = plainRulesTextOf(card)
+      .replace(/^[^:]*:\s*/, "")
+      .split(/\.(?:\s|$)/)
+      .map((part) => part.replace(/^(?:Then,\s*)?(?:(?:After|When|If)\b[^,]*,\s*)?/i, "").trim())
+      .find((part) => /\b(?:search|choose|shuffle|return|take)\b/i.test(part));
+    return sentence ? sentence.charAt(0).toUpperCase() + sentence.slice(1) : undefined;
   }
 
   /**
