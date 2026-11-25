@@ -83,9 +83,13 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     await expect(builder(page)).toBeVisible();
     await expect(builder(page).locator("#tray-total")).toHaveText("15 cards (40 to 50)");
     await page.keyboard.press("PageUp");
-    // Only the aspects checked on the table: never Protection until Black Panther's cards are in.
-    await expect(builder(page).locator(".aspect-chip")).toContainText(["Justice", "Leadership"]);
-    await expect(builder(page).locator(".aspect-chip", { hasText: "Protection" })).toHaveCount(0);
+    // The aspects checked on the table: all four of the Core Set since Black Panther's Protection cards came in.
+    await expect(builder(page).locator(".aspect-chip")).toHaveText([
+      "Aggression",
+      "Justice",
+      "Leadership",
+      "Protection",
+    ]);
     await page.keyboard.press("ArrowUp");
     await expect(page.locator(":focus")).toHaveClass(/aspect-chip/);
     await keyTo(page, "ArrowRight", /^Justice$/);
@@ -132,9 +136,9 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     expect(look).toMatch(/Carol Danvers/);
   });
 
-  test("a saved deck the table can't deal yet is shown, says why, and can't be picked", async ({ page }) => {
-    // A Protection deck for Captain Marvel (her own 15 cards, Protection chosen) is one the table can't deal yet: the
-    // Protection cards come with Black Panther. Built on the builder's own page, which keeps the whole Core Set pool.
+  test("a saved deck the table can't deal is shown, says why, and can't be picked", async ({ page }) => {
+    // Captain Marvel's own 15 cards with Protection chosen and nothing else: saved, but not a legal deck, so the bench
+    // shows it held back with the engine's reason. (Every aspect is on the table now, so legality is what holds it.)
     await page.goto("/battle/decks.html?hero=01010a&deck=new");
     await page.keyboard.press("PageUp");
     await page.getByRole("radio", { name: "Protection" }).click();
@@ -147,7 +151,7 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     await bench.getByRole("button", { name: "Captain Marvel", exact: true }).click();
     const held = bench.locator(".bench-pick", { hasText: "Carol smashes" });
     await expect(held).toHaveAttribute("aria-disabled", "true");
-    await expect(held).toContainText("Protection cards aren't on the 3D table yet.");
+    await expect(held).toContainText("Not legal yet: The deck has 15 cards; a deck must have between 40 and 50");
     // It only looks held back: a click still says why (forced past Playwright's aria-disabled check).
     await held.click({ force: true });
     await expect(held).toHaveAttribute("aria-pressed", "false");
