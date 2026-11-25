@@ -13,7 +13,7 @@
  * - The game-over dialog says how they stand against that villain, and when a villain has just unlocked.
  * - "My record" in the menu ("Record" on any other table): their wins and losses overall, per villain and per hero,
  *   their best, every achievement, their latest games and their link (`record/board.ts`).
- * - A game that earns achievements says so in a pop-up (`record/popup.ts`).
+ * - A game that earns achievements says so, one toast at a time over everything (`record/popup.ts`).
  */
 import "./player.css";
 import { browserHome, siteHome, type GameReport, type RecordHome } from "../record/home.js";
