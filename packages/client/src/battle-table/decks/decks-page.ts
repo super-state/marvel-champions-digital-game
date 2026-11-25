@@ -648,6 +648,8 @@ function hidePanel(): void {
 }
 
 let zoomed: string | null = null;
+/** The card shown full size, while the dialog is open (its close handler runs a moment after Escape). */
+const openZoomCard = (): string | null => ($<HTMLDialogElement>("zoom").open ? zoomed : null);
 /** What had the focus when the card opened full size, to hand it back on close. */
 let zoomOpener: string | null = null;
 
@@ -675,6 +677,9 @@ function renderZoom(cardId: string): void {
     : `${n} in the deck.`;
   $<HTMLButtonElement>("zoom-add").disabled = copiesLeft(builder.draft, cardId) <= 0;
   $<HTMLButtonElement>("zoom-remove").disabled = !canRemove(builder.draft, cardId);
+  // However the copy went in or out (a click, a key, the pad), a button that has just greyed out under the focus hands
+  // it on.
+  if ($<HTMLDialogElement>("zoom").open) keepZoomFocus();
 }
 
 function closeZoom(): void {
@@ -688,7 +693,16 @@ $("zoom").addEventListener("close", () => {
   const back = byKey(zoomOpener) ?? byKey(zoomed && `card:${zoomed}`) ?? byKey(zoomed && `tray:${zoomed}`);
   zoomed = null;
   zoomOpener = null;
-  (back ?? $("binder-cards").querySelector<HTMLElement>(".binder-card"))?.focus();
+  const target = back ?? $("binder-cards").querySelector<HTMLElement>(".binder-card");
+  target?.focus();
+  // The browser hands the focus back to whatever had it when the dialog opened; when a copy went in or out meanwhile,
+  // that card was redrawn and the old one is gone, so the focus can land on the page. Put it on the card again once the
+  // browser is done.
+  setTimeout(() => {
+    if (target?.isConnected && document.activeElement !== target && !document.querySelector("dialog[open]")) {
+      target.focus();
+    }
+  }, 0);
 });
 /** A zoom button that has just greyed itself out hands the focus to one that still works. */
 function keepZoomFocus(): void {
@@ -697,14 +711,8 @@ function keepZoomFocus(): void {
   const other = [$<HTMLButtonElement>("zoom-add"), $<HTMLButtonElement>("zoom-remove")].find((b) => !b.disabled);
   (other ?? $("zoom-close")).focus();
 }
-$("zoom-add").addEventListener("click", () => {
-  if (zoomed) add(zoomed);
-  keepZoomFocus();
-});
-$("zoom-remove").addEventListener("click", () => {
-  if (zoomed) remove(zoomed);
-  keepZoomFocus();
-});
+$("zoom-add").addEventListener("click", () => zoomed && add(zoomed));
+$("zoom-remove").addEventListener("click", () => zoomed && remove(zoomed));
 $("zoom-close").addEventListener("click", closeZoom);
 
 // ── Focus ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -768,7 +776,9 @@ const PREVIEWS = "[data-card], [data-preview]";
 
 document.addEventListener("pointerover", (event) => {
   const el = (event.target as HTMLElement).closest<HTMLElement>(PREVIEWS);
-  if (el && event.pointerType === "mouse") showPanel(previewOf(el)!, el);
+  if (!el || event.pointerType !== "mouse") return;
+  setInput("mouse");
+  showPanel(previewOf(el)!, el);
 });
 document.addEventListener("pointerout", (event) => {
   const el = (event.target as HTMLElement).closest<HTMLElement>(PREVIEWS);
@@ -776,20 +786,33 @@ document.addEventListener("pointerout", (event) => {
   if (el && !to) {
     const focused = document.activeElement as HTMLElement | null;
     const shown = focused ? previewOf(focused) : undefined;
-    if (focused && shown && document.documentElement.dataset.input !== "mouse") showPanel(shown, focused);
+    if (focused && shown && focusDriven()) showPanel(shown, focused);
     else hidePanel();
   }
 });
 document.addEventListener("focusin", (event) => {
   const el = event.target as HTMLElement;
   const shown = previewOf(el);
-  if (shown && document.documentElement.dataset.input !== "mouse") showPanel(shown, el);
+  if (shown && focusDriven()) showPanel(shown, el);
   else if (!shown) hidePanel();
 });
 
 /** Mouse, keyboard or pad: hover previews only follow the focus when it was moved by keys or a pad. */
 const setInput = (kind: "mouse" | "keys" | "pad"): void => {
-  if (document.documentElement.dataset.input !== kind) document.documentElement.dataset.input = kind;
+  if (document.documentElement.dataset.input === kind) return;
+  document.documentElement.dataset.input = kind;
+  // A panel the keys or the pad opened goes when the mouse takes over; hovering opens its own.
+  if (kind === "mouse") hidePanel();
+  else {
+    const focused = document.activeElement as HTMLElement | null;
+    const shown = focused ? previewOf(focused) : undefined;
+    if (focused && shown) showPanel(shown, focused);
+  }
+};
+/** Whether the focus was last moved by the keyboard or a pad (not on page load, not by the mouse). */
+const focusDriven = (): boolean => {
+  const input = document.documentElement.dataset.input;
+  return input === "keys" || input === "pad";
 };
 document.addEventListener("pointerdown", () => setInput("mouse"));
 document.addEventListener("mousemove", () => setInput("mouse"), { passive: true });
@@ -805,7 +828,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   // Leave the browser's own shortcuts alone (Ctrl+minus zooms out, Ctrl+F finds).
-  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if ((event.ctrlKey || event.metaKey || event.altKey) && !event.getModifierState("AltGraph")) return;
   setInput("keys");
   const arrows: Record<string, FocusDirection> = {
     ArrowUp: "up",
@@ -828,7 +851,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (!builder || document.querySelector("dialog[open]:not(#zoom)")) return;
-  const card = focusedCard() ?? zoomed;
+  const card = focusedCard() ?? openZoomCard();
   if ((event.key === "Delete" || event.key === "Backspace" || event.key === "-") && card) {
     event.preventDefault();
     remove(card);
@@ -843,7 +866,7 @@ document.addEventListener("keydown", (event) => {
     stepTab(event.key === "]" || event.key === "PageDown" ? 1 : -1);
   } else if ((event.key === "f" || event.key === "F") && card) {
     event.preventDefault();
-    if (zoomed) closeZoom();
+    if (openZoomCard()) closeZoom();
     else openZoom(card);
   }
 });
@@ -882,7 +905,7 @@ function padPress(button: number): void {
       else if (chosenHero) closeDeckChoice();
       return;
     case GAMEPAD_BUTTON.x: {
-      const card = focusedCard() ?? zoomed;
+      const card = focusedCard() ?? openZoomCard();
       if (card && builder) remove(card);
       return;
     }
