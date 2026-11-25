@@ -1,0 +1,129 @@
+import { readFileSync } from "node:fs";
+import { expect, test, type Page } from "@playwright/test";
+
+/**
+ * A driven win for every hero the table deals (`HEROES` in `model.ts`): the dev-only `finish` scene puts Rhino on his
+ * last hit point with this stage made his last, the hero in hero form and ready (`debug-scenes.ts`). One attack wins.
+ * Then, as Adam's own table keeps them: the victory screen, the game in this browser's record and in the menu's Record
+ * list, and the Rhino mat earned at the trophy cabinet.
+ *
+ * The heroes are read from `model.ts` itself, so a hero added there is checked here without touching this file.
+ *
+ * Not checked here: the campaign moving on to Klaw. Only the friends' test site locks villains (`test-site/player.ts`,
+ * switched on by `VITE_TABLE_VERSION` at build time); on this table every villain is open, so there is nothing to
+ * unlock. The site's unlock after a win is covered by `test-site/players.test.ts`.
+ */
+
+const HEROES = [
+  ...readFileSync(new URL("../src/battle-table/model.ts", import.meta.url), "utf8").matchAll(
+    /\{ id: "([a-z-]+)", name: "([^"]+)", starterDeckId: "([^"]+)" \}/g,
+  ),
+].map(([, id, name, deck]) => ({ id: id!, name: name!, deck: deck! }));
+
+interface PlayHook {
+  moves(): { n: number; label: string }[];
+  play(move: number | string): Promise<string>;
+  wait(): Promise<string>;
+  look(): Promise<string>;
+}
+
+const KEY = "mc-table-record";
+
+async function hook(page: Page) {
+  await expect
+    .poll(() => page.evaluate(() => !!(window as unknown as { __battlePlay?: PlayHook }).__battlePlay), {
+      timeout: 60_000,
+    })
+    .toBe(true);
+}
+
+/** Answer a setup question first (Black Panther's Foresight), then the hero's basic attack: the last blow. */
+async function lastBlow(page: Page, hero: string) {
+  return page.evaluate(async (name) => {
+    const play = (window as unknown as { __battlePlay: PlayHook }).__battlePlay;
+    await play.wait();
+    for (let i = 0; i < 3; i++) {
+      const labels = play.moves().map((m) => m.label);
+      if (labels.includes(`${name}: Attack`)) return play.play(`${name}: Attack`);
+      // Foresight's search: any of his upgrades.
+      const setup = labels.find((l) => l.startsWith("Choose "));
+      if (!setup) break;
+      await play.play(setup);
+    }
+    throw new Error(
+      `no attack for ${name}: ${play
+        .moves()
+        .map((m) => m.label)
+        .join(" | ")}`,
+    );
+  }, hero);
+}
+
+test.describe("battle table: a driven win for every hero", () => {
+  test("the heroes are read from model.ts", () => {
+    expect(HEROES.map((h) => h.id)).toEqual(expect.arrayContaining(["spider-man", "captain-marvel", "she-hulk"]));
+  });
+
+  for (const hero of HEROES) {
+    test(`${hero.name} beats Rhino: the victory, the record, the Record list and the Rhino mat`, async ({ page }) => {
+      test.setTimeout(120_000);
+      // A record with nothing in it, once: the win is the only game.
+      await page.addInitScript((key) => {
+        if (sessionStorage.getItem("battle-win")) return;
+        sessionStorage.setItem("battle-win", "1");
+        localStorage.removeItem(key);
+        localStorage.removeItem("battle-mat");
+      }, KEY);
+      await page.goto(`/battle/?hero=${hero.id}&scene=finish`);
+      await hook(page);
+      await expect(page).toHaveTitle(new RegExp(`^${hero.name} vs\\. Rhino`));
+
+      const after = await lastBlow(page, hero.name);
+      expect(after).toContain("GAME OVER: you won (villainDefeated)");
+
+      // The victory screen: Rhino's card stamped, the hero named, the record's line under it.
+      const over = page.locator("dialog#game-over");
+      await expect(over).toHaveAttribute("open", "", { timeout: 30_000 });
+      await expect(over).toHaveAttribute("data-victory", "");
+      await expect(page.locator("#game-over-title")).toHaveText("Victory");
+      await expect(page.locator("#game-over-stamp")).toHaveText("Defeated");
+      await expect(page.locator("#game-over-kicker")).toHaveText(`${hero.name} vs. Rhino`);
+      await expect(page.locator("#game-over-record")).toHaveText("You against Rhino: 1 won, 0 lost.");
+      // Its achievements, Beat Rhino among them.
+      const popup = page.locator("#achievement-popup");
+      await expect(popup).toContainText("Beat Rhino");
+      await expect(popup).toContainText(`Win as ${hero.name}`);
+      await page.keyboard.press("Escape");
+      await expect(popup).toHaveCount(0);
+
+      // The game in this browser's record, with its hero, deck and ending.
+      const saved = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!).games, KEY);
+      expect(saved).toHaveLength(1);
+      expect(saved[0]).toMatchObject({
+        hero: hero.name,
+        villain: "rhino",
+        result: "win",
+        reason: "villainDefeated",
+        deck: [hero.deck],
+      });
+
+      // The menu's Record list: one win, as this hero, against Rhino.
+      await page.locator("#try-again").click();
+      await expect(over).not.toHaveAttribute("open", "");
+      await page.locator("#menu-button").click();
+      await page.locator("#menu-record").click();
+      const sheet = page.locator("dialog#player-record");
+      await expect(sheet.getByRole("row", { name: new RegExp(`^Rhino 1 0`) })).toBeVisible();
+      await expect(sheet.getByRole("row", { name: new RegExp(`^${hero.name} 1 0`) })).toBeVisible();
+
+      // At the trophy cabinet the Rhino mat is earned; the Klaw mat is still rolled up.
+      await page.goto("/battle/?room=trophies");
+      const room = page.locator("#shelf");
+      await expect(room).toHaveAttribute("data-place", "trophies", { timeout: 60_000 });
+      const rhinoMat = room.locator('.trophies-mat[data-mat="rhino"]');
+      await expect(rhinoMat).toHaveCount(1);
+      await expect(rhinoMat).not.toHaveAttribute("aria-label", /locked/);
+      await expect(room.getByRole("button", { name: /^Klaw mat, locked/ })).toHaveCount(1);
+    });
+  }
+});

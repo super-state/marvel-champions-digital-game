@@ -8,7 +8,7 @@ import type { CoreAspect } from "@mc/content";
 
 /**
  * The aspects whose cards have been checked on the 3D table: Justice came with Spider-Man, Leadership with Captain
- * Marvel and Aggression with She-Hulk (her audit, `deck-audit-she-hulk.test.ts`). Protection arrives with Black
- * Panther, whose task adds it here.
+ * Marvel, Aggression with She-Hulk (`deck-audit-aggression.test.ts`) and Protection with Black Panther
+ * (`deck-audit-protection.test.ts`): every aspect of the Core Set.
  */
-export const TABLE_ASPECTS: readonly CoreAspect[] = ["aggression", "justice", "leadership"];
+export const TABLE_ASPECTS: readonly CoreAspect[] = ["aggression", "justice", "leadership", "protection"];

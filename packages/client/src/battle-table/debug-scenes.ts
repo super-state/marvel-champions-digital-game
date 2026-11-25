@@ -21,7 +21,12 @@ interface Scene {
   /** The scenario it is dealt from: Rhino unless it says otherwise. */
   scenario?: VillainId;
   hero?: { form?: "hero" | "alterEgo"; damage?: number; statuses?: Record<string, number>; exhausted?: boolean };
-  villain?: { damage?: number; statuses?: Record<string, number> };
+  /** `lastStage`: the stage the villain is on is his last, so defeating it wins the game (a scene's shortcut). */
+  villain?: { damage?: number; statuses?: Record<string, number>; lastStage?: boolean };
+  /** Dealt for whichever hero the address or the bench chose, not Spider-Man: it uses none of his cards. */
+  anyHero?: true;
+  /** Goes on the record like a real game (the driven win checks the record, the mats and the unlocks). */
+  recorded?: true;
   mainThreat?: number;
   /** Player cards in play (allies, supports, upgrades). */
   play?: Placement[];
@@ -638,6 +643,19 @@ const SCENES: Record<string, Scene> = {
     deckLeft: 14,
     encounterLeft: 16,
   },
+  /**
+   * The finish, for any hero (`?scene=finish&hero=she-hulk`): Rhino on his last hit point, this stage made his last,
+   * the hero in hero form and ready, nothing engaged. One attack wins. It goes on the record as a game does: the
+   * driven win (`e2e/battle-win.spec.ts`) follows it to the victory screen, the record, the mats and the unlocks.
+   */
+  finish: {
+    anyHero: true,
+    recorded: true,
+    hero: { form: "hero" },
+    villain: { damage: 13, lastStage: true },
+    mainThreat: 0,
+    clearMinions: true,
+  },
   /** Nick Fury in hand with the resources to pay for him: his "Choose one" waits in the dock, the table blurred behind. */
   fury: {
     hero: { form: "hero" },
@@ -653,6 +671,11 @@ export function arrangeScene(name: string): ((state: GameState) => GameState) | 
   const scene = SCENES[name];
   if (!scene) return undefined;
   return (state) => arrange(state, scene);
+}
+
+/** Whether a scene is dealt for any hero and goes on the record (the finish); the others are Spider-Man's checks. */
+export function sceneOptions(name: string): { anyHero: boolean; recorded: boolean } {
+  return { anyHero: !!SCENES[name]?.anyHero, recorded: !!SCENES[name]?.recorded };
 }
 
 /** The villain a scene is dealt against: it must be dealt from that scenario for its cards to be there. */
@@ -800,6 +823,9 @@ function arrange(state: GameState, scene: Scene): GameState {
     ...state,
     instances,
     ...(scene.mainStage !== undefined ? { mainScheme: { ...state.mainScheme, stageIndex: scene.mainStage - 1 } } : {}),
+    ...(scene.villain?.lastStage
+      ? { villains: state.villains.map((v, i) => (i === 0 ? { ...v, lastStageIndex: v.stageIndex } : v)) }
+      : {}),
     players: [
       {
         ...player,

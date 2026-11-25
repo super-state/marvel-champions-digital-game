@@ -8,7 +8,7 @@ import { handBetweenBeats } from "./hand-flow.js";
 import { nextOfferIndex } from "./offer-queue.js";
 import { cardPlaces, pickOrder } from "./pick-order.js";
 import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js";
-import { arrangeScene, sceneVillain } from "./debug-scenes.js";
+import { arrangeScene, sceneOptions, sceneVillain } from "./debug-scenes.js";
 import { sfx, type SoundName } from "./sound.js";
 import { icon, RESOURCE_ICON, type IconName } from "./icons.js";
 import {
@@ -3661,7 +3661,7 @@ function render() {
     turnStatus.dataset.phase = state.outcome.result === "win" ? "hero" : "villain";
   } else
     phaseIndicator(
-      state.choice?.mulligan
+      state.choice?.mulligan || state.setup
         ? "setup"
         : state.turn === "enemy"
           ? "villain"
@@ -3980,7 +3980,8 @@ function deal() {
   const villain = arrange ? sceneVillain(sceneName) : villainChoice;
   // The scenes are laid out with Spider-Man's cards. Otherwise the hero chosen now (the bench may have changed it since
   // the page opened), with their chosen deck when the table can deal it.
-  const hero = arrange ? "spider-man" : (freePlayHero ?? initialHero());
+  const scene = sceneOptions(sceneName);
+  const hero = arrange && !scene.anyHero ? "spider-man" : (freePlayHero ?? initialHero());
   const deck = arrange ? null : chosenBuiltDeck(hero);
   model.reset(
     arrange
@@ -3991,7 +3992,8 @@ function deal() {
   deckDealt = deck?.deck?.name ?? null;
   villainDealt = villain;
   // A set-up or a chosen shuffle is a check, not a game: it never goes on a record.
-  gameSaved = arrange || seedFromUrl() !== undefined ? null : startGame(villain);
+  // The finish scene is the exception: it is there to follow a win onto the record.
+  gameSaved = (arrange && !scene.recorded) || seedFromUrl() !== undefined ? null : startGame(villain);
   paintMatchup();
   // The table opens with what the scenario's setup already did (Ultron's Drones environment and the first Drone off
   // the player's deck): the log says so, so nothing on it is there unexplained.

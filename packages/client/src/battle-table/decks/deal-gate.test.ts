@@ -17,8 +17,8 @@ const filled = (draft: Draft, size = 40): Draft => {
 const saved = (draft: Draft, name = "Deck"): SavedDeck => ({ ...draft, id: "d1", name, updatedAt: "t" });
 
 describe("which saved decks can be dealt", () => {
-  it("offers the aspects checked on the table so far, not Protection (Black Panther's, still to come)", () => {
-    expect([...TABLE_ASPECTS].sort()).toEqual(["aggression", "justice", "leadership"]);
+  it("offers every aspect: all four have been checked on the table (Protection with Black Panther)", () => {
+    expect([...TABLE_ASPECTS].sort()).toEqual(["aggression", "justice", "leadership", "protection"]);
   });
 
   it("passes a legal deck of an opened aspect, as one card id per copy, and coreScenario deals it", () => {
@@ -40,9 +40,12 @@ describe("which saved decks can be dealt", () => {
 
   it("holds back a deck of an aspect not yet on the table, and says so", () => {
     const deck = saved(starterDraft("01040a"));
-    expect(dealVerdict(deck)).toEqual({ ok: false, reason: "Protection cards aren't on the 3D table yet." });
+    expect(dealVerdict(deck, ["aggression", "justice", "leadership"])).toEqual({
+      ok: false,
+      reason: "Protection cards aren't on the 3D table yet.",
+    });
     // Once the aspect is opened, the same deck deals.
-    expect(dealVerdict(deck, [...TABLE_ASPECTS, "protection"]).ok).toBe(true);
+    expect(dealVerdict(deck).ok).toBe(true);
   });
 
   it("holds back a deck that is no longer legal, in the engine's words", () => {
