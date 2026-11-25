@@ -14,6 +14,7 @@
 import { writeFileSync } from "node:fs";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import * as engine from "@mc/engine";
+import { watchThisFile } from "./shown-check.js";
 import {
   BattleModel,
   HEROES,
@@ -29,6 +30,9 @@ type Choice = NonNullable<Snap["choice"]>;
 type Payment = NonNullable<Snap["payment"]>;
 type Source = Payment["sources"][number];
 type Policy = "random" | "aggressive" | "defender" | "decliner" | "careful";
+
+// Every fuzz game is watched for anything happening unseen (`shown-check.ts`).
+watchThisFile("battle-fuzz");
 
 const POLICIES: readonly Policy[] = ["random", "aggressive", "defender", "decliner", "careful"];
 // 15 deals keep the unit run quick; FUZZ_GAMES=250 is the deep run (15,000 moves clean on 2026-11-19).

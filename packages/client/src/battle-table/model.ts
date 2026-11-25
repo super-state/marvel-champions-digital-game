@@ -773,6 +773,25 @@ function openingTurn({
   return { state: arrange ? arrange(turn.state) : turn.state, setup };
 }
 
+/** One committed move, as the table gets it: the game before and after, the engine's events and the beats shown. */
+export interface CommittedMove {
+  readonly model: BattleModel;
+  readonly before: GameState;
+  readonly after: GameState;
+  readonly events: readonly GameEvent[];
+  readonly beats: readonly BattleBeat[];
+}
+
+let commitObserver: ((move: CommittedMove) => void) | null = null;
+
+/**
+ * Tests only: hear every committed move (`shown-check.ts`, the "nothing happens without the table showing it" check).
+ * Null stops listening. The table itself never sets it.
+ */
+export function observeCommits(observer: ((move: CommittedMove) => void) | null): void {
+  commitObserver = observer;
+}
+
 export class BattleModel {
   #game!: GameState;
   #actions!: LegalActions;
@@ -1790,6 +1809,7 @@ export class BattleModel {
           });
       }
     }
+    commitObserver?.({ model: this, before: this.#game, after: result.state, events, beats: this.#beats });
     this.#events.push(...events);
     this.#setGame(result.state, drawn);
   }
