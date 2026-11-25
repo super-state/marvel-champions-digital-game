@@ -25,7 +25,7 @@ import { fadeAmount, headTo, moving, stepCamera } from "./camera.js";
 import { boxesBuilt, campaignPlace, openFromAddress, reset as resetCampaign } from "./places/campaign.js";
 import { play, stepOutro, type ShelfHost } from "./places/campaign-play.js";
 import { decks } from "./places/decks.js";
-import { freePlay } from "./places/free-play.js";
+import { freePlay, mountFreePlay } from "./places/free-play.js";
 import type { Place, PlaceId } from "./places/place.js";
 import { furnishSettings, offerSettings, settingsPlace } from "./places/settings.js";
 import {
@@ -40,11 +40,13 @@ import {
 import { trophies } from "./places/trophies.js";
 import { buildRoom, renderFrame, resize, root, say, scene } from "./room.js";
 
-export type { ShelfHost } from "./places/campaign-play.js";
+export type { RoomGame, ShelfHost } from "./places/campaign-play.js";
 export type { RoomSetting } from "./places/settings.js";
 export type { PlaceContents, PlaceId } from "./places/place.js";
 /** The places still to be filled, for their tasks to `mount` once the room has loaded (`places/place.ts`). */
 export { decks, freePlay, trophies };
+/** Fills Free Play's tray (once, after the room has loaded). */
+export { mountFreePlay };
 
 const places: Record<PlaceId, Place> = {
   title: titlePlace,

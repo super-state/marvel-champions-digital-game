@@ -19,6 +19,8 @@ import {
   isHeroId,
   isModuleId,
   isVillainId,
+  MODULES,
+  recommendedModule,
   VILLAINS,
   type BattleCard,
   type DealOptions,
@@ -28,7 +30,7 @@ import {
 import { answerRemote, createPlayer, type Player, type RemoteChannel } from "./play.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
 import { gameOnTable } from "./record/facts.js";
-import type { PlaceId, RoomSetting } from "./room/index.js";
+import type { PlaceId, RoomGame, RoomSetting } from "./room/index.js";
 import {
   addRecordButton,
   finishGame,
@@ -1382,7 +1384,9 @@ function showOutcome(outcome: Snapshot["outcome"]) {
         ? "Knocked out"
         : "Defeat";
   // The hero's name, not the face showing ("Captain Marvel vs. Rhino", lost as Carol Danvers or not).
-  element("game-over-kicker").textContent = `${heroName(heroDealt)} vs. ${state.villain.name}`;
+  const note = encounterNote();
+  element("game-over-kicker").textContent =
+    `${heroName(heroDealt)} vs. ${state.villain.name}${note ? ` · ${note}` : ""}`;
   // The record keeps this ending, once (test-site/player.ts, record/): the hero, deck and facts read from the game.
   if (gameSaved)
     void finishGame(gameSaved, {
@@ -3844,13 +3848,63 @@ function addressEncounter(): Pick<DealOptions, "difficulty" | "modules"> {
 }
 let encounterChoice: Pick<DealOptions, "difficulty" | "modules"> = addressEncounter();
 
+// ── Free Play's game ──────────────────────────────────────────────────────────────────────────────────────────────
+// The game Free Play's tray built (its hero, difficulty and modules) is the one Play, Try again and a reload deal,
+// until a campaign box deals one of its own. Kept for this tab (`battle-free-play`), beside `battle-at-table`, so the
+// reload that a code change brings deals it again. An address naming a hero or the encounter wins over it.
+const FREE_PLAY = "battle-free-play";
+/** Free Play's hero, while its game is the one dealt (a campaign deals `heroChoice`). */
+let freePlayHero: HeroId | null = null;
+function chooseFreePlay(game: RoomGame | null) {
+  freePlayHero = game?.hero ?? null;
+  encounterChoice = {
+    ...(game?.difficulty ? { difficulty: game.difficulty } : {}),
+    ...(game?.modules ? { modules: game.modules } : {}),
+  };
+  try {
+    if (game) sessionStorage.setItem(FREE_PLAY, JSON.stringify(game));
+    else sessionStorage.removeItem(FREE_PLAY);
+  } catch {
+    // Private windows may refuse storage: a reload deals the campaign's game.
+  }
+}
+(() => {
+  const params = new URLSearchParams(location.search);
+  if (["hero", "difficulty", "modules"].some((key) => params.has(key))) return;
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(FREE_PLAY) ?? "null") as RoomGame | null;
+    if (!saved || !isVillainId(saved.villain) || !isHeroId(saved.hero)) return;
+    freePlayHero = saved.hero;
+    encounterChoice = {
+      ...(isDifficulty(saved.difficulty) ? { difficulty: saved.difficulty } : {}),
+      ...(saved.modules?.every(isModuleId) && saved.modules.length ? { modules: saved.modules } : {}),
+    };
+  } catch {
+    // Nothing kept: the campaign's game.
+  }
+})();
+
+/** What the game on the table was dealt with beyond its matchup, in words: "Expert · Legions of Hydra" ("" for neither). */
+function encounterNote(): string {
+  const { difficulty, modules } = model.encounter;
+  const recommended = modules.length === 1 && modules[0] === recommendedModule(villainDealt);
+  return [
+    ...(difficulty === "expert" ? ["Expert"] : []),
+    ...(recommended ? [] : modules.map((id) => MODULES.find((module) => module.id === id)!.name)),
+  ].join(" · ");
+}
+
 function paintMatchup() {
   const hero = heroName(heroDealt);
   const villain = villainName(villainDealt);
-  document.title = `${hero} vs. ${villain} · Marvel Champions`;
-  element("matchup").textContent = `${hero} vs. ${villain}`;
+  const note = encounterNote();
+  const extra = note ? ` · ${note}` : "";
+  document.title = `${hero} vs. ${villain}${extra} · Marvel Champions`;
+  element("matchup").textContent = `${hero} vs. ${villain}${extra}`;
   const title = element("menu-title");
   title.replaceChildren(`${hero} `, Object.assign(document.createElement("i"), { textContent: "vs." }), ` ${villain}`);
+  if (note)
+    title.append(Object.assign(document.createElement("small"), { className: "menu-title-note", textContent: note }));
 }
 
 /** A game has been dealt in this page, so a `?scene=` set-up has had its turn. */
@@ -3894,7 +3948,7 @@ function deal() {
   const arrange = import.meta.env.DEV ? arrangeScene(sceneName) : undefined;
   const villain = arrange ? sceneVillain(sceneName) : villainChoice;
   // The scenes are laid out with Spider-Man's cards.
-  const hero = arrange ? "spider-man" : heroChoice;
+  const hero = arrange ? "spider-man" : (freePlayHero ?? heroChoice);
   model.reset(arrange ? { hero, villain, seed, arrange } : { hero, villain, seed, mulligan: true, ...encounterChoice });
   heroDealt = hero;
   villainDealt = villain;
@@ -4532,6 +4586,8 @@ function tableInert(inert: boolean) {
 }
 /** The room, once loaded. */
 let room: typeof import("./room/index.js") | null = null;
+/** Free Play's tray has been filled (once: the room stays loaded for the next New game). */
+let freePlayMounted = false;
 /** The table's own menu settings, for the room's radio. */
 function roomSettings(): RoomSetting[] {
   return [
@@ -4575,15 +4631,21 @@ async function showShelf(at?: PlaceId) {
       return;
     }
     room = await import("./room/index.js");
+    if (!freePlayMounted) {
+      freePlayMounted = true;
+      room.mountFreePlay();
+    }
     shelfDrawn();
     await room.openShelf(
       {
         lock: lockReason,
         settings: roomSettings,
         player: () => playerReady.then((profile) => profile?.name ?? null),
-        deal: (villain) => {
+        deal: (game) => {
+          const villain = game.villain;
           setVillainChoice(villain);
-          encounterChoice = {};
+          // Free Play's tray names the hero and the encounter; a campaign box deals Standard with its module.
+          chooseFreePlay(game.hero ? game : null);
           rememberAtTable(villain);
           start();
         },
