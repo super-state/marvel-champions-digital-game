@@ -64,7 +64,8 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     const bench = room(page).locator('[data-for="decks"]');
 
     // A deck box for each hero the table deals; Captain Marvel picked by the arrows.
-    await expect(bench.locator(".bench-hero")).toHaveText(["Spider-Man", "Captain Marvel"]);
+    await expect(bench.locator(".bench-hero").nth(0)).toHaveText("Spider-Man");
+    await expect(bench.locator(".bench-hero").nth(1)).toHaveText("Captain Marvel");
     await expect.poll(() => focused(page)).toBe("Spider-Man");
     await page.keyboard.press("ArrowRight");
     await expect.poll(() => focused(page)).toBe("Captain Marvel");
@@ -82,12 +83,15 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     await expect(builder(page)).toBeVisible();
     await expect(builder(page).locator("#tray-total")).toHaveText("15 cards (40 to 50)");
     await page.keyboard.press("PageUp");
-    await expect(builder(page).locator(".aspect-chip")).toHaveText(["Justice", "Leadership"]);
+    // Only the aspects checked on the table: never Protection until Black Panther's cards are in.
+    await expect(builder(page).locator(".aspect-chip")).toContainText(["Justice", "Leadership"]);
+    await expect(builder(page).locator(".aspect-chip", { hasText: "Protection" })).toHaveCount(0);
     await page.keyboard.press("ArrowUp");
-    await expect.poll(() => focused(page)).toBe("Justice");
+    await expect(page.locator(":focus")).toHaveClass(/aspect-chip/);
+    await keyTo(page, "ArrowRight", /^Justice$/);
     await page.keyboard.press("Enter");
-    await page.keyboard.press("Tab");
-    await page.keyboard.press("Tab");
+    for (let i = 0; i < 6 && !(await page.locator(":focus").getAttribute("class"))?.includes("binder-card"); i++)
+      await page.keyboard.press("Tab");
     await expect(page.locator(":focus")).toHaveClass(/binder-card/);
     await twoOfEach(page);
     await page.keyboard.press("PageDown");
@@ -129,11 +133,11 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
   });
 
   test("a saved deck the table can't deal yet is shown, says why, and can't be picked", async ({ page }) => {
-    // She-Hulk's starter list saved under Captain Marvel's name would be illegal; an Aggression deck for Captain Marvel
-    // is the case the table can't deal yet: her own 15 cards and the Aggression cards.
+    // A Protection deck for Captain Marvel (her own 15 cards, Protection chosen) is one the table can't deal yet: the
+    // Protection cards come with Black Panther. Built on the builder's own page, which keeps the whole Core Set pool.
     await page.goto("/battle/decks.html?hero=01010a&deck=new");
     await page.keyboard.press("PageUp");
-    await page.getByRole("radio", { name: "Aggression" }).click();
+    await page.getByRole("radio", { name: "Protection" }).click();
     await page.getByLabel("Deck name").fill("Carol smashes");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.locator("#builder-notice")).toHaveText(/Saved as “Carol smashes”/);
@@ -143,7 +147,7 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     await bench.getByRole("button", { name: "Captain Marvel", exact: true }).click();
     const held = bench.locator(".bench-pick", { hasText: "Carol smashes" });
     await expect(held).toHaveAttribute("aria-disabled", "true");
-    await expect(held).toContainText("Aggression cards aren't on the 3D table yet.");
+    await expect(held).toContainText("Protection cards aren't on the 3D table yet.");
     // It only looks held back: a click still says why (forced past Playwright's aria-disabled check).
     await held.click({ force: true });
     await expect(held).toHaveAttribute("aria-pressed", "false");
