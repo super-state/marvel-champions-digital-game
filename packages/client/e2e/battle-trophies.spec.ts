@@ -43,6 +43,8 @@ async function seedRecord(page: Page): Promise<void> {
 }
 
 async function at(page: Page, place: string): Promise<void> {
+  // The room keeps its last place while hidden (after Play): it has to be up again first.
+  await expect(room(page)).toBeVisible({ timeout: 30_000 });
   await expect(room(page)).toHaveAttribute("data-place", place, { timeout: 30_000 });
   await expect(room(page)).not.toHaveAttribute("data-moving", "", { timeout: 30_000 });
 }
