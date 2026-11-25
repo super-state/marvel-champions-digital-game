@@ -37,7 +37,7 @@ async function padTo(page: Page, direction: number, name: RegExp, max = 6): Prom
 }
 
 test.describe("battle table: the room", () => {
-  test("walked by keyboard: press any button, the menu, Settings, a place still to come, Campaign and back", async ({
+  test("walked by keyboard: press any button, the menu (every place open), Settings, Campaign and back", async ({
     page,
   }) => {
     test.setTimeout(150_000);
@@ -77,15 +77,9 @@ test.describe("battle table: the room", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator("#menu")).not.toHaveJSProperty("open", true);
 
-    // A place still to come says so, and the camera stays (whichever is still to come: they fill up one by one).
-    const stillToCome = menu.locator('[aria-disabled="true"] .room-choice-name');
-    const soon = (await stillToCome.count()) ? await stillToCome.first().textContent() : null;
-    if (soon) {
-      for (let i = 0; i < 5 && !(await focused(page)).startsWith(soon); i++) await page.keyboard.press("ArrowUp");
-      await page.keyboard.press("Enter");
-      await expect(room(page).getByRole("status")).toHaveText(`${soon} is coming soon.`);
-      await expect(room(page)).toHaveAttribute("data-place", "title");
-    }
+    // Every place in the room is filled now: no menu choice is held back as "Coming soon", and each says what is there.
+    await expect(menu.locator('[aria-disabled="true"]')).toHaveCount(0);
+    await expect(menu.getByText("Coming soon")).toHaveCount(0);
 
     // Campaign: the boxes. Escape puts an open box back, then goes back to the doorway.
     for (let i = 0; i < 5 && !(await focused(page)).startsWith("Campaign"); i++) await page.keyboard.press("ArrowUp");
