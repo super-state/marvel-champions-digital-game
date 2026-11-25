@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * Guard explained (Adam, 2026-11-25: an attack "went straight to the guard one" and the player didn't know why). A

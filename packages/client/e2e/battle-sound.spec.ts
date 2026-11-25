@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * The 3D table's sound effects (`src/battle-table/sound.ts`). Under automation nothing is heard: each sound the table

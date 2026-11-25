@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 
 /**
  * The answer buttons in the 3D table's turn bar grow wider rather than taller: a long answer takes two lines at most

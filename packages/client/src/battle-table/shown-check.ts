@@ -476,6 +476,18 @@ function watch(move: CommittedMove) {
   const snapBefore = move.model.snapshot();
   return () => {
     const snapAfter = move.model.snapshot();
+    // Each threat beat says what its scheme reads once it lands (`threat.to`); the table shows that number, so the last
+    // one for each scheme must be the threat the game ends the move with.
+    const lastThreat = new Map<string, number>();
+    for (const b of beats) {
+      if (b.threat) lastThreat.set(b.threat.scheme, b.threat.to);
+      if (b.schemeAdvance) lastThreat.set(b.schemeAdvance.scheme, b.schemeAdvance.threat);
+    }
+    for (const [scheme, to] of lastThreat) {
+      const real = after.instances[scheme]?.threat;
+      if (real !== undefined && to !== real)
+        throw new Error(`threat beats leave ${scheme} at ${to}, the game has ${real}`);
+    }
     let memory = memories.get(move.model);
     if (!memory) memories.set(move.model, (memory = newMemory()));
     for (const result of judge(before, after, events, beats, snapBefore, snapAfter, memory)) {

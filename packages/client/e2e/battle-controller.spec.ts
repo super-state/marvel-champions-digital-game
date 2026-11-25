@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./battle-test";
 import { frames, installPad, PAD, padHold, padRelease, padTap, setButton } from "./pad-e2e-helpers.js";
 
 /**

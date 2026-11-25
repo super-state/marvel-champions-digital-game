@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./battle-test";
 
 /**
  * Surge on the 3D battle table says "Surge!" once, on the card that causes it; the encounter deck then shows only

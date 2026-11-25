@@ -1742,6 +1742,28 @@ function throwConfetti() {
   }
 }
 
+/**
+ * Dev and tests only: once a move's beats have all played, every health and threat number on the table must already
+ * read what the game says. A number that only comes right when the table redraws afterwards was wrong on screen while
+ * the beats played (the Ultron report of 2026-11-25: 8/10 shown, 5/10 real). Logged as "[table drift]", which fails
+ * every 3D table browser test (`e2e/battle-test.ts`).
+ */
+function checkShownNumbers() {
+  if (!import.meta.env.DEV || discardOpen) return;
+  const wrong: string[] = [];
+  for (const card of [state.hero, state.villain, ...state.enemyCards, ...state.inPlay]) {
+    const label = labels.get(card.id);
+    if (!label?.isConnected) continue;
+    const pill = label.querySelector<HTMLElement>(".scheme-threat");
+    if (pill && card.threat !== null && Number(pill.dataset.count) !== card.threat)
+      wrong.push(`${card.name} shows ${pill.dataset.count} threat, the game has ${card.threat}`);
+    const hp = card.id === state.hero.id ? state.heroHp : card.id === state.villain.id ? state.villainHp : card.hp;
+    if (label.dataset.hp !== undefined && hp !== undefined && Number(label.dataset.hp) !== hp)
+      wrong.push(`${card.name} shows ${label.dataset.hp} HP, the game has ${hp}`);
+  }
+  if (wrong.length) console.error(`[table drift] ${wrong.join("; ")}`);
+}
+
 function synchronizeLabels() {
   const visible = discardOpen
     ? viewedPile()
@@ -1804,7 +1826,11 @@ function synchronizeLabels() {
     else label.removeAttribute("aria-pressed");
     const hero = card.id === state.hero.id;
     const enemy = card.id === state.villain.id;
-    const hp = hero ? state.heroHp : enemy ? state.villainHp : card.hp;
+    // While a move's beats are still playing, a card keeps the health it shows, as a scheme keeps its threat (below):
+    // the snapshot already holds the damage the hits still to come will take off one by one.
+    const shownHp = stage.dataset.resolving && label.dataset.hp !== undefined ? Number(label.dataset.hp) : undefined;
+    const finalHp = hero ? state.heroHp : enemy ? state.villainHp : card.hp;
+    const hp = finalHp !== undefined && shownHp !== undefined ? shownHp : finalHp;
     const inHand = !discardOpen && displayedHand.some((item) => item.id === card.id);
     label.className =
       "anchor" + (discardOpen ? " discard-card" : hero ? " identity" : enemy ? " enemy" : inHand ? " in-hand" : "");
@@ -3735,7 +3761,9 @@ async function present(beats: Snapshot["beats"]) {
       activationRing(beat.threat.scheme);
       const counter = labels.get(beat.threat.scheme)?.querySelector<HTMLElement>(".scheme-threat");
       if (counter) {
-        const n = Math.max(0, Number(counter.dataset.count) + beat.threat.delta);
+        // The scheme reads what the move leaves it at after this beat (`to`), never what it showed plus the change: a
+        // label redrawn mid-move then can't count the same threat twice.
+        const n = beat.threat.to ?? Math.max(0, Number(counter.dataset.count) + beat.threat.delta);
         updateThreatLabel(counter, n);
         table?.setThreat(beat.threat.scheme, n);
       }
@@ -3795,6 +3823,7 @@ async function present(beats: Snapshot["beats"]) {
   impact.hidden = true;
   announcement.hidden = true;
   setSpot(null);
+  checkShownNumbers();
   delete stage.dataset.resolving;
   anchors.inert = false;
   presenting = false;
