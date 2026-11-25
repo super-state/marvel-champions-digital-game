@@ -824,6 +824,8 @@ export class BattleModel {
   #costDiscard: { entry: LegalAction; candidates: readonly InstanceId[]; min: number; max: number } | null = null;
   #view: BattleSnapshot | null = null;
   #matchup: { hero: HeroId; villain: VillainId } = { hero: "spider-man", villain: "rhino" };
+  /** The shuffle this game was dealt with: with the matchup, it deals the same game again (a bug report keeps it). */
+  #seed = PRACTICE_SEED;
   #encounter: { difficulty: Difficulty; modules: readonly ModuleId[] } = {
     difficulty: "standard",
     modules: [recommendedModule("rhino")],
@@ -937,6 +939,16 @@ export class BattleModel {
     return true;
   }
 
+  /** The shuffle the game on the table was dealt with. */
+  get seed(): number {
+    return this.#seed;
+  }
+
+  /** The engine's own state of the game this moment, for a bug report: plain data, never changed in place. */
+  get engineState(): GameState {
+    return this.#game;
+  }
+
   /** The hero and villain of the game on the table, as it was dealt. */
   get matchup(): { hero: HeroId; villain: VillainId } {
     return this.#matchup;
@@ -949,6 +961,7 @@ export class BattleModel {
 
   reset(options: DealOptions = {}): void {
     this.#matchup = { hero: options.hero ?? "spider-man", villain: options.villain ?? "rhino" };
+    this.#seed = options.seed ?? PRACTICE_SEED;
     this.#encounter = {
       difficulty: options.difficulty ?? "standard",
       modules: options.modules ?? [recommendedModule(this.#matchup.villain)],

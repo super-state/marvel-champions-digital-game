@@ -34,6 +34,7 @@
     "battle:check": "pnpm --filter @mc/client typecheck && pnpm battle:test",
     "table:ship": "node scripts/ship-table.mjs",
     "table:check": "node scripts/table-check.mjs",
+    "table:reports": "node scripts/file-table-reports.mjs",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
