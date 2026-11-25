@@ -6,7 +6,9 @@
  *   POST /api/me       { name }: become a player (from the shared invite link) or change your name
  *   POST /api/games    a finished game (saved, or updated when the same game ends again)
  *   GET  /api/record   this player's record
- *   POST /api/reports  a bug report from the menu's "Report a bug": the player's words and the moment (reports.ts)
+ *   POST /api/reports  a bug report from the menu's "Report a bug": the player's words and the moment (reports.ts),
+ *                      filed on GitHub straight after the answer when the site has its token (file-report.ts)
+ *   GET  /api/reports/<id>/state  Adam only: the engine state kept with a report (its issue links here)
  *   GET  /admin        every player, their record and link; POST adds a player or switches a link off/on
  */
 import {
@@ -30,7 +32,8 @@ import {
 } from "./players.js";
 
 import { parseReport, REPORT_LIMIT } from "../report/moment.js";
-import { latestReports, saveReport, type ReportRow } from "./reports.js";
+import { latestReports, reportState, saveReport, type ReportRow } from "./reports.js";
+import { fileSiteReport, type GitHubFiling } from "./file-report.js";
 
 export { ADMIN_COOKIE, ADMIN_PREFIX, PLAYER_COOKIE, PLAYER_PREFIX } from "./players.js";
 import { PLAYER_COOKIE, PLAYER_PREFIX } from "./players.js";
@@ -97,10 +100,34 @@ async function readJson(request: Request, limit = 20_000): Promise<unknown> {
   }
 }
 
-export async function handleApi(request: Request, db: D1Like | undefined, who: Visitor): Promise<Response> {
+export interface ApiOptions {
+  /** Files each new report on GitHub; unset (no token), reports wait in the database for `pnpm table:reports`. */
+  github?: GitHubFiling | undefined;
+  /** Runs work after the answer has gone (the Worker's `waitUntil`); unset, the work is awaited before answering. */
+  defer?: ((work: Promise<unknown>) => void) | undefined;
+}
+
+const STATE_ROUTE = /^\/api\/reports\/([^/]+)\/state$/;
+
+export async function handleApi(
+  request: Request,
+  db: D1Like | undefined,
+  who: Visitor,
+  options: ApiOptions = {},
+): Promise<Response> {
   const url = new URL(request.url);
   const route = `${request.method} ${url.pathname.replace(/\/$/, "")}`;
   try {
+    const stateOf = request.method === "GET" ? STATE_ROUTE.exec(url.pathname) : null;
+    if (stateOf) {
+      if (!db || !who.admin) return json({ error: "Only Adam can open a report's engine state." }, 403);
+      const state = await reportState(db, decodeURIComponent(stateOf[1]!));
+      return state === null
+        ? json({ error: "No engine state kept for that report." }, 404)
+        : new Response(state, {
+            headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+          });
+    }
     switch (route) {
       case "GET /api/me":
         return json(await me(db, who, url.origin));
@@ -153,6 +180,12 @@ export async function handleApi(request: Request, db: D1Like | undefined, who: V
             : { key: "invited", name: "Someone on the invite link" };
         const saved = await saveReport(db, sender, report);
         if (!saved) return json({ error: "That's a lot of reports in an hour: try again a bit later." }, 429);
+        if (options.github) {
+          const record = { id: saved.id, from: saved.from_name, at: saved.at, text: saved.text, moment: report.moment };
+          const filing = fileSiteReport(db, record, options.github, url.origin);
+          if (options.defer) options.defer(filing);
+          else await filing;
+        }
         return json({ saved: true, id: saved.id });
       }
 
@@ -288,7 +321,7 @@ export function adminPage(
     ${latest || `<tr><td colspan="8" class="empty">No games yet.</td></tr>`}
   </table></div>
   <h2>Bug reports</h2>
-  <p class="lead">Sent from the menu's Report a bug, with the moment on the table. <code>pnpm table:reports</code> files new ones on GitHub.</p>
+  <p class="lead">Sent from the menu's Report a bug, with the moment on the table. The site files each one on GitHub as it arrives; one it couldn't (GitHub down, the token missing or run out) waits here for <code>pnpm table:reports</code>.</p>
   <div class="scroll"><table>
     <tr><th>When</th><th>From</th><th>What they wrote</th><th>Game</th><th>Version</th><th>Issue</th></tr>
     ${reportRows || `<tr><td colspan="6" class="empty">No reports yet.</td></tr>`}
