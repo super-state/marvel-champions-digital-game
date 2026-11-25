@@ -1817,6 +1817,13 @@ function synchronizeLabels() {
     if (description.length && layer === boardLabels) label.setAttribute("aria-description", description.join(", "));
     else label.removeAttribute("aria-description");
     if (label.parentElement !== layer) layer.append(label);
+    // While a move's beats are still playing, a scheme keeps the threat it shows: the snapshot already holds the threat
+    // the beats still to come will add one by one. A Drone arriving mid-way (Ultron) redraws every label, and the
+    // threat landing after it was counted twice, 8/10 showing until the move ended at the true 4/10 (a player's
+    // report, 2026-11-25).
+    const shownThreat = stage.dataset.resolving
+      ? label.querySelector<HTMLElement>(".scheme-threat")?.dataset.count
+      : undefined;
     label.replaceChildren();
     // Characters and schemes wear a nameplate; a support or upgrade only does while a question involves it.
     const plated = hp !== undefined || card.threat !== null || !!source || !!target;
@@ -1843,7 +1850,9 @@ function synchronizeLabels() {
     if (hp === undefined || discardOpen || inHand) delete label.dataset.hp;
     else label.dataset.hp = String(hp);
     if (card.threat !== null && onTable(card.id))
-      label.append(threatPill(card.threat, card.threatTarget, card.threatLock));
+      label.append(
+        threatPill(shownThreat !== undefined ? Number(shownThreat) : card.threat, card.threatTarget, card.threatLock),
+      );
     if (
       !inHand &&
       target &&
