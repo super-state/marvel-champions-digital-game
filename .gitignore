@@ -77,3 +77,4 @@ packages/client/dist-landing/
 
 # Bug reports sent from the 3D table on the dev server (packages/client/vite-battle-report.ts)
 packages/client/.battle-reports/
+packages/client/.table-games/

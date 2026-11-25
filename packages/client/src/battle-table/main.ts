@@ -597,6 +597,8 @@ interface FeedLine {
 let feed: FeedLine[] = [];
 /** The whole story, oldest first, for the play hook (`play.ts`): the player's moves and every beat the game played. */
 const story: string[] = [];
+/** Where the game on the table starts in `story` (the page keeps one story across games): its log is kept with it. */
+let storyFrom = 0;
 function pushFeed(line: FeedLine) {
   if (!line.text || feed[0]?.text === line.text) return;
   feed = [line, ...feed].slice(0, 6);
@@ -1650,6 +1652,7 @@ function showOutcome(outcome: Snapshot["outcome"]) {
       reason: outcome.reason,
       rounds: state.round,
       ...gameOnTable(model.game, model.events, gameSaved.undone),
+      whole: model.replay ? { v: 1, replay: model.replay, log: story.slice(storyFrom) } : null,
     });
   element("game-over-title").textContent = won ? "Victory" : "Defeat";
   element("game-over-detail").textContent = detail;
@@ -4278,6 +4281,7 @@ function deal() {
   // is there to follow a win onto the record. Without it, opening the scene on Adam's table adds no win to his record.
   const recorded = scene.recorded && params.get("record") === "1";
   gameSaved = (arrange && !recorded) || seedFromUrl() !== undefined ? null : startGame(villain);
+  storyFrom = story.length;
   paintMatchup();
   // The table opens with what the scenario's setup already did (Ultron's Drones environment and the first Drone off
   // the player's deck): the log says so, so nothing on it is there unexplained.
