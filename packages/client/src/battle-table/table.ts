@@ -1482,19 +1482,24 @@ export class BattleTable {
   /** Of those, the ones the effect keeps for the hand: they rise and glow. */
   readonly #deckPicks = new Set<string>();
 
-  /** Turn `cards` up off the top of the deck, one after another, into a row in the middle of the table. */
-  revealFromDeck(cards: readonly TableCard[]): void {
+  /**
+   * Turn `cards` up off the top of the deck (or the encounter deck: Masterplan's discards), one after another, into a
+   * row in the middle of the table.
+   */
+  revealFromDeck(cards: readonly TableCard[], from: "deck" | "encounterDeck" = "deck"): void {
     if (!this.#state || !cards.length) return;
     this.#deckReveal = [...cards];
     this.#deckPicks.clear();
     this.setCards(this.#state);
     const start = performance.now();
+    const slot = from === "deck" ? this.#deckSlot : this.#encounterSlot;
+    const lift = from === "deck" ? this.#deckBack.position.z * this.#deckSlot.scale.x + 0.03 : 0.15;
     cards.forEach((card, index) => {
       const root = this.#pieces.get(card.id)?.root;
       if (!root) return;
-      root.position.copy(this.#deckSlot.position);
-      root.position.y += this.#deckBack.position.z * this.#deckSlot.scale.x + 0.03;
-      root.scale.copy(this.#deckSlot.scale);
+      root.position.copy(slot.position);
+      root.position.y += lift;
+      root.scale.copy(slot.scale);
       root.rotation.set(-Math.PI / 2, Math.PI, 0);
       this.#startFlight(card.id, "draw", start + index * 180);
     });
@@ -1506,15 +1511,18 @@ export class BattleTable {
     if (this.#state) this.setCards(this.#state);
   }
 
-  /** Revealed cards the effect doesn't keep go to the discard pile, the last one on top (the pile's last entry). */
-  discardFromReveal(ids: readonly string[]): void {
+  /**
+   * Revealed cards the effect doesn't keep go to the discard pile (the encounter discard pile, for cards off the
+   * encounter deck), the last one on top (the pile's last entry).
+   */
+  discardFromReveal(ids: readonly string[], pile: "discard" | "encounterDiscard" = "discard"): void {
     const s = this.#state;
     const going = this.#deckReveal.filter((card) => ids.includes(card.id));
     if (!s || !going.length) return;
     this.#deckReveal = this.#deckReveal.filter((card) => !ids.includes(card.id));
     for (const id of ids) this.#deckPicks.delete(id);
-    const left = s.discard.filter((card) => !ids.includes(card.id));
-    this.setCards({ ...s, discard: [...left, ...going] });
+    const left = s[pile].filter((card) => !ids.includes(card.id));
+    this.setCards({ ...s, [pile]: [...left, ...going] });
     for (const card of going) this.#startFlight(card.id, "discard");
   }
 

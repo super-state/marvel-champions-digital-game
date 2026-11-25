@@ -1808,7 +1808,9 @@ function leaveEncounter(id: string, upcoming: readonly Beat[]): "landed" | "park
  * `returned` beat that follows.
  */
 async function revealMilled(beat: Beat, next: Beat | undefined) {
-  const milled = beat.milled!;
+  // Off the encounter deck (Masterplan's "until a side scheme"): the same row, then the encounter discard pile.
+  const encounter = !!beat.encounterMilled;
+  const milled = beat.encounterMilled ?? beat.milled!;
   const source = beat.millSource;
   if (source && table?.anchors().some((point) => point.id === source.card)) {
     narrate(beat, null, {
@@ -1829,10 +1831,15 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   }
   narrate(beat, feedLineOf(beat));
   const cards = milled.flatMap((id) => {
-    const card = state.discard.find((c) => c.id === id) ?? state.hand.find((c) => c.id === id);
+    const card =
+      state.discard.find((c) => c.id === id) ??
+      state.hand.find((c) => c.id === id) ??
+      state.encounterDiscard.find((c) => c.id === id) ??
+      state.enemyCards.find((c) => c.id === id);
     return card ? [card] : [];
   });
-  deckCount.textContent = String(Math.max(0, Number(deckCount.textContent) - milled.length));
+  const counter = encounter ? element("encounter-count") : deckCount;
+  counter.textContent = String(Math.max(0, Number(counter.textContent) - milled.length));
   if (!table || !cards.length) {
     await sleep(700);
     return;
@@ -1841,7 +1848,7 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   rowFocus = cards.map((card) => card.id);
   focusBlur.dataset.row = "";
   focusBlur.hidden = false;
-  table.revealFromDeck(cards);
+  table.revealFromDeck(cards, encounter ? "encounterDeck" : "deck");
   cards.forEach((_, i) => sfx.play("flip", { delay: i * 180, gain: 0.8 }));
   placeLabels();
   // Laid out once hidden-at-0 first, so the fade-in runs from the same moment the first card lifts.
@@ -1865,7 +1872,7 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   }
   const going = milled.filter((id) => !kept.includes(id));
   if (going.length) {
-    table.discardFromReveal(going);
+    table.discardFromReveal(going, encounter ? "encounterDiscard" : "discard");
     sfx.play("discard");
     await sleep(reducedMotion() ? 200 : 520);
   }
@@ -2591,6 +2598,12 @@ function feedLineOf(beat: Beat): FeedLine | null {
       icon: "discard",
       tone: "hero",
     };
+  if (beat.encounterMilled)
+    return {
+      text: `Discard ${beat.encounterMilled.map(nameOf).filter(Boolean).join(", ") || plural(beat.encounterMilled.length, "card")} from the encounter deck`,
+      icon: "discard",
+      tone: "villain",
+    };
   if (beat.droneIn) return { text: beat.text, icon: "deck", tone: "villain" };
   if (beat.defeatedCard && beat.droneWas)
     return {
@@ -2877,7 +2890,7 @@ async function present(beats: Snapshot["beats"]) {
       await sleep(reducedMotion() ? 300 : 900);
       continue;
     }
-    if (beat.milled) {
+    if (beat.milled || beat.encounterMilled) {
       await revealMilled(beat, beats[index + 1]);
       continue;
     }
