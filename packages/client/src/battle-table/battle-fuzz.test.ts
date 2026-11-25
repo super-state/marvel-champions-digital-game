@@ -721,10 +721,13 @@ function playGame(
     }
     const top = Math.min(ch.max, options.length);
     const k = policy === "decliner" ? ch.min : ch.min + int(top - ch.min + 1);
-    const picks = shuffled(options)
+    let picks = shuffled(options)
       .slice(0, k)
       .map((o) => o.id);
-    trace.push(`choose ${k} of ${options.length}`);
+    // A spend that can be declined (Sonic Boom) goes through only with picks that pay it, as on the table, where its
+    // Spend button stays disabled: picks that don't are declined instead.
+    if (model.spendPays(picks) === false) picks = [];
+    trace.push(`choose ${picks.length} of ${options.length}`);
     if (chooseMany(picks, "chooseMany()")) return true;
     fail(
       "choose-refused",

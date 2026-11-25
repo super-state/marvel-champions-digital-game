@@ -13,6 +13,8 @@ import {
   legalActions,
   locateCard,
   paymentOptionsPool,
+  satisfies,
+  combineRequirements,
   readsOverpaid,
   playCostOf,
   remainingHitPoints,
@@ -1488,7 +1490,9 @@ export class BattleModel {
             ? `Tough prevents ${e.amount} damage to ${name(e.targetInstanceId)}`
             : e.type === "damagePlaced"
               ? `${e.amount} damage lands on ${name(e.targetInstanceId)}`
-              : sourceId
+              : // An ally's own damage for attacking or thwarting (consequential damage) is taken, not dealt to itself:
+                // "Daredevil takes 1 damage", where "Daredevil deals 1 damage to Daredevil" read as a mistake.
+                sourceId && sourceId !== e.targetInstanceId
                 ? `${name(sourceId)} deals ${e.amount} damage to ${name(e.targetInstanceId)}`
                 : `${name(e.targetInstanceId)} takes ${e.amount} damage`,
           hit: {
@@ -2264,7 +2268,14 @@ export class BattleModel {
       if (ability?.trigger.kind !== "action") return [];
       const short = abilityShortLabelOf(this.#game, action.instanceId, action.abilityId, CORE_DEPS) ?? "Use ability";
       // The exhaust icon on the button already says "exhaust", so the label is only what the action does.
-      const does = short.replace(/^exhaust\b[^→·:]*[→·:]\s*/i, "");
+      let does = short.replace(/^exhaust\b[^→·:]*[→·:]\s*/i, "");
+      // A short label that is only the cost ("Exhaust", Aunt May's): what the card's text says it does after the
+      // arrow ("heal 4 damage from Peter Parker").
+      if (/^exhaust\b/i.test(does)) {
+        const card = cardOf(this.#game, action.instanceId);
+        const effect = card ? /→\s*([^.(]+)/.exec(plainRulesTextOf(card))?.[1]?.trim() : undefined;
+        if (effect) does = effect;
+      }
       const label =
         action.abilityId === "01092.helicarrier-action"
           ? "Next card costs 1 less"
@@ -2549,7 +2560,24 @@ export class BattleModel {
     return this.chooseMany(id === null ? [] : [id]);
   }
 
+  /**
+   * For a spend the player may decline (Sonic Boom: "Either spend [energy][mental][physical] resources or exhaust each
+   * character you control"): whether these picks pay it. The engine takes picks that don't pay as not spending, and
+   * the "or" happens with the cards still in hand, so the table only lets a spend through that pays (an empty pick is
+   * the decline). Null when the question isn't such a spend.
+   */
+  spendPays(ids: readonly string[]): boolean | null {
+    const choice = this.#game.pendingChoice;
+    if (choice?.prompt.kind !== "spendResources" || choice.prompt.required) return null;
+    if (!ids.length) return true;
+    const pool = paymentOptionsPool(this.#game, CORE_DEPS, choice.playerId, ids, null);
+    // A spend asking for several different types (none in the Core Set) is left to the engine.
+    if (choice.prompt.distinctTypes) return pool !== null;
+    return pool !== null && satisfies(pool, combineRequirements(choice.prompt.requirement, 0));
+  }
+
   chooseMany(ids: readonly string[]): boolean {
+    if (this.spendPays(ids) === false) return false;
     if (this.#costDiscard) {
       const { entry, candidates, min, max } = this.#costDiscard;
       if (ids.length < min || ids.length > max || ids.some((id) => !candidates.includes(id as InstanceId)))
