@@ -56,6 +56,7 @@ const ULTRON_SEEDS: readonly number[] = Array.from(
 const HERO_SEEDS: readonly { hero: HeroId; first: number; env: string }[] = [
   { hero: "captain-marvel", first: 4000, env: "CAPTAIN_MARVEL_FUZZ_GAMES" },
   { hero: "she-hulk", first: 6000, env: "SHE_HULK_FUZZ_GAMES" },
+  { hero: "iron-man", first: 8000, env: "IRON_MAN_FUZZ_GAMES" },
 ];
 const HERO_GAMES = HERO_SEEDS.flatMap(({ hero, first, env }) =>
   Array.from({ length: Number(process.env[env] ?? process.env.HERO_FUZZ_GAMES ?? 9) }, (_, i) => ({

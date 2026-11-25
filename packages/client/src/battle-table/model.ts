@@ -587,6 +587,7 @@ export const HEROES = [
   { id: "spider-man", name: "Spider-Man", starterDeckId: "core-spider-man-justice" },
   { id: "captain-marvel", name: "Captain Marvel", starterDeckId: "core-captain-marvel-leadership" },
   { id: "she-hulk", name: "She-Hulk", starterDeckId: "core-she-hulk-aggression" },
+  { id: "iron-man", name: "Iron Man", starterDeckId: "core-iron-man-aggression" },
 ] as const;
 export type HeroId = (typeof HEROES)[number]["id"];
 
