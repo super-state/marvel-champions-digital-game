@@ -4,7 +4,9 @@ import {
   applyCommand,
   activeEncounterDeck,
   activeAbilityRefs,
+  canAttack,
   cardOf,
+  hasKeyword,
   characterProfile,
   createGame,
   getInstance,
@@ -141,6 +143,11 @@ export interface BattleCard {
    * lock, and a thwart never offers it.
    */
   threatLock?: string;
+  /**
+   * A minion engaged with the player that has guard now: while it is there the player cannot attack the villain (RRG
+   * 1.8 "Guard", p. 21). The table wears a shield on its plate, and calls "Guard" out as it arrives.
+   */
+  guard?: true;
 }
 
 export interface BattlePayment {
@@ -228,7 +235,36 @@ export interface BattleChoice {
    * first. The table numbers the picked cards as they are picked (`pick-order.ts`).
    */
   ordered?: boolean;
+  /**
+   * Picking whom to attack while guard stops an attack on the villain: the villains the player cannot attack, and the
+   * guard minions stopping it. The pick is asked even when the guard minion is the only enemy left to attack, so the
+   * player sees why the villain is out of reach rather than the attack going to the minion by itself (Adam,
+   * 2026-11-25: a playtester was confused when the attack "went straight to the guard one").
+   */
+  guard?: { blocked: string[]; guards: string[] };
+  /**
+   * Options that are cards in a deck, a discard pile or set aside, which the table doesn't show face up: each one's
+   * face and the pile it is in. The table lays them out as cards to read before choosing (Masters of Mayhem searching
+   * the encounter deck for a Masters of Evil minion; any search of the player's own deck). Absent when none are.
+   */
+  searched?: { id: string; card: BattleCard; from: string }[];
 }
+
+/** What the table calls each pile a question can offer cards from (`BattleChoice.searched`). */
+const PILE_NAMES: Partial<Record<NonNullable<ReturnType<typeof locateCard>>["kind"], string>> = {
+  deck: "Your deck",
+  discard: "Your discard pile",
+  setAside: "Set aside",
+  separateDeck: "Deck",
+  separateDiscard: "Discard pile",
+  encounterDeck: "Encounter deck",
+  encounterDiscard: "Encounter discard pile",
+  encounterSetAside: "Set aside",
+  scenarioDeck: "Deck",
+  scenarioDiscard: "Discard pile",
+  victoryDisplay: "Victory display",
+  removedFromGame: "Out of the game",
+};
 
 export interface BattleBeat {
   text: string;
@@ -1807,6 +1843,23 @@ export class BattleModel {
     this.#setGame(result.state, drawn);
   }
 
+  /**
+   * The cards a question offers from a pile the table doesn't lay out face up (a deck, a discard pile, set aside):
+   * each card's face and which pile it is in, so the player sees what they are choosing (`BattleChoice.searched`).
+   */
+  #searched(options: BattleChoice["options"]): BattleChoice["searched"] {
+    const state = this.#game;
+    const found: NonNullable<BattleChoice["searched"]> = [];
+    for (const { cardId } of options) {
+      if (!cardId || found.some((each) => each.id === cardId)) continue;
+      const zone = locateCard(state, cardId as InstanceId);
+      const from = zone ? PILE_NAMES[zone.kind] : undefined;
+      if (!from) continue;
+      found.push({ id: cardId, card: this.#shownCard(cardId as InstanceId), from });
+    }
+    return found.length ? found : undefined;
+  }
+
   /** A card shown faceup a moment as it moves between hidden places (a set-aside card shuffled into a deck). */
   #shownCard(id: InstanceId): BattleCard {
     const card = cardOf(this.#game, id);
@@ -1919,6 +1972,9 @@ export class BattleModel {
       name: shortIdentityNameOf(state, id) ?? faceUpName(state, id),
       ...(card?.type === "minion" || card?.type === "ally"
         ? { hp: Math.max(0, remainingHitPoints(state, id, CORE_DEPS) ?? 0) }
+        : {}),
+      ...(card?.type === "minion" && instance?.engagedWith && hasKeyword(state, id, "guard", CORE_DEPS)
+        ? { guard: true as const }
         : {}),
       reverseArt:
         id === state.players[0]!.identity.instanceId
@@ -2122,6 +2178,7 @@ export class BattleModel {
                   ? "Choose a scheme to thwart"
                   : this.#targetPrompt(this.#targetPick),
             options: this.#targetPick.targets.map((id) => ({ id, label: faceUpName(state, id), cardId: id })),
+            ...this.#guardChoice(this.#targetPick),
             canSkip: false,
             canCancel: true,
             min: 1,
@@ -2256,6 +2313,7 @@ export class BattleModel {
     ]);
     enemyIds.delete(villain.instanceId);
     for (const host of enemyIds) for (const id of getInstance(state, host)?.attachments ?? []) enemyIds.add(id);
+    const searched = choice ? this.#searched(choice.options) : undefined;
     this.#view = {
       beats: this.#beats,
       choiceSource: pending ? (choiceSourceOf(state, pending)?.instanceId ?? null) : null,
@@ -2314,7 +2372,7 @@ export class BattleModel {
         .filter((id) => !enemyIds.has(id))
         .map((id) => this.#card(id)),
       payment,
-      choice,
+      choice: choice && searched ? { ...choice, searched } : choice,
       turn: state.outcome
         ? "finished"
         : state.step.phase === "villain"
@@ -2744,8 +2802,53 @@ export class BattleModel {
     return this.fieldAction(this.#game.players[0]!.identity.instanceId, kind);
   }
 
+  /**
+   * A basic attack that guard keeps off the villain (RRG 1.8 "Guard", p. 21: "The engaged player cannot attack any
+   * villain"; other minions stay attackable): the villains it can't reach for guard alone, and the guard minions
+   * engaged with the player. Null for any other power, or when guard is not what narrows the attack.
+   */
+  #guardBlocked(entry: LegalAction): { blocked: InstanceId[]; guards: InstanceId[] } | null {
+    if (entry.action.kind !== "basicAttack") return null;
+    const state = this.#game;
+    const attacker = entry.action.instanceId;
+    const blocked = state.villains
+      .filter((villain) => !villain.defeated)
+      .map((villain) => villain.instanceId)
+      .filter(
+        (id) =>
+          !entry.targets.includes(id) &&
+          canAttack(state, attacker, id, CORE_DEPS, true, true) &&
+          !canAttack(state, attacker, id, CORE_DEPS, true),
+      );
+    if (!blocked.length) return null;
+    const playerId = state.players[0]!.playerId;
+    const guards = state.players[0]!.playArea.filter(
+      (id) =>
+        shownType(state, id) === "minion" &&
+        getInstance(state, id)?.engagedWith === playerId &&
+        hasKeyword(state, id, "guard", CORE_DEPS),
+    );
+    return guards.length ? { blocked, guards } : null;
+  }
+
+  /** The attack pick's guard fields (`BattleChoice.guard`), with the reason said in words. */
+  #guardChoice(entry: LegalAction): Pick<BattleChoice, "guard" | "explanation"> {
+    const guard = this.#guardBlocked(entry);
+    if (!guard) return {};
+    const state = this.#game;
+    const guards = guard.guards.map((id) => faceUpName(state, id as InstanceId));
+    const villain = faceUpName(state, guard.blocked[0] as InstanceId);
+    const who =
+      guards.length === 1 ? `${guards[0]} has` : `${guards.slice(0, -1).join(", ")} and ${guards.at(-1)} have`;
+    return {
+      guard,
+      explanation: `${who} Guard: ${villain} can't be attacked until ${guards.length === 1 ? "it is" : "they are"} defeated.`,
+    };
+  }
+
   #usePower(entry: LegalAction): boolean {
-    if (entry.targets.length > 1) {
+    // Guard narrowing the attack to its minion still asks: the pick shows why the villain can't be chosen.
+    if (entry.targets.length > 1 || (entry.targets.length === 1 && this.#guardBlocked(entry))) {
       this.#targetPick = entry;
       this.#view = null;
     } else this.#accept(apply(this.#game, entry.example));

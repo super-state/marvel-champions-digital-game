@@ -291,6 +291,14 @@ const SCENES: Record<string, Scene> = {
     minions: [{ code: "01110", damage: 1 }],
     schemes: [{ code: "01107", threat: 3 }],
   },
+  /**
+   * Hydra Mercenary (guard) engaged with Spider-Man: attacking still asks whom, Rhino can't be picked, and pointing at
+   * him says Hydra Mercenary's Guard is why (Adam, 2026-11-25).
+   */
+  guard: {
+    hero: { form: "hero" },
+    minions: [{ code: "01101" }],
+  },
   /** Spider-Tracer in hand with two minions out: the attachment waits over the villain's side while its host is chosen. */
   tracer: {
     hero: { form: "hero" },
@@ -414,6 +422,18 @@ const SCENES: Record<string, Scene> = {
     clearMinions: true,
     hero: { form: "hero" },
     minions: [{ code: "01131" }, { code: "01132" }],
+    play: [{ code: "01002" }],
+    encounterTop: ["01186", "01188", "01133"],
+  },
+  /**
+   * As klawmasters with no minion engaged: Masters of Mayhem has nobody to attack, so it searches the encounter deck
+   * and discard pile for a Masters of Evil minion and the player picks one, seeing each card (Adam, 2026-11-25: the
+   * names alone didn't say what the minions do).
+   */
+  klawsearch: {
+    scenario: "klaw",
+    clearMinions: true,
+    hero: { form: "hero" },
     play: [{ code: "01002" }],
     encounterTop: ["01186", "01188", "01133"],
   },

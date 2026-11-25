@@ -45,8 +45,8 @@ async function lastBlow(page: Page, hero: string) {
     for (let i = 0; i < 3; i++) {
       const labels = play.moves().map((m) => m.label);
       if (labels.includes(`${name}: Attack`)) return play.play(`${name}: Attack`);
-      // Foresight's search: any of his upgrades.
-      const setup = labels.find((l) => l.startsWith("Choose "));
+      // Foresight's search: any of his upgrades. A searched card is picked, then confirmed (the bar's card row).
+      const setup = labels.find((l) => l.startsWith("Confirm ")) ?? labels.find((l) => l.startsWith("Choose "));
       if (!setup) break;
       await play.play(setup);
     }

@@ -393,7 +393,10 @@ export function createPlayer(hooks: PlayHooks): Player {
       const asked = [dock.eyebrow?.text, dock.title].filter(Boolean).join(": ");
       lines.push(`Turn bar: ${asked}${dock.meter ? ` (paid ${dock.meter.paid} of ${dock.meter.required})` : ""}`);
       if (dock.help) lines.push(dock.help);
-      if (state.choice?.explanation) lines.push(state.choice.explanation);
+      if (state.choice?.explanation && state.choice.explanation !== dock.help) lines.push(state.choice.explanation);
+      // Cards found in a deck or discard pile, laid out in the bar: what each one does, to choose between them.
+      for (const found of state.choice?.searched ?? [])
+        lines.push(`- ${found.card.name} (${found.from.toLowerCase()}): ${hooks.cardFacts(found.id)}`);
       const moves = buildMoves();
       lines.push("Moves:", ...moves.map((move) => `  ${move.n}. ${move.label}`));
     }
