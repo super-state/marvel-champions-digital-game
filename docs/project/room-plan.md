@@ -174,40 +174,47 @@ How the room is built (for whoever builds 0.3.0):
   fast on a phone.
 - A browser test with `battle` in its name walks the room with keyboard and controller.
 
-## Where it has got to (25 Nov 2026)
+## Where it has got to (25 Nov 2026, after round two)
 
-| Step  | What                    | State                                                                                                                                      | Pull requests |
-| ----- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------- |
-| 0.3.0 | The room and title      | In: `room/`, the title in the doorway, the menu, Campaign, the radio. The table opens in the doorway.                                      | 127, 133, 134 |
-| 0.3.0 | The record ("do early") | In: more facts per game (one added column on the test site), a record on Adam's own table too.                                             | 128           |
-| 0.4.0 | Free Play               | In: the deal takes difficulty and modules; Expert and the two modules audited; the tray in the room.                                       | 136, 137, 138 |
-| 0.5.0 | Trophies & Stats        | Half in: 32 achievements, the stats, the pop-up and a Record list in the game menu. The cabinet, the board and the mats are next.          | 128           |
-| 0.6.0 | Captain Marvel          | In: `?hero=captain-marvel`, her audit (64 tests with Leadership), played against all three villains. Choosing a hero at the bench is next. | 125, 131, 135 |
-| 0.9.0 | The deck builder        | Built on its own page (`battle/decks.html`), not linked from the game. Opening it at the bench is next.                                    | 126, 129, 132 |
+| Step  | What                    | State                                                                                                                                                              | Pull requests                          |
+| ----- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
+| 0.3.0 | The room and title      | In: `room/`, the title in the doorway, the menu, Campaign, the radio. Every place in the room is filled.                                                           | 127, 133, 134                          |
+| 0.3.0 | The record ("do early") | In: more facts per game (one added column on the test site), a record on Adam's own table too.                                                                     | 128                                    |
+| 0.4.0 | Free Play               | In: difficulty and modules in the deal, Expert and the two modules audited, the tray, three games played and their fixes.                                          | 136, 137, 138, 143, 145                |
+| 0.5.0 | Trophies & Stats        | In: the cabinet with all 32 achievements, the record board, a mat for each villain beaten, chosen at the cabinet.                                                  | 128, 141, 148                          |
+| 0.6.0 | Captain Marvel          | In: her deal and audit (64 tests with Leadership), played against all three villains, chosen at the bench.                                                         | 125, 131, 135                          |
+| 0.7.0 | She-Hulk                | In: her deal, her audit (22 tests) and the Aggression cards' (65), played against all three villains.                                                              | 144, 147                               |
+| 0.9.0 | The deck builder        | In, ahead of its turn: opened at the bench, a hero's saved decks listed and dealt in Campaign and Free Play. Justice, Leadership and Aggression are open to build. | 126, 129, 132, 140, 142, 146, 149, 150 |
 
 Still to check, by a person or a later task:
 
-- A real controller and a real phone in the room; how fast the title appears on a phone.
-- A win as Captain Marvel (her three test games were lost, by the play, not the table).
+- A real controller and a real phone in the room; how fast the title appears on a phone. Only a simulated pad and a
+  phone-sized window have been tried.
+- A win. About a dozen whole games were played across the tasks and all were lost, by the play and not the table. Round
+  three replaces "play until one is won" with a win driven by a test, for every hero.
+- The whole release check (`pnpm table:check`): nothing since 0.2.2 had been through it when round two ended. Round
+  three runs it first.
 - That Cloudflare's database accepts the record's column check when a version is next shipped (it falls back to adding
   the column and ignoring "already there").
-- `battle-record.spec.ts` after the last merges, and the whole release check (`pnpm table:check`) before any version
-  is shipped: nothing here has been through it yet.
-- Deck pairings no starter deck has, played through on the table.
+- The Doomsday Chair's M.O.D.O.K. never came out in a played game: checked by tests only.
 
-What Captain Marvel taught about sizing: about 3 hours for a hero, a quarter of it waiting on checks. Every problem was
-in how the table shows things (abilities her deck uses that Spider-Man's never did, and wording), none in the rules.
+Sizing: Captain Marvel took about 3 hours and She-Hulk about 2¼, because the shared audit driver, the fuzz list and the
+cost-pick screen were already there. Every problem in both was in how the table shows things (abilities a deck uses
+that earlier decks never did, and wording), none in the rules engine.
 
-## Who is building what (round two, from 25 Nov 2026)
+## Who is building what (round three, from 25 Nov 2026)
 
-| Task                                   | Owns                                                                                                                       | Leaves alone                                          |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| She-Hulk                               | her entry in `HEROES` (`model.ts`), `deck-audit-she-hulk.test.ts`, the Aggression cards' audit, table fixes her cards need | `room/`, `decks/`, `record/`                          |
-| Trophies & Stats in the room, and mats | `room/places/trophies.ts`, the mat's print in `table.ts` (`matPrint`) and the setting that picks a mat                     | `model.ts`, `decks/`, the hero audits                 |
-| Heroes & Decks at the bench            | `room/places/decks.ts`, `decks/`, and one small addition to the deal's options in `model.ts` (a built deck)                | `record/`, `room/places/trophies.ts`, the hero audits |
-| Waiting: Black Panther                 | starts when a place frees up; same shape as She-Hulk, with the Protection cards                                            |                                                       |
-| Waiting: Iron Man                      | after Black Panther or She-Hulk                                                                                            |                                                       |
+The last building round: the two heroes left, and the "still to check" list.
 
+| Task                                                | Owns                                                                                                                                                                             | Leaves alone                                |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Black Panther, and a driven win for every hero      | his line in `HEROES` and the fuzz list, his audit and the Protection cards', Protection in `decks/table-pool.ts`, a browser test that wins as each hero in `HEROES`              | `room/`, the Free Play tray                 |
+| Iron Man                                            | his line in `HEROES` and the fuzz list, his audit, table fixes his cards need                                                                                                    | `room/`, the Free Play tray, `decks/`       |
+| The release check, then the Stampede banner         | running `pnpm table:check` on the main line and fixing what fails (any file, small fixes); the reveal banner that names the wrong card's owner (`model.ts`)                      | new features                                |
+| The room: everything open on Adam's table, the tray | the gate override and "see it as a friend" switch, the chosen mat on the room's table, `room/places/free-play.ts` (hero piece from `HEROES`, several modules), the record's line | `model.ts`, the hero audits, `unlockedFrom` |
+
+- Each hero task lands its one line in `HEROES` and in the fuzz list as its own tiny pull request first, then adds to
+  the shared audit driver without restructuring it.
 - `main.ts`, `model.ts` and `table.ts` are shared and large: small pull requests, merged often, and the main line
   merged into the branch before each push.
 - This PC (Nimbus) has 16 GB of memory and little disk: four tasks at once is the ceiling. While working, run only the
@@ -216,14 +223,18 @@ in how the table shows things (abilities her deck uses that Spider-Man's never d
   the memory there is. No production builds, no kept test recordings.
 - Each task previews on its own port, never 5173 (Adam's own table), and does not commit a changed
   `.claude/launch.json`.
-- The deck builder opens at the bench with only the aspects whose cards have been checked on the table (Justice and
-  Leadership now; Aggression with She-Hulk, Protection with Black Panther).
+
+After round three, what is left is Adam's: a look at the room on a real controller and phone, and the word to ship.
+One version to the friend site would carry everything since 0.2.2; its number is his call (1.0.0 if all five heroes
+are in and the release check passes).
 
 ## Adam's calls
 
-| #   | Question                             | This plan assumes                                                                                                                                                                                                                                 |
-| --- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | What is "Campaign" for the Core Set? | The three villains in order, then again on Expert. Free Play is where you build your own game. Building your own campaign comes later. (Today the shelf's code calls each villain's box a "campaign"; here the campaign is the run of all three.) |
-| 2   | What does the room look like?        | The dim, warm games room the shelf already has, our own design, filling up as you earn things.                                                                                                                                                    |
-| 3   | Room first or heroes first?          | The room first (0.3.0), heroes alongside from 0.6.0, the deck builder once Black Panther is in.                                                                                                                                                   |
-| 4   | Do locks apply to Adam too?          | Friends unlock by playing. Adam's own table has everything open, with a switch to see it as a friend does.                                                                                                                                        |
+| #   | Question                                              | This plan assumes                                                                                                                                                                                                                                 |
+| --- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | What is "Campaign" for the Core Set?                  | The three villains in order, then again on Expert. Free Play is where you build your own game. Building your own campaign comes later. (Today the shelf's code calls each villain's box a "campaign"; here the campaign is the run of all three.) |
+| 2   | What does the room look like?                         | The dim, warm games room the shelf already has, our own design, filling up as you earn things.                                                                                                                                                    |
+| 3   | Room first or heroes first?                           | The room first (0.3.0), heroes alongside from 0.6.0, the deck builder once Black Panther is in.                                                                                                                                                   |
+| 4   | Do locks apply to Adam too?                           | Friends unlock by playing. Adam's own table has everything open, with a switch to see it as a friend does.                                                                                                                                        |
+| 5   | Does a Free Play or Expert win open the next villain? | Yes, as on the friend site today: any win against a villain, in any mode or difficulty, opens the next one and earns its mat. The record shows Standard and Expert apart.                                                                         |
+| 6   | How many modules can Free Play add?                   | Several at once, as the rules allow.                                                                                                                                                                                                              |
