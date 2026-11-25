@@ -35,6 +35,7 @@
     "table:ship": "node scripts/ship-table.mjs",
     "table:check": "node scripts/table-check.mjs",
     "table:reports": "node scripts/file-table-reports.mjs",
+    "table:game": "node scripts/table-game.mjs",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",

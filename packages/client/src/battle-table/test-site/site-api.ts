@@ -10,6 +10,8 @@
  *   POST /api/reports  a bug report from the menu's "Report a bug": the player's words and the moment (reports.ts),
  *                      filed on GitHub straight after the answer when the site has its token (file-report.ts)
  *   GET  /api/reports/<id>/state  Adam only: the engine state kept with a report (its issue links here)
+ *   GET  /api/games/<id>/replay   Adam only: a finished game kept whole (its deal, moves and log, unpacked) to play it
+ *                                 again (`record/replay.ts`); `pnpm table:game` reads the same from the database
  *   GET  /admin        every player, their record and link; POST adds a player or switches a link off/on
  */
 import {
@@ -19,6 +21,8 @@ import {
   createPlayer,
   finishedGameOf,
   gamesOf,
+  keptWhole,
+  packedGame,
   parseGameReport,
   playerByToken,
   recordOf,
@@ -36,6 +40,7 @@ import {
 import { parseReport, REPORT_LIMIT } from "../report/moment.js";
 import { latestReports, reportState, saveReport, type ReportRow } from "./reports.js";
 import { fileSiteReport, type GitHubFiling } from "./file-report.js";
+import { PACKED_LIMIT, unpackGame } from "../record/replay-pack.js";
 
 export { ADMIN_COOKIE, ADMIN_PREFIX, PLAYER_COOKIE, PLAYER_PREFIX } from "./players.js";
 import { PLAYER_COOKIE, PLAYER_PREFIX } from "./players.js";
@@ -110,6 +115,7 @@ export interface ApiOptions {
 }
 
 const STATE_ROUTE = /^\/api\/reports\/([^/]+)\/state$/;
+const REPLAY_ROUTE = /^\/api\/games\/([^/]+)\/replay$/;
 
 export async function handleApi(
   request: Request,
@@ -129,6 +135,19 @@ export async function handleApi(
         : new Response(state, {
             headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
           });
+    }
+    const replayOf = request.method === "GET" ? REPLAY_ROUTE.exec(url.pathname) : null;
+    if (replayOf) {
+      if (!db || !who.admin) return json({ error: "Only Adam can open a saved game." }, 403);
+      const kept = await packedGame(db, decodeURIComponent(replayOf[1]!));
+      const saved = kept && (await unpackGame(kept.packed));
+      if (!kept || !saved) return json({ error: "That game wasn't kept whole." }, 404);
+      return json({
+        player: kept.player,
+        game: finishedGameOf(kept.game),
+        weighs: { packed: kept.packed.length },
+        ...saved,
+      });
     }
     switch (route) {
       case "GET /api/me":
@@ -152,7 +171,8 @@ export async function handleApi(
       case "POST /api/games": {
         if (!db) return json({ saved: false });
         if (!who.player) return json({ error: "Not signed in." }, 403);
-        const game = parseGameReport(await readJson(request));
+        // A game kept whole (its moves, packed) makes this body bigger than the other calls': its own cap.
+        const game = parseGameReport(await readJson(request, 2 * PACKED_LIMIT + 20_000));
         if (!game) return json({ error: "That game doesn't read right." }, 400);
         const before = unlockedFrom(await gamesOf(db, who.player.id));
         await saveGame(db, who.player.id, game);
@@ -247,6 +267,7 @@ export function adminPage(
   origin: string,
   added?: string,
   reports: readonly ReportLine[] = [],
+  whole: ReadonlySet<string> = new Set(),
 ) {
   const names = new Map(players.map((p) => [p.id, p.name]));
   const rows = players
@@ -277,7 +298,8 @@ export function adminPage(
       (g) => `<tr><td>${esc(when(g.ended_at))}</td><td>${esc(names.get(g.player_id) ?? "?")}</td>
         <td>${esc(g.hero)} vs ${esc(villainName(g.villain))}</td>
         <td class="${g.result}">${g.result === "win" ? "Won" : "Lost"}</td><td>${esc(reasonText(g.reason))}</td>
-        <td>${g.rounds}</td><td>${Math.max(0, Math.round((g.ended_at - g.started_at) / 60000))} min</td><td>v${esc(g.version)}</td></tr>`,
+        <td>${g.rounds}</td><td>${Math.max(0, Math.round((g.ended_at - g.started_at) / 60000))} min</td><td>v${esc(g.version)}</td>
+        <td>${whole.has(g.game_id) ? `<a href="/api/games/${encodeURIComponent(g.game_id)}/replay">Whole game</a>` : "–"}</td></tr>`,
     )
     .join("");
   const reportRows = reports
@@ -324,8 +346,8 @@ export function adminPage(
   </table></div>
   <h2>Latest games</h2>
   <div class="scroll"><table>
-    <tr><th>When</th><th>Player</th><th>Match</th><th>Result</th><th>How</th><th>Rounds</th><th>Time</th><th>Version</th></tr>
-    ${latest || `<tr><td colspan="8" class="empty">No games yet.</td></tr>`}
+    <tr><th>When</th><th>Player</th><th>Match</th><th>Result</th><th>How</th><th>Rounds</th><th>Time</th><th>Version</th><th>Kept</th></tr>
+    ${latest || `<tr><td colspan="9" class="empty">No games yet.</td></tr>`}
   </table></div>
   <h2>Bug reports</h2>
   <p class="lead">Sent from the menu's Report a bug, with the moment on the table. The site files each one on GitHub as it arrives; one it couldn't (GitHub down, the token missing or run out) waits here for <code>pnpm table:reports</code>.</p>
@@ -381,6 +403,11 @@ export async function handleAdmin(request: Request, db: D1Like | undefined): Pro
     if ((action === "off" || action === "on") && id) await setDisabled(db, id, action === "off");
     return Response.redirect(`${url.origin}/admin`, 303);
   }
-  const [players, games, reports] = await Promise.all([allPlayers(db), allGames(db), latestReports(db)]);
-  return html(adminPage(players, games, url.origin, url.searchParams.get("added") ?? undefined, reports));
+  const [players, games, reports, whole] = await Promise.all([
+    allPlayers(db),
+    allGames(db),
+    latestReports(db),
+    keptWhole(db),
+  ]);
+  return html(adminPage(players, games, url.origin, url.searchParams.get("added") ?? undefined, reports, whole));
 }

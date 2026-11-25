@@ -21,6 +21,8 @@ export interface GameReport {
   deck: string[];
   startedAt: number;
   facts: GameFacts | null;
+  /** The whole game packed (`replay-pack.ts`), for the test site only: this browser's record never keeps it. */
+  replay?: string | null;
 }
 
 export interface SaveOutcome {
@@ -101,7 +103,8 @@ export function browserHome(storage: StorageLike | null = safeLocalStorage(), no
       const ended = now();
       const before = read();
       const old = before.find((g) => g.id === report.id);
-      const game: FinishedGame = { ...report, startedAt: Math.min(report.startedAt, ended), endedAt: ended };
+      const { replay: _whole, ...summary } = report;
+      const game: FinishedGame = { ...summary, startedAt: Math.min(report.startedAt, ended), endedAt: ended };
       // The same game ending again keeps its place in time from when it was dealt, and takes the new ending.
       const games = [game, ...before.filter((g) => g !== old)].sort((a, b) => b.endedAt - a.endedAt).slice(0, KEEP);
       try {

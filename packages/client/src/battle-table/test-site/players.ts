@@ -22,6 +22,7 @@
  */
 
 import { factsFromText, readFacts, type FinishedGame, type GameFacts } from "../record/game.js";
+import { isPacked } from "../record/replay-pack.js";
 
 /** The part of Cloudflare D1 this uses (so tests can run it on node:sqlite). */
 export interface D1Like {
@@ -91,6 +92,14 @@ const SCHEMA = [
     PRIMARY KEY (player_id, game_id)
   )`,
   `CREATE INDEX IF NOT EXISTS games_by_end ON games (ended_at)`,
+  // The whole game, to play it again (`record/replay-pack.ts`): apart from `games`, which every page load reads whole.
+  `CREATE TABLE IF NOT EXISTS game_replays (
+    player_id TEXT NOT NULL,
+    game_id TEXT NOT NULL,
+    saved_at INTEGER NOT NULL,
+    packed TEXT NOT NULL,
+    PRIMARY KEY (player_id, game_id)
+  )`,
 ];
 
 /** Whether `games` has the `facts` column; false when the database won't say (then adding it settles it). */
@@ -204,6 +213,11 @@ export interface GameReport {
   startedAt: number;
   /** Null from a page made before the facts were kept, or facts that don't read right: the game still saves. */
   facts: GameFacts | null;
+  /**
+   * The whole game packed (`record/replay-pack.ts`): null from a page made before games were kept whole, or one too
+   * big or not packed right. The game still saves without it.
+   */
+  replay: string | null;
 }
 
 const short = (v: unknown, max: number) => typeof v === "string" && v.length > 0 && v.length <= max;
@@ -229,6 +243,7 @@ export function parseGameReport(body: unknown): GameReport | null {
     deck,
     startedAt,
     facts: readFacts(b.facts),
+    replay: isPacked(b.replay) ? b.replay : null,
   };
 }
 
@@ -258,6 +273,42 @@ export async function saveGame(db: D1Like, playerId: string, game: GameReport, n
       game.facts ? JSON.stringify(game.facts) : null,
     )
     .run();
+  // The same game ending again (after an undo) keeps its latest moves.
+  if (game.replay)
+    await db
+      .prepare(
+        `INSERT INTO game_replays (player_id, game_id, saved_at, packed) VALUES (?, ?, ?, ?)
+         ON CONFLICT (player_id, game_id) DO UPDATE SET saved_at = excluded.saved_at, packed = excluded.packed`,
+      )
+      .bind(playerId, game.id, now, game.replay)
+      .run();
+}
+
+/** A game kept whole, packed, with its player's name; null when there is none for that game id. */
+export async function packedGame(
+  db: D1Like,
+  gameId: string,
+): Promise<{ player: string; game: GameRow; packed: string } | null> {
+  await ensureSchema(db);
+  const row = await db
+    .prepare(
+      `SELECT r.packed AS packed, p.name AS player, g.* FROM game_replays r
+       JOIN games g ON g.player_id = r.player_id AND g.game_id = r.game_id
+       LEFT JOIN players p ON p.id = r.player_id
+       WHERE r.game_id = ? ORDER BY r.saved_at DESC LIMIT 1`,
+    )
+    .bind(gameId)
+    .first<GameRow & { packed: string; player: string | null }>();
+  if (!row) return null;
+  const { packed, player, ...game } = row;
+  return { player: player ?? "?", game, packed };
+}
+
+/** The ids of the games kept whole (the players page links them). */
+export async function keptWhole(db: D1Like): Promise<Set<string>> {
+  await ensureSchema(db);
+  const { results } = await db.prepare("SELECT game_id FROM game_replays").all<{ game_id: string }>();
+  return new Set(results.map((r) => r.game_id));
 }
 
 export async function gamesOf(db: D1Like, playerId: string): Promise<GameRow[]> {

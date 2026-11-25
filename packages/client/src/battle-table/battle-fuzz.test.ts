@@ -12,6 +12,8 @@
  * forward, so stuck detection counts only UI-reachable gestures.
  */
 import { writeFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
+import { replayGame } from "./record/replay.js";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import * as engine from "@mc/engine";
 import { watchThisFile } from "./shown-check.js";
@@ -100,6 +102,8 @@ const KNOWN_FAILURE_KINDS: ReadonlySet<string> = new Set<string>([]);
 // ---------------------------------------------------------------------------------------------------------------
 
 let dealSeed: number | null = null;
+/** Each finished game's replay, for its weight (the fuzz summary prints the biggest). */
+const replaySizes: { moves: number; rounds: number; bytes: number }[] = [];
 let lastEngineState: engine.GameState | undefined;
 const realCreate = engine.createGame;
 const realLegal = engine.legalActions;
@@ -362,6 +366,21 @@ function playGame(
   };
 
   function result(ended: GameResult["ended"]): GameResult {
+    // Every game, undos and all, plays again from its deal and moves to the same table (`record/replay.ts`: the test
+    // site keeps finished games this way). The seed spy is still on this game's seed, as the deal was.
+    const replay = ended === "aborted" ? null : model.replay;
+    if (replay) {
+      const again = replayGame(JSON.parse(JSON.stringify(replay)));
+      if (again.refusedAt !== null)
+        fail(
+          "replay-mismatch",
+          "refused",
+          `the replay's move ${again.refusedAt} of ${replay.moves.length} was refused`,
+        );
+      else if (!isDeepStrictEqual(again.model.game, model.game))
+        fail("replay-mismatch", "state", "the replay ended on a different engine state");
+      replaySizes.push({ moves: replay.moves.length, rounds: maxRound, bytes: JSON.stringify(replay).length });
+    }
     return {
       seed,
       policy,
@@ -1121,6 +1140,7 @@ test("fuzz summary: no failure kinds outside the known set", () => {
       (g) =>
         `GAME seed=${g.seed} ${g.policy} moves=${g.moves} rounds=${g.rounds} stage=${g.stage} ${g.ended} ${g.reason}`,
     ),
+    `REPLAYS ${replaySizes.length}, biggest ${JSON.stringify([...replaySizes].sort((x, y) => y.bytes - x.bytes)[0] ?? null)}`,
     `games=${results.length} moves=${moves} ms=${Math.round(results.reduce((t, g) => t + g.ms, 0))} outcomes=${JSON.stringify(outcomes)} distinctDeals=${new Set(results.map((g) => g.firstHand)).size}`,
     ...[...distinct.values()].map(
       (f) => `FAIL ${f.kind} x${f.count} first seed=${f.seed} (${f.policy}) move=${f.move}: ${f.detail}`,
