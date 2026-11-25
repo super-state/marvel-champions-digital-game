@@ -77,15 +77,18 @@ test.describe("battle table: the room", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator("#menu")).not.toHaveJSProperty("open", true);
 
-    // A place still to come says so, and the camera stays.
-    await page.keyboard.press("ArrowUp");
-    await expect.poll(() => focused(page)).toMatch(/^Trophies/);
-    await page.keyboard.press("Enter");
-    await expect(room(page).getByRole("status")).toHaveText("Trophies & Stats is coming soon.");
-    await expect(room(page)).toHaveAttribute("data-place", "title");
+    // A place still to come says so, and the camera stays (whichever is still to come: they fill up one by one).
+    const stillToCome = menu.locator('[aria-disabled="true"] .room-choice-name');
+    const soon = (await stillToCome.count()) ? await stillToCome.first().textContent() : null;
+    if (soon) {
+      for (let i = 0; i < 5 && !(await focused(page)).startsWith(soon); i++) await page.keyboard.press("ArrowUp");
+      await page.keyboard.press("Enter");
+      await expect(room(page).getByRole("status")).toHaveText(`${soon} is coming soon.`);
+      await expect(room(page)).toHaveAttribute("data-place", "title");
+    }
 
     // Campaign: the boxes. Escape puts an open box back, then goes back to the doorway.
-    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowUp");
+    for (let i = 0; i < 5 && !(await focused(page)).startsWith("Campaign"); i++) await page.keyboard.press("ArrowUp");
     await expect.poll(() => focused(page)).toMatch(/^Campaign/);
     await page.keyboard.press("Enter");
     await at(page, "campaign");
@@ -100,16 +103,11 @@ test.describe("battle table: the room", () => {
     await expect.poll(() => focused(page)).toMatch(/^Campaign/);
   });
 
-  test("?room= starts at a place, even one still to come", async ({ page }) => {
+  test("?room= starts at a place", async ({ page }) => {
     await page.goto("/battle/?room=trophies");
     await at(page, "trophies");
     await expect(room(page).getByRole("heading", { name: "Trophies & Stats" })).toBeVisible();
-    await expect(
-      room(page)
-        .locator('[data-for="trophies"]')
-        .getByText(/^Coming soon/),
-    ).toBeVisible();
-    await room(page).getByRole("button", { name: "Back" }).click();
+    await room(page).getByRole("button", { name: "Back", exact: true }).click();
     await at(page, "title");
   });
 

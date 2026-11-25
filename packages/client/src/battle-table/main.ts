@@ -40,6 +40,7 @@ import {
   finishGame,
   lockReason,
   playerReady,
+  recordHome,
   shelfDrawn,
   shelfStale,
   startGame,
@@ -4675,6 +4676,8 @@ async function showShelf(at?: PlaceId) {
     if (!freePlayMounted) {
       freePlayMounted = true;
       room.mountFreePlay();
+      // Trophies & Stats reads the record (this browser's, or the test site's) each time the camera gets there.
+      room.mountTrophies({ games: async () => (await recordHome()?.games()) ?? null });
       room.mountBench();
     }
     shelfDrawn();

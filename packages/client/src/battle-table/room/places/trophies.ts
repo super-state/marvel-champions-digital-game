@@ -1,6 +1,7 @@
 /**
- * Trophies & Stats: the glass cabinet and the record board on the right wall. For now the cabinet stands empty and the
- * board blank; the trophies task mounts the trophies, the record and their buttons here (`place.ts`).
+ * Trophies & Stats: the glass cabinet and the record board on the right wall, standing as furniture from the start.
+ * What fills them (the trophies, the record, the mats and their buttons) is `trophy-cabinet.ts`, mounted by `main.ts`
+ * once the room has loaded.
  */
 import * as THREE from "three";
 import { canvas, texture } from "../canvas.js";
@@ -14,26 +15,36 @@ export const CABINET = { x: WALL - 1.15, z: -3.8, depth: 2.1, width: 5, height: 
 /** The record board, hung on the wall: its middle (z, y) and size. */
 export const BOARD = { x: WALL - 0.12, z: 3.9, y: 1.4, width: 5.4, height: 4 };
 
-/** Cork for the record board: warm brown with darker flecks. */
-function corkPrint(): HTMLCanvasElement {
-  const [cv, g] = canvas(512, 384);
+/** Cork for the record board: warm brown with darker flecks (the cabinet's code pins the record to it). */
+export function corkPrint(width = 512, height = 384): [HTMLCanvasElement, CanvasRenderingContext2D] {
+  const [cv, g] = canvas(width, height);
   g.fillStyle = "#8a6440";
-  g.fillRect(0, 0, 512, 384);
+  g.fillRect(0, 0, width, height);
   let seed = 5;
   const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  for (let i = 0; i < 2600; i++) {
+  const flecks = (2600 * width * height) / (512 * 384);
+  for (let i = 0; i < flecks; i++) {
     g.fillStyle = rand() < 0.6 ? `rgba(60,38,18,${0.2 + rand() * 0.3})` : `rgba(200,160,110,${0.15 + rand() * 0.2})`;
-    g.fillRect(rand() * 512, rand() * 384, 1 + rand() * 3, 1 + rand() * 3);
+    g.fillRect(rand() * width, rand() * height, 1 + rand() * 3, 1 + rand() * 3);
   }
-  return cv;
+  return [cv, g];
 }
+
+let cork: THREE.MeshStandardMaterial | null = null;
+/** The board's cork, to draw the record on (null until the furniture stands). */
+export const paintBoard = () => cork;
 
 export const trophies = furniturePlace({
   id: "trophies",
   label: "Trophies & Stats",
   promise: "a trophy for each thing you have done, and your record against every villain.",
   view(out, aspect) {
-    setPose(out, [5.5, 7.2, 6.5], [WALL - 1, 0.6, 0], 44, [10, 40], 0);
+    if (aspect < 0.9) {
+      // A phone held upright: the panel takes the lower part of the screen, so the cabinet stands in the top part.
+      setPose(out, [CABINET.x - 9.5, 7.5, CABINET.z + 0.4], [CABINET.x, -5.6, CABINET.z], 62, [8, 40], 0);
+      return;
+    }
+    setPose(out, [4.2, 7.6, 6.2], [WALL - 1, 0.2, -1.9], 46, [10, 40], 0);
     fitNarrow(out, aspect, 1.2);
   },
   furniture(group) {
@@ -79,12 +90,10 @@ export const trophies = furniturePlace({
 
     // The record board: cork in a wooden frame, hung on the wall.
     const board = new THREE.Group();
-    const cork = new THREE.Mesh(
-      new THREE.PlaneGeometry(BOARD.width, BOARD.height),
-      new THREE.MeshStandardMaterial({ map: texture(corkPrint()), roughness: 0.95 }),
-    );
-    cork.rotation.y = -Math.PI / 2;
-    board.add(cork);
+    cork = new THREE.MeshStandardMaterial({ map: texture(corkPrint()[0]), roughness: 0.95 });
+    const corkMesh = new THREE.Mesh(new THREE.PlaneGeometry(BOARD.width, BOARD.height), cork);
+    corkMesh.rotation.y = -Math.PI / 2;
+    board.add(corkMesh);
     for (const [w, h, dz, dy] of [
       [BOARD.width + 0.4, 0.25, 0, BOARD.height / 2],
       [BOARD.width + 0.4, 0.25, 0, -BOARD.height / 2],
