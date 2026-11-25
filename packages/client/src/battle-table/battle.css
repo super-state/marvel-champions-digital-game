@@ -1456,6 +1456,14 @@ button:focus-visible {
   color: var(--text-3);
   font-weight: 700;
 }
+/* A Free Play game's difficulty and module, under the matchup ("Expert · Legions of Hydra"). */
+#menu h2 .menu-title-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-2);
+  font: 700 13px var(--font-ui);
+  letter-spacing: 0.04em;
+}
 /* Label, then two equal choices; the settings stack with their buttons lined up (Sidebar, Sound). */
 .menu-setting {
   display: grid;

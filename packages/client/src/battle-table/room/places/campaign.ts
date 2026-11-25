@@ -307,7 +307,7 @@ function showOpened(c: Campaign) {
   el(".shelf-blurb").textContent = c.blurb;
   playButton.textContent = `Play vs ${c.name[0]}${c.name.slice(1).toLowerCase()}`;
   playButton.onclick = () => {
-    if (c.villain) beginPlay(c.villain);
+    if (c.villain) beginPlay({ villain: c.villain });
     else say("This villain's table is still being built.");
   };
   opened.hidden = false;
@@ -315,7 +315,7 @@ function showOpened(c: Campaign) {
   // `&play` presses Play at once (for checks).
   if (c.villain && play.pressPlay) {
     play.pressPlay = false;
-    beginPlay(c.villain);
+    beginPlay({ villain: c.villain });
   }
 }
 

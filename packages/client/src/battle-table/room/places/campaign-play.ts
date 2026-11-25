@@ -8,7 +8,7 @@
  */
 import * as THREE from "three";
 import { matPrint, type BattleTable } from "../../table.js";
-import type { VillainId } from "../../model.js";
+import type { Difficulty, HeroId, ModuleId, VillainId } from "../../model.js";
 import { anisotropy } from "../canvas.js";
 import type { RoomSetting } from "./settings.js";
 import { CAM_GAME, camera } from "../camera.js";
@@ -26,11 +26,22 @@ const FADE_LENGTH = 0.45;
 const ENTER_AT = FADE_AT + FADE_LENGTH * 0.7;
 
 type Quad = [THREE.Vector2, THREE.Vector2, THREE.Vector2, THREE.Vector2];
+
+/**
+ * The game Play deals: a campaign box names only its villain (Standard, its recommended module, the player's hero);
+ * Free Play's tray names the hero, the difficulty and the modules too.
+ */
+export interface RoomGame {
+  villain: VillainId;
+  hero?: HeroId;
+  difficulty?: Difficulty;
+  modules?: readonly ModuleId[];
+}
 type Corners = THREE.Vector3[];
 /** What the shelf reads of the table page it lies over (`main.ts`). */
 export interface ShelfHost {
-  /** Deals a new game against this villain on the table under the shelf. */
-  deal(villain: VillainId): void;
+  /** Deals this game on the table under the shelf. */
+  deal(game: RoomGame): void;
   /** The table, once a game has been dealt on it. */
   table(): Pick<BattleTable, "matOutline" | "enter"> | null;
   /** The shelf has faded away: the table is the page. */
@@ -61,11 +72,11 @@ export const play = {
   stopped: false,
 };
 
-export function beginPlay(villain: VillainId) {
+export function beginPlay(game: RoomGame) {
   if (play.outro || !play.host) return;
   el(".shelf-opened").hidden = true;
   // The game is dealt now, under the shelf, and waits out of sight until the table brings it in.
-  play.host.deal(villain);
+  play.host.deal(game);
   play.outro = {
     u: 0,
     launched: false,
