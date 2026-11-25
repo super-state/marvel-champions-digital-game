@@ -120,6 +120,18 @@ cards work in one form only, what each status does and the hand limit.
 - **Sonic Boom and other "spend X or …" cards:** the hook's moves don't show a card's resource icons; pick the
   resource cards (Energy, Genius, Strength) you can name. The table now refuses picks that don't pay. `seen 1×`
 
+### She-Hulk (Aggression starter deck) — 0 wins, 4 losses (Rhino twice, Klaw, Ultron)
+
+- **Her first turn hits hard:** Superhuman Strength as Jennifer, flip ("Do You Even Lift?" 2), attack 5 (stuns), Uppercut
+  5 took Rhino from 14 to 2 in round 1. Open like that whenever the cards allow. `seen 2×`
+- **Gamma Slam scales with her damage:** at 11 damage it hits for 11. Keep it for when she is low, and count it into lethal. `seen 1×`
+- **Confusion stays on her across the flip.** A thwart event as Jennifer (Legal Practice) only cleared it and cost three
+  cards. Read her statuses before a thwart in either form. `seen 1×`
+- **Every loss was the scheme while she hit the villain.** Rhino's Bomb Scare + Breakin' & Takin' and Klaw's Defense
+  Network piled threat faster than "I Object!" (1) and Superhuman Law Division (2) take off. Thwart before stage 2. `seen 3×`
+- **An auto-player loses these games:** it passed Emergency and "I Object!" at 6/7 and lost. Play the villain phase's
+  offers by hand. `seen 2×`
+
 ### Driving the hook
 
 - Pick moves from `moves()` labels only; a look's text starts with the move just made. `seen 1×`
@@ -155,6 +167,14 @@ cards work in one form only, what each status does and the hand limit.
 
 ## Recent games
 
+- 2026-11-25 · She-Hulk (Aggression) vs Ultron · lost in round 6, Countdown to Oblivion 6/5 · auto-played to the end;
+  Relentless Assault's overkill and Tac Team kept the Drones down, but nothing thwarted the last stage.
+- 2026-11-25 · She-Hulk (Aggression) vs Klaw · lost in round 6, Secret Rendezvous · Klaw's first stage fell in round 5
+  (Hulk's physical result, then Uppercut), but she was on 2 HP behind three minions and The "Immortal" Klaw's +10.
+- 2026-11-25 · She-Hulk (Aggression) vs Rhino · lost in round 4, The Break-In! 7/7 · Rhino's first stage fell in round 3
+  (Nick Fury's 4 + his attack); Legal Practice was wasted on her confusion and an auto-player passed Emergency at 6/7.
+- 2026-11-25 · She-Hulk (Aggression) vs Rhino · lost in round 5, The Break-In! 8/7 · Rhino 14 → 2 in round 1; then two
+  side schemes and an auto-player that passed "I Object!".
 - 2026-11-25 · Spider-Man (Justice) vs Rhino, The Doomsday Chair · lost in round 9, knocked out · allies blocked and
   thwarted well until a driver script declined a defence (10 → 2 HP); stage I fell to basic + Kick, then Rhino (II)
   attacked three times in one phase. Doomsday Chair and M.O.D.O.K. never came out of the deck.
@@ -170,16 +190,3 @@ cards work in one form only, what each status does and the hand limit.
 - 2026-11-24 · Captain Marvel (Leadership) vs Rhino · lost in round 6, The Break-In! 4 → 8 in one phase · Rhino's
   first stage fell in round 4 (Photonic Blast through the Armored Suit, Nick Fury's 4 past a Guard); spent the next
   turn on Inspired and the Triskelion instead of thwarting.
-- 2026-11-24 · Spider-Man (Justice) vs Ultron · lost in round 6, Countdown to Oblivion 5/5 · Jessica Jones was
-  lost to her own thwart in round 2, so nothing blocked; by round 3 four Drones, an Advanced Ultron Drone and two
-  hazard schemes were out; hiding as Peter with six Drones let them fill the last stage in one phase. First game
-  against Ultron, played while building him.
-- 2026-11-24 · Spider-Man (Justice) vs Klaw · lost in round 8, Secret Rendezvous 8/8 · Klaw (I) worn to 5 by round 2,
-  but Sonic Converter's stuns and five minions (two Armored Guards) kept Spider-Man off him. The win was checked
-  from the `klawfinish` scene instead.
-- 2026-11-24 · Spider-Man (Justice) vs Klaw · lost in round 9, Peter defeated by Masters of Mayhem · a driver script
-  declined every defend in round 2 and left Spider-Man on 1 HP; held the scheme with Spider-Tracer, Interrogation
-  Room and Surveillance Team for six rounds.
-- 2026-11-24 · Spider-Man (Justice) vs Rhino · **won** in round 8 · Black Cat and Jessica wore stage 1 down while
-  both Kicks waited; Webbed Up's stun carried into stage 2; Kick on arrival, Black Cat blocked Stampede, Kick to
-  finish. First game in Adam's single "Marvel Champions" Games tab.
