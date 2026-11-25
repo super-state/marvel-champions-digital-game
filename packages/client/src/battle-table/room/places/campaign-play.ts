@@ -10,6 +10,7 @@ import * as THREE from "three";
 import { matPrint, type BattleTable } from "../../table.js";
 import type { VillainId } from "../../model.js";
 import { anisotropy } from "../canvas.js";
+import type { RoomSetting } from "./settings.js";
 import { CAM_GAME, camera } from "../camera.js";
 import { span } from "../motion.js";
 import { el, raycaster, root, scene } from "../room.js";
@@ -36,6 +37,10 @@ export interface ShelfHost {
   shown(): void;
   /** Why a villain is still sealed for this player ("Beat Rhino to unlock"), or null when it is open (the test site). */
   lock?(villain: VillainId): string | null;
+  /** The settings the table's own menu offers, for the radio (Settings). */
+  settings?(): readonly RoomSetting[];
+  /** Who is playing, for the title (the test site knows; elsewhere null). */
+  player?(): Promise<string | null>;
 }
 
 interface Outro {
@@ -196,7 +201,7 @@ function finishOutro() {
   root.hidden = true;
   // The shelf's own address settings (an opened box, a pressed Play) have had their turn: a reload opens the table.
   const params = new URLSearchParams(location.search);
-  for (const key of ["open", "play", "at", "hold"]) params.delete(key);
+  for (const key of ["open", "play", "at", "hold", "room"]) params.delete(key);
   const query = params.toString();
   history.replaceState(history.state, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
   play.host.shown();

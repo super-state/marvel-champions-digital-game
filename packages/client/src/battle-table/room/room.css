@@ -125,3 +125,304 @@
 .shelf:focus {
   outline: none;
 }
+
+/* ── The room: places, the title and its menu ───────────────────────────────────────────────────────────────────── */
+
+/* Each place's buttons and words; only the camera's place shows (index.ts showPanel). */
+.room-panel {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.room-panel[hidden] {
+  display: none;
+}
+.room-panel button,
+.room-panel .shelf-opened,
+.room-panel .room-place-head,
+.room-panel .room-settings-rows,
+.room-panel .room-contents {
+  pointer-events: auto;
+}
+
+/* The fade between places with "reduce motion": a veil the room's own colour. */
+.room-fade {
+  position: absolute;
+  inset: 0;
+  background: #0d0a08;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The campaign boxes' own buttons sit over the boxes, see-through: the pointer passes to the room, which picks the
+   boxes itself; the keyboard and a pad focus them, which lifts the box (and rings it). */
+.shelf-picks button {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: transparent;
+  font-size: 1px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.shelf-picks button:focus-visible,
+:root[data-input="pad"] .shelf-picks button:focus {
+  outline: 3px solid var(--gold);
+  outline-offset: 6px;
+}
+
+/* Back, from a place, in the bottom-left corner. */
+.shelf-leave,
+.room-place > .room-back {
+  position: absolute;
+  left: 24px;
+  bottom: 22px;
+}
+.shelf-leave[hidden] {
+  display: none;
+}
+
+/* ── The title, in the doorway ── */
+.room-title {
+  background:
+    linear-gradient(90deg, #0d0a08e6 0%, #0d0a08a8 30%, #0d0a0800 58%),
+    linear-gradient(0deg, #0d0a08cc 0%, #0d0a0800 28%);
+}
+.room-brand {
+  position: absolute;
+  left: clamp(24px, 6vw, 88px);
+  top: clamp(28px, 12vh, 120px);
+}
+.room-name {
+  margin: 6px 0 0;
+  color: var(--text);
+  font: 400 clamp(54px, 8.4vw, 118px) / 0.92 var(--font-logo);
+  letter-spacing: 0.01em;
+  text-shadow:
+    0 4px 0 #0b0705,
+    0 10px 30px #000c;
+}
+.room-name::after {
+  content: "";
+  display: block;
+  width: 2.4em;
+  height: 6px;
+  margin-top: 14px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--gold), #f5c35b00);
+}
+.room-brand .eyebrow {
+  text-shadow: 0 1px 8px #000;
+}
+.room-player {
+  margin: 14px 0 0;
+  color: var(--text-2);
+  font: 600 16px var(--font-ui);
+  text-shadow: 0 1px 8px #000;
+}
+.room-player[hidden] {
+  display: none;
+}
+
+/* "Press any button": the whole picture is the button. */
+.room-press {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 0 clamp(36px, 11vh, 110px);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: 800 15px var(--font-ui);
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 12px #000;
+  cursor: pointer;
+  animation: room-pulse 2.4s ease-in-out infinite;
+}
+.room-press[hidden] {
+  display: none;
+}
+.room-press:focus {
+  outline: none;
+}
+@keyframes room-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* The menu: a column of real buttons over the left of the picture. */
+.room-menu {
+  position: absolute;
+  left: clamp(24px, 6vw, 88px);
+  bottom: clamp(28px, 10vh, 96px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(340px, calc(100% - 48px));
+  animation: shelf-menu-in 0.4s var(--ease-out);
+}
+.room-menu[hidden] {
+  display: none;
+}
+@keyframes shelf-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+.room-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 16px 11px 18px;
+  border: 1px solid transparent;
+  border-left: 4px solid transparent;
+  border-radius: var(--r-md);
+  background: #0d0a0866;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.15s var(--ease-out);
+}
+.room-choice-name {
+  font: 800 21px / 1.15 var(--font-ui);
+  letter-spacing: -0.01em;
+}
+.room-choice-line {
+  color: var(--text-2);
+  font: 600 12.5px var(--font-ui);
+}
+.room-choice:hover,
+.room-choice:focus-visible,
+:root[data-input="pad"] .room-choice:focus {
+  outline: none;
+  background: linear-gradient(90deg, #f5c35b38 0%, #f5c35b12 100%), #0d0a08b3;
+  border-color: #f5c35b80;
+  border-left-color: var(--gold);
+  transform: translateX(6px);
+}
+.room-choice[aria-disabled="true"] .room-choice-name {
+  color: var(--text-2);
+}
+.room-choice[aria-disabled="true"] .room-choice-line {
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+}
+
+/* ── A place's own card: its name, what is (or will be) there, Back ── */
+.room-place-head {
+  position: absolute;
+  top: 22px;
+  left: 28px;
+  max-width: min(420px, calc(100% - 56px));
+}
+.room-place-head h2 {
+  margin: 4px 0 0;
+  color: var(--text);
+  font: 800 clamp(26px, 3vw, 38px) / 1.1 var(--font-ui);
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 14px #000c;
+}
+.room-place-head .eyebrow {
+  text-shadow: 0 1px 8px #000;
+}
+.room-soon {
+  margin: 8px 0 0;
+  color: var(--text-2);
+  font: 500 15px / 1.45 var(--font-ui);
+  text-shadow: 0 1px 8px #000;
+}
+.room-soon[hidden] {
+  display: none;
+}
+
+/* Settings, by the radio. */
+.room-settings-rows {
+  position: absolute;
+  left: 28px;
+  top: clamp(110px, 18vh, 150px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(380px, calc(100% - 56px));
+  box-sizing: border-box;
+  padding: 16px 18px;
+  border-radius: var(--r-lg);
+  background: var(--glass);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-2);
+}
+.room-settings-rows .menu-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font: 700 14px var(--font-ui);
+}
+.room-settings-rows .menu-setting > span {
+  flex: 1;
+}
+
+/* A pad's focus on any of the room's buttons. */
+:root[data-input="pad"] .shelf .btn:focus {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* A phone held upright: the name at the top, the menu at the bottom, full width. */
+@media (max-width: 600px) {
+  .room-title {
+    background:
+      linear-gradient(180deg, #0d0a08d9 0%, #0d0a0800 30%),
+      linear-gradient(0deg, #0d0a08f0 0%, #0d0a08b0 40%, #0d0a0800 62%);
+  }
+  .room-brand {
+    left: 20px;
+    right: 20px;
+    top: 26px;
+  }
+  .room-name {
+    font-size: clamp(44px, 13vw, 64px);
+  }
+  .room-menu {
+    left: 16px;
+    right: 16px;
+    bottom: 18px;
+    width: auto;
+  }
+  .room-choice {
+    padding: 8px 14px 9px 16px;
+  }
+  .room-choice-name {
+    font-size: 18px;
+  }
+  .room-place-head {
+    left: 18px;
+    top: 18px;
+  }
+  .room-settings-rows {
+    left: 16px;
+    right: 16px;
+    width: auto;
+    top: auto;
+    bottom: 80px;
+  }
+  .shelf-leave,
+  .room-place > .room-back {
+    left: 16px;
+    bottom: 16px;
+  }
+}

@@ -25,6 +25,7 @@ import {
 import { answerRemote, createPlayer, type Player, type RemoteChannel } from "./play.js";
 import { pictureOf, retryFailedPictures } from "./picture-retry.js";
 import { gameOnTable } from "./record/facts.js";
+import type { PlaceId, RoomSetting } from "./room/index.js";
 import {
   addRecordButton,
   finishGame,
@@ -547,7 +548,16 @@ function paymentView(payment: Payment): DockView {
     tone: "hero",
     asking: true,
     eyebrow: { text: payment.subject.name, icon: "action", tone: "hero" },
-    title: payment.required ? `Pay ${payment.required}` : payment.ability ? "Use it?" : "Play it?",
+    title: payment.spendX
+      ? // "Spend X energy" (Energy Channel): how many is what the player picks.
+        payment.paid
+        ? `Spend ${payment.paid} ${payment.spendX}`
+        : `Spend any ${payment.spendX}`
+      : payment.required
+        ? `Pay ${payment.required}`
+        : payment.ability
+          ? "Use it?"
+          : "Play it?",
     meter: payment.required
       ? {
           paid: payment.paid,
@@ -695,6 +705,23 @@ function choiceView(choice: Choice): DockView {
         attention: true,
         onClick: confirmChoice,
       },
+    };
+  }
+  if (choice.discardFromHand && choice.canCancel) {
+    // A card's cost that discards from the hand (Alpha Flight Station): named by the card, and it can be called off.
+    return {
+      tone: "hero",
+      asking: true,
+      eyebrow: { text: choice.sourceTitle ?? "Cost", icon: "discard", tone: "hero" },
+      title: choice.prompt,
+      primary: {
+        label: n ? `Discard ${n}` : `Pick ${choice.min}`,
+        icon: "discard",
+        disabled: n < choice.min || n > choice.max || discarding,
+        attention: n >= choice.min,
+        onClick: confirmChoice,
+      },
+      secondary: { label: "Cancel", onClick: cancel },
     };
   }
   if (choice.discardFromHand) {
@@ -1130,6 +1157,8 @@ function cancel() {
   // A reaction called off goes with its question: what it was about plays out as if passed.
   reacting = null;
   paymentCalledOff = !!state.payment;
+  // A cost's hand discard called off (Alpha Flight Station): the cards picked for it go back to being just cards.
+  choicePicks.clear();
   model.cancel();
   staged = null;
   flying = false;
@@ -1152,7 +1181,8 @@ function pay() {
     // Keep a resolving event on the mat while the player chooses its target.
     staged = !payment.ability && state.choice && payment.subject.type === "event" ? payment.subject : null;
     // An event announces itself when it resolves; a card that stays on the table gets its own line.
-    if (payment.subject.type !== "event") say(`${payment.subject.name} ${payment.ability ? "used" : "played"}`);
+    if (payment.subject.type !== "event")
+      say(payment.used ?? `${payment.subject.name} ${payment.ability ? "used" : "played"}`);
   });
 }
 
@@ -1348,7 +1378,8 @@ function showOutcome(outcome: Snapshot["outcome"]) {
       : outcome.reason === "allPlayersDefeated"
         ? "Knocked out"
         : "Defeat";
-  element("game-over-kicker").textContent = `${state.hero.name} vs. ${state.villain.name}`;
+  // The hero's name, not the face showing ("Captain Marvel vs. Rhino", lost as Carol Danvers or not).
+  element("game-over-kicker").textContent = `${heroName(heroDealt)} vs. ${state.villain.name}`;
   // The record keeps this ending, once (test-site/player.ts, record/): the hero, deck and facts read from the game.
   if (gameSaved)
     void finishGame(gameSaved, {
@@ -3562,7 +3593,11 @@ function render() {
         : [],
     discardOpen,
     hand: displayedHand,
-    staged,
+    // An upgrade being paid for knows its host by now (Inspired on an ally): the table holds it by that card.
+    staged:
+      staged && state.payment?.subject.id === staged.id
+        ? { ...staged, attachedTo: state.payment.subject.attachedTo ?? null }
+        : staged,
     stagedOverEnemies: !!staged && staged.id === stagedAttachment,
     paymentSources: state.payment?.sources.filter((s) => s.available).map(resourcePieceId) ?? null,
     selected,
@@ -3954,7 +3989,7 @@ undoButton.onclick = () => {
 restart.textContent = "New game";
 restart.onclick = () => {
   if (gameMenu.open) gameMenu.close();
-  void showShelf();
+  void showShelf("campaign");
 };
 menuButton.onclick = () => {
   if (!gameMenu.open) gameMenu.showModal();
@@ -4018,6 +4053,11 @@ document.addEventListener(
 );
 /** Escape, or a controller's B: put away the topmost thing. An open dialog handles its own. */
 function back() {
+  // Over the room, Back is the room's: one step back towards its doorway.
+  if (shelfUp) {
+    room?.back();
+    return;
+  }
   if (gameMenu.open || gameOver.open) return;
   if (pinnedId) {
     pinCard(null);
@@ -4437,7 +4477,7 @@ const AT_TABLE = "battle-at-table";
 let shelfUp = false;
 function opensOnShelf(): boolean {
   const params = new URLSearchParams(location.search);
-  if (params.has("open")) return true;
+  if (params.has("open") || params.has("room")) return true;
   if (["seed", "scene", "villain", "remote", "studio"].some((key) => params.has(key))) return false;
   try {
     return !sessionStorage.getItem(AT_TABLE);
@@ -4458,7 +4498,37 @@ function tableInert(inert: boolean) {
   for (const child of document.body.children)
     if (child instanceof HTMLElement && child.id !== "shelf") child.inert = inert;
 }
-async function showShelf() {
+/** The room, once loaded. */
+let room: typeof import("./room/index.js") | null = null;
+/** The table's own menu settings, for the room's radio. */
+function roomSettings(): RoomSetting[] {
+  return [
+    {
+      label: "Card panel",
+      options: [
+        { value: "left", label: "Left" },
+        { value: "right", label: "Right" },
+      ],
+      value: () => arena.getAttribute("data-rail") ?? "right",
+      choose: (value) => setSidebarSide(value === "left" ? "left" : "right"),
+    },
+    {
+      label: "Sound",
+      options: [
+        { value: "on", label: "On" },
+        { value: "off", label: "Off" },
+      ],
+      value: () => (sfx.enabled ? "on" : "off"),
+      choose: (value) => {
+        sfx.enabled = value === "on";
+        paintSound();
+        sfx.play("confirm");
+      },
+    },
+  ];
+}
+/** Puts the room up over the table: at its doorway, or at `at` (New game goes straight to the boxes). */
+async function showShelf(at?: PlaceId) {
   shelfUp = true;
   // No game on the shelf yet: the tab says the game's name, not the last matchup.
   document.title = "Marvel Champions";
@@ -4472,24 +4542,29 @@ async function showShelf() {
       location.reload();
       return;
     }
-    const { openShelf } = await import("./room/index.js");
+    room = await import("./room/index.js");
     shelfDrawn();
-    await openShelf({
-      lock: lockReason,
-      deal: (villain) => {
-        setVillainChoice(villain);
-        rememberAtTable(villain);
-        start();
+    await room.openShelf(
+      {
+        lock: lockReason,
+        settings: roomSettings,
+        player: () => playerReady.then((profile) => profile?.name ?? null),
+        deal: (villain) => {
+          setVillainChoice(villain);
+          rememberAtTable(villain);
+          start();
+        },
+        table: () => table ?? null,
+        shown: () => {
+          shelfUp = false;
+          tableInert(false);
+          // The mulligan's blur and question waited for the shelf to go; the table may be standing still by now.
+          placeLabels();
+          dockTitle.focus({ preventScroll: true });
+        },
       },
-      table: () => table ?? null,
-      shown: () => {
-        shelfUp = false;
-        tableInert(false);
-        // The mulligan's blur and question waited for the shelf to go; the table may be standing still by now.
-        placeLabels();
-        dockTitle.focus({ preventScroll: true });
-      },
-    });
+      at,
+    );
   } catch (error) {
     // No shelf (it failed to load): the table deals as it always has.
     console.error(error);
