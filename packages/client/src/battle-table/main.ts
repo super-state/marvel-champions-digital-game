@@ -15,10 +15,13 @@ import {
   BattleModel,
   DRONE_NAME,
   HEROES,
+  isDifficulty,
   isHeroId,
+  isModuleId,
   isVillainId,
   VILLAINS,
   type BattleCard,
+  type DealOptions,
   type HeroId,
   type VillainId,
 } from "./model.js";
@@ -3813,6 +3816,21 @@ const heroChoice: HeroId = initialHero();
 /** The hero of the game on the table. */
 let heroDealt: HeroId = heroChoice;
 
+// ── Which difficulty and modules ──────────────────────────────────────────────────────────────────────────────────
+// Standard with the villain's recommended module, unless the address asks otherwise for that page (`?difficulty=expert`,
+// `?modules=legions_of_hydra`, comma-separated for more than one) or Free Play's tray chose them. A campaign box
+// always deals Standard with its recommended module; Try again deals what the last game had.
+function addressEncounter(): Pick<DealOptions, "difficulty" | "modules"> {
+  const params = new URLSearchParams(location.search);
+  const difficulty = params.get("difficulty");
+  const modules = (params.get("modules") ?? "").split(",").filter(isModuleId);
+  return {
+    ...(isDifficulty(difficulty) ? { difficulty } : {}),
+    ...(modules.length ? { modules: [...new Set(modules)] } : {}),
+  };
+}
+let encounterChoice: Pick<DealOptions, "difficulty" | "modules"> = addressEncounter();
+
 function paintMatchup() {
   const hero = heroName(heroDealt);
   const villain = villainName(villainDealt);
@@ -3864,7 +3882,7 @@ function deal() {
   const villain = arrange ? sceneVillain(sceneName) : villainChoice;
   // The scenes are laid out with Spider-Man's cards.
   const hero = arrange ? "spider-man" : heroChoice;
-  model.reset(arrange ? { hero, villain, seed, arrange } : { hero, villain, seed, mulligan: true });
+  model.reset(arrange ? { hero, villain, seed, arrange } : { hero, villain, seed, mulligan: true, ...encounterChoice });
   heroDealt = hero;
   villainDealt = villain;
   // A set-up or a chosen shuffle is a check, not a game: it never goes on a record.
@@ -4478,7 +4496,8 @@ let shelfUp = false;
 function opensOnShelf(): boolean {
   const params = new URLSearchParams(location.search);
   if (params.has("open") || params.has("room")) return true;
-  if (["seed", "scene", "villain", "remote", "studio"].some((key) => params.has(key))) return false;
+  if (["seed", "scene", "villain", "difficulty", "modules", "remote", "studio"].some((key) => params.has(key)))
+    return false;
   try {
     return !sessionStorage.getItem(AT_TABLE);
   } catch {
@@ -4551,6 +4570,7 @@ async function showShelf(at?: PlaceId) {
         player: () => playerReady.then((profile) => profile?.name ?? null),
         deal: (villain) => {
           setVillainChoice(villain);
+          encounterChoice = {};
           rememberAtTable(villain);
           start();
         },
