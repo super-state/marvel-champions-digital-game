@@ -291,6 +291,14 @@ const SCENES: Record<string, Scene> = {
     minions: [{ code: "01110", damage: 1 }],
     schemes: [{ code: "01107", threat: 3 }],
   },
+  /**
+   * Hydra Mercenary (guard) engaged with Spider-Man: attacking still asks whom, Rhino can't be picked, and pointing at
+   * him says Hydra Mercenary's Guard is why (Adam, 2026-11-25).
+   */
+  guard: {
+    hero: { form: "hero" },
+    minions: [{ code: "01101" }],
+  },
   /** Spider-Tracer in hand with two minions out: the attachment waits over the villain's side while its host is chosen. */
   tracer: {
     hero: { form: "hero" },

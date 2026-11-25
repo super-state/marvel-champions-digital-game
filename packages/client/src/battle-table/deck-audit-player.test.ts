@@ -1572,6 +1572,10 @@ test("Guard (Hydra Mercenary): the hero's basic attack is forced onto the guard"
   const guard = p.card("Hydra Mercenary", "enemyCards");
   const rhinoHp = p.snap.villainHp;
   expect(p.run(() => p.battle.heroAction("basicAttack"))).toBe(true);
+  // Asked anyway, with the guard as the only answer, so the table can say why Rhino is out of reach (Adam, 2026-11-25).
+  expect(p.snap.choice?.options.map((o) => o.cardId)).toEqual([guard.id]);
+  expect(p.snap.choice?.guard?.guards).toEqual([guard.id]);
+  p.choose({ card: guard.id });
   expect(p.snap.choice).toBeNull();
   expect(p.snap.villainHp).toBe(rhinoHp);
   expect(p.card("Hydra Mercenary", "enemyCards").markers).toContainEqual({ name: "damage", count: 2 });

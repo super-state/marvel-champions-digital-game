@@ -591,3 +591,38 @@ describe("the difficulty and modules the deal takes", () => {
     expect(isModuleId("expert")).toBe(false);
   });
 });
+
+describe("Guard (Adam, 2026-11-25: the attack went straight to the guard minion and the player didn't know why)", () => {
+  test("attacking with a guard minion engaged asks whom, says why the villain is out of reach, and attacks the minion", () => {
+    const battle = new BattleModel();
+    battle.reset({ seed: 7, arrange: arrangeScene("guard")! });
+    const before = battle.snapshot();
+    const mercenary = before.enemyCards.find((card) => card.name === "Hydra Mercenary")!;
+    expect(mercenary.guard).toBe(true);
+    expect(before.villain.guard).toBeUndefined();
+
+    expect(battle.heroAction("basicAttack")).toBe(true);
+    const asked = battle.snapshot().choice!;
+    expect(asked.prompt).toBe("Choose an enemy to attack");
+    expect(asked.options.map((option) => option.cardId)).toEqual([mercenary.id]);
+    expect(asked.guard).toEqual({ blocked: [before.villain.id], guards: [mercenary.id] });
+    expect(asked.explanation).toBe("Hydra Mercenary has Guard: Rhino can't be attacked until it is defeated.");
+    expect(asked.canCancel).toBe(true);
+
+    // The villain is no answer; the minion is.
+    expect(battle.choose(before.villain.id)).toBe(false);
+    expect(battle.choose(mercenary.id)).toBe(true);
+    const after = battle.snapshot();
+    expect(after.choice).toBeNull();
+    expect(after.enemyCards.find((card) => card.id === mercenary.id)?.hp ?? 0).toBeLessThan(mercenary.hp!);
+  });
+
+  test("an attack with no guard minion engaged and only the villain to hit still goes straight in", () => {
+    const battle = new BattleModel();
+    battle.reset({ seed: 7, arrange: arrangeScene("klawstage")! });
+    expect(battle.snapshot().enemyCards.some((card) => card.type === "minion")).toBe(false);
+    expect(battle.heroAction("basicAttack")).toBe(true);
+    expect(battle.snapshot().choice?.guard).toBeUndefined();
+    expect(battle.snapshot().choice?.prompt).not.toBe("Choose an enemy to attack");
+  });
+});
