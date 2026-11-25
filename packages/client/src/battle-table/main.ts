@@ -1657,7 +1657,7 @@ function throwConfetti() {
  * every 3D table browser test (`e2e/battle-test.ts`).
  */
 function checkShownNumbers() {
-  if (!import.meta.env.DEV || discardOpen) return;
+  if (!import.meta.env.DEV || discardOpen || studioPlaying) return;
   const wrong: string[] = [];
   for (const card of [state.hero, state.villain, ...state.enemyCards, ...state.inPlay]) {
     const label = labels.get(card.id);
@@ -4822,6 +4822,19 @@ else begin();
 // beats where it can), so the sound fires at its real place; the table is put back from the game state afterwards.
 async function studioDemo(name: string): Promise<boolean> {
   if (!table || presenting) return false;
+  // The Sound Studio plays made-up beats (a hit, threat) that the game never had: the numbers they move are not checked.
+  studioPlaying = true;
+  try {
+    return await studioScene(name);
+  } finally {
+    studioPlaying = false;
+  }
+}
+
+/** True while the Sound Studio plays a made-up moment on the table (`studioDemo`). */
+let studioPlaying = false;
+
+async function studioScene(name: string): Promise<boolean> {
   const hero = state.hero.id;
   const villain = state.villain.id;
   const scheme = state.enemyCards.find((card) => card.type === "main_scheme")?.id ?? villain;
