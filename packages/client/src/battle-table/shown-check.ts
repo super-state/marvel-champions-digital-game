@@ -51,7 +51,10 @@ export const BEAT_FIELDS: Record<string, { cls: "table" | "meta"; where: string 
   text: { cls: "meta", where: "the dock's title and its feed" },
   enemy: { cls: "meta", where: "the dock's colour (villain or hero)" },
   activity: { cls: "meta", where: "the dock's eyebrow in the villain phase" },
-  actor: { cls: "table", where: "the card is marked on the table while the words show (markActor)" },
+  actor: {
+    cls: "meta",
+    where: "the card is marked on the table while the words show (markActor): words, not a change",
+  },
   round: { cls: "meta", where: "the round on a phase banner" },
   random: { cls: "meta", where: "with handDiscard/tucked: a light hops across the hand first" },
   penalty: { cls: "meta", where: "with encounterDeal: marks the deal as the run-out price" },
@@ -599,6 +602,14 @@ export function judge(
       rowOf(rowKey(after, { instanceId: e.instanceId, what: "revealed" })).fired++;
     if (e.type === "enemyActivated")
       rowOf(rowKey(after, { instanceId: e.enemyInstanceId, what: "activation" })).fired++;
+    // A keyword the engine reports firing (Retaliate, Quickstrike, Surge) is a row of its card's own.
+    if (e.type === "keywordResolved" || e.type === "surgeTriggered") {
+      row = rowKey(after, {
+        instanceId: e.instanceId,
+        what: `keyword ${e.type === "surgeTriggered" ? "surge" : e.keyword}`,
+      });
+      rowOf(row).fired++;
+    }
     if (!rule) {
       unclassified.set(e.type, (unclassified.get(e.type) ?? 0) + 1);
       results.push({ row, kind: `event ${e.type} (no rule yet)`, cls: "silent", how: "" });
