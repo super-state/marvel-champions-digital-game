@@ -3,8 +3,9 @@ import { frames, installPad, PAD, setButton } from "./pad-e2e-helpers.js";
 
 /**
  * Free Play (`src/battle-table/room/places/free-play.ts`): the setup tray in the room. A game is built on it slot by
- * slot (villain, module, difficulty, hero, deck) and Play deals it onto the mat. Built here once by keyboard and once
- * by a fake Xbox pad through the table's own controller code: Klaw, Expert, Legions of Hydra.
+ * slot (villain, modules, difficulty, hero, deck) and Play deals it onto the mat. Built here once by keyboard (Klaw,
+ * Expert, Legions of Hydra in place of his own module) and once by a fake Xbox pad through the table's own controller
+ * code (Klaw, Expert, two modules at once, Captain Marvel).
  */
 
 const room = (page: Page) => page.locator("#shelf");
@@ -97,13 +98,26 @@ test.describe("battle table: Free Play", () => {
     await expect(option(page, "Villain", "Klaw")).toHaveAttribute("aria-pressed", "true");
     await expect(option(page, "Module", /^Masters of Evil/)).toHaveAttribute("aria-pressed", "true");
 
-    // Down onto the module row's chosen one, then along to Legions of Hydra.
+    // Down onto the module row's chosen one, along to Legions of Hydra: a module is a toggle, so it goes in beside
+    // Klaw's own; back to Masters of Evil to take that out. The last one in can't be taken out.
     await page.keyboard.press("ArrowDown");
     await expect.poll(() => focused(page)).toMatch(/^Masters of Evil/);
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowRight");
     await expect.poll(() => focused(page)).toBe("Legions of Hydra");
     await page.keyboard.press("Enter");
+    await expect(option(page, "Module", "Legions of Hydra")).toHaveAttribute("aria-pressed", "true");
+    await expect(option(page, "Module", /^Masters of Evil/)).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    await expect.poll(() => focused(page)).toMatch(/^Masters of Evil/);
+    await page.keyboard.press("Enter");
+    await expect(option(page, "Module", /^Masters of Evil/)).toHaveAttribute("aria-pressed", "false");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => focused(page)).toBe("Legions of Hydra");
+    await page.keyboard.press("Enter");
+    await expect(room(page).getByRole("status")).toHaveText("A game needs at least one module.");
     await expect(option(page, "Module", "Legions of Hydra")).toHaveAttribute("aria-pressed", "true");
 
     await page.keyboard.press("ArrowDown");
@@ -150,6 +164,7 @@ test.describe("battle table: Free Play", () => {
       await nudge(page, PAD.a);
       await at(page, "free-play");
 
+      // Legions of Hydra goes in beside Klaw's own Masters of Evil: two modules at once.
       for (const [slot, name] of [
         ["Villain", /^Klaw$/],
         ["Module", /^Legions of Hydra$/],
@@ -162,9 +177,11 @@ test.describe("battle table: Free Play", () => {
       }
       // The deck follows the hero: her starter deck.
       await expect(option(page, "Deck", "Leadership starter deck")).toHaveAttribute("aria-pressed", "true");
+      await expect(option(page, "Module", /^Masters of Evil/)).toHaveAttribute("aria-pressed", "true");
       await padTo(page, /^Play vs Klaw$/);
       await nudge(page, PAD.a);
-      await dealt(page, "Captain Marvel vs. Klaw · Expert · Legions of Hydra");
+      // The title names the modules the game was dealt with (`main.ts` reads them back from the game).
+      await dealt(page, "Captain Marvel vs. Klaw · Expert · Masters of Evil · Legions of Hydra");
     });
   });
 });

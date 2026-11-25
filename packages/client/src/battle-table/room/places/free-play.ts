@@ -10,12 +10,15 @@
  * the deck's box. Play deals that game onto the mat the way a campaign box does (`campaign-play.ts`).
  *
  * Only villains this player has opened are offered: on the test site the ones the room's locks leave open, on Adam's
- * own table all of them. The module starts as the villain's recommended one (and follows the villain until another is
- * picked). The deck slot offers the hero's starter deck and every deck saved for them at the bench, the one chosen being
+ * own table all of them. The modules start as the villain's recommended one (and follow the villain until the player
+ * changes them); several can be in at once, as the rules allow (each a toggle; the last one can't be taken out). The
+ * hero's piece is their identity card's scan, found from their starter deck in `HEROES`, so a hero added there gets
+ * their picture here with no other change. The deck slot offers the hero's starter deck and every deck saved for them at the bench, the one chosen being
  * the hero's chosen deck (`decks/chosen-deck.ts`, shared with the bench); a deck the table can't deal yet is shown with
  * why, and can't be picked (`decks/deal-gate.ts`). Picking a hero at the bench picks them here too (`followHero`).
  */
 import * as THREE from "three";
+import { CORE_STARTER_DECKS } from "@mc/content";
 import {
   HEROES,
   MODULES,
@@ -101,7 +104,7 @@ const SLOTS: readonly Slot[] = ["villain", "module", "difficulty", "hero", "deck
 
 interface Built {
   villain: VillainId;
-  module: ModuleId;
+  modules: ModuleId[];
   difficulty: Difficulty;
   hero: HeroId;
 }
@@ -111,8 +114,13 @@ const DIFFICULTIES: readonly { id: Difficulty; name: string }[] = [
   { id: "expert", name: "Expert" },
 ];
 
-/** The hero's identity card (its scan, as the boxes use the villain's) and their starter deck's aspect. */
-const HERO_CARDS: Partial<Record<HeroId, string>> = { "spider-man": "01001a", "captain-marvel": "01010a" };
+/** The hero's starter deck in the card data: its identity card (its scan, as the boxes use the villain's) and aspect. */
+const starterOf = (hero: HeroId) =>
+  CORE_STARTER_DECKS.find((deck) => (deck.id as string) === heroOf(hero).starterDeckId);
+const heroScan = (hero: HeroId): string | null => {
+  const identity = starterOf(hero)?.identityCardId as string | undefined;
+  return identity ? `${CARDS}${identity}.png` : null;
+};
 const ASPECTS: Record<string, { name: string; colour: string; ink: string }> = {
   justice: { name: "Justice", colour: "#f2c230", ink: "#2a2006" },
   leadership: { name: "Leadership", colour: "#3d8fe0", ink: "#f4f8ff" },
@@ -125,24 +133,36 @@ const moduleName = (id: ModuleId) => MODULES.find((module) => module.id === id)!
 /** The starter deck's aspect, read from its id ("core-spider-man-justice"). */
 function aspectOf(hero: HeroId) {
   const id = heroOf(hero).starterDeckId;
-  return ASPECTS[id.slice(id.lastIndexOf("-") + 1)] ?? { name: "Starter", colour: "#8d877d", ink: "#10100f" };
+  const aspect = (starterOf(hero)?.aspects[0] as string | undefined) ?? id.slice(id.lastIndexOf("-") + 1);
+  return ASPECTS[aspect] ?? { name: "Starter", colour: "#8d877d", ink: "#10100f" };
 }
 const deckName = (hero: HeroId) => `${aspectOf(hero).name} starter deck`;
 
 const SAVED = "battle-free-play-tray";
-let built: Built = { villain: "rhino", module: recommendedModule("rhino"), difficulty: "standard", hero: "spider-man" };
+let built: Built = {
+  villain: "rhino",
+  modules: [recommendedModule("rhino")],
+  difficulty: "standard",
+  hero: "spider-man",
+};
 /** A module the player picked stays when the villain changes; otherwise it follows the villain's recommended one. */
 let modulePicked = false;
 try {
-  const saved = JSON.parse(localStorage.getItem(SAVED) ?? "null") as (Built & { modulePicked?: boolean }) | null;
+  const saved = JSON.parse(localStorage.getItem(SAVED) ?? "null") as
+    | (Omit<Built, "modules"> & { modules?: unknown; module?: unknown; modulePicked?: boolean })
+    | null;
+  // A tray saved before several modules could be in at once kept one (`module`).
+  const modules = (Array.isArray(saved?.modules) ? saved.modules : [saved?.module]).filter((m): m is ModuleId =>
+    MODULES.some((each) => each.id === m),
+  );
   if (
     saved &&
     VILLAINS.some((v) => v.id === saved.villain) &&
-    MODULES.some((m) => m.id === saved.module) &&
+    modules.length > 0 &&
     DIFFICULTIES.some((d) => d.id === saved.difficulty) &&
     HEROES.some((h) => h.id === saved.hero)
   ) {
-    built = { villain: saved.villain, module: saved.module, difficulty: saved.difficulty, hero: saved.hero };
+    built = { villain: saved.villain, modules: [...new Set(modules)], difficulty: saved.difficulty, hero: saved.hero };
     modulePicked = !!saved.modulePicked;
   }
 } catch {
@@ -214,7 +234,8 @@ function villainPrint(id: VillainId): HTMLCanvasElement {
   return frontPrint({ ...campaign, open: true }, image(campaign.scan));
 }
 
-function modulePrint(id: ModuleId): HTMLCanvasElement {
+function modulePrint(ids: readonly ModuleId[]): HTMLCanvasElement {
+  const id = ids[0]!;
   const [cv, g] = canvas(512, 716);
   const bg = g.createLinearGradient(0, 0, 512, 716);
   bg.addColorStop(0, "#3a1a4a");
@@ -228,7 +249,25 @@ function modulePrint(id: ModuleId): HTMLCanvasElement {
   g.fillStyle = "#e9dcc4";
   g.font = "900 34px 'Public Sans'";
   g.textAlign = "center";
-  g.fillText("MODULAR SET", 256, 120);
+  g.fillText(ids.length > 1 ? `${ids.length} MODULAR SETS` : "MODULAR SET", 256, 120);
+  if (ids.length > 1) {
+    // Several sets: each name on a line of its own.
+    const names = ids.map((each) => moduleName(each).toUpperCase());
+    const size = Math.min(72, 420 / names.length);
+    g.font = `${size}px Bangers`;
+    const fit = Math.min(1, 440 / Math.max(...names.map((name) => g.measureText(name).width)));
+    g.font = `${Math.floor(size * fit)}px Bangers`;
+    g.lineWidth = 9;
+    g.lineJoin = "round";
+    g.strokeStyle = "#0b0705";
+    names.forEach((name, i) => {
+      const y = 380 + (i - (names.length - 1) / 2) * size * 1.1 * fit;
+      g.strokeText(name, 256, y);
+      g.fillStyle = "#ffd54a";
+      g.fillText(name, 256, y);
+    });
+    return cv;
+  }
   const words = moduleName(id).toUpperCase().split(" ");
   // Two lines at most: "THE DOOMSDAY / CHAIR", "LEGIONS OF / HYDRA".
   const lines =
@@ -283,8 +322,8 @@ function difficultyPrint(id: Difficulty): HTMLCanvasElement {
 }
 
 function heroPrint(id: HeroId): HTMLCanvasElement | HTMLImageElement {
-  const code = HERO_CARDS[id];
-  const scan = code ? image(`${CARDS}${code}.png`) : null;
+  const url = heroScan(id);
+  const scan = url ? image(url) : null;
   if (scan) return scan;
   // No scan to hand: the hero's name on a plain card.
   const [cv, g] = canvas(512, 716);
@@ -326,7 +365,7 @@ function paintPiece(slot: Slot) {
   const piece = pieces.get(slot);
   if (!piece) return;
   if (slot === "villain") setPrint(piece, villainPrint(built.villain));
-  else if (slot === "module") setPrint(piece, modulePrint(built.module));
+  else if (slot === "module") setPrint(piece, modulePrint(built.modules));
   else if (slot === "difficulty") setPrint(piece, difficultyPrint(built.difficulty));
   else if (slot === "hero") setPrint(piece, heroPrint(built.hero));
   else setPrint(piece, deckPrint(built.hero));
@@ -443,16 +482,27 @@ function optionsOf(slot: Slot): Option[] {
   }
 }
 
-const valueOf = (slot: Slot): string =>
-  slot === "deck" ? deckChoice(built.hero) : slot === "module" ? built.module : built[slot];
+/** Whether a choice is the one in: any of the modules in, for the module row. */
+const isIn = (slot: Slot, value: string): boolean =>
+  slot === "module"
+    ? built.modules.includes(value as ModuleId)
+    : value === (slot === "deck" ? deckChoice(built.hero) : built[slot]);
 
 function choose(slot: Slot, value: string) {
   if (slot === "villain") {
     built.villain = value as VillainId;
-    if (!modulePicked) built.module = recommendedModule(built.villain);
+    if (!modulePicked) built.modules = [recommendedModule(built.villain)];
   } else if (slot === "module") {
-    built.module = value as ModuleId;
-    modulePicked = built.module !== recommendedModule(built.villain);
+    // Each module is a toggle: in, or out again; a game keeps at least one.
+    const module = value as ModuleId;
+    if (built.modules.includes(module)) {
+      if (built.modules.length === 1) {
+        say("A game needs at least one module.");
+        return;
+      }
+      built.modules = built.modules.filter((each) => each !== module);
+    } else built.modules = [...built.modules, module];
+    modulePicked = !(built.modules.length === 1 && built.modules[0] === recommendedModule(built.villain));
   } else if (slot === "difficulty") built.difficulty = value as Difficulty;
   else if (slot === "hero") built.hero = value as HeroId;
   else if (slot === "deck") {
@@ -488,7 +538,7 @@ function paint() {
         button.className = "btn btn-option free-play-option";
         button.dataset.slot = slot;
         button.dataset.value = option.value;
-        button.setAttribute("aria-pressed", String(option.value === valueOf(slot)));
+        button.setAttribute("aria-pressed", String(isIn(slot, option.value)));
         button.textContent = option.label;
         if (option.held) {
           button.setAttribute("aria-disabled", "true");
@@ -513,7 +563,7 @@ function paint() {
   summary.textContent = [
     `${heroOf(built.hero).name} vs. ${villainName(built.villain)}`,
     DIFFICULTIES.find((d) => d.id === built.difficulty)!.name,
-    moduleName(built.module),
+    built.modules.map(moduleName).join(" + "),
   ].join(" · ");
 }
 
@@ -551,7 +601,7 @@ function key(event: KeyboardEvent): boolean {
 
 const LABELS: Record<Slot, string> = {
   villain: "Villain",
-  module: "Module",
+  module: "Modules",
   difficulty: "Difficulty",
   hero: "Hero",
   deck: "Deck",
@@ -587,7 +637,7 @@ function buildPanel(panel: HTMLElement) {
       villain: built.villain,
       hero: built.hero,
       difficulty: built.difficulty,
-      modules: [built.module],
+      modules: [...built.modules],
     });
   };
 }
@@ -600,8 +650,8 @@ export function mountFreePlay() {
       await Promise.all([
         document.fonts.load("96px Bangers"),
         document.fonts.load("900 40px 'Public Sans'"),
-        ...[...CAMPAIGNS.map((c) => c.scan), ...Object.values(HERO_CARDS).map((code) => `${CARDS}${code}.png`)].map(
-          async (url) => art.set(url, await loadImage(url)),
+        ...[...CAMPAIGNS.map((c) => c.scan), ...HEROES.flatMap((hero) => heroScan(hero.id) ?? [])].map(async (url) =>
+          art.set(url, await loadImage(url)),
         ),
       ]);
       buildPanel(panel);
@@ -614,7 +664,7 @@ export function mountFreePlay() {
       const open = openVillains();
       if (!open.some((v) => v.id === built.villain) && open[0]) {
         built.villain = open[0].id;
-        if (!modulePicked) built.module = recommendedModule(built.villain);
+        if (!modulePicked) built.modules = [recommendedModule(built.villain)];
         paintPiece("villain");
         paintPiece("module");
       }
