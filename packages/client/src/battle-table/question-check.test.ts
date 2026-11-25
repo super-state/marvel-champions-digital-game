@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { arrangeScene } from "./debug-scenes.js";
 import { BattleModel } from "./model.js";
-import { KNOWN_PLAIN, QUESTION_HANDLING, plainQuestion } from "./question-check.js";
+import { KNOWN_PLAIN, QUESTION_HANDLING, plainQuestion, tagsQuestion } from "./question-check.js";
 
 /** Up to Masters of Mayhem's search: discard down, pass Spider-Sense, don't defend (as model.test.ts does). */
 function toTheSearch() {
@@ -47,5 +47,13 @@ describe("the question tripwire (question-check.ts)", () => {
       expect(QUESTION_HANDLING[kind], key).not.toBe("unhandled");
       expect(key.endsWith(": unhandled"), key).toBe(false);
     }
+  });
+
+  test("an accepted plain question wears no tag on the dev table; one waiting for a design still does", () => {
+    const plain = (key: string) => ({ key, kind: key.split(":")[0]!, why: "buttons only" as const, asker: "?" });
+    expect(tagsQuestion(plain("chooseOption: buttons only"))).toBe(false);
+    expect(tagsQuestion(plain("orderSpecials: cards as name buttons"))).toBe(true);
+    expect(tagsQuestion(plain("chooseNumber: buttons only"))).toBe(true);
+    expect(tagsQuestion(null)).toBe(false);
   });
 });
