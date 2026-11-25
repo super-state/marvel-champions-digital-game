@@ -177,6 +177,7 @@ export const EVENT_RULES: Record<string, Rule> = {
   defenseDeclined: book("the player's own answer"),
   attackAwaitsAbility: book("the attack waits for a question the dock asks"),
   attackResumed: book("the attack goes on: what it does is checked"),
+  activationAwaitsAbility: book("the activation waits for a question the dock asks"),
   costDamageSettled: book("a cost the player chose to pay"),
   damageBeyondZeroLost: book("damage past the last hit point: the card is defeated"),
   deckStacked: book("set-up only"),
@@ -255,7 +256,7 @@ export const EVENT_RULES: Record<string, Rule> = {
   deckTopShown: beat("the deck's top card shown"),
   encounterTopShown: beat("the encounter deck's top card shown"),
   cardFound: beat("a card found by a search"),
-  deckShuffled: beat("a deck shuffled", ["deckReset", "encounterReset", "intoEncounterDeck"]),
+  deckShuffled: beat("a deck shuffled", undefined, ["deckReset", "encounterReset", "intoEncounterDeck"]),
   lastingEffectAdded: beat("an effect that lasts begins"),
   lastingEffectEnded: beat("an effect that lasts ends"),
   playCostReduced: beat("a cost reduced", ["discount"]),
@@ -350,6 +351,9 @@ function ownerOfFrame(frame: GameState["stack"][number]): Owner | null {
     case "enemyAttack":
     case "enemyScheme":
       return { instanceId: frame.enemyInstanceId, what: "activation" };
+    // Effects from before the watch began (a setup ability, Foresight): the card whose text they are.
+    case "effects":
+      return frame.selfInstanceId ? { instanceId: frame.selfInstanceId, what: "effects" } : null;
     default:
       return null;
   }
@@ -482,7 +486,7 @@ function watch(move: CommittedMove) {
       )
         appendFileSync(
           process.env.SHOWN_DEBUG_FILE ?? "shown-debug.log",
-          `[shown] ${result.row} | ${result.kind} | ${result.cls}
+          `[shown] ${result.row} | ${result.kind} | ${result.cls} | ${result.how}
   stack before: ${before.stack.map((f) => `${f.frameId}:${f.kind}`).join(" ")}
   events: ${events.map((e) => (e.type === "framePushed" ? `push(${e.frameId}:${e.description})` : e.type === "framePopped" ? `pop(${e.frameId})` : e.type === "abilityResolved" ? `resolved(${e.abilityId})` : e.type)).join(" ")}
   beats: ${JSON.stringify(beats)}
@@ -628,6 +632,11 @@ export function judge(
     const owner = ownerAt[i]?.instanceId;
     const subject = named.length || !owner ? named : [owner];
     if (lasting && subject.length) row = rowKey(after, { instanceId: subject[0]!, what: "lasting effect" });
+    // A cost reduction used up (Helicarrier's): the card it was used on costs less on the payment screen.
+    if (e.type === "lastingEffectEnded" && lasting?.kind === "costReduction") {
+      results.push({ row, kind: rule.what, cls: "table", how: "the next card's cost on the payment screen" });
+      return;
+    }
     const judged = subject.map((id) => byBeat(id, rule.fields)).filter((s) => s !== null);
     let shown: { cls: ShownClass; how: string } | null = judged.find((s) => s.cls === "table") ?? judged[0] ?? null;
     if (!shown || shown.cls !== "table") {
@@ -635,7 +644,12 @@ export function judge(
       const hit = fields && classed.find((c) => fields.some((f) => (c.beat as unknown as Record<string, unknown>)[f]));
       if (hit) shown = { cls: hit.cls, how: `beat: ${hit.beat.text}` };
     }
-    results.push({ row, kind: rule.what, cls: shown?.cls ?? "silent", how: shown?.how ?? "" });
+    results.push({
+      row,
+      kind: rule.what,
+      cls: shown?.cls ?? "silent",
+      how: shown?.how ?? (lasting ? JSON.stringify(lasting).slice(0, 300) : ""),
+    });
   });
 
   // 2. What changed in the game, card by card: the cards whose instance changed or that an event names.

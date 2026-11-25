@@ -1,1 +1,5 @@
-["01036 | played | hand size changed | silent", "01108 | revealed | hand size changed | silent"]
+[
+  "01029a | hand size | hand size changed (by 01036 played) | silent",
+  "01029a | hand size | hand size changed (by 01108 revealed) | silent",
+  "01039 | 01039.rocket-boots-action | traits changed | log"
+]
