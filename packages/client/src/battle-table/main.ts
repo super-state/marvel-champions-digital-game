@@ -342,6 +342,8 @@ interface DockOption {
   pressed?: boolean;
   /** Where this pick stands in an ordered question: 1 goes first (`pick-order.ts`). */
   order?: number;
+  /** Not an answer now (a card that can't pay a declinable spend). */
+  disabled?: boolean;
   onClick(): void;
 }
 interface DockView {
@@ -460,6 +462,7 @@ function paintDock(view: DockView): boolean {
       button.type = "button";
       button.dataset.option = option.id;
       if (option.pressed !== undefined) button.setAttribute("aria-pressed", String(option.pressed));
+      button.disabled = !!option.disabled;
       if (option.order !== undefined) button.append(orderBadge(option.order, false));
       else if (option.icon) button.append(icon(option.icon));
       button.append(make("span", "", option.label));
@@ -779,6 +782,9 @@ function choiceView(choice: Choice): DockView {
       icon: optionIcon(option.label),
       ...(multiple ? { pressed: choicePicks.has(option.id) } : {}),
       ...(order.has(option.id) ? { order: order.get(option.id)! } : {}),
+      // A spend that can be declined, answered by one card: a card that can't pay it is no answer (it would be taken
+      // as not spending). Declining is the turn bar's own button.
+      ...(!multiple && model.spendPays([option.id]) === false ? { disabled: true } : {}),
       onClick: () => selectChoice(option.id),
     })),
     primary: multiple

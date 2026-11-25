@@ -458,6 +458,11 @@ function playGame(
         })
         .map((id) => engine.cardOf(st, id as engine.InstanceId)?.name),
     );
+    // Another copy the question itself shows the player (Tony Stark's Futurist looks at the top 3 cards of the deck):
+    // it is public, and which Drone is which is still not told.
+    for (const option of s.choice?.options ?? [])
+      if (option.cardId && !facedown.has(option.cardId))
+        visibleNames.add(engine.cardOf(st, option.cardId as engine.InstanceId)?.name);
     for (const b of s.beats) {
       if (b.droneIn) coverage["drone:in"] = (coverage["drone:in"] ?? 0) + 1;
       if (b.droneWas) coverage["drone:defeated"] = (coverage["drone:defeated"] ?? 0) + 1;
@@ -648,7 +653,12 @@ function playGame(
         guard("cancel()", () => model.cancel());
         return !!snap() && !snap()!.choice?.canCancel;
       }
-      const pool = preferred(s, ch);
+      // A card that can't pay a declinable spend is disabled on the table: only paying cards, else decline.
+      const pool = preferred(s, ch).filter((o) => model.spendPays([o.id]) !== false);
+      if (!pool.length) {
+        trace.push("skip (nothing pays)");
+        return choose(null, "choose(null)");
+      }
       const pick = pool[int(pool.length)]!;
       trace.push(`target ${pick.label}`);
       if (!choose(pick.id, "choose()")) {
@@ -719,7 +729,12 @@ function playGame(
         fail("choice-unsatisfiable", `${pendingKind()}:no-options`, `min=${ch.min} but no options are shown; ${ctx}`);
         return false;
       }
-      const pool = preferred(s, ch);
+      // A card that can't pay a declinable spend is disabled on the table: only paying cards, else decline.
+      const pool = preferred(s, ch).filter((o) => model.spendPays([o.id]) !== false);
+      if (!pool.length) {
+        trace.push("skip (nothing pays)");
+        return choose(null, "choose(null)");
+      }
       const pick = pool[int(pool.length)]!;
       trace.push(`choose ${pick.label}`);
       return choose(pick.id, "choose()");
