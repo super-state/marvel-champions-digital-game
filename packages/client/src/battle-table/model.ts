@@ -1824,6 +1824,7 @@ export class BattleModel {
             id: pending.choiceId,
             prompt:
               this.#droneHeadline(trigger?.headline, pending) ??
+              this.#chooseCardsTitle(pending) ??
               eitherOrTitle(state, pending) ??
               promptTitleOf(pending.prompt, CORE_DEPS, pending, state),
             ...(pending.prompt.kind === "declareDefender"
@@ -2291,6 +2292,25 @@ export class BattleModel {
   }
 
   /** The attack pick's guard fields, for a basic attack. */
+  /**
+   * The engine titles a pick of cards "Choose cards": the asking card's own words say what the pick is for. It is the
+   * sentence that does the picking (search, choose, shuffle, return, take): Masters of Mayhem's search for a minion
+   * comes after its attack sentence, and a card with no such sentence keeps the engine's title. (From the main line,
+   * for 0.2.4's search panel.)
+   */
+  #chooseCardsTitle(pending: NonNullable<GameState["pendingChoice"]>): string | undefined {
+    if (pending.prompt.kind !== "chooseCards") return undefined;
+    const source = choiceSourceOf(this.#game, pending)?.instanceId;
+    const card = source ? cardOf(this.#game, source) : undefined;
+    if (!card || card.type === "hero_identity") return undefined;
+    const sentence = plainRulesTextOf(card)
+      .replace(/^[^:]*:\s*/, "")
+      .split(/\.(?:\s|$)/)
+      .map((part) => part.replace(/^(?:Then,\s*)?(?:(?:After|When|If)\b[^,]*,\s*)?/i, "").trim())
+      .find((part) => /\b(?:search|choose|shuffle|return|take)\b/i.test(part));
+    return sentence ? sentence.charAt(0).toUpperCase() + sentence.slice(1) : undefined;
+  }
+
   #guardChoice(entry: LegalAction) {
     return this.#guardFields(this.#guardBlocked(entry));
   }
