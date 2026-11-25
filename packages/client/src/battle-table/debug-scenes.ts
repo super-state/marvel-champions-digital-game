@@ -292,12 +292,14 @@ const SCENES: Record<string, Scene> = {
     schemes: [{ code: "01107", threat: 3 }],
   },
   /**
-   * Hydra Mercenary (guard) engaged with Spider-Man: attacking still asks whom, Rhino can't be picked, and pointing at
-   * him says Hydra Mercenary's Guard is why (Adam, 2026-11-25).
+   * Hydra Mercenary (guard) engaged with Spider-Man: attacking (his basic attack, or Swinging Web Kick from the hand)
+   * still asks whom, Rhino can't be picked, and pointing at him says Hydra Mercenary's Guard is why (Adam, 2026-11-25).
    */
   guard: {
     hero: { form: "hero" },
     minions: [{ code: "01101" }],
+    // Swinging Web Kick and the resources to pay for it: the attack card asks the same way.
+    hand: ["01005", "01088", "01089", "01090"],
   },
   /** Spider-Tracer in hand with two minions out: the attachment waits over the villain's side while its host is chosen. */
   tracer: {

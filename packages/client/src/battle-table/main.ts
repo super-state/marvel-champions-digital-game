@@ -998,7 +998,10 @@ let overMenu = false;
 function hoverCard(id: string | null) {
   // A soft tick as the pointer comes onto a new card, one for the hand and one for the table (Adam, 2026-11-24).
   if (id && id !== pointedCard) sfx.play(inHand(id) ? "hover-hand" : "hover-table");
-  if (id && id !== pointedCard && state.choice?.guard?.blocked.includes(id)) showGuardHint(id);
+  if (id !== pointedCard) {
+    if (id && state.choice?.guard?.blocked.includes(id)) showGuardHint(id, true);
+    else dropGuardHint();
+  }
   pointedCard = id;
   showHovered();
 }
@@ -1478,30 +1481,55 @@ function guardReason(): string {
 }
 
 /**
- * The player points at or clicks the villain while guard keeps it out of reach: a shield and the reason over the
- * villain, and "Guard" stamped on the minion(s) stopping it (Adam, 2026-11-25: "highlight the minion and say, with a
- * shield or something, saying they have guard"). Once per pointing: a pointer resting on the villain doesn't repeat it.
+ * The player points at or clicks the villain while guard keeps it out of reach: "Guard" stamped, with its shield, on
+ * the minion(s) stopping it (Adam, 2026-11-25: "it says guard over the thing with guard is enough"; no words over the
+ * villain). Pointing holds the stamps until the pointer leaves him ("that should stay there while hovered over the
+ * card"); a click or a tap stamps them a moment.
  */
-let guardHint: HTMLElement | null = null;
+let guardHeld: HTMLElement[] = [];
 let guardHintAt = 0;
-function showGuardHint(villain: string) {
+function showGuardHint(villain: string, held = false) {
   const guard = state.choice?.guard;
   if (!guard?.blocked.includes(villain)) return;
-  const now = performance.now();
-  if (guardHint?.isConnected && now - guardHintAt < 1200) return;
-  guardHintAt = now;
-  guardHint?.remove();
-  const node = make("div", "guard-hint");
-  node.setAttribute("role", "status");
-  node.append(icon("guard"), make("span", "", guardReason()));
-  guardHint = node;
-  floatOver(villain, node, 2600, [
-    { transform: "translateY(8px) scale(.85)", opacity: 0 },
-    { transform: "none", opacity: 1, offset: 0.1 },
-    { transform: "none", opacity: 1, offset: 0.85 },
-    { transform: "translateY(-6px)", opacity: 0 },
-  ]);
-  for (const id of guard.guards) stampCard(id, "Guard", "guard");
+  if (!held) {
+    // Already held over the minions: they stay as they are.
+    if (guardHeld.some((node) => node.isConnected)) return;
+    const now = performance.now();
+    if (now - guardHintAt < 900) return;
+    guardHintAt = now;
+    for (const id of guard.guards) stampCard(id, "Guard", "guard");
+    return;
+  }
+  dropGuardHint();
+  const anchors = table?.anchors() ?? [];
+  for (const id of guard.guards) {
+    const anchor = anchors.find((point) => point.id === id);
+    if (!anchor) continue;
+    const node = make("div", "card-stamp", "Guard");
+    node.dataset.tone = "guard";
+    node.dataset.card = id;
+    node.prepend(icon("guard"));
+    node.style.left = anchor.x + "px";
+    node.style.top = anchor.y + "px";
+    node.style.setProperty("--float-size", Math.round(Math.min(78, Math.max(40, anchor.width * 0.62))) + "px");
+    stage.append(node);
+    guardHeld.push(node);
+    if (!reducedMotion())
+      node.animate(
+        [
+          { transform: "scale(2.4)", opacity: 0 },
+          { transform: "scale(.92)", opacity: 1, offset: 0.6 },
+          { transform: "scale(1)", opacity: 1 },
+        ],
+        { duration: 300, easing: "cubic-bezier(.2,.8,.3,1)" },
+      );
+  }
+}
+
+/** The held stamps go once the pointer leaves the villain, or the question they explain is over. */
+function dropGuardHint() {
+  for (const node of guardHeld) node.remove();
+  guardHeld = [];
 }
 
 /** Guard minions already called out: each is stamped "Guard" once as it comes onto the table. */
@@ -1756,9 +1784,10 @@ function synchronizeLabels() {
         label.append(chip);
       }
     } else {
-      // Picking a defender, the plate is just the health: the card shows who it is and the dock asks the question
-      // (Adam, 2026-11-22: "All the player needs is their health").
-      if ((source || target) && !handPick && !state.choice?.defense)
+      // A pick's plate is just the health, threat or shield: the card shows who it is and the dock asks the question
+      // (Adam, 2026-11-22: "All the player needs is their health"; 2026-11-25, of whom to attack: "the heart and the
+      // guard symbol are enough"). Only a card with nothing else to show (a support, an upgrade) is named.
+      if ((source || target) && !handPick && !state.choice?.defense && hp === undefined && card.threat === null)
         label.append(make("span", "plate-name", card.name));
       if (!discardOpen && hp !== undefined) label.append(hpPill(hp));
       if (!discardOpen && card.guard) label.append(guardPill());
@@ -3845,6 +3874,7 @@ function render() {
   syncBoostTags();
   synchronizeLabels();
   announceGuards();
+  if (!state.choice?.guard) dropGuardHint();
   element("board-viewport").toggleAttribute("data-paying", !!state.payment);
   pile.disabled = !state.discard.length || flying || discarding || !!state.payment;
   pile.setAttribute("aria-expanded", String(discardOpen && !viewingEncounterDiscard));

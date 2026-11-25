@@ -953,29 +953,6 @@
     scale: 1.12;
   }
 }
-/* Over the villain the player tried to attack: why not, in a word with the guard's shield. */
-.guard-hint {
-  position: absolute;
-  z-index: 6;
-  translate: -50% -50%;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 11px;
-  border-radius: var(--r-pill);
-  border: 1px solid #ffd45a88;
-  background: #1c1606f2;
-  color: #fff3cf;
-  pointer-events: none;
-  font: 700 13px/1.25 var(--font-ui);
-  white-space: nowrap;
-  box-shadow: 0 8px 22px #000b;
-}
-.guard-hint .icon {
-  width: 16px;
-  height: 16px;
-  color: var(--guard);
-}
 
 @media (prefers-reduced-motion: reduce) {
   .btn-primary[data-attention]:enabled,

@@ -43,10 +43,14 @@ test("a guard minion is called out, and the attack it narrows asks and says why"
   );
   await expect(page.locator('.anchor[data-guarding] .stat-pill[data-kind="guard"]')).toHaveCount(1);
 
-  // Pressing Rhino: the reason over him, and "Guard" stamped on the minion again.
-  const before = await stamps();
-  await page.locator("#board-labels .anchor.enemy").evaluate((el) => (el as HTMLElement).click());
-  await expect(page.locator(".guard-hint")).toContainText("Can't attack Rhino: Hydra Mercenary has Guard");
-  await expect.poll(stamps).toBeGreaterThan(before);
+  // Pointing at Rhino: "Guard" stands on the minion while the pointer stays, with no words over Rhino, and goes
+  // when it leaves.
+  const held = page.locator('.card-stamp[data-tone="guard"]');
+  await page.locator("#board-labels .anchor.enemy").hover();
+  await expect(held).toHaveCount(1);
+  await page.waitForTimeout(1600);
+  await expect(held).toHaveCount(1);
+  await page.mouse.move(5, 5);
+  await expect(held).toHaveCount(0);
   await expect(page.locator("#dock-title")).toHaveText("Choose an enemy to attack");
 });
