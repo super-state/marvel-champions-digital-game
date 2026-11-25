@@ -1,6 +1,6 @@
 import { statHue } from "../tokens.js";
 import { searchQuestion } from "./search-question.js";
-import { plainQuestion, type PlainQuestion } from "./question-check.js";
+import { plainQuestion, tagsQuestion, type PlainQuestion } from "./question-check.js";
 import "./design.css";
 import "./battle.css";
 import { padActive, startController } from "./pad/controller.js";
@@ -3988,7 +3988,10 @@ function render() {
   else if (dockFocus && blurWasHidden) requestAnimationFrame(() => dockFocus && (focusBlur.dataset.ready = ""));
   choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
   const asked = paintDock(dockView());
-  if (import.meta.env.DEV) tagPlainQuestion(state.choice ? plainQuestion(state, model.game) : null);
+  if (import.meta.env.DEV) {
+    const found = state.choice ? plainQuestion(state, model.game) : null;
+    tagPlainQuestion(tagsQuestion(found) ? found : null);
+  }
   // A question about the hand sends a ripple through it, so the eye goes where the answer is.
   if (asked && (state.choice?.discardFromHand || state.choice?.mulligan)) table?.waveHand();
   // A question darkens the table around what it is about: the attacker (red), or what an interrupt would change.
