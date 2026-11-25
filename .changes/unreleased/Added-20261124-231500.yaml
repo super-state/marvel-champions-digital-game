@@ -1,0 +1,3 @@
+kind: Added
+body: "3D table: every finished game keeps its facts (difficulty, modules, how the hero ended, allies played, Undo, the card that dealt the last blow), Adam's own table keeps a record too (in the browser), and the first 32 achievements, the stats, an Achievement unlocked pop-up and a Record list in the menu are worked out from it."
+time: 2026-11-24T23:15:00.0000000+00:00
