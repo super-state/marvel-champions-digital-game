@@ -132,6 +132,19 @@ cards work in one form only, what each status does and the hand limit.
 - **An auto-player loses these games:** it passed Emergency and "I Object!" at 6/7 and lost. Play the villain phase's
   offers by hand. `seen 2×`
 
+### Built decks from the bench (Spider-Man with Leadership, Captain Marvel with Justice) — 0 wins, 2 losses (Rhino)
+
+- **Both took Rhino's first stage fast, then lost in stage two to two attacks plus a Stampede in one phase.** Spider-Man
+  (Leadership) fell in round 8, Captain Marvel (Justice) in round 6; Breakin' & Takin' was never cleared in either.
+  Clear it the turn stage two arrives (Jessica Jones, For Justice!, Nick Fury's 2 threat). `seen 2×`
+- **Allies win stage one.** Vision with an energy card (+2 ATK), Mockingbird's stun, Nick Fury's 4 damage and both
+  their attacks dropped Rhino's 14 by round 3 (Spider-Man) and round 5 (Captain Marvel). `seen 2×`
+- **A stun stops the attack only: a stunned Rhino still schemes** while you are in alter ego (Captain Marvel game:
+  Break-In 3 → 6 in a phase spent as Carol while Rhino was stunned). Confusion is what stops a scheme. `seen 1×`
+- **For Justice! paid with a mental resource is 4 threat** and saved Captain Marvel at 6/7. `seen 1×`
+- **Spider-Man with Leadership has no Web Kick turn to spare:** Make the Call needs an ally in the discard, so both
+  copies are dead in the opening hand; mulligan them. `seen 1×`
+
 ### Driving the hook
 
 - Pick moves from `moves()` labels only; a look's text starts with the move just made. `seen 1×`
@@ -148,6 +161,9 @@ cards work in one form only, what each status does and the hand limit.
   speed. `seen 1×`
 - A driver loop that answers defend questions must defend: one that declined left Spider-Man on 2 HP (Doomsday
   Chair game, as in the Klaw game before). `seen 2×`
+- A deck built at the bench in a page of your own: hold the `?remote` page in headless Playwright with the saved decks
+  preloaded into its storage (`mc-table-decks-v1`, and `battle-deck:<hero>` set to the deck's id), and the deal
+  picks it up; the matchup line names the deck. `seen 2×`
 - Read the whole hand before a villain phase: two Backflips sat unread while Drones hit for 1 each (Ultron game).
   `seen 1×`
 
@@ -166,6 +182,13 @@ cards work in one form only, what each status does and the hand limit.
   block with allies and Backflip; pay Upgraded Drones off at once; save both Kicks for Ultron (II).
 
 ## Recent games
+
+- 2026-11-25 · Captain Marvel (Justice, built at the bench) vs Rhino · lost in round 6, knocked out · stage one fell
+  in round 5 (Photonic Blast through the Armored Rhino Suit, Nick Fury, Mockingbird); then Assault, Gang-Up and Stampede
+  hit her in one phase. A stunned Rhino schemed the Break-In to 6 while she was Carol.
+- 2026-11-25 · Spider-Man (Leadership, built at the bench) vs Rhino · lost in round 8, knocked out · stage one fell in
+  round 3 (Vision with +2 ATK, Mockingbird, Haymaker); stage two brought Charge and the Ivory Horn (ATK 7), Bomb Scare
+  and Breakin' & Takin', and Stampede finished him.
 
 - 2026-11-25 · She-Hulk (Aggression) vs Ultron · lost in round 6, Countdown to Oblivion 6/5 · auto-played to the end;
   Relentless Assault's overkill and Tac Team kept the Drones down, but nothing thwarted the last stage.
