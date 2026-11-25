@@ -21,6 +21,7 @@ import type { GameFacts } from "../record/game.js";
 import { newlyEarned } from "../record/achievements.js";
 import { recordRows } from "../record/board.js";
 import { announceAchievements } from "../record/popup.js";
+import { versusLine } from "./versus.js";
 
 export interface Profile {
   saving: boolean;
@@ -297,8 +298,12 @@ export async function finishGame(
   }
   if (profile && saved.unlocked) profile.unlocked = saved.unlocked;
   const name = NAMES[game.villain] ?? game.villain;
+  // Every game, read back: Standard and Expert are counted apart on the line, and achievements are worked out below.
+  const games = await home.games();
   const v = saved.versus ?? { won: 0, lost: 0 };
-  line.replaceChildren(`You against ${name}: ${v.won} won, ${v.lost} lost.`);
+  line.replaceChildren(
+    games ? versusLine(name, games, game.villain) : `You against ${name}: ${v.won} won, ${v.lost} lost.`,
+  );
   for (const villain of saved.newlyUnlocked ?? []) {
     const news = make("strong", "outcome-unlocked", `${villain} is unlocked!`);
     // Try again deals the same villain: this goes back to the shelf, drawn with the new one open.
@@ -311,7 +316,6 @@ export async function finishGame(
     line.append(make("br"), news, go);
   }
   // What this game earned (worked out from every game, so whatever was earned before is never announced again).
-  const games = await home.games();
   if (games && game.sent === ending) announceAchievements(newlyEarned(games, game.id));
 }
 

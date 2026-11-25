@@ -35,6 +35,7 @@ import { STARTER, chosenDeck } from "./decks/chosen-deck.js";
 import { dealVerdict } from "./decks/deal-gate.js";
 import { browserDeckStore } from "./decks/deck-store.js";
 import type { PlaceId, RoomGame, RoomSetting } from "./room/index.js";
+import { friendLocks, onTestSite, seeAsFriend, seeingAsFriend } from "./access.js";
 import {
   addRecordButton,
   finishGame,
@@ -342,6 +343,8 @@ interface DockOption {
   pressed?: boolean;
   /** Where this pick stands in an ordered question: 1 goes first (`pick-order.ts`). */
   order?: number;
+  /** Not an answer now (a card that can't pay a declinable spend). */
+  disabled?: boolean;
   onClick(): void;
 }
 interface DockView {
@@ -460,6 +463,7 @@ function paintDock(view: DockView): boolean {
       button.type = "button";
       button.dataset.option = option.id;
       if (option.pressed !== undefined) button.setAttribute("aria-pressed", String(option.pressed));
+      button.disabled = !!option.disabled;
       if (option.order !== undefined) button.append(orderBadge(option.order, false));
       else if (option.icon) button.append(icon(option.icon));
       button.append(make("span", "", option.label));
@@ -779,6 +783,9 @@ function choiceView(choice: Choice): DockView {
       icon: optionIcon(option.label),
       ...(multiple ? { pressed: choicePicks.has(option.id) } : {}),
       ...(order.has(option.id) ? { order: order.get(option.id)! } : {}),
+      // A spend that can be declined, answered by one card: a card that can't pay it is no answer (it would be taken
+      // as not spending). Declining is the turn bar's own button.
+      ...(!multiple && model.spendPays([option.id]) === false ? { disabled: true } : {}),
       onClick: () => selectChoice(option.id),
     })),
     primary: multiple
@@ -4659,6 +4666,27 @@ function roomSettings(): RoomSetting[] {
         sfx.play("confirm");
       },
     },
+    // Adam's own table has everything open; this shows it locked by his record, as a friend sees theirs (`access.ts`).
+    ...(onTestSite()
+      ? []
+      : [
+          {
+            label: "See it as a friend",
+            options: [
+              { value: "off", label: "Off" },
+              { value: "on", label: "On" },
+            ],
+            value: () => (seeingAsFriend() ? "on" : "off"),
+            choose: (value: string) => {
+              seeAsFriend(value === "on");
+              // The boxes and the tray are drawn with their locks: the page starts again, back at the radio.
+              const params = new URLSearchParams(location.search);
+              params.delete("friend");
+              params.set("room", "settings");
+              location.search = params.toString();
+            },
+          },
+        ]),
   ];
 }
 /** Puts the room up over the table: at its doorway, or at `at` (New game goes straight to the boxes). */
@@ -4677,6 +4705,8 @@ async function showShelf(at?: PlaceId) {
       return;
     }
     room = await import("./room/index.js");
+    // Adam looking at his own table as a friend: his villains lock by his own record (`access.ts`).
+    const asFriend = friendLocks(seeingAsFriend() ? ((await recordHome()?.games()) ?? null) : null);
     if (!freePlayMounted) {
       freePlayMounted = true;
       room.mountFreePlay();
@@ -4687,7 +4717,7 @@ async function showShelf(at?: PlaceId) {
     shelfDrawn();
     await room.openShelf(
       {
-        lock: lockReason,
+        lock: (villain) => (asFriend ? asFriend(villain) : lockReason(villain)),
         settings: roomSettings,
         player: () => playerReady.then((profile) => profile?.name ?? null),
         deal: (game) => {

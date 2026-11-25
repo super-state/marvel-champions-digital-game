@@ -38,6 +38,7 @@ import {
   waitingForPress,
 } from "./places/title.js";
 import { trophies } from "./places/trophies.js";
+import { layTableMat, showTableMat } from "./table-mat.js";
 import { buildRoom, renderFrame, resize, root, say, scene } from "./room.js";
 
 export type { RoomGame, ShelfHost } from "./places/campaign-play.js";
@@ -107,7 +108,7 @@ async function go(id: PlaceId, options: { force?: boolean; now?: boolean } = {})
     say(`${place.label} couldn't be opened. Try again in a moment.`);
     return;
   }
-  if (id === "title") titlePlace.cameFrom(here);
+  if (id === "title" && here !== "title") titlePlace.cameFrom(here);
   headTo((out) => place.view(out), { fade: lessMotion.matches, now: !!options.now });
   if (options.now) arrive();
 }
@@ -190,6 +191,8 @@ function frame(now: number) {
     return;
   }
   if (padPressed() && waitingForPress()) showMenu();
+  // The mat on the room's table gives way as Play's own mat starts to roll out over it.
+  showTableMat(!(play.outro && play.outro.u >= 0.45));
   const time = now / 1000;
   for (const place of allPlaces) place.step(dt, time);
   const { blur, arrived } = stepCamera(dt, scene.fog as Fog);
@@ -203,6 +206,7 @@ const fade = root.querySelector<HTMLElement>(".room-fade")!;
 let built: Promise<void> | null = null;
 function buildShell() {
   buildRoom();
+  layTableMat();
   furnishSettings();
   for (const place of [freePlay, decks, trophies]) place.furnish();
 }
