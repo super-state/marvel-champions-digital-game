@@ -76,12 +76,18 @@ async function choose(page: Page, name: RegExp): Promise<void> {
 }
 
 /** Campaign, Rhino's box, Play: the game dealt on the table. */
-async function dealRhino(page: Page): Promise<void> {
+/**
+ * Campaign, Rhino's box, Play: the game dealt on the table. The room's table is bare until then (no mat lying there to
+ * be rolled out onto), and the mat that rolls out is the chosen one.
+ */
+async function dealRhino(page: Page, mat: string): Promise<void> {
   await choose(page, /^Campaign/);
   await at(page, "campaign");
+  await expect(room(page)).not.toHaveAttribute("data-rolled-mat");
   await page.getByRole("button", { name: "Open Rhino" }).focus();
   await page.keyboard.press("Enter");
   await page.locator("#shelf-play").click({ timeout: 30_000 });
+  await expect(room(page)).toHaveAttribute("data-rolled-mat", mat, { timeout: 30_000 });
   await expect(room(page)).toBeHidden({ timeout: 60_000 });
 }
 
@@ -137,14 +143,12 @@ test.describe("battle table: trophies and mats", () => {
     const rhinoMat = room(page).locator('.trophies-mat[data-mat="rhino"]');
     await rhinoMat.click();
     await expect(rhinoMat).toHaveAttribute("aria-pressed", "true");
-    // It lies on the room's table, the one the next game is dealt on.
-    await expect(room(page)).toHaveAttribute("data-table-mat", "rhino");
 
     // Dealt, the table's mat is Rhino's. (As a friend, Ultron's box is sealed: Klaw hasn't been beaten.)
     await page.keyboard.press("Escape");
     await at(page, "title");
     await expect(room(page).locator(".shelf-picks button", { hasText: "Ultron (Beat Klaw to unlock)" })).toHaveCount(1);
-    await dealRhino(page);
+    await dealRhino(page, "rhino");
     await expect(page.locator("#board-viewport")).toHaveAttribute("data-mat", "rhino", { timeout: 30_000 });
 
     // New game, the default mat chosen at the cabinet, dealt again: the same table draws the new mat.
@@ -159,7 +163,7 @@ test.describe("battle table: trophies and mats", () => {
     await room(page).locator('.trophies-mat[data-mat="night"]').click();
     await page.keyboard.press("Escape");
     await at(page, "title");
-    await dealRhino(page);
+    await dealRhino(page, "night");
     await expect(page.locator("#board-viewport")).toHaveAttribute("data-mat", "night", { timeout: 30_000 });
   });
 

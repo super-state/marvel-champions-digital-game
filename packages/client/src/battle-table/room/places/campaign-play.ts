@@ -130,6 +130,9 @@ let mat: {
 function buildMat(corners: Corners) {
   // The table's own mat print, lying in this room's light like the cloth it is, so it reads as a mat on the wood.
   const { texture: print, reshape, stop } = matPrint(() => {});
+  // The room's table is bare until now (Adam, 2026-11-25: a mat lying there had the game's mat "roll onto itself"):
+  // this, the chosen mat, is the first mat it shows. `#shelf[data-rolled-mat]` says which, for checks.
+  root.dataset.rolledMat = currentMat();
   reshape(corners[0]!.distanceTo(corners[1]!) / corners[0]!.distanceTo(corners[3]!));
   print.anisotropy = anisotropy();
   const geometry = new THREE.BufferGeometry();
@@ -234,5 +237,6 @@ export function resetPlay() {
     (mat.roll.material as THREE.Material).dispose();
     mat = null;
   }
+  delete root.dataset.rolledMat;
   play.outro = null;
 }
