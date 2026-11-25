@@ -19,7 +19,11 @@ import {
   patchByCode,
   patchCard,
   Player,
+  nemesisInPlay,
   scenarioOf,
+  stack,
+  villainPhase,
+  villainPhaseDeals,
   type Id,
   type Setup,
 } from "./deck-audit-driver.js";
@@ -353,79 +357,6 @@ test("01011 Spider-Woman: a confused Rhino turns to scheme and spends the confus
 });
 
 // Her obligation and nemesis set ---------------------------------------------------------------------------------------
-
-/** Stack the encounter deck from anywhere (deck, discard, her set-aside nemesis set), first = next to be drawn. */
-const stack =
-  (...codes: string[]): Setup =>
-  (state) => {
-    const key = engine.activeEncounterDeckId(state);
-    const piles = engine.activeEncounterDeck(state);
-    const p = state.players[0]!;
-    const used: Id[] = [];
-    for (const code of codes) {
-      const id = [...piles.deck, ...piles.discard, ...p.setAside, ...state.encounterSetAside].find(
-        (i) => codeOf(state, i) === code && !used.includes(i),
-      );
-      if (!id) throw Error(`no ${code} to stack`);
-      used.push(id);
-    }
-    const strip = (list: readonly Id[]) => list.filter((i) => !used.includes(i));
-    return {
-      ...state,
-      players: [{ ...p, setAside: strip(p.setAside) }],
-      encounterSetAside: strip(state.encounterSetAside),
-      encounterDecks: {
-        ...state.encounterDecks,
-        [key]: { ...piles, deck: [...used, ...strip(piles.deck)], discard: strip(piles.discard) },
-      },
-    };
-  };
-
-/** Put a card of her set-aside nemesis set into play: a side scheme by the villain (with threat), a minion engaged. */
-const nemesisInPlay =
-  (code: string, threat = 0): Setup =>
-  (state) => {
-    const p = state.players[0]!;
-    const id = p.setAside.find((i) => codeOf(state, i) === code);
-    if (!id) throw Error(`no ${code} set aside`);
-    const scheme = engine.cardOf(state, id)?.type === "side_scheme";
-    return {
-      ...state,
-      players: [
-        { ...p, setAside: p.setAside.filter((i) => i !== id), playArea: scheme ? p.playArea : [...p.playArea, id] },
-      ],
-      villainArea: scheme ? [...state.villainArea, id] : state.villainArea,
-      instances: {
-        ...state.instances,
-        [id]: { ...state.instances[id]!, faceup: true, ...(scheme ? { threat } : { engagedWith: p.playerId }) },
-      },
-    };
-  };
-
-/** Rhino's boost card first (Advance: no boost icons), then the card under test, then inert fillers. */
-const villainPhaseDeals = (...codes: string[]) => stack("01104", ...codes, "01108", "01101");
-
-/**
- * End the turn and play out the villain phase, keeping the questions it asks with their options' words. `answer` picks
- * an option by its words; a question it doesn't pick for (-1) gets the driver's default, and attacks go undefended.
- */
-function villainPhase(p: Player, answer: (labels: string[]) => number = () => -1) {
-  const asked: { prompt: string; source?: string | undefined; labels: string[] }[] = [];
-  p.mark();
-  p.end();
-  p.drive({
-    defend: () => "decline",
-    pick: (choice) => {
-      const labels = choice.options.map((o) => o.label);
-      asked.push({ prompt: choice.prompt, source: choice.sourceTitle, labels });
-      if (choice.defense || choice.discardFromHand || choice.mulligan) return undefined;
-      if (choice.ordered) return choice.options.map((o) => o.id);
-      const at = answer(labels);
-      return at >= 0 ? [choice.options[at]!.id] : undefined;
-    },
-  });
-  return asked;
-}
 
 test("01175 Family Emergency as Carol Danvers: two choices in her words; exhausting removes it from the game", () => {
   const p = scenario(villainPhaseDeals("01175"));
