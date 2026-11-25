@@ -4835,6 +4835,7 @@ async function studioDemo(name: string): Promise<boolean> {
 let studioPlaying = false;
 
 async function studioScene(name: string): Promise<boolean> {
+  if (!table) return false;
   const hero = state.hero.id;
   const villain = state.villain.id;
   const scheme = state.enemyCards.find((card) => card.type === "main_scheme")?.id ?? villain;
