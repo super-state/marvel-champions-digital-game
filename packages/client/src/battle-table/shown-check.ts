@@ -36,6 +36,7 @@ import {
   type InstanceId,
 } from "@mc/engine";
 import { CORE_DEPS } from "@mc/cards";
+import { watchQuestions } from "./question-watch.js";
 import { observeCommits, type BattleBeat, type BattleCard, type BattleSnapshot, type CommittedMove } from "./model.js";
 
 export type ShownClass = "table" | "log" | "silent";
@@ -857,6 +858,8 @@ const BASELINE_DIR = new URL("./shown-baseline/", import.meta.url);
  * as other changes move them, which is not something newly broken.
  */
 export function watchThisFile(options: { name?: string; gate?: boolean } = {}): void {
+  // The same games are watched for a question the table can only show plainly (question-check.ts).
+  watchQuestions(options.name);
   beforeAll(() => observeCommits(watch));
   afterAll(() => {
     observeCommits(null);

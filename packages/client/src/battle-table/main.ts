@@ -1,5 +1,6 @@
 import { statHue } from "../tokens.js";
 import { searchQuestion } from "./search-question.js";
+import { plainQuestion, type PlainQuestion } from "./question-check.js";
 import "./design.css";
 import "./battle.css";
 import { padActive, startController } from "./pad/controller.js";
@@ -473,6 +474,33 @@ function markFound(option: string) {
   const art = button?.querySelector("img");
   const id = (button as HTMLElement | undefined)?.dataset.found;
   foundAt = id && art ? new Map([[id, art.getBoundingClientRect()]]) : new Map();
+}
+
+/**
+ * Dev table only: a question the table shows only plainly (a bar of buttons, cards as names) wears a red tag at the
+ * top of the screen until it is designed, so it is seen while playing rather than slipping by (question-check.ts).
+ */
+let plainTag: HTMLElement | null = null;
+const plainWarned = new Set<string>();
+function tagPlainQuestion(found: PlainQuestion | null) {
+  if (!found) {
+    if (plainTag) plainTag.hidden = true;
+    return;
+  }
+  plainTag ??= document.body.appendChild(make("div", "plain-question"));
+  plainTag.hidden = false;
+  const why = {
+    unhandled: "the table can't show this question",
+    "cards off the table": "cards shown only by name",
+    "cards as name buttons": "cards shown as name buttons",
+    "buttons only": "plain buttons",
+  }[found.why];
+  plainTag.textContent = `No designed screen yet · ${why}`;
+  plainTag.title = `${found.asker}: ${found.key} (question-check.ts)`;
+  if (!plainWarned.has(found.key)) {
+    plainWarned.add(found.key);
+    console.warn(`[question tripwire] ${found.key}, asked by ${found.asker}`);
+  }
 }
 
 /** Paint the turn bar; true when it now asks a question it was not asking before. */
@@ -3960,6 +3988,7 @@ function render() {
   else if (dockFocus && blurWasHidden) requestAnimationFrame(() => dockFocus && (focusBlur.dataset.ready = ""));
   choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
   const asked = paintDock(dockView());
+  if (import.meta.env.DEV) tagPlainQuestion(state.choice ? plainQuestion(state, model.game) : null);
   // A question about the hand sends a ripple through it, so the eye goes where the answer is.
   if (asked && (state.choice?.discardFromHand || state.choice?.mulligan)) table?.waveHand();
   // A question darkens the table around what it is about: the attacker (red), or what an interrupt would change.
