@@ -782,13 +782,16 @@ export interface CommittedMove {
   readonly beats: readonly BattleBeat[];
 }
 
-let commitObserver: ((move: CommittedMove) => void) | null = null;
+/** Hears a move as it is committed (the game still the one before it); what it returns is called once it is in. */
+export type CommitObserver = (move: CommittedMove) => (() => void) | void;
+
+let commitObserver: CommitObserver | null = null;
 
 /**
  * Tests only: hear every committed move (`shown-check.ts`, the "nothing happens without the table showing it" check).
  * Null stops listening. The table itself never sets it.
  */
-export function observeCommits(observer: ((move: CommittedMove) => void) | null): void {
+export function observeCommits(observer: CommitObserver | null): void {
   commitObserver = observer;
 }
 
@@ -1809,9 +1812,16 @@ export class BattleModel {
           });
       }
     }
-    commitObserver?.({ model: this, before: this.#game, after: result.state, events, beats: this.#beats });
+    const committed = commitObserver?.({
+      model: this,
+      before: this.#game,
+      after: result.state,
+      events,
+      beats: this.#beats,
+    });
     this.#events.push(...events);
     this.#setGame(result.state, drawn);
+    committed?.();
   }
 
   /** A card shown faceup a moment as it moves between hidden places (a set-aside card shuffled into a deck). */

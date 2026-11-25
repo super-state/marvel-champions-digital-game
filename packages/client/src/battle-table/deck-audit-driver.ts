@@ -17,7 +17,7 @@ import {
 } from "./model.js";
 
 // Every audit that drives the table through this driver is watched for anything happening unseen (`shown-check.ts`).
-watchThisFile();
+watchThisFile({ gate: true });
 
 export type Setup = (state: engine.GameState) => engine.GameState;
 export type Id = engine.InstanceId;
