@@ -187,8 +187,10 @@
 
 /* ── The title, in the doorway ── */
 .room-title {
+  /* The menu stays over whichever place's view the camera has gone to (the bright boxes, the cabinet): a dark band
+     behind its column keeps it readable over all of them. */
   background:
-    linear-gradient(90deg, #0d0a08e6 0%, #0d0a08a8 30%, #0d0a0800 58%),
+    linear-gradient(90deg, #0d0a08f0 0%, #0d0a08c8 26%, #0d0a0860 42%, #0d0a0800 56%),
     linear-gradient(0deg, #0d0a08cc 0%, #0d0a0800 28%);
 }
 .room-brand {
@@ -286,7 +288,9 @@
   border: 1px solid transparent;
   border-left: 4px solid transparent;
   border-radius: var(--r-md);
-  background: #0d0a0866;
+  background: #0d0a08d0;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   color: var(--text);
   text-align: left;
   cursor: pointer;
@@ -307,7 +311,7 @@
 .room-choice:focus-visible,
 :root[data-input="pad"] .room-choice:focus {
   outline: none;
-  background: linear-gradient(90deg, #f5c35b38 0%, #f5c35b12 100%), #0d0a08b3;
+  background: linear-gradient(90deg, #f5c35b38 0%, #f5c35b12 100%), #0d0a08e0;
   border-color: #f5c35b80;
   border-left-color: var(--gold);
   transform: translateX(6px);
