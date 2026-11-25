@@ -149,10 +149,14 @@ export function furniturePlace(spec: {
     view: (out) => spec.view(out, camera.aspect),
     build() {
       if (!contents) return Promise.resolve();
+      // A build that failed is tried again next time, not kept.
       return (built ??= (async () => {
         scene.add(contentsGroup);
         await contents!.build(contentsGroup, contentsPanel);
-      })());
+      })().catch((error: unknown) => {
+        built = null;
+        throw error;
+      }));
     },
     enter: () => contents?.enter?.(),
     leave: () => contents?.leave?.(),

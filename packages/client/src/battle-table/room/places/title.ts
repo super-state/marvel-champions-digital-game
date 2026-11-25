@@ -99,6 +99,10 @@ function paintMenu() {
       hooks?.go(place.id);
     };
     const leanHere = () => (lean = place);
+    // Pointing at a choice also takes the focus there, so one choice is lit at a time and Enter takes the one pointed at.
+    button.addEventListener("pointerenter", (event) => {
+      if (event.pointerType === "mouse") button.focus({ preventScroll: true });
+    });
     const leanOff = () => {
       if (lean === place) lean = null;
     };
