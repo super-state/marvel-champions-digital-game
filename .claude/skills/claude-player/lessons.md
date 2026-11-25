@@ -105,6 +105,21 @@ cards work in one form only, what each status does and the hand limit.
 - **Spider-Woman's confuse is worth most against a high-SCH villain** (Klaw SCH 2), played while you stay Carol. `seen 1×`
 - **Cosmic Flight: spend it on the big hit.** Passing it on Rhino's 4 cost a game's worth of HP. `seen 1×`
 
+### Free Play: Expert and the two other modules (Spider-Man, Justice) — 0 wins, 3 losses (one left unfinished)
+
+- **Expert Rhino opens on stage II (15 HP, ATK 3) with Breakin' & Takin' already in, so its hazard deals two encounter
+  cards from round 1.** Clearing it in round 1 (Nick Fury 2 + Mockingbird 1) paid off. Stage III is 16 HP, ATK 4,
+  Toughness, and stuns on arrival: don't finish stage II with Spider-Man exhausted and Charge on Rhino. `seen 1×`
+- **Legions of Hydra snowballs threat on two fronts.** Madame Hydra can't be damaged (or targeted by a damage-only
+  card) while Legions of Hydra stands, and every time she schemes or attacks it gains 2; its hazard icon is a second
+  encounter card each phase. Thwart Legions down first; Jessica Jones (+1 THW per side scheme) is the card for it.
+  `seen 1×`
+- **Hydra Soldier is a Guard whose death deals you an encounter card** in your own turn: kill it when you can afford
+  the extra card. `seen 1×`
+- **Biomechanical Upgrades with no minion out just surges** (into Crowd Control, here). `seen 1×`
+- **Sonic Boom and other "spend X or …" cards:** the hook's moves don't show a card's resource icons; pick the
+  resource cards (Energy, Genius, Strength) you can name. The table now refuses picks that don't pay. `seen 1×`
+
 ### Driving the hook
 
 - Pick moves from `moves()` labels only; a look's text starts with the move just made. `seen 1×`
@@ -116,11 +131,19 @@ cards work in one form only, what each status does and the hand limit.
   match on plain ASCII words ("Pay with Web-Shooter"). `seen 1×`
 - An action ability that costs resources (Tenacity, paying Upgraded Drones off) ends with a "Use" move after
   paying, not "Play". `seen 2×`
+- A hidden Browser pane stops drawing frames, so the table hangs on "playing something out". Hold the `?remote` page
+  in a headless Playwright chromium (`--use-angle=d3d11 --enable-gpu`) on your own port instead; it plays at full
+  speed. `seen 1×`
+- A driver loop that answers defend questions must defend: one that declined left Spider-Man on 2 HP (Doomsday
+  Chair game, as in the Klaw game before). `seen 2×`
 - Read the whole hand before a villain phase: two Backflips sat unread while Drones hit for 1 each (Ultron game).
   `seen 1×`
 
 ## Try next
 
+- Expert Rhino: Nick Fury or Daredevil plus Mockingbird to clear Breakin' & Takin' in round 1, then hold both Kicks for
+  stage III, with Webbed Up ready for the stun turn.
+- Legions of Hydra: thwart Legions of Hydra to 0 before touching Madame Hydra; Spider-Tracer on her for the 3 threat.
 - Against Klaw: an opening that keeps Peter safe while Defense Network and the first minion go (Daredevil, Jessica
   Jones), then Spider-Man for good once allies can block; save both Kicks for Klaw (II).
 - Keep the shape (allies, Kicks for stage 2, stay Spider-Man); try Webbed Up on Rhino the turn before stage 1
@@ -132,6 +155,13 @@ cards work in one form only, what each status does and the hand limit.
 
 ## Recent games
 
+- 2026-11-25 · Spider-Man (Justice) vs Rhino, The Doomsday Chair · lost in round 9, knocked out · allies blocked and
+  thwarted well until a driver script declined a defence (10 → 2 HP); stage I fell to basic + Kick, then Rhino (II)
+  attacked three times in one phase. Doomsday Chair and M.O.D.O.K. never came out of the deck.
+- 2026-11-25 · Spider-Man (Justice) vs Rhino, Legions of Hydra · stopped in round 8 (main scheme 3/7, three Hydra
+  minions out) · Madame Hydra kept adding 2 to Legions of Hydra; Jessica Jones' thwarts held it.
+- 2026-11-25 · Spider-Man (Justice) vs Rhino, Expert · lost in round 5, knocked out · cleared Breakin' & Takin' in
+  round 1, but Charge and Ivory Horn made Rhino ATK 7 and Bomb Scare's acceleration ran the main scheme to 5/7.
 - 2026-11-25 · Captain Marvel (Leadership) vs Ultron · lost in round 9, knocked out · Lead from the Front + four
   thwarts took NORAD from 8 to 0, but Ultron's boosts kept adding 4-6 a phase and the Drones wore her down (an
   auto-player declined every defend at the end).
@@ -153,13 +183,3 @@ cards work in one form only, what each status does and the hand limit.
 - 2026-11-24 · Spider-Man (Justice) vs Rhino · **won** in round 8 · Black Cat and Jessica wore stage 1 down while
   both Kicks waited; Webbed Up's stun carried into stage 2; Kick on arrival, Black Cat blocked Stampede, Kick to
   finish. First game in Adam's single "Marvel Champions" Games tab.
-- 2026-11-23 · Spider-Man (Justice) vs Rhino · **won** in round 7 · Mansion from round 1, Mockingbird, Daredevil and
-  Jessica Jones out by stage 2; stayed Spider-Man through stage 2 while the allies took three attacks in one phase,
-  then Daredevil + two Kicks = 18 against 15. (The game before it was lost unfinished in round 4: its Games tab was
-  hidden behind a video, the browser unloaded it, and it came back as a new deal.)
-- 2026-11-23 · Spider-Man (Justice) vs Rhino · lost in round 4, The Break-In! 1 → 7 in one phase · Kicked stage 1
-  away on 6 HP and hid as Peter from the new stage 2 with no minions out; Breakin' & Takin' plus surging treacheries
-  dealt five encounter cards. (First game played in Surf's game mode.)
-- 2026-11-23 · Spider-Man (Justice) vs Rhino · lost in round 10, The Break-In! 3 → 7 in one phase · in round 7 two
-  Kicks (16) were set up against stage 2's 15, but the first fizzled on a Sweeping Swoop stun I hadn't read; Hard to
-  Keep Down then healed Rhino twice. (An earlier start was wiped in round 4 when a merge reloaded the table.)
