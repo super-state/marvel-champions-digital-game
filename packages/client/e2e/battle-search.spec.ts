@@ -53,31 +53,31 @@ test("Masters of Mayhem's search shows the minions as cards to read, pick and co
   await expect(row).toBeVisible();
   const cards = row.locator(".dock-card");
   await expect(cards).toHaveCount(4);
-  await expect(cards.locator(".dock-card-name")).toContainText([
-    "Tiger Shark",
-    "Melter",
-    "Whirlwind",
-    "Radioactive Man",
-  ]);
+  await expect(cards.first()).toHaveAttribute("aria-label", /^Tiger Shark, from /);
+  // Only what to choose, and where it goes: no piles searched, no shuffle (Adam, 2026-11-25).
+  await expect(page.locator("#dock-title")).toHaveText("Choose a Masters of Evil minion");
+  await expect(page.locator("#instruction")).toHaveText("It comes into play engaged with you.");
+  // Full size in a panel in the middle of the table: no second picture on hover.
+  await expect(page.locator("#dock")).toHaveAttribute("data-search", "");
+  expect((await cards.first().boundingBox())!.height).toBeGreaterThan(200);
   await expect(cards.first().locator("img")).toHaveJSProperty("complete", true);
   // The new question puts the keyboard on the first card, and Enter picks it (a controller's A steps the same way).
   await expect(cards.first()).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(cards.first()).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("#dock-primary")).toHaveText("Confirm Tiger Shark");
+  await expect(page.locator("#dock-primary")).toHaveText("Confirm");
 
-  const melter = cards.filter({ hasText: "Melter" });
-  await melter.hover();
-  // Read full size where the pointer is (the hover picture), and in the card panel.
-  await expect(page.locator("#hover-card")).toBeVisible();
-  await expect(page.locator("#hover-card")).toHaveAttribute("alt", "Melter");
+  const melter = page.locator('.dock-card[aria-label^="Melter"]');
+  const confirmBox = await page.locator("#dock-primary").boundingBox();
 
   // Picking another card moves the pick to it.
   const confirm = page.locator("#dock-primary");
   await melter.click();
   await expect(melter).toHaveAttribute("aria-pressed", "true");
   await expect(cards.first()).toHaveAttribute("aria-pressed", "false");
-  await expect(confirm).toHaveText("Confirm Melter");
+  await expect(confirm).toHaveText("Confirm");
+  // The button keeps its size as the pick changes.
+  expect((await confirm.boundingBox())!.width).toBe(confirmBox!.width);
   await confirm.click();
   await expect
     .poll(() => page.evaluate(() => (window as unknown as { __battlePlay: PlayHook }).__battlePlay.look()), {

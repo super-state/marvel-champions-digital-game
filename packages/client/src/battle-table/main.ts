@@ -1,4 +1,5 @@
 import { statHue } from "../tokens.js";
+import { searchQuestion } from "./search-question.js";
 import "./design.css";
 import "./battle.css";
 import { padActive, startController } from "./pad/controller.js";
@@ -431,7 +432,7 @@ function paintDockCards(list: readonly DockCard[]) {
       const picture = make("img", "");
       picture.alt = "";
       picture.draggable = false;
-      button.append(picture, make("span", "dock-card-name"), make("small", "dock-card-from"));
+      button.append(picture);
       button.onpointerenter = (event) => {
         if (event.pointerType !== "touch") hoverCard(card.cardId);
       };
@@ -447,8 +448,6 @@ function paintDockCards(list: readonly DockCard[]) {
     };
     const picture = button.querySelector("img")!;
     if (picture.getAttribute("src") !== card.art) picture.src = card.art;
-    button.querySelector(".dock-card-name")!.textContent = card.name;
-    button.querySelector(".dock-card-from")!.textContent = card.from;
     button.setAttribute("aria-pressed", String(card.pressed));
     button.setAttribute("aria-label", `${card.name}, from ${card.from.toLowerCase()}`);
     button.querySelector(".pick-order")?.remove();
@@ -475,6 +474,8 @@ function paintDock(view: DockView): boolean {
     turnMark.replaceChildren(icon(side));
   }
   dock.toggleAttribute("data-asking", view.asking);
+  // A search lays its cards out full size: the bar opens into a panel in the middle of the table (`.dock[data-search]`).
+  dock.toggleAttribute("data-search", !!view.cards?.length);
   // On a wider screen the bar shows only when there is something to press: a question, Continue, Play again. What
   // the game is doing (the villain phase, an ability resolving) plays out on the table and goes in the log.
   const pressable = [view.primary, view.secondary].some((button) => button && !button.endTurn && !button.disabled);
@@ -847,14 +848,16 @@ function choiceView(choice: Choice): DockView {
   );
   const searchCards = choice.options.filter((option) => searched.has(option.cardId ?? ""));
   const picked = searchCards.length && !multiple ? searchPicked(choice) : null;
-  const pickedName = picked ? nameOf(choice.options.find((option) => option.id === picked)?.cardId) : "";
   const source =
     choice.sourceTitle?.replace(/ · When Revealed$/, "") ??
     (nameOf(state.choiceSource) ||
       // A revealed card standing aside beside the villain while it asks (Sonic Boom) is in none of the zones.
       parkedViews.get(state.choiceSource ?? "")?.name ||
       (state.turn === "enemy" ? "Villain phase" : state.turn === "ending" ? "End of turn" : staged?.name || ""));
-  const heading = /^choose one[.:]?$/i.test(choice.prompt.trim()) ? "Choose one" : choice.prompt;
+  // A search's question says only what to choose, and at most one plain line on where the card goes
+  // (`searchQuestion`; Adam, 2026-11-25).
+  const asked = choice.searched?.length ? searchQuestion(choice.prompt, choice.max) : null;
+  const heading = asked?.title ?? (/^choose one[.:]?$/i.test(choice.prompt.trim()) ? "Choose one" : choice.prompt);
   const eitherOr = /^Spend .+, or .+\?$/.test(choice.prompt);
   const paysSpend = model.spendPays([...choicePicks]) !== false;
   const order = pickOrder(choice, choicePicks);
@@ -870,7 +873,7 @@ function choiceView(choice: Choice): DockView {
       : null,
     title: heading,
     // Guard keeping the villain out of reach says so under the question (`BattleChoice.guard`).
-    help: choice.guard ? (choice.explanation ?? null) : null,
+    help: choice.guard ? (choice.explanation ?? null) : (asked?.help ?? null),
     options: listed.map((option) => ({
       id: option.id,
       label: option.label,
@@ -902,7 +905,8 @@ function choiceView(choice: Choice): DockView {
       !multiple && searchCards.length
         ? {
             // One card from a search: pressing a card picks it (so it can be read first); this takes it.
-            label: picked ? `Confirm ${pickedName}` : "Pick a card",
+            // Always "Confirm": the picked card shows itself, and the button keeps its size (Adam, 2026-11-25).
+            label: "Confirm",
             icon: "check",
             disabled: !picked || discarding,
             attention: !!picked,
@@ -4739,8 +4743,8 @@ function previewSpot(id: string) {
   // The villain guard keeps out of reach, pointed at while picking whom to attack: its big picture would cover the
   // guard minion's "Guard" call-out, which is what the player needs to see (`showGuardHint`).
   if (state.choice?.guard?.blocked.includes(id)) return null;
-  const found = state.choice?.searched?.find((each) => each.id === id);
-  if (found) return searchedSpot(found.card);
+  // A searched card is already full size in the search panel: no second picture.
+  if (state.choice?.searched?.some((each) => each.id === id)) return null;
   const card = folded && !inHand(id) ? cards().find((item) => item.id === id) : undefined;
   const point = card?.art && table ? table.anchors().find((anchor) => anchor.id === id) : undefined;
   if (!card || !point) return null;
@@ -4774,37 +4778,12 @@ function previewSpot(id: string) {
 }
 
 /**
- * A searched card pointed at in the bar's row (`paintDockCards`): full size above or beside its small picture, on
- * every screen size, since the card panel may be folded away or show another card.
- */
-function searchedSpot(card: BattleCard) {
-  const button = dockCards.querySelector<HTMLElement>(`[data-found="${CSS.escape(card.id)}"]`);
-  if (!card.art || !button || dockCards.hidden) return null;
-  const field = playfield.getBoundingClientRect();
-  const box = button.getBoundingClientRect();
-  const around = {
-    left: box.left - field.left,
-    right: box.right - field.left,
-    top: box.top - field.top,
-    bottom: box.bottom - field.top,
-  };
-  // As tall as there is room above the row, up to a table card's preview size.
-  const long = Math.max(200, Math.min(around.top - 16, field.height * 0.62, 460));
-  const size = card.landscape ? { width: long, height: long / 1.4 } : { width: long / 1.4, height: long };
-  const centre = (around.left + around.right) / 2;
-  const spot = {
-    left: Math.round(Math.min(Math.max(8, centre - size.width / 2), field.width - size.width - 8)),
-    top: Math.round(Math.max(8, around.top - size.height - 10)),
-  };
-  return { card, size, spot, side: "right" as const };
-}
-
-/**
  * Float the bar where `dockSpot` says, on every frame the table draws (so it follows the hand as it rises to be paid
  * from) and whenever the bar changes size. Folding away it keeps its spot, so it fades out where it was.
  */
 function placeDock() {
-  if (!roomy.matches || !table) {
+  // The search panel sits in the middle of the table, placed by its own style.
+  if (!roomy.matches || !table || dock.hasAttribute("data-search")) {
     for (const property of ["top", "left", "bottom", "translate"]) dock.style.removeProperty(property);
     return;
   }
