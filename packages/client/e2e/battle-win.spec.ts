@@ -7,11 +7,11 @@ import { expect, test, type Page } from "@playwright/test";
  * Then, as Adam's own table keeps them: the victory screen, the game in this browser's record and in the menu's Record
  * list, and the Rhino mat earned at the trophy cabinet.
  *
- * The heroes are read from `model.ts` itself, so a hero added there is checked here without touching this file.
+ * The campaign moving on to Klaw: Adam's own table has every villain open, so it is checked as a friend sees it
+ * (`?friend=1`, `access.ts`), where the villains lock by this record: Klaw locked before the win, open after it, and
+ * Ultron still waiting for Klaw.
  *
- * Not checked here: the campaign moving on to Klaw. Only the friends' test site locks villains (`test-site/player.ts`,
- * switched on by `VITE_TABLE_VERSION` at build time); on this table every villain is open, so there is nothing to
- * unlock. The site's unlock after a win is covered by `test-site/players.test.ts`.
+ * The heroes are read from `model.ts` itself, so a hero added there is checked here without touching this file.
  */
 
 const HEROES = [
@@ -80,7 +80,14 @@ test.describe("battle table: a driven win for every hero", () => {
         localStorage.removeItem(key);
         localStorage.removeItem("battle-mat");
       }, KEY);
-      await page.goto(`/battle/?hero=${hero.id}&scene=finish&record=1`);
+      // Before the win, as a friend sees it: Klaw waits for Rhino.
+      const room = page.locator("#shelf");
+      const picks = room.locator(".shelf-picks button");
+      await page.goto("/battle/?friend=1");
+      await expect(room).toHaveAttribute("data-place", "title", { timeout: 60_000 });
+      await expect(picks.filter({ hasText: "Klaw (Beat Rhino to unlock)" })).toHaveCount(1);
+
+      await page.goto(`/battle/?hero=${hero.id}&scene=finish&record=1&friend=0`);
       await hook(page);
       await expect(page).toHaveTitle(new RegExp(`^${hero.name} vs\\. Rhino`));
 
@@ -94,7 +101,7 @@ test.describe("battle table: a driven win for every hero", () => {
       await expect(page.locator("#game-over-title")).toHaveText("Victory");
       await expect(page.locator("#game-over-stamp")).toHaveText("Defeated");
       await expect(page.locator("#game-over-kicker")).toHaveText(`${hero.name} vs. Rhino`);
-      await expect(page.locator("#game-over-record")).toHaveText("You against Rhino: 1 won, 0 lost.");
+      await expect(page.locator("#game-over-record")).toHaveText("You against Rhino on Standard: 1 won, 0 lost.");
       // Its achievements, Beat Rhino among them.
       const popup = page.locator("#achievement-popup");
       await expect(popup).toContainText("Beat Rhino");
@@ -122,9 +129,15 @@ test.describe("battle table: a driven win for every hero", () => {
       await expect(sheet.getByRole("row", { name: new RegExp(`^Rhino 1 0`) })).toBeVisible();
       await expect(sheet.getByRole("row", { name: new RegExp(`^${hero.name} 1 0`) })).toBeVisible();
 
+      // The campaign moves on, as a friend sees it: Klaw is open, Ultron still waits for Klaw.
+      await page.goto("/battle/?friend=1&room=title");
+      await expect(room).toHaveAttribute("data-place", "title", { timeout: 60_000 });
+      await expect(picks.filter({ hasText: /^Klaw/ })).toHaveCount(1);
+      await expect(picks.filter({ hasText: "Klaw (Beat Rhino to unlock)" })).toHaveCount(0);
+      await expect(picks.filter({ hasText: "Ultron (Beat Klaw to unlock)" })).toHaveCount(1);
+
       // At the trophy cabinet the Rhino mat is earned; the Klaw mat is still rolled up.
-      await page.goto("/battle/?room=trophies");
-      const room = page.locator("#shelf");
+      await page.goto("/battle/?friend=1&room=trophies");
       await expect(room).toHaveAttribute("data-place", "trophies", { timeout: 60_000 });
       const rhinoMat = room.locator('.trophies-mat[data-mat="rhino"]');
       await expect(rhinoMat).toHaveCount(1);
