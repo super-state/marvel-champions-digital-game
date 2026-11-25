@@ -3081,10 +3081,19 @@ export class BattleTable {
     const permanents = state.inPlay.filter((c) => c.id !== state.staged?.id);
     if (state.staged && !state.stagedOverEnemies && ["ally", "support", "upgrade"].includes(state.staged.type))
       permanents.push(state.staged);
-    const upgrades = permanents.filter(isTuckedUpgrade);
+    // An upgrade on an ally (Inspired) is tucked under that ally, as the hero's are under the hero.
+    const onAlly = (card: TableCard) =>
+      !!card.attachedTo && card.attachedTo !== state.hero.id && permanents.some((host) => host.id === card.attachedTo);
+    const upgrades = permanents.filter((card) => isTuckedUpgrade(card) && !onAlly(card));
+    const allyUpgrades = new Map<string, TableCard[]>();
+    for (const card of permanents)
+      if (isTuckedUpgrade(card) && onAlly(card))
+        allyUpgrades.set(card.attachedTo!, [...(allyUpgrades.get(card.attachedTo!) ?? []), card]);
     const visibleUpgrades = permanents.filter((card) => card.type === "upgrade" && card.showAsFullCard);
     const row = [state.hero, ...visibleUpgrades, ...permanents.filter((card) => card.type !== "upgrade")];
-    const tabs = upgrades.length * TAB;
+    const tabsOf = (card: TableCard) =>
+      (allyUpgrades.get(card.id)?.length ?? 0) * TAB * (card.exhausted ? 1 / HEIGHT : 1);
+    const allyTabs = row.reduce((total, card) => total + tabsOf(card), 0);
     this.#heroShadow.visible = upgrades.some((card) => card.id !== state.staged?.id);
     this.#heroShadow.position.z = -0.006 * upgrades.length - 0.004;
     // Airborne cards can sweep over their neighbours. Space the row for their settled poses.
@@ -3092,10 +3101,16 @@ export class BattleTable {
     const tabScale = state.hero.exhausted ? 1 / HEIGHT : 1;
     // A busy row closes up before its cards shrink.
     const gap = row.length > 5 ? 0.16 : 0.28;
-    const rowWidth = tabs * tabScale + footprints.reduce((total, width) => total + width, 0) + gap * (row.length - 1);
+    const rowWidth =
+      upgrades.length * TAB * tabScale +
+      allyTabs +
+      footprints.reduce((total, width) => total + width, 0) +
+      gap * (row.length - 1);
     const playWidth = Math.min(w * 0.1134, h * 0.133, (w * 0.62) / rowWidth);
-    let left = (w - rowWidth * playWidth) / 2 + tabs * tabScale * playWidth;
-    const centers = footprints.map((width) => {
+    let left = (w - rowWidth * playWidth) / 2 + upgrades.length * TAB * tabScale * playWidth;
+    const centers = footprints.map((width, i) => {
+      // Room on its left for the tabs of anything tucked under it.
+      left += tabsOf(row[i]!) * playWidth;
       const center = left + (width * playWidth) / 2;
       left += (width + gap) * playWidth;
       return center;
@@ -3129,7 +3144,25 @@ export class BattleTable {
         rest(target.position, target.scale, false);
       }
     });
-    row.forEach((card, i) => posePermanent(card, centers[i]!, 0.08 + (i === 0 ? upgrades.length * 0.035 : 0)));
+    row.forEach((card, i) => {
+      const under = i === 0 ? upgrades.length : (allyUpgrades.get(card.id)?.length ?? 0);
+      posePermanent(card, centers[i]!, 0.08 + under * 0.035);
+      const tucked = allyUpgrades.get(card.id);
+      if (!tucked || i === 0) return;
+      const half = (playWidth * (card.exhausted ? HEIGHT : 1)) / 2;
+      const width = playWidth * (card.exhausted ? 1 / HEIGHT : 1);
+      tucked.forEach((upgrade, j) => {
+        const depth = tucked.length - j;
+        const x = centers[i]! - half + width * 0.5 - width * TAB * depth;
+        // Still being paid for: it waits lifted where it will go, as the hero's upgrades do.
+        if (upgrade.id === state.staged?.id) return posePermanent(upgrade, x, 0.05);
+        this.#tucked.set(upgrade.id, { host: card.id, depth });
+        this.#pose(upgrade.id, x, rowY - width * STAGGER * depth, width, 0.045 + j * 0.035, flat);
+        onBoard.add(upgrade.id);
+        const target = this.#pieces.get(upgrade.id)!.target;
+        rest(target.position, target.scale, false);
+      });
+    });
     const hand = state.hand.filter((card) => card.id !== state.staged?.id);
     const handLeft = 14;
     // A phone's hand overlaps more so each card stays big enough to read; a hovered card lifts clear.
@@ -3250,7 +3283,7 @@ export class BattleTable {
           const half = (footprints[i]! * playWidth) / 2;
           return Math.abs(centers[i]! - x) < half + playWidth * 0.62 && Math.abs(rowY - y) < playWidth * 1.45;
         });
-      const rowLeft = first - heroHalf - tabs * tabScale * playWidth;
+      const rowLeft = first - heroHalf - upgrades.length * TAB * tabScale * playWidth;
       const spots: [number, number][] = [
         [first + playWidth * 0.92, rowY - playWidth * 0.48],
         [rowLeft - playWidth * 0.75, rowY - playWidth * 0.48],
