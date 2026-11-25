@@ -12,6 +12,7 @@ import * as THREE from "three";
 import { trophyRoom, type Achievement, type Family, type TrophyRoom } from "../../record/achievements.js";
 import type { FinishedGame } from "../../record/game.js";
 import { chooseMat, currentMat, DEFAULT_MAT, MATS, type MatId } from "../../mats.js";
+import { allOpen } from "../../access.js";
 import { lerp } from "../motion.js";
 import { ROOM, say } from "../room.js";
 import { BOARD, CABINET, corkPrint, paintBoard, trophies } from "./trophies.js";
@@ -234,11 +235,18 @@ function earnedMats(): Set<MatId> {
   return new Set(MATS.filter((m) => m.reward === null || rewards.has(m.reward)).map((m) => m.id));
 }
 
+/** The mats this player can choose: the earned ones, or every one on Adam's own table (`access.ts`). */
+function choosableMats(): Set<MatId> {
+  return allOpen() ? new Set(MATS.map((m) => m.id)) : earnedMats();
+}
+
 function paintMats() {
   if (!matRow) return;
   const earned = earnedMats();
-  // A mat chosen once but not earned now (another player on this device, a record that can't be read) gives way.
-  if (!earned.has(currentMat())) chooseMat(DEFAULT_MAT);
+  const choosable = choosableMats();
+  // A mat chosen once but not open now (another player on this device, a record that can't be read, Adam looking as
+  // a friend) gives way.
+  if (!choosable.has(currentMat())) chooseMat(DEFAULT_MAT);
   const chosen = currentMat();
   matRow.replaceChildren(
     ...MATS.map((mat) => {
@@ -246,7 +254,7 @@ function paintMats() {
       button.type = "button";
       button.className = "trophies-mat";
       button.dataset.mat = mat.id;
-      const has = earned.has(mat.id);
+      const has = choosable.has(mat.id);
       const how = mat.reward ? (room?.achievements.find((a) => a.reward === mat.reward)?.how ?? "") : "";
       const swatch = document.createElement("span");
       swatch.className = "trophies-mat-swatch";
@@ -255,7 +263,13 @@ function paintMats() {
       name.className = "trophies-mat-name";
       name.textContent = mat.name;
       const line = document.createElement("small");
-      line.textContent = has ? (mat.id === chosen ? "On the table" : "Earned") : how.replace(/\.$/, "");
+      line.textContent = has
+        ? mat.id === chosen
+          ? "On the table"
+          : earned.has(mat.id)
+            ? "Earned"
+            : "Open on your table"
+        : how.replace(/\.$/, "");
       button.append(swatch, name, line);
       if (has) {
         button.setAttribute("aria-pressed", String(mat.id === chosen));
@@ -425,10 +439,10 @@ function paintTrophies() {
 
 /** Earned mats in their colours, the chosen one standing out a little; locked ones a dim outline. */
 function paintRolls() {
-  const earned = earnedMats();
+  const choosable = choosableMats();
   const chosen = currentMat();
   for (const [id, roll] of rolls) {
-    const has = earned.has(id);
+    const has = choosable.has(id);
     roll.solid.material = has ? roll.material : unlit;
     roll.outline.visible = !has;
     roll.solid.parent!.position.x = ROOM.HALF_WIDTH - (id === chosen ? 0.8 : 0.55);

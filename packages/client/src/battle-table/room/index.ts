@@ -107,7 +107,7 @@ async function go(id: PlaceId, options: { force?: boolean; now?: boolean } = {})
     say(`${place.label} couldn't be opened. Try again in a moment.`);
     return;
   }
-  if (id === "title") titlePlace.cameFrom(here);
+  if (id === "title" && here !== "title") titlePlace.cameFrom(here);
   headTo((out) => place.view(out), { fade: lessMotion.matches, now: !!options.now });
   if (options.now) arrive();
 }

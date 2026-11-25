@@ -195,5 +195,12 @@ export const titlePlace: Place & { cameFrom(id: PlaceId): void } = {
   },
   cameFrom(id) {
     cameFrom = id;
+    // Back from a place (one the room opened straight onto, `?room=`, included): the menu, not "press any button".
+    if (atPress) {
+      atPress = false;
+      press.hidden = true;
+      menu.hidden = false;
+      panel.dataset.stage = "menu";
+    }
   },
 };
