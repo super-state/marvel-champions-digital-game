@@ -89,7 +89,7 @@ export interface PlainQuestion {
   /** Kind and why, e.g. "orderSpecials: names of cards not on the table". The test's key. */
   key: string;
   kind: string;
-  why: "unhandled" | "cards off the table" | "cards as name buttons" | "buttons only";
+  why: "unhandled" | "cards off the table" | "cards as name buttons" | "buttons only" | "boost card unnamed";
   /** The card asking, as the turn bar names it, for the failure message. */
   asker: string;
 }
@@ -107,6 +107,16 @@ export function plainQuestion(snapshot: BattleSnapshot, game: GameState): PlainQ
   const handling = QUESTION_HANDLING[kind];
   const asker = choice.sourceTitle ?? choice.prompt;
   if (handling === "unhandled") return { key: `${kind}: unhandled`, kind, why: "unhandled", asker };
+  // A boost card asking (Android Efficiency's spend or a Drone): the question names it, which is what keeps the card up
+  // and in focus until it is answered (reveal-hold.ts). Unnamed, the card went to the discard pile while the turn bar
+  // asked "Villain phase" (Adam, 2026-11-25).
+  const source = snapshot.choiceSource;
+  if (
+    source &&
+    !choice.sourceTitle &&
+    Object.values(game.instances).some((instance) => instance?.boostCards.includes(source as never))
+  )
+    return { key: `${kind}: boost card unnamed`, kind, why: "boost card unnamed", asker };
   if (handling === "designed") return null;
   // Asked in a designed way whatever its kind: defending, reaction offers, a search panel, picks in the hand, Guard.
   if (choice.defense || choice.offers?.length || choice.mulligan || choice.discardFromHand || choice.guard) return null;
