@@ -73,8 +73,8 @@ test("build a legal deck by mouse, save it, and open it again", async ({ page })
 
   // A click on a tray line takes a copy out; a click in the binder puts it back.
   const line = page.locator(".tray-line:not([data-fixed])").first();
-  const cardId = await line.getAttribute("data-card");
-  const copies = page.locator(`.tray-line[data-card="${cardId}"] .tray-qty`);
+  const cardId = await line.getAttribute("data-deck-card");
+  const copies = page.locator(`.tray-line[data-deck-card="${cardId}"] .tray-qty`);
   const before = Number((await copies.textContent())!.replace("×", ""));
   await line.click();
   await expect(total(page)).not.toHaveText(built!);
@@ -119,15 +119,15 @@ test("build a legal deck by keyboard alone", async ({ page }) => {
   await expect(page.getByRole("radio", { name: "Protection" })).toHaveAttribute("aria-checked", "true");
   // Protection is the last choice, so Tab steps on to the binder's first card.
   await page.keyboard.press("Tab");
-  const firstCard = await page.locator(".binder-card").first().getAttribute("data-card");
-  await expect(page.locator(":focus")).toHaveAttribute("data-card", firstCard!);
+  const firstCard = await page.locator(".binder-card").first().getAttribute("data-deck-card");
+  await expect(page.locator(":focus")).toHaveAttribute("data-deck-card", firstCard!);
   await enterEveryCard(page, 2);
 
   // Page Down to Basic, and two of each.
   await page.keyboard.press("PageDown");
   await expect(page.getByRole("tab", { name: "Basic" })).toHaveAttribute("aria-selected", "true");
-  const firstBasic = await page.locator(".binder-card").first().getAttribute("data-card");
-  await expect(page.locator(":focus")).toHaveAttribute("data-card", firstBasic!);
+  const firstBasic = await page.locator(".binder-card").first().getAttribute("data-deck-card");
+  await expect(page.locator(":focus")).toHaveAttribute("data-deck-card", firstBasic!);
   await enterEveryCard(page, 2);
   await expect(legality(page)).toHaveText(/Legal deck: 4\d cards\./);
 
@@ -204,9 +204,9 @@ test("a controller: D-pad through the binder, A adds, X takes out, Y full size, 
   // A mouse click first: the pad must still show where its focus is afterwards.
   await page.locator("#binder-help").click();
   await page.locator(".binder-card").first().focus();
-  const first = await page.locator(":focus").getAttribute("data-card");
+  const first = await page.locator(":focus").getAttribute("data-deck-card");
   await press(PAD.right);
-  await expect(page.locator(":focus")).not.toHaveAttribute("data-card", first!);
+  await expect(page.locator(":focus")).not.toHaveAttribute("data-deck-card", first!);
   const ring = await page.locator(":focus").evaluate((el) => getComputedStyle(el).outlineStyle);
   expect(ring).not.toBe("none");
   await press(PAD.a);

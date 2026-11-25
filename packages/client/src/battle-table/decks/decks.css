@@ -3,7 +3,7 @@
  * warm room, gold where you can act. The binder takes the colour of the page it is open at (the aspect, Basic grey, the
  * hero's own gold).
  */
-:root {
+.decks {
   --aggression: #e2453c;
   --justice: #f2c230;
   --leadership: #4d8ff0;
@@ -13,22 +13,22 @@
   --card-ratio: 63 / 88;
 }
 
-html,
-body {
+html:has(body.decks-page),
+body.decks-page {
   margin: 0;
   min-height: 100%;
 }
-body {
+body.decks-page {
   background:
     radial-gradient(ellipse 80% 60% at 50% 0%, #2a1d10 0%, transparent 70%),
     radial-gradient(ellipse 120% 80% at 50% 120%, #0f1820 0%, transparent 60%), var(--bg-0);
   color: var(--text);
   font-family: var(--font-ui);
 }
-[hidden] {
+.decks [hidden] {
   display: none !important;
 }
-.visually-hidden {
+.decks .visually-hidden {
   position: absolute !important;
   width: 1px;
   height: 1px;
@@ -36,34 +36,34 @@ body {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
-button {
+.decks button {
   font: inherit;
   color: inherit;
 }
-:focus-visible,
+.decks :focus-visible,
 /* A pad or the keyboard moves the focus by script, which the browser may not mark :focus-visible after a click. */
-:root[data-input="pad"] :focus,
-:root[data-input="keys"] :focus {
+.decks[data-input="pad"] :focus,
+.decks[data-input="keys"] :focus {
   outline: 3px solid var(--gold);
   outline-offset: 3px;
 }
 
-[data-aspect="aggression"] {
+.decks [data-aspect="aggression"] {
   --tint: var(--aggression);
 }
-[data-aspect="justice"] {
+.decks [data-aspect="justice"] {
   --tint: var(--justice);
 }
-[data-aspect="leadership"] {
+.decks [data-aspect="leadership"] {
   --tint: var(--leadership);
 }
-[data-aspect="protection"] {
+.decks [data-aspect="protection"] {
   --tint: var(--protection);
 }
-[data-aspect="basic"] {
+.decks [data-aspect="basic"] {
   --tint: var(--basic);
 }
-[data-aspect="hero"] {
+.decks [data-aspect="hero"] {
   --tint: var(--own);
 }
 
@@ -73,24 +73,35 @@ button {
   box-sizing: border-box;
   padding: 24px clamp(16px, 3vw, 40px) 0;
 }
+/* Laid over the room at the bench: the whole screen, over the room's picture, which shows dimly behind. */
+.decks[data-mode="room"] {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #0a1018f2, #070c12fa);
+  color: var(--text);
+  font-family: var(--font-ui);
+  text-align: left;
+}
 
 /* ── The heroes ─────────────────────────────────────────────────────────── */
-.decks-head h1 {
+.decks .decks-head h1 {
   margin: 0;
   font: 900 italic clamp(28px, 4vw, 44px) / 1 var(--font-ui);
   letter-spacing: 0.01em;
 }
-.decks-sub {
+.decks .decks-sub {
   margin: 6px 0 22px;
   color: var(--text-2);
 }
-.hero-boxes {
+.decks .hero-boxes {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: clamp(10px, 2vw, 24px);
   max-width: 1100px;
 }
-.hero-box {
+.decks .hero-box {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -108,13 +119,13 @@ button {
     transform 200ms var(--ease-out),
     box-shadow 200ms;
 }
-.hero-box:hover,
-.hero-box:focus-visible,
-:root[data-input="pad"] .hero-box:focus,
-:root[data-input="keys"] .hero-box:focus {
+.decks .hero-box:hover,
+.decks .hero-box:focus-visible,
+.decks[data-input="pad"] .hero-box:focus,
+.decks[data-input="keys"] .hero-box:focus {
   transform: translateY(-4px);
 }
-.hero-box[aria-pressed="true"] {
+.decks .hero-box[aria-pressed="true"] {
   transform: translateY(-10px) scale(1.03);
   border-color: var(--gold);
   box-shadow:
@@ -122,29 +133,29 @@ button {
     0 0 0 2px var(--gold),
     var(--shadow-2);
 }
-.hero-box-lid {
+.decks .hero-box-lid {
   display: block;
   overflow: hidden;
   border-radius: var(--r-sm);
   aspect-ratio: 1 / 1;
   background: var(--bg-2);
 }
-.hero-box-art {
+.decks .hero-box-art {
   display: block;
   width: 100%;
   height: auto;
   /* The hero's portrait sits in the top of the scan. */
   transform: translateY(-4%);
 }
-.hero-box-name {
+.decks .hero-box-name {
   font: 800 16px/1.15 var(--font-ui);
 }
-.hero-box-note {
+.decks .hero-box-note {
   color: var(--text-2);
   font-size: 13px;
 }
 
-.deck-choice {
+.decks .deck-choice {
   max-width: 1100px;
   margin-top: 26px;
   padding: 16px;
@@ -152,16 +163,16 @@ button {
   border-radius: var(--r-lg);
   background: var(--glass);
 }
-.deck-choice h2 {
+.decks .deck-choice h2 {
   margin: 0 0 12px;
   font: 800 18px/1.2 var(--font-ui);
 }
-.deck-choice-list {
+.decks .deck-choice-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 10px;
 }
-.deck-option {
+.decks .deck-option {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -173,13 +184,13 @@ button {
   text-align: left;
   cursor: var(--cursor-hand, pointer);
 }
-.deck-option:hover {
+.decks .deck-option:hover {
   border-color: var(--gold);
 }
-.deck-option strong {
+.decks .deck-option strong {
   font: 800 15px/1.2 var(--font-ui);
 }
-.deck-option small {
+.decks .deck-option small {
   color: var(--text-2);
   font-size: 13px;
 }
@@ -192,20 +203,20 @@ button {
   height: 100dvh;
   padding-top: 12px;
 }
-.decks-builder {
+.decks .decks-builder {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
 }
-.builder-bar {
+.decks .builder-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding-bottom: 10px;
 }
-.deck-name input {
+.decks .deck-name input {
   width: min(320px, 50vw);
   min-height: 44px;
   box-sizing: border-box;
@@ -216,17 +227,17 @@ button {
   color: var(--text);
   font: 800 16px var(--font-ui);
 }
-.builder-actions {
+.decks .builder-actions {
   display: flex;
   gap: 8px;
 }
-.builder-notice {
+.decks .builder-notice {
   flex: 1 1 200px;
   color: var(--text-2);
   font-size: 14px;
 }
 
-.builder-body {
+.decks .builder-body {
   display: grid;
   flex: 1;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
@@ -234,7 +245,7 @@ button {
   min-height: 0;
 }
 
-.binder {
+.decks .binder {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -248,12 +259,12 @@ button {
     var(--shadow-1);
   transition: border-color 200ms;
 }
-.binder-tabs {
+.decks .binder-tabs {
   display: flex;
   gap: 4px;
   padding: 8px 10px 0;
 }
-.binder-tab {
+.decks .binder-tab {
   min-height: 40px;
   padding: 0 16px;
   border: 1px solid var(--line-strong);
@@ -264,21 +275,21 @@ button {
   font-weight: 700;
   cursor: var(--cursor-hand, pointer);
 }
-.binder-tab[aria-selected="true"] {
+.decks .binder-tab[aria-selected="true"] {
   background: color-mix(in srgb, var(--tint) 28%, var(--bg-3));
   border-color: var(--tint);
   color: var(--text);
 }
-.aspect-picker {
+.decks .aspect-picker {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   padding: 10px 12px 0;
 }
-.aspect-picker[hidden] {
+.decks .aspect-picker[hidden] {
   display: none;
 }
-.aspect-chip {
+.decks .aspect-chip {
   min-height: 40px;
   padding: 0 14px;
   border: 2px solid color-mix(in srgb, var(--tint) 60%, #000);
@@ -287,17 +298,17 @@ button {
   font-weight: 800;
   cursor: var(--cursor-hand, pointer);
 }
-.aspect-chip[aria-checked="true"] {
+.decks .aspect-chip[aria-checked="true"] {
   border-color: var(--tint);
   background: var(--tint);
   color: #111;
 }
-.binder-help {
+.decks .binder-help {
   margin: 8px 14px 4px;
   color: var(--text-2);
   font-size: 13px;
 }
-.binder-cards {
+.decks .binder-cards {
   display: grid;
   flex: 1;
   grid-template-columns: repeat(auto-fill, minmax(clamp(110px, 12vw, 160px), 1fr));
@@ -308,10 +319,10 @@ button {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.binder-slot {
+.decks .binder-slot {
   position: relative;
 }
-.binder-card {
+.decks .binder-card {
   position: relative;
   display: block;
   width: 100%;
@@ -326,32 +337,32 @@ button {
     transform 140ms var(--ease-out),
     filter 140ms;
 }
-.binder-card:hover {
+.decks .binder-card:hover {
   transform: translateY(-3px) scale(1.03);
 }
 /* A card that can't go in is dimmed; one already in at its limit stays bright, ringed in gold. */
-.binder-card[aria-disabled="true"]:not([data-fixed]) {
+.decks .binder-card[aria-disabled="true"]:not([data-fixed]) {
   cursor: var(--cursor-arrow, default);
 }
-.binder-card[aria-disabled="true"]:not([data-fixed]):not([data-full]) {
+.decks .binder-card[aria-disabled="true"]:not([data-fixed]):not([data-full]) {
   filter: saturate(0.5) brightness(0.62);
 }
-.binder-card[aria-disabled="true"]:not([data-fixed]):hover {
+.decks .binder-card[aria-disabled="true"]:not([data-fixed]):hover {
   transform: none;
 }
-.binder-card[data-full] {
+.decks .binder-card[data-full] {
   box-shadow:
     0 0 0 2px var(--gold),
     var(--shadow-1);
 }
-.binder-card-art {
+.decks .binder-card-art {
   display: block;
   width: 100%;
   height: 100%;
   border-radius: inherit;
   object-fit: cover;
 }
-.binder-count {
+.decks .binder-count {
   position: absolute;
   right: 6px;
   bottom: 6px;
@@ -364,11 +375,11 @@ button {
   text-align: center;
   box-shadow: var(--shadow-1);
 }
-.binder-count[data-zero] {
+.decks .binder-count[data-zero] {
   background: #0d151ddd;
   color: var(--text-2);
 }
-.zoom-btn {
+.decks .zoom-btn {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -383,18 +394,18 @@ button {
 }
 /* With a mouse the card panel shows a card full size on hover; the button is for touch, and stays out of the way. */
 @media (hover: hover) and (pointer: fine) {
-  .zoom-btn {
+  .decks .zoom-btn {
     opacity: 0;
   }
-  .binder-slot:hover .zoom-btn,
-  .zoom-btn:focus-visible,
-  :root[data-input="pad"] .zoom-btn:focus,
-  :root[data-input="keys"] .zoom-btn:focus {
+  .decks .binder-slot:hover .zoom-btn,
+  .decks .zoom-btn:focus-visible,
+  .decks[data-input="pad"] .zoom-btn:focus,
+  .decks[data-input="keys"] .zoom-btn:focus {
     opacity: 1;
   }
 }
 
-.tray {
+.decks .tray {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -403,67 +414,67 @@ button {
   border-radius: var(--r-lg);
   background: var(--glass);
 }
-.tray-head {
+.decks .tray-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
 }
-.tray-head h2 {
+.decks .tray-head h2 {
   margin: 0;
   font: 800 18px/1.2 var(--font-ui);
 }
-.tray-total {
+.decks .tray-total {
   margin: 0;
   font-weight: 800;
 }
-.tray-total[data-range="ok"] {
+.decks .tray-total[data-range="ok"] {
   color: var(--heal);
 }
-.tray-total[data-range="wrong"] {
+.decks .tray-total[data-range="wrong"] {
   color: var(--threat);
 }
-.tray-chart {
+.decks .tray-chart {
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-rows: auto 1fr;
   gap: 4px 12px;
   margin: 10px 0;
 }
-.chart-title {
+.decks .chart-title {
   margin: 0;
   color: var(--text-3);
   font: 700 11px/1 var(--font-ui);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.cost-bars {
+.decks .cost-bars {
   display: grid;
   grid-column: 1;
   grid-template-columns: repeat(6, 1fr);
   gap: 4px;
   height: 74px;
 }
-.cost-bar {
+.decks .cost-bar {
   display: grid;
   grid-template-rows: auto 1fr auto;
   align-items: end;
   justify-items: center;
   font-size: 11px;
 }
-.cost-bar b {
+.decks .cost-bar b {
   color: var(--text-2);
 }
-.cost-bar i {
+.decks .cost-bar i {
   width: 100%;
   min-height: 2px;
   border-radius: 3px 3px 0 0;
   background: linear-gradient(180deg, var(--gold-hi), var(--gold-lo));
 }
-.cost-bar small {
+.decks .cost-bar small {
   color: var(--text-3);
 }
-.resource-chips {
+.decks .resource-chips {
   display: grid;
   grid-column: 2;
   grid-row: 1 / span 2;
@@ -471,37 +482,37 @@ button {
   align-content: center;
   gap: 6px 10px;
 }
-.resource-chip {
+.decks .resource-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-weight: 800;
 }
-.resource-chip i {
+.decks .resource-chip i {
   width: 12px;
   height: 12px;
   border-radius: 50%;
   background: var(--res);
 }
-.resource-chip[data-resource="physical"] {
+.decks .resource-chip[data-resource="physical"] {
   --res: var(--physical);
 }
-.resource-chip[data-resource="mental"] {
+.decks .resource-chip[data-resource="mental"] {
   --res: var(--mental);
 }
-.resource-chip[data-resource="energy"] {
+.decks .resource-chip[data-resource="energy"] {
   --res: var(--energy);
 }
-.resource-chip[data-resource="wild"] {
+.decks .resource-chip[data-resource="wild"] {
   --res: var(--wild);
 }
-.tray-groups {
+.decks .tray-groups {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.tray-group h3 {
+.decks .tray-group h3 {
   display: flex;
   justify-content: space-between;
   margin: 10px 0 4px;
@@ -510,12 +521,12 @@ button {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.tray-group ul {
+.decks .tray-group ul {
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.tray-line {
+.decks .tray-line {
   display: grid;
   grid-template-columns: 30px 1fr auto;
   align-items: center;
@@ -528,27 +539,27 @@ button {
   text-align: left;
   cursor: var(--cursor-hand, pointer);
 }
-.tray-line:hover {
+.decks .tray-line:hover {
   border-color: var(--line-strong);
   background: var(--bg-3);
 }
-.tray-line[data-fixed] {
+.decks .tray-line[data-fixed] {
   color: var(--text-2);
   cursor: var(--cursor-arrow, default);
 }
-.tray-line[data-fixed] .tray-qty {
+.decks .tray-line[data-fixed] .tray-qty {
   color: var(--gold);
 }
-.tray-qty {
+.decks .tray-qty {
   font-weight: 900;
 }
-.tray-cost {
+.decks .tray-cost {
   min-width: 22px;
   color: var(--text-3);
   text-align: right;
 }
 
-.legality {
+.decks .legality {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -558,7 +569,7 @@ button {
   background: #0a1118f2;
   font-weight: 700;
 }
-.legality-mark {
+.decks .legality-mark {
   display: grid;
   flex: none;
   place-items: center;
@@ -569,20 +580,20 @@ button {
   color: #111;
   font-weight: 900;
 }
-.legality[data-legal="true"] .legality-mark {
+.decks .legality[data-legal="true"] .legality-mark {
   background: var(--heal);
 }
-.legality[data-legal="true"] .legality-text {
+.decks .legality[data-legal="true"] .legality-text {
   color: var(--heal);
 }
-.legality-more {
+.decks .legality-more {
   color: var(--text-3);
   font-weight: 400;
   white-space: nowrap;
 }
 
 /* ── A card full size ───────────────────────────────────────────────────── */
-.card-panel {
+.decks .card-panel {
   position: fixed;
   top: 50%;
   z-index: 20;
@@ -591,13 +602,13 @@ button {
   transform: translateY(-50%);
   filter: drop-shadow(0 18px 40px #000c);
 }
-.card-panel[data-side="right"] {
+.decks .card-panel[data-side="right"] {
   right: 24px;
 }
-.card-panel[data-side="left"] {
+.decks .card-panel[data-side="left"] {
   left: 24px;
 }
-.card-panel img {
+.decks .card-panel img {
   display: block;
   width: 100%;
   border-radius: 4.5%/3.2%;
@@ -605,18 +616,18 @@ button {
   object-fit: cover;
 }
 
-dialog {
+.decks dialog {
   border: 1px solid var(--line-strong);
   border-radius: var(--r-lg);
   background: var(--bg-2);
   color: var(--text);
   box-shadow: var(--shadow-2);
 }
-dialog::backdrop {
+.decks dialog::backdrop {
   background: #000a;
   backdrop-filter: blur(3px);
 }
-.zoom[open] {
+.decks .zoom[open] {
   display: flex;
   flex-wrap: wrap;
   gap: 18px;
@@ -627,34 +638,34 @@ dialog::backdrop {
   box-sizing: border-box;
   overflow: auto;
 }
-.zoom img {
+.decks .zoom img {
   width: min(340px, 100%);
   border-radius: 4.5%/3.2%;
   aspect-ratio: var(--card-ratio);
   object-fit: cover;
 }
-.zoom-side {
+.decks .zoom-side {
   display: flex;
   flex: 1 1 200px;
   flex-direction: column;
   gap: 8px;
 }
-.zoom-side h2 {
+.decks .zoom-side h2 {
   margin: 0;
   font: 800 20px/1.2 var(--font-ui);
 }
-.zoom-side p {
+.decks .zoom-side p {
   margin: 0;
   color: var(--text-2);
 }
-.zoom-actions,
-.confirm-actions {
+.decks .zoom-actions,
+.decks .confirm-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
 }
-.confirm p {
+.decks .confirm p {
   margin: 0 0 6px;
   font-weight: 700;
 }
@@ -665,16 +676,16 @@ dialog::backdrop {
     height: auto;
     min-height: 100dvh;
   }
-  .builder-body {
+  .decks .builder-body {
     grid-template-columns: 1fr;
   }
-  .binder-cards {
+  .decks .binder-cards {
     max-height: 62dvh;
   }
-  .tray-groups {
+  .decks .tray-groups {
     overflow: visible;
   }
-  .legality {
+  .decks .legality {
     position: sticky;
     bottom: 0;
     z-index: 5;
@@ -684,47 +695,47 @@ dialog::backdrop {
   .decks {
     padding-top: 16px;
   }
-  .hero-boxes {
+  .decks .hero-boxes {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .hero-box-name {
+  .decks .hero-box-name {
     font-size: 14px;
   }
-  .zoom-btn {
+  .decks .zoom-btn {
     top: 4px;
     right: 4px;
     width: 30px;
     height: 30px;
     font-size: 13px;
   }
-  .deck-name input {
+  .decks .deck-name input {
     width: 100%;
   }
-  .deck-name {
+  .decks .deck-name {
     flex: 1 1 100%;
     order: 2;
   }
-  .builder-actions {
+  .decks .builder-actions {
     order: 3;
   }
-  .builder-actions .btn {
+  .decks .builder-actions .btn {
     padding: 0 12px;
   }
-  .binder-tab {
+  .decks .binder-tab {
     padding: 0 10px;
     font-size: 13px;
   }
-  .binder-cards {
+  .decks .binder-cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 10px;
     padding: 8px 10px 14px;
   }
-  .legality {
+  .decks .legality {
     font-size: 14px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  * {
+  .decks * {
     transition: none !important;
   }
 }

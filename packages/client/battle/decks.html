@@ -14,85 +14,10 @@
       }
     </style>
   </head>
-  <body>
-    <!-- The deck builder (room plan step 0.9.0; dev server only, not in the build, like studio.html). The room's bench
-         will open it once all four aspects have been checked on the 3D table. -->
-    <main class="decks" id="decks" data-view="heroes">
-      <section class="decks-heroes" id="view-heroes" aria-labelledby="heroes-title">
-        <header class="decks-head">
-          <h1 id="heroes-title">Heroes &amp; Decks</h1>
-          <p class="decks-sub">Pick a hero, then a deck to play or build.</p>
-        </header>
-        <div class="hero-boxes" id="hero-boxes"></div>
-        <section class="deck-choice" id="deck-choice" aria-labelledby="deck-choice-title" hidden>
-          <h2 id="deck-choice-title"></h2>
-          <div class="deck-choice-list" id="deck-choice-list"></div>
-        </section>
-      </section>
-
-      <section class="decks-builder" id="view-builder" aria-label="Deck builder" hidden>
-        <header class="builder-bar">
-          <button type="button" class="btn btn-ghost" id="builder-back" title="Back to the heroes (Esc)">
-            ‹ Heroes
-          </button>
-          <label class="deck-name">
-            <span class="visually-hidden">Deck name</span>
-            <input id="deck-name" type="text" maxlength="40" autocomplete="off" spellcheck="false" />
-          </label>
-          <div class="builder-actions">
-            <button type="button" class="btn btn-primary" id="deck-save">Save</button>
-            <button type="button" class="btn btn-secondary" id="deck-duplicate">Duplicate</button>
-            <button type="button" class="btn btn-ghost" id="deck-delete">Delete</button>
-          </div>
-          <span class="builder-notice" id="builder-notice" role="status" aria-live="polite"></span>
-        </header>
-
-        <div class="builder-body">
-          <section class="binder" id="binder" aria-label="Binder">
-            <div class="binder-tabs" role="tablist" aria-label="Binder pages" id="binder-tabs"></div>
-            <div class="aspect-picker" id="aspect-picker" role="radiogroup" aria-label="Aspect"></div>
-            <p class="binder-help" id="binder-help"></p>
-            <div class="binder-cards" id="binder-cards" role="list"></div>
-          </section>
-
-          <aside class="tray" id="tray" aria-label="Your deck">
-            <div class="tray-head">
-              <h2>Your deck</h2>
-              <p class="tray-total" id="tray-total"></p>
-            </div>
-            <div class="tray-chart" id="tray-chart" aria-label="Costs and resources"></div>
-            <div class="tray-groups" id="tray-groups"></div>
-          </aside>
-        </div>
-
-        <footer class="legality" id="legality" role="status" aria-live="polite"></footer>
-      </section>
-
-      <aside class="card-panel" id="card-panel" aria-hidden="true" hidden>
-        <img id="card-panel-img" alt="" />
-      </aside>
-
-      <dialog class="zoom" id="zoom" aria-labelledby="zoom-name">
-        <img id="zoom-img" alt="" />
-        <div class="zoom-side">
-          <h2 id="zoom-name"></h2>
-          <p id="zoom-count"></p>
-          <div class="zoom-actions">
-            <button type="button" class="btn btn-primary" id="zoom-add">Add a copy</button>
-            <button type="button" class="btn btn-secondary" id="zoom-remove">Take one out</button>
-            <button type="button" class="btn btn-ghost" id="zoom-close">Close</button>
-          </div>
-        </div>
-      </dialog>
-
-      <dialog class="confirm" id="confirm" aria-labelledby="confirm-text">
-        <p id="confirm-text"></p>
-        <div class="confirm-actions">
-          <button type="button" class="btn btn-primary" id="confirm-yes"></button>
-          <button type="button" class="btn btn-secondary" id="confirm-no">Cancel</button>
-        </div>
-      </dialog>
-    </main>
+  <body class="decks-page">
+    <!-- The deck builder (room plan step 0.9.0; dev server only, not in the build, like studio.html): the whole Core
+         Set pool, for checking. The room's bench lays the same screen (deck-screen.ts) over the room. -->
+    <main id="decks"></main>
     <script type="module" src="../src/battle-table/decks/decks-page.ts"></script>
   </body>
 </html>
