@@ -278,6 +278,11 @@ export interface BattleBeat {
   returned?: string[];
   /** Cards discarded from the top of the player's deck (Black Cat). */
   milled?: string[];
+  /**
+   * Cards discarded from the top of the encounter deck, in the order they went (Masterplan's "until a side scheme is
+   * discarded", Secret Rendezvous's "until a minion"): turned up off the encounter deck, then to its discard pile.
+   */
+  encounterMilled?: string[];
   /** Cards from the hand put facedown under a card (Highway Robbery's When Revealed), and that card. */
   tucked?: { ids: string[]; host: string; count: number };
   /** The cards this beat moves out of the hand (`tucked`, `handDiscard`) were picked at random. */
@@ -546,6 +551,25 @@ const SCHEME_ICON_TEXT: Record<string, string> = {
   crisis: "Crisis icon: player cards can't remove threat from the main scheme while this is in play.",
   hazard: "Hazard icon: 1 more encounter card is dealt each villain phase while this is in play.",
 };
+
+/**
+ * The question for an encounter attachment's host, when the engine leaves the pick to the player (two minions tied on
+ * Biomechanical Upgrades' "highest printed hit points"): it names the card and gives its "Attach to" rule.
+ */
+function attachQuestion(
+  state: GameState,
+  attaching: InstanceId,
+  options: NonNullable<GameState["pendingChoice"]>["options"],
+): Pick<BattleChoice, "prompt" | "sourceTitle" | "explanation"> {
+  const card = cardOf(state, attaching);
+  const rule = card ? /\bAttach to [^.]*\./i.exec(plainRulesTextOf(card))?.[0] : undefined;
+  const minions = options.every((o) => o.ref.kind === "card" && cardOf(state, o.ref.instanceId)?.type === "minion");
+  return {
+    prompt: `Choose ${minions ? "a minion" : "a card"} to attach it to`,
+    sourceTitle: faceUpName(state, attaching),
+    ...(rule ? { explanation: rule.trim() } : {}),
+  };
+}
 
 /** The heroes the table can deal, each with their Core Set starter deck. */
 export const HEROES = [
@@ -1245,6 +1269,16 @@ export class BattleModel {
                   ? { millSource: millSourceOf(resolving) }
                   : {}),
           });
+      } else if (e.type === "cardMoved" && e.from.kind === "encounterDeck" && e.to.kind === "encounterDiscard") {
+        const last = this.#beats.at(-1);
+        if (last?.encounterMilled) last.encounterMilled.push(e.instanceId);
+        else
+          this.#beats.push({
+            enemy,
+            text: "Discard from the top of the encounter deck",
+            encounterMilled: [e.instanceId],
+            ...(resolving ? { millSource: millSourceOf(resolving) } : {}),
+          });
       } else if (e.type === "cardMoved" && e.from.kind === "hand" && e.to.kind === "tucked") {
         const host = e.to.hostInstanceId;
         const last = this.#beats.at(-1);
@@ -1569,6 +1603,15 @@ export class BattleModel {
       const names = beat.milled.map((id) => cardOf(result.state, id as InstanceId)?.name ?? "a card").join(", ");
       const by = beat.millSource ? `${name(beat.millSource.card as InstanceId)}: d` : "D";
       beat.text = `${by}iscard ${beat.milled.length === 1 ? "the top card" : `the top ${beat.milled.length} cards`} of your deck (${names})`;
+    }
+    for (const beat of this.#beats) {
+      if (!beat.encounterMilled) continue;
+      const count = beat.encounterMilled.length;
+      const names = beat.encounterMilled
+        .map((id) => cardOf(result.state, id as InstanceId)?.name ?? "a card")
+        .join(", ");
+      const by = beat.millSource ? `${name(beat.millSource.card as InstanceId)}: d` : "D";
+      beat.text = `${by}iscard ${count === 1 ? "the top card" : `the top ${count} cards`} of the encounter deck (${names})`;
     }
     // The attack waits on a question (whether to defend): it is aimed now, as the question asks.
     if (heldAim) {
@@ -1944,6 +1987,11 @@ export class BattleModel {
                     sourceTitle: `${revealed.name} · When Revealed`,
                     explanation: revealed.rulesText.split(/\n+/)[0]!.replace(/^When Revealed\s*:\s*/i, ""),
                   }
+                : {}),
+              // An encounter attachment choosing its host among equals (Biomechanical Upgrades: "Attach to the minion
+              // with the highest printed hit points", two tied): the question names the card and says its rule.
+              ...(!revealed && pending.prompt.kind === "chooseAttachmentTarget"
+                ? attachQuestion(state, pending.prompt.instanceId, pending.options)
                 : {}),
               ...(trigger && pending.prompt.kind === "chooseTriggers"
                 ? {

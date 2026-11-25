@@ -14,7 +14,15 @@
 import { writeFileSync } from "node:fs";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import * as engine from "@mc/engine";
-import { BattleModel, HEROES, type BattleBeat, type BattleSnapshot, type HeroId, type VillainId } from "./model.js";
+import {
+  BattleModel,
+  HEROES,
+  type BattleBeat,
+  type BattleSnapshot,
+  type DealOptions,
+  type HeroId,
+  type VillainId,
+} from "./model.js";
 
 type Snap = BattleSnapshot;
 type Choice = NonNullable<Snap["choice"]>;
@@ -46,6 +54,22 @@ const CAPTAIN_MARVEL_SEEDS: readonly number[] = Array.from(
   (_, i) => 4000 + i * 47,
 );
 const VILLAIN_ROTA: readonly VillainId[] = ["rhino", "klaw", "ultron"];
+
+/**
+ * Free Play's deals: Expert, and the two modules no villain recommends, in turn against each villain and with each hero
+ * (FREE_PLAY_FUZZ_GAMES=250 for the deep run).
+ */
+const FREE_PLAY_SEEDS: readonly number[] = Array.from(
+  { length: Number(process.env.FREE_PLAY_FUZZ_GAMES ?? 10) },
+  (_, i) => 5000 + i * 53,
+);
+const FREE_PLAY_ROTA: readonly Pick<DealOptions, "difficulty" | "modules">[] = [
+  { difficulty: "expert" },
+  { modules: ["legions_of_hydra"] },
+  { modules: ["the_doomsday_chair"] },
+  { difficulty: "expert", modules: ["legions_of_hydra"] },
+  { difficulty: "expert", modules: ["the_doomsday_chair"] },
+];
 
 /**
  * Failure kinds already reported and reproduced below as test.fails(...). The broad loop records these instead of
@@ -244,7 +268,13 @@ interface Gesture {
   run: () => boolean;
 }
 
-function playGame(seed: number, policy: Policy, villain: VillainId = "rhino", hero: HeroId = "spider-man"): GameResult {
+function playGame(
+  seed: number,
+  policy: Policy,
+  villain: VillainId = "rhino",
+  hero: HeroId = "spider-man",
+  encounter: Pick<DealOptions, "difficulty" | "modules"> = {},
+): GameResult {
   const started = performance.now();
   const rnd = mulberry(seed * 7919 + POLICIES.indexOf(policy) * 104729 + 13);
   const chance = (p: number) => rnd() < p;
@@ -302,7 +332,7 @@ function playGame(seed: number, policy: Policy, villain: VillainId = "rhino", he
   };
 
   let firstHand = "";
-  const reset = guard("reset()", () => model.reset({ hero, villain }));
+  const reset = guard("reset()", () => model.reset({ hero, villain, ...encounter }));
   if (!reset.ok) return result("aborted");
   firstHand = model
     .snapshot()
@@ -1003,6 +1033,24 @@ test.each(
   "fuzz game as Captain Marvel against $villain, seed $seed ($policy)",
   ({ seed, policy, villain }) => {
     const game = playGame(seed, policy, villain, "captain-marvel");
+    results.push(game);
+  },
+  60_000,
+);
+
+test.each(
+  FREE_PLAY_SEEDS.map((seed, i) => ({
+    seed,
+    policy: POLICIES[i % POLICIES.length]!,
+    villain: VILLAIN_ROTA[i % VILLAIN_ROTA.length]!,
+    hero: HEROES[Math.floor(i / VILLAIN_ROTA.length) % HEROES.length]!.id,
+    encounter: FREE_PLAY_ROTA[i % FREE_PLAY_ROTA.length]!,
+    label: JSON.stringify(FREE_PLAY_ROTA[i % FREE_PLAY_ROTA.length]),
+  })).filter((g) => !process.env.FUZZ_ONLY || String(g.seed) === process.env.FUZZ_ONLY),
+)(
+  "fuzz game in Free Play ($label) as $hero against $villain, seed $seed ($policy)",
+  ({ seed, policy, villain, hero, encounter }) => {
+    const game = playGame(seed, policy, villain, hero, encounter);
     results.push(game);
   },
   60_000,

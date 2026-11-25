@@ -361,6 +361,16 @@ const SCENES: Record<string, Scene> = {
     mainThreat: 5,
   },
   /**
+   * As klawadvance, with two cards that aren't minions on top of the encounter deck: Secret Rendezvous turns them up
+   * off the encounter deck and onto its discard pile before Melter comes in (Masterplan shows its discards the same way).
+   */
+  klawdiscards: {
+    scenario: "klaw",
+    clearMinions: true,
+    mainThreat: 5,
+    encounterTop: ["01123", "01124", "01132"],
+  },
+  /**
    * Sonic Converter and Solid-Sound Body on Klaw, the resources for one in hand: spend [energy][mental][physical] to take
    * one off, or attack him and take Solid-Sound Body's retaliate 1.
    */
