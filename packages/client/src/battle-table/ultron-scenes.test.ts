@@ -195,6 +195,19 @@ describe("Ultron on the table (seed 7 unless a test says otherwise)", () => {
     expect(drones(view)).toHaveLength(before + 1);
   });
 
+  test("ultronboost: Android Efficiency's boost names itself on its spend question, and the picks wear no cost label", () => {
+    // Adam, 2026-11-25: the question read "Villain phase" and he looked for it on Ultron's own text.
+    const battle = deal("ultronboost");
+    const beats = untilAsked(battle, /^Spend 1 energy, or /);
+    const choice = battle.snapshot().choice!;
+    expect(choice.sourceTitle).toBe("Android Efficiency · Boost");
+    expect(choice.spend).toBe(true);
+    // The boost card turned over during the attack is the one asking: the table holds it up while it does.
+    const boost = beats.find((beat) => beat.reveal?.boost)?.reveal;
+    expect(boost?.name).toBe("Android Efficiency");
+    expect(battle.snapshot().choiceSource).toBe(boost!.id);
+  });
+
   test("ultronattack: choosing threat puts no Drone in from Ultron and the main scheme gains that 1 threat", () => {
     const drone = deal("ultronattack");
     throughVillainPhase(drone, /Drone/);

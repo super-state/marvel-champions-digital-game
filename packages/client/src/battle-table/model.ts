@@ -218,6 +218,12 @@ export interface BattleChoice {
   min: number;
   max: number;
   discardFromHand: boolean;
+  /**
+   * A spend of resources (Ultron's Drones: "Spend 1 energy, or …"): the cards picked pay it, so their plates show no
+   * label of what each card's resource costs to use ("exhaust, remove 1 web counter"; Adam, 2026-11-25: "we don't need
+   * this pill").
+   */
+  spend?: boolean;
   /** The opening-hand mulligan: pick any cards to discard, then draw back up to hand size. */
   mulligan: boolean;
   /**
@@ -1828,6 +1834,17 @@ export class BattleModel {
         ? choiceSourcePanelOf(state, pending, player.playerId, CORE_DEPS)
         : null;
     const revealed = panel?.abilityLine?.startsWith("When Revealed") ? panel : null;
+    // A boost card's ability asking (Android Efficiency's "Choose to either spend a [energy] resource or put the top card
+    // of the deck into play … as a Drone minion"): the question names that card, where it read "Villain phase" and the
+    // player looked for it on Ultron (Adam, 2026-11-25: "what is this resource question being triggered from?").
+    const boostSource = pending && !revealed ? choiceSourceOf(state, pending) : null;
+    // A boost card is one an enemy holds among its boost cards (the source's ability can't always be pinned down: a
+    // card with a When Revealed and a Boost has two).
+    const boosted =
+      boostSource &&
+      Object.values(state.instances).some((instance) => instance?.boostCards.includes(boostSource.instanceId))
+        ? faceUpName(state, boostSource.instanceId)
+        : null;
     const trigger = pending && triggerWindowContextOf(state, pending, player.playerId, CORE_DEPS);
     const choice = this.#targetPick
       ? {
@@ -1873,6 +1890,7 @@ export class BattleModel {
                   explanation: revealed.rulesText.split(/\n+/)[0]!.replace(/^When Revealed\s*:\s*/i, ""),
                 }
               : {}),
+            ...(boosted ? { sourceTitle: `${boosted} · Boost` } : {}),
             // An attack card's enemy pick that guard narrows (Swinging Web Kick with Hydra Mercenary out): why the
             // villain isn't among the answers.
             ...this.#guardFields(this.#attackPickGuard(state, pending)),
@@ -1922,6 +1940,7 @@ export class BattleModel {
             min: pending.minSelections,
             max: pending.maxSelections,
             discardFromHand: pending.prompt.kind === "discardDownToHandSize",
+            ...(pending.prompt.kind === "spendResources" ? { spend: true } : {}),
             mulligan: pending.prompt.kind === "mulligan",
             // A reaction window's picks are ordered too, but the table asks those one card at a time (`offers`).
             ordered:

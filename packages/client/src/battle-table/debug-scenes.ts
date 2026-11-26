@@ -484,6 +484,15 @@ const SCENES: Record<string, Scene> = {
     encounterTop: ["01189", "01188"],
   },
   /**
+   * Spider-Man in hero form: end the turn, and Ultron's attack turns over Android Efficiency as its boost card, which
+   * asks "Spend 1 energy, or put the top card of the deck into play … as a Drone minion?". The card stays up while it asks.
+   */
+  ultronboost: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    encounterTop: ["01144a", "01189", "01188"],
+  },
+  /**
    * Ultron (I) one hit from his second stage with two Drones out: attack him, then end the turn. Ultron (II) puts
    * another Drone into play as he attacks and gets +1 ATK for each.
    */

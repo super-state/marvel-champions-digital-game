@@ -521,6 +521,7 @@ function paintDock(view: DockView): boolean {
       );
   }
   dockTitle.textContent = view.title;
+  dockTitle.toggleAttribute("data-long", isSentence(view.title));
   instruction.textContent = view.help ?? "";
   instruction.hidden = !view.help;
   dockMeter.hidden = !view.meter;
@@ -635,6 +636,14 @@ function optionIcon(label: string): IconName | null {
   if (/tough/.test(text)) return "tough";
   if (/exhaust/.test(text)) return "exhaust";
   return null;
+}
+
+/**
+ * A dock title long enough to be a sentence ("Spend 1 energy, or put the top card of the deck into play facedown…")
+ * is set in the regular weight: bold suits "Pay 2" or "Victory" but is too much over two lines (Adam, 2026-11-25).
+ */
+function isSentence(title: string) {
+  return title.length > 40;
 }
 
 function capitalize(text: string) {
@@ -1808,6 +1817,7 @@ function synchronizeLabels() {
       !handPick &&
       !state.choice?.offers?.length &&
       !state.choice?.defense &&
+      !state.choice?.spend &&
       target.label !== card.name &&
       !target.label.startsWith(card.name + " (")
     )
@@ -3498,6 +3508,7 @@ async function present(beats: Snapshot["beats"]) {
       if (!beat.turned.exhausted) {
         while (beats[index + 1]?.turned?.exhausted === false) turns.push(beats[++index]!.turned!);
         dockTitle.textContent = turns.length > 1 ? `Ready ${plural(turns.length, "card")}` : beat.text;
+        dockTitle.toggleAttribute("data-long", isSentence(dockTitle.textContent));
       }
       table?.turnCards(turns);
       sfx.play("turn");
@@ -3564,6 +3575,16 @@ async function present(beats: Snapshot["beats"]) {
       if (beat.reveal.boost) {
         await showBoost(beat.reveal);
         dropBoostBurst(beat.reveal.id);
+        // A boost that asks a question (Android Efficiency: "spend a [energy] resource or … a Drone minion") stays up,
+        // full size with the table dimmed, like a revealed card asking: the player sees why they are asked (Adam,
+        // 2026-11-25). Answered, it stands by the villain until the attack is over and it goes to the discard pile.
+        if (state.choice?.sourceTitle && state.choiceSource === beat.reveal.id) {
+          parkedViews.set(beat.reveal.id, beat.reveal);
+          heldReveal = beat.reveal;
+          heldEncounter = beat.reveal.id;
+          readingCard = null;
+          continue;
+        }
         table?.retireEncounter(
           beat.reveal.id,
           state.encounterDiscard.find((c) => c.id === beat.reveal!.id),
