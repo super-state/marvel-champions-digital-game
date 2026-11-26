@@ -129,6 +129,20 @@ function paintThreatChip(ctx: CanvasRenderingContext2D, size: number) {
   paintIcon(ctx, "threat", c, c * 1.02, size * 0.56);
 }
 
+/** The five-threat chip's face: the same amber, deeper, with a big 5 that reads from across the table. */
+function paintThreatFive(ctx: CanvasRenderingContext2D, size: number) {
+  const c = size / 2;
+  const enamel = ctx.createRadialGradient(c * 0.8, c * 0.7, c * 0.1, c, c, c);
+  enamel.addColorStop(0, "#ffc561");
+  enamel.addColorStop(0.6, "#f08a14");
+  enamel.addColorStop(1, "#8f4806");
+  ctx.fillStyle = enamel;
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = "#4a2604";
+  paintIcon(ctx, "threat", c, c * 0.42, size * 0.24);
+  number(ctx, "5", c, c * 1.18, size * 0.58, size * 0.6);
+}
+
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, r);
@@ -341,23 +355,32 @@ export class TokenKit {
     return group;
   }
 
-  /** One threat chip: an amber hexagon with the threat symbol, dropped one per threat on a scheme. */
-  threatChip(): THREE.Group {
+  /**
+   * One threat chip: an amber hexagon with the threat symbol, one per threat on a scheme. Five of them are swapped for
+   * one bigger chip with a 5 on it (`value` 5), as the printed game's threat tokens come in ones and fives, so a
+   * scheme's threat reads at a glance (Adam, 2026-11-26).
+   */
+  threatChip(value: 1 | 5 = 1): THREE.Group {
     const group = new THREE.Group();
+    group.userData.value = value;
     const piece = new THREE.Group();
     group.add(piece);
     const body = new THREE.Mesh(this.#chipBody, this.#materials.chip);
     body.position.z = 0.0225;
     body.castShadow = true;
+    const key = value === 5 ? "threat-chip-5" : "threat-chip";
     const face = new THREE.Mesh(
       this.#chipFace,
       this.#faceMaterial(
-        "threat-chip",
-        this.#face("threat-chip", 128, 128, (ctx) => paintThreatChip(ctx, 128)),
+        key,
+        value === 5
+          ? this.#face(key, 192, 192, (ctx) => paintThreatFive(ctx, 192))
+          : this.#face(key, 128, 128, (ctx) => paintThreatChip(ctx, 128)),
       ),
     );
     face.position.z = 0.0455;
     piece.add(body, face);
+    if (value === 5) piece.scale.set(1.55, 1.55, 1.3);
     return group;
   }
 
