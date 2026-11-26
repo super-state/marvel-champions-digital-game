@@ -362,6 +362,7 @@ describe("Ultron on the table (seed 7 unless a test says otherwise)", () => {
       .slice(reveal, end)
       .filter((beat) => beat.hit && beat.text.startsWith("Drone deals"))
       .map((beat) => beat.hit!.source);
+    expect(beats[reveal]!.reveal!.noHeroToAttack).toBeUndefined();
     expect(new Set(attackers).size).toBe(inPlay);
     expect(attackers).toHaveLength(inPlay);
   });
@@ -371,6 +372,10 @@ describe("Ultron on the table (seed 7 unless a test says otherwise)", () => {
     const { beats } = throughVillainPhase(battle, /Drone/);
     const reveal = beats.findIndex((beat) => beat.reveal?.name === "Swarm Attack");
     expect(reveal).toBeGreaterThan(-1);
+    // The table says there is no hero to attack, and what happens instead, in the card's words (Adam, 2026-11-26).
+    expect(beats[reveal]!.reveal!.noHeroToAttack).toEqual({
+      instead: "Put the top card of your deck into play facedown, engaged with you as a Drone minion.",
+    });
     const end = beats.findIndex((beat, i) => i > reveal && (beat.reveal || beat.leftPlay || beat.phase));
     const swarm = beats.slice(reveal, end);
     expect(swarm.filter((beat) => beat.hit)).toEqual([]);

@@ -411,6 +411,12 @@ export interface BattleBeat {
      * alter-ego is not a hero (Rules Reference v1.8, "Hero"), and the table says so rather than flashing for nothing.
      */
     noHeroes?: true;
+    /**
+     * Its When Revealed attacks "your hero" while the player is in alter-ego form (Swarm Attack), so nothing attacks
+     * (Rules Reference v1.8, "Form, Change Form", p. 21). `instead` is the card's own "if no attack was made" half, in
+     * its words, when it has one. The table says so, as it does for a choice with no target (issue 222).
+     */
+    noHeroToAttack?: { instead: string | null };
     /** The card whose ability revealed it, when it was not dealt (Shadow of the Past bringing in Vulture). */
     broughtBy?: string;
     /** It belongs to a nemesis set. */
@@ -540,6 +546,30 @@ export function whenRevealedMissesHeroes(text: string, form: "hero" | "alterEgo"
       text,
     )?.[1] ?? "";
   return /\beach hero\b/i.test(line) && !/\b(?:player|identity|you)\b/i.test(line);
+}
+
+/**
+ * A When Revealed that opens by attacking "your hero" ("Each Drone minion engaged with your hero attacks.") finds no
+ * hero while the player is in alter-ego form: no attack is made, and its "if no attack was made" sentence, if it has
+ * one, is what happens instead (Rules Reference v1.8, "Form, Change Form", p. 21; issue 222).
+ */
+export function whenRevealedAttacksYourHero(
+  text: string,
+  form: "hero" | "alterEgo",
+): { noHeroToAttack: { instead: string | null } } | Record<string, never> {
+  if (form !== "alterEgo" || /When Revealed \((?:Hero|Alter-Ego)\)/i.test(text)) return {};
+  const line =
+    /When Revealed\s*:\s*(.+?)\s*(?=\n|When Revealed\b|(?:Forced )?(?:Interrupt|Response)\b|Boost\b|$)/is.exec(
+      text,
+    )?.[1] ?? "";
+  const [first = "", ...rest] = line.split(/(?<=\.)\s+/);
+  if (!/\b(?:attacks your hero|engaged with your hero attacks)\b/i.test(first)) return {};
+  const otherwise = rest
+    .map((sentence) => /^If\b[^,]*\b(?:no attacks?|not attack)\b[^,]*,\s*(.+)$/i.exec(sentence)?.[1])
+    .find(Boolean);
+  return {
+    noHeroToAttack: { instead: otherwise ? otherwise.charAt(0).toUpperCase() + otherwise.slice(1) : null },
+  };
 }
 
 /**
@@ -1228,6 +1258,9 @@ export class BattleModel {
             e.type === "encounterCardRevealed" &&
             whenRevealedMissesHeroes(plainRulesTextOf(card), result.state.players[0]!.identity.form)
               ? { noHeroes: true as const }
+              : {}),
+            ...(card && e.type === "encounterCardRevealed"
+              ? whenRevealedAttacksYourHero(plainRulesTextOf(card), result.state.players[0]!.identity.form)
               : {}),
           },
         });
