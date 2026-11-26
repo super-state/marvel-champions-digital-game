@@ -25,6 +25,24 @@ export interface PatchNote {
 
 export const PATCH_NOTES: readonly PatchNote[] = [
   {
+    // Not shipped yet: written ahead, so the fixes already on the main line are listed for the next version. Each
+    // change names its pull request or branch, to pick onto the release branch (cut off table-v0.2.9) when 0.2.10 ships.
+    version: "0.2.10",
+    title: "Read before you choose",
+    changes: [
+      {
+        // Issue 210 (a player's report): branch claude/choice-keeps-targets-sharp.
+        kind: "fixed",
+        text: 'When a card makes you choose (Ultron\'s "threat or a Drone"), the cards your choice would change stay in focus, so you can read the threat or health before you pick.',
+      },
+      {
+        // Issue 210, the same branch.
+        kind: "better",
+        text: "Hovering a card in play shows its numbers as they are right now under its picture: the threat on a scheme, the health left, and any counters.",
+      },
+    ],
+  },
+  {
     version: "0.2.9",
     title: "Paying, made plain",
     changes: [
@@ -42,16 +60,6 @@ export const PATCH_NOTES: readonly PatchNote[] = [
         // PR 209.
         kind: "better",
         text: "Resource symbols on the table now look exactly like the ones printed on the cards.",
-      },
-      {
-        // Issue 210 (a player's report): branch claude/choice-keeps-targets-sharp.
-        kind: "fixed",
-        text: 'When a card makes you choose (Ultron\'s "threat or a Drone"), the cards your choice would change stay in focus, so you can read the threat or health before you pick.',
-      },
-      {
-        // Issue 210, the same branch.
-        kind: "better",
-        text: "Hovering a card in play shows its numbers as they are right now under its picture: the threat on a scheme, the health left, and any counters.",
       },
       {
         // PR 199.
