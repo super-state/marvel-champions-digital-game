@@ -133,6 +133,8 @@ let rowFocus: string[] = [];
 let dockFocus: { keep: string | null; also: string[] } | null = null;
 const defenseShade = document.querySelector<SVGSVGElement>("#defense-shade")!;
 const abilityGlow = document.querySelector<SVGSVGElement>("#ability-glow")!;
+const askingGlow = document.querySelector<SVGSVGElement>("#asking-glow")!;
+const askingOutlines = askingGlow.querySelector<SVGGElement>("#asking-outlines")!;
 const abilityOutlines = document.querySelector<SVGGElement>("#ability-outlines")!;
 const defenderCutouts = document.querySelector<SVGGElement>("#defender-cutouts")!;
 const plateCutouts = document.querySelector<SVGGElement>("#plate-cutouts")!;
@@ -2649,6 +2651,10 @@ function placeLabels() {
       reticle.style.width = Math.min(100, Math.max(34, target.width * 0.65)) + "px";
     }
   }
+  // The card asking a dock-only question gets its violet rim while the table blurs around it.
+  const asking = !spot && dockFocus?.keep && onTable(dockFocus.keep) ? dockFocus.keep : null;
+  askingGlow.toggleAttribute("hidden", !asking);
+  updateOutlines(askingOutlines, asking ? [asking] : []);
   if (spot) {
     updateOutlines(
       abilityOutlines,
