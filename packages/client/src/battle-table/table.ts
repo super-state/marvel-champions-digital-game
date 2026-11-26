@@ -71,6 +71,11 @@ export interface TableCards {
   readonly spendMarks?: Readonly<Record<string, string>> | undefined;
   /** Cards are being picked from the hand (a mulligan, the hand limit): a sunk hand rises so every card shows. */
   readonly handPick?: boolean;
+  /**
+   * The hand only needs reading (an either-or's "Choose one": what could pay its spend): a sunk hand rises as for a
+   * pick, but nothing in it is lit, picked or played by it.
+   */
+  readonly handUp?: boolean;
   /** Cards lying facedown under an enemy card, each naming it in `under`. */
   readonly under?: readonly TableCard[];
 }
@@ -2626,7 +2631,7 @@ export class BattleTable {
       // eases up to make room for it.
       bottom: !this.#hand.sunk
         ? h - bar - handCard * 1.48 - 26
-        : this.#state?.paymentSources || this.#state?.handPick
+        : this.#state?.paymentSources || this.#state?.handPick || this.#state?.handUp
           ? h - 12 - handCard * 1.64 - QUESTION_ROOM
           : this.#question
             ? h - handCard * (SUNK_SHOWS + 0.24) - QUESTION_ROOM
@@ -3338,8 +3343,9 @@ export class BattleTable {
       w * 0.245,
     );
     const center = (hand.length - 1) / 2;
-    // Paying or picking from the hand lifts a sunk hand whole, so every card's resource icons and title show.
-    const lifted = sunk && (!!state.paymentSources || !!state.handPick);
+    // Paying or picking from the hand lifts a sunk hand whole, so every card's resource icons and title show; so does
+    // an either-or's "Choose one", where the player reads what could pay (`handUp`).
+    const lifted = sunk && (!!state.paymentSources || !!state.handPick || !!state.handUp);
     const baseline = !sunk
       ? h - bottomMargin - cardWidth * 0.78
       : lifted

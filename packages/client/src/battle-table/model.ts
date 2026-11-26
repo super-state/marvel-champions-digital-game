@@ -236,6 +236,12 @@ export interface BattleChoice {
    * can pay are picked, and Cancel goes back to "choose".
    */
   eitherOr?: "choose" | "spend";
+  /**
+   * An either-or's "choose" step: the cards that could pay its spend, in the order the "spend" step offers them. The
+   * table keeps them (and the whole hand) readable while the player decides, and puts the asking card where the
+   * "spend" step will, so nothing moves between the steps (issue 217: "I can't view the cards in my hand").
+   */
+  payers?: string[];
   /** The opening-hand mulligan: pick any cards to discard, then draw back up to hand size. */
   mulligan: boolean;
   /**
@@ -2509,6 +2515,7 @@ export class BattleModel {
       ...choice,
       prompt: "Choose one",
       eitherOr: "choose",
+      payers: choice.options.flatMap((option) => (option.cardId ? [option.cardId] : [])),
       options: [
         { id: EITHER_SPEND, label: `Spend ${halves[1]}`, cardId: null },
         { id: EITHER_OTHERWISE, label: halves[2]!.charAt(0).toUpperCase() + halves[2]!.slice(1), cardId: null },
