@@ -38,7 +38,12 @@ export const PATCH_NOTES: readonly PatchNote[] = [
       {
         // Issue 210, the same branch.
         kind: "better",
-        text: "Hovering a card in play shows its numbers as they are right now under its picture: the threat on a scheme, the health left, and any counters.",
+        text: "Hovering a card in play shows its numbers as they are right now under its picture, as wide as the card: the threat on a scheme, the health left, and any counters.",
+      },
+      {
+        // Branch claude/asking-card-outline.
+        kind: "better",
+        text: "The card asking you to choose has a violet outline, so you can tell at a glance which card is acting.",
       },
       {
         // PRs 216, 219.
