@@ -183,8 +183,21 @@
   min-height: 52px;
   font-size: 17px;
 }
+/* Back to the shelf, while a box is up close: top left, under the place's name, big and plain. */
+.room-panel .bench-back-bar {
+  position: absolute;
+  top: 96px;
+  left: 24px;
+  pointer-events: auto;
+}
+.bench-back-bar[hidden] {
+  display: none;
+}
 .room-panel .bench-back {
-  align-self: flex-start;
+  min-height: 48px;
+  padding: 0 22px 0 16px;
+  font: 800 17px var(--font-ui);
+  box-shadow: var(--shadow-2);
 }
 .bench-line {
   margin: 2px 0 0;

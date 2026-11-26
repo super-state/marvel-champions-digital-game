@@ -100,23 +100,92 @@ function flatPrint(hero: ShelfHero, lit: boolean): HTMLCanvasElement {
   return cv;
 }
 
-/** A box's front: the hero's card (or, where its scan isn't here, their name on the box's stock). */
+/** Fits a line of text to a width by stepping its size down. */
+function fit(g: CanvasRenderingContext2D, text: string, weight: number, size: number, width: number) {
+  g.font = `${weight} ${size}px 'Public Sans', sans-serif`;
+  while (size > 12 && g.measureText(text).width > width) g.font = `${weight} ${--size}px 'Public Sans', sans-serif`;
+}
+
+const ASPECT_LABEL: Record<string, string> = {
+  justice: "Justice",
+  leadership: "Leadership",
+  aggression: "Aggression",
+  protection: "Protection",
+  pool: "'Pool",
+};
+
+/**
+ * A deck box's front, printed as a box is: a frame in the aspect's colour, "Hero deck" across the lid, the hero's art in
+ * a window (cut from their card), their name on a banner, and the deck along the foot.
+ */
 function frontPrint(hero: ShelfHero, scan: HTMLImageElement | null, lit: boolean): HTMLCanvasElement {
-  const [cv, g] = canvas(200, 280);
-  if (scan) g.drawImage(scan, 0, 0, 200, 280);
-  else {
-    g.fillStyle = "#15110d";
-    g.fillRect(0, 0, 200, 280);
-    g.fillStyle = hex(aspectColour(hero));
-    g.fillRect(0, 0, 200, 26);
-    g.fillStyle = "#f3eee3";
-    g.font = "900 26px 'Public Sans', sans-serif";
-    g.textAlign = "center";
-    g.fillText(hero.name.toUpperCase(), 100, 150, 184);
-    g.fillStyle = "#b7ad9c";
-    g.font = "700 16px 'Public Sans', sans-serif";
-    g.fillText(hero.alterEgo, 100, 180, 184);
+  const [cv, g] = canvas(400, 560);
+  const colour = hex(aspectColour(hero));
+  g.fillStyle = colour;
+  g.fillRect(0, 0, 400, 560);
+  const inner = g.createLinearGradient(0, 0, 0, 560);
+  inner.addColorStop(0, "#1d1712");
+  inner.addColorStop(1, "#0c0906");
+  g.fillStyle = inner;
+  g.fillRect(12, 12, 376, 536);
+  // The lid's band.
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillStyle = colour;
+  g.font = "800 22px 'Public Sans', sans-serif";
+  g.fillText("H E R O   D E C K", 200, 48);
+  g.fillRect(40, 74, 320, 3);
+  // The art window: the top of the hero's card, under its title.
+  g.fillStyle = colour;
+  g.fillRect(22, 92, 356, 252);
+  if (scan) {
+    const w = scan.naturalWidth || scan.width;
+    const h = scan.naturalHeight || scan.height;
+    // Clear of the stat badges down its left side and the title above.
+    g.drawImage(scan, w * 0.2, h * 0.1, w * 0.78, h * 0.39, 26, 96, 348, 244);
+  } else {
+    g.fillStyle = "#2a221a";
+    g.fillRect(26, 96, 348, 244);
   }
+  // The name banner.
+  g.fillStyle = "#f3eee3";
+  const name = hero.name.toUpperCase();
+  fit(g, name, 900, 46, 350);
+  g.fillText(name, 200, 392);
+  if (hero.alterEgo !== hero.name) {
+    g.fillStyle = "#b7ad9c";
+    fit(g, hero.alterEgo, 700, 24, 340);
+    g.fillText(hero.alterEgo, 200, 436);
+  }
+  // The deck, along the foot.
+  g.fillStyle = colour;
+  g.fillRect(12, 488, 376, 60);
+  g.fillStyle = "#120d08";
+  const aspect = ASPECT_LABEL[hero.aspect ?? ""];
+  fit(g, `STARTER DECK${aspect ? ` · ${aspect.toUpperCase()}` : ""}`, 800, 22, 340);
+  g.fillText(`STARTER DECK${aspect ? ` · ${aspect.toUpperCase()}` : ""}`, 200, 519);
+  if (!lit) greyOut(cv);
+  return cv;
+}
+
+/** A deck box's side: the aspect's colour, the hero's name running up it. */
+function sidePrint(hero: ShelfHero, lit: boolean): HTMLCanvasElement {
+  const [cv, g] = canvas(140, 416);
+  g.fillStyle = hex(aspectColour(hero));
+  g.fillRect(0, 0, 140, 416);
+  g.fillStyle = "#120d08";
+  g.fillRect(0, 0, 140, 8);
+  g.fillRect(0, 408, 140, 8);
+  g.save();
+  g.translate(70, 208);
+  g.rotate(-Math.PI / 2);
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillStyle = "#120d08";
+  const name = hero.name.toUpperCase();
+  fit(g, name, 900, 44, 370);
+  g.fillText(name, 0, 2);
+  g.restore();
   if (!lit) greyOut(cv);
   return cv;
 }
@@ -153,9 +222,57 @@ export interface ShelfBox {
   readonly star: THREE.Mesh;
 }
 
+/** How tall a face-out deck box's lid is: it sits over the top of the box, a touch bigger, so its seam shows. */
+const LID = 0.72;
+
+/** A face-out deck box: the box, and its lid over the top, both printed. Every part answers the pointer as box `i`. */
+function deckBox(size: BoxSize, front: THREE.Texture, side: THREE.Texture, lit: boolean, colour: number, i: number) {
+  const shade = lit ? 0xffffff : 0x7a7a7a;
+  const glow = (map: THREE.Texture) =>
+    lit ? { emissive: 0xffffff, emissiveMap: map, emissiveIntensity: 0.22 } : ({} as Record<string, never>);
+  const print = (map: THREE.Texture) =>
+    new THREE.MeshStandardMaterial({ map, roughness: lit ? 0.45 : 0.8, color: shade, ...glow(map) });
+  const stock = new THREE.MeshStandardMaterial({ color: lit ? 0x15110d : 0x1a1816, roughness: 0.7 });
+  const top = new THREE.MeshStandardMaterial({ color: lit ? colour : 0x3b3936, roughness: 0.5 });
+  const sides = print(side);
+  // The box: +x (the front), -x, +y, -y, +z, -z.
+  const body = new THREE.Mesh(new THREE.BoxGeometry(size.deep, size.tall, size.across), [
+    print(front),
+    stock,
+    stock,
+    stock,
+    sides,
+    sides,
+  ]);
+  // The lid shows the top of the same front and sides.
+  const crop = (map: THREE.Texture) => {
+    const part = map.clone();
+    part.repeat.set(1, LID / size.tall);
+    part.offset.set(0, 1 - LID / size.tall);
+    part.needsUpdate = true;
+    return part;
+  };
+  const lidSides = print(crop(side));
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(size.deep + 0.05, LID, size.across + 0.05), [
+    print(crop(front)),
+    stock,
+    top,
+    stock,
+    lidSides,
+    lidSides,
+  ]);
+  lid.position.y = size.tall / 2 - LID / 2 + 0.025;
+  for (const part of [body, lid]) {
+    part.castShadow = part.receiveShadow = true;
+    part.userData.box = i;
+  }
+  return [body, lid];
+}
+
 /**
- * A deck box for every hero in the game, in the catalogue's order, not yet placed. Face-out boxes show the hero's
- * card, so their scans load first. Each box's body carries `userData.box`, its index, for the pointer to find it.
+ * A deck box for every hero in the game, in the catalogue's order, not yet placed. Face-out, each is a printed deck
+ * box with its lid (their art loads first); in the spines look, a box lying flat with its spine out. Each part carries
+ * `userData.box`, its index, for the pointer to find it.
  */
 export async function buildBoxes(group: THREE.Group, look: ShelfLook, lit: ReadonlySet<string>): Promise<ShelfBox[]> {
   const size = boxSize(look);
@@ -163,42 +280,52 @@ export async function buildBoxes(group: THREE.Group, look: ShelfLook, lit: Reado
   const scans = await Promise.all(SHELF_HEROES.map((hero) => (face ? loadImage(scanOf(hero)) : null)));
   const stockLit = new THREE.MeshStandardMaterial({ color: 0x15110d, roughness: 0.7 });
   const stockGrey = new THREE.MeshStandardMaterial({ color: 0x1a1816, roughness: 0.8 });
-  const lidGrey = new THREE.MeshStandardMaterial({ color: 0x3b3936, roughness: 0.6 });
   const starMaterial = new THREE.MeshStandardMaterial({ map: texture(starPrint()), transparent: true, roughness: 0.4 });
-  const starGeometry = new THREE.CircleGeometry(face ? 0.2 : 0.17, 28);
+  const starGeometry = new THREE.CircleGeometry(face ? 0.22 : 0.17, 28);
   return SHELF_HEROES.map((hero, i) => {
     const isLit = lit.has(hero.code);
-    const stock = isLit ? stockLit : stockGrey;
-    const lid = isLit ? new THREE.MeshStandardMaterial({ color: aspectColour(hero), roughness: 0.5 }) : lidGrey;
-    const print = face ? frontPrint(hero, scans[i] ?? null, isLit) : flatPrint(hero, isLit);
-    // The lit boxes glow softly from their own print; the faded ones are dimmed further than the print's own greying.
-    const map = texture(print);
-    const show = new THREE.MeshStandardMaterial({
-      map,
-      roughness: isLit ? 0.5 : 0.8,
-      color: isLit ? 0xffffff : 0x7a7a7a,
-      ...(isLit ? { emissive: 0xffffff, emissiveMap: map, emissiveIntensity: 0.28 } : {}),
-    });
-    // Its showing side faces the room (+x): +x, -x, +y, -y, +z, -z. A flat box's top is its big back, plain stock.
-    const top = face ? lid : stock;
-    const body = new THREE.Mesh(new THREE.BoxGeometry(size.deep, size.tall, size.across), [
-      show,
-      stock,
-      top,
-      stock,
-      stock,
-      stock,
-    ]);
-    body.castShadow = true;
-    body.receiveShadow = true;
-    body.userData.box = i;
-    // The favourite's sticker, on the front's top right corner (the reader's right is -z).
+    let parts: THREE.Mesh[];
+    if (face) {
+      parts = deckBox(
+        size,
+        texture(frontPrint(hero, scans[i] ?? null, isLit)),
+        texture(sidePrint(hero, isLit)),
+        isLit,
+        aspectColour(hero),
+        i,
+      );
+    } else {
+      const stock = isLit ? stockLit : stockGrey;
+      const map = texture(flatPrint(hero, isLit));
+      const show = new THREE.MeshStandardMaterial({
+        map,
+        roughness: isLit ? 0.5 : 0.8,
+        color: isLit ? 0xffffff : 0x7a7a7a,
+        ...(isLit ? { emissive: 0xffffff, emissiveMap: map, emissiveIntensity: 0.28 } : {}),
+      });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(size.deep, size.tall, size.across), [
+        show,
+        stock,
+        stock,
+        stock,
+        stock,
+        stock,
+      ]);
+      body.castShadow = body.receiveShadow = true;
+      body.userData.box = i;
+      parts = [body];
+    }
+    // The favourite's sticker, on the front's top right corner (the reader's right is -z), on the lid face-out.
     const star = new THREE.Mesh(starGeometry, starMaterial);
     star.rotation.y = Math.PI / 2;
-    star.position.set(size.deep / 2 + 0.006, face ? size.tall / 2 - 0.26 : 0, -size.across / 2 + (face ? 0.26 : 0.24));
+    star.position.set(
+      size.deep / 2 + (face ? 0.035 : 0.006),
+      face ? size.tall / 2 - 0.36 : 0,
+      -size.across / 2 + (face ? 0.32 : 0.24),
+    );
     star.visible = false;
     const mesh = new THREE.Group();
-    mesh.add(body, star);
+    mesh.add(...parts, star);
     mesh.visible = false;
     group.add(mesh);
     return { hero, lit: isLit, size, mesh, star };
