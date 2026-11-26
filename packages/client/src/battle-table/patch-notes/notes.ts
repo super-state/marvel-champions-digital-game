@@ -51,9 +51,9 @@ export const PATCH_NOTES: readonly PatchNote[] = [
         text: "When a card asks you to spend resources or take its other choice (Android Efficiency, Sonic Boom), your hand rises clear of the dimming, so you can see what you could pay with before you choose.",
       },
       {
-        // Issue 222 (a player's report): branch claude/swarm-attack-alter-ego.
+        // Issue 222 (a player's report): pick PR 226 (the fix), 229 (its dev scene), 234 and branch claude/swarm-no-hero-short (the "No hero" stamp).
         kind: "fixed",
-        text: "Swarm Attack only sends Drones at your hero. Revealed while you are in alter-ego form, no Drone attacks you: the top card of your deck becomes a new Drone instead, as the card says, and the table tells you there is no hero to attack.",
+        text: 'Swarm Attack only sends Drones at your hero. Revealed while you are in alter-ego form, no Drone attacks you: the top card of your deck becomes a new Drone instead, as the card says, and the card is stamped "No hero".',
       },
       {
         // Issue 210, the same branch.
