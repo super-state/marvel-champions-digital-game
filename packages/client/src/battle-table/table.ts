@@ -2751,7 +2751,7 @@ export class BattleTable {
     // Extra room under each encounter pile for its count, found short once the table was fitted (below).
     if (!this.#roomingPiles) this.#pileRoom = { deck: 0, discard: 0 };
     const pileRoom = this.#pileRoom;
-    const pilesOf = (full: boolean) => {
+    const pilesOf = (full: boolean, out = false) => {
       const width = full ? playerPileWidth : Math.min(w * 0.088, h * 0.088);
       // One pile's height on screen (a card lying on the mat, seen from the camera's angle) plus its label and a gap.
       const label = h * 0.045;
@@ -2760,16 +2760,18 @@ export class BattleTable {
       // grows. Shrunk, the piles once came down so far that the count lay on the player's discard pile (found playing
       // Ultron, 2026-11-24).
       const deckY = Math.min(pileY - step, discardTop - label - pileRoom.deck - width * 0.555);
-      return { width, deckY: discarded ? deckY : h * 0.242, discardY: deckY - step - pileRoom.discard };
+      return { width, deckY: discarded ? deckY : h * 0.242, discardY: deckY - step - pileRoom.discard, out };
     };
     let piles = pilesOf(true);
-    const encounterPile = (y: number, width = piles.width) => {
+    const encounterPile = (y: number, width = piles.width, out = piles.out) => {
       const position = this.#point(pileX, y, 0.025);
       const scale = this.#point(pileX + width, y, 0.025).x - position.x;
-      // Further back the table narrows on screen, so the encounter piles, lined up with the player's discard pile on
-      // screen rather than on the table, stand out into the far corner of the mat: room for the minions' row between
-      // them and the villain (Adam, 2026-11-26: "space where the mat could go left and right"). The table is fitted
-      // card by card, so standing there never shrinks it.
+      // The piles stand in line with the player's discard pile on the table. When the minions' row needs more room
+      // they line up with it on screen instead: further back the table narrows on screen, so that stands them out in
+      // the far corner of the mat, which widens with them (Adam, 2026-11-26: "space where the mat could go left and
+      // right"), and only then: a table with room to spare keeps its usual size ("it should shrink to normal when not
+      // at that capacity"). The table is fitted card by card, so standing out there never shrinks it.
+      if (!out) position.x = base.x;
       return { position, scale };
     };
     const encounterWidth = piles.width;
@@ -2905,9 +2907,9 @@ export class BattleTable {
       // The row ends at the encounter piles' edge, taken as far back as a pile or a second row of minions stands: the
       // further back, the further in that edge comes on screen (Klaw's fourth Master of Evil slid under the discard).
       const rightOf = (of: typeof piles) => {
-        const deck = encounterPile(of.deckY, of.width);
+        const deck = encounterPile(of.deckY, of.width, of.out);
         const depths = [deck.position.z, schemeOrigin.z - minionStep / 2];
-        if (discarded) depths.push(encounterPile(of.discardY, of.width).position.z);
+        if (discarded) depths.push(encounterPile(of.discardY, of.width, of.out).position.z);
         return Math.min(...depths.map((z) => this.#project(deck.position.x - deck.scale * 0.5, 0.025, z).x));
       };
       const footprintOf = (card: TableCard) => {
@@ -2938,7 +2940,7 @@ export class BattleTable {
       const villainLine = this.#point(w * 0.5, h * 0.237, 0).x;
       // How far left the table reaches: as far as the encounter piles reach right.
       const farLeft = (of: typeof piles) => {
-        const deck = encounterPile(of.deckY, of.width);
+        const deck = encounterPile(of.deckY, of.width, of.out);
         return this.#project(2 * villainLine - (deck.position.x + deck.scale * 0.5), schemeElevation, schemeOrigin.z).x;
       };
       const roomPastSchemes = (card: TableCard, of: typeof piles) =>
@@ -2954,11 +2956,15 @@ export class BattleTable {
       const oneRow = (of: typeof piles) => row.length < 2 || fullRoom(row) <= rightOf(of) - left;
       const leftFits = (of: typeof piles) =>
         fullRoom(row.slice(0, -1)) <= rightOf(of) - left && roomPastSchemes(lastOne, of);
-      // The piles stay full size while the minions have a row of their own beside the villain, or one stands past the
-      // schemes; they shrink when that makes room for the row, or when the minions need two rows anyway.
-      const small = pilesOf(false);
-      if (!oneRow(piles) && (oneRow(small) || !leftFits(piles))) {
-        piles = small;
+      // A row too long for the room first stands the piles out in the corner (above), full size; failing that they
+      // shrink in place if that makes room for the row, or stay as they are while one minion stands past the schemes.
+      // Only minions that need two rows anyway have the piles both shrink and stand out, for the most room.
+      if (!oneRow(piles)) {
+        const out = pilesOf(true, true);
+        const small = pilesOf(false);
+        if (oneRow(out)) piles = out;
+        else if (oneRow(small)) piles = small;
+        else if (!leftFits(piles)) piles = pilesOf(false, true);
         encounterGoal = encounterPile(piles.deckY);
       }
       const right = rightOf(piles);
