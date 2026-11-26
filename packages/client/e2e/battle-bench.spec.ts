@@ -3,7 +3,8 @@ import { frames, installPad, PAD, setButton } from "./pad-e2e-helpers.js";
 
 /**
  * Heroes & Decks at the room's bench (`src/battle-table/room/places/decks.ts`): walked to by keyboard and by a fake
- * Xbox pad, a hero picked, a deck built in the deck builder laid over the room and saved, and a game dealt with it.
+ * Xbox pad, a hero picked from their box on the shelf (a see-through button over it), a deck built in the deck builder
+ * laid over the room and saved, and a game dealt with it.
  */
 
 const room = (page: Page) => page.locator("#shelf");
@@ -65,7 +66,10 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     await at(page, "decks");
     const bench = room(page).locator('[data-for="decks"]');
 
-    // A deck box for each hero the table deals; Captain Marvel picked by the arrows.
+    // A deck box (a button over it) for each hero the table deals; Captain Marvel picked by the arrows. Nothing else
+    // on the screen until then: the deck card opens once a hero is picked.
+    await expect(bench.locator(".bench-card")).toBeHidden();
+    await expect(bench.locator(".bench-hero")).toHaveCount(5);
     await expect(bench.locator(".bench-hero").nth(0)).toHaveText("Spider-Man");
     await expect(bench.locator(".bench-hero").nth(1)).toHaveText("Captain Marvel");
     await expect.poll(() => focused(page)).toBe("Spider-Man");
@@ -77,6 +81,7 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
       "true",
     );
     expect(await page.evaluate(() => localStorage.getItem("battle-hero"))).toBe("captain-marvel");
+    await expect(bench.locator(".bench-card")).toBeVisible();
     await expect(bench.locator(".bench-pick")).toHaveText([/Starter deck.*Leadership, as printed/]);
 
     // New deck: the builder over the room, with only the aspects the table has been checked with.
@@ -120,7 +125,11 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
       "Campaign and Free Play deal Captain Marvel with Carol's Justice.",
     );
 
-    // Back to the doorway, Campaign, Rhino, Play: the game is dealt with her deck.
+    // Escape puts the card away (the focus back on her box); again, back to the doorway. Campaign, Rhino, Play: the
+    // game is dealt with her deck.
+    await page.keyboard.press("Escape");
+    await expect(bench.locator(".bench-card")).toBeHidden();
+    await expect.poll(() => focused(page)).toBe("Captain Marvel");
     await page.keyboard.press("Escape");
     await at(page, "title");
     await keyTo(page, "ArrowUp", /^Campaign/);
@@ -150,7 +159,7 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     await page.goto("/battle/?room=decks");
     await at(page, "decks");
     const bench = room(page).locator('[data-for="decks"]');
-    await bench.getByRole("button", { name: "Captain Marvel", exact: true }).click();
+    await bench.getByRole("button", { name: "Captain Marvel", exact: true }).press("Enter");
     const held = bench.locator(".bench-pick", { hasText: "Carol smashes" });
     await expect(held).toHaveAttribute("aria-disabled", "true");
     await expect(held).toContainText("Not legal yet: The deck has 15 cards; a deck must have between 40 and 50");
