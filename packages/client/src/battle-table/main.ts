@@ -622,6 +622,12 @@ function toast(text: string) {
 /** A symbol for a printed option ("Take 2 damage", "Place 1 threat…"), so choices read at a glance. */
 function optionIcon(label: string): IconName | null {
   const text = label.toLowerCase();
+  // An either-or's "Spend 1 energy" half: the resource it asks for (several kinds read as wild).
+  const spend = /^spend (.+)$/.exec(text)?.[1];
+  if (spend) {
+    const kinds = [...new Set(spend.match(/\b(energy|mental|physical)\b/g) ?? [])] as IconName[];
+    return kinds.length === 1 ? kinds[0]! : "wild";
+  }
   if (/\bheal/.test(text)) return "heal";
   // A card off the player's deck becoming a Drone (Ultron, Assault on NORAD, Android Efficiency).
   if (/\bdrone\b/.test(text)) return "deck";
@@ -840,7 +846,9 @@ function choiceView(choice: Choice): DockView {
   // (`searchQuestion`; Adam, 2026-11-25).
   const asked = choice.searched?.length ? searchQuestion(choice.prompt, choice.max) : null;
   const heading = asked?.title ?? (/^choose one[.:]?$/i.test(choice.prompt.trim()) ? "Choose one" : choice.prompt);
-  const eitherOr = /^Spend .+, or .+\?$/.test(choice.prompt);
+  // An either-or spend's second step: the cards that pay it are picked, and Back returns to its two halves.
+  const spending = choice.eitherOr === "spend";
+  const paysSpend = model.spendPays([...choicePicks]) !== false;
   const order = pickOrder(choice, choicePicks);
   return {
     tone,
@@ -900,15 +908,18 @@ function choiceView(choice: Choice): DockView {
               // An either-or payment ("Spend 1 physical, or put the top card of the deck into play ... as a Drone
               // minion?"): the button says which half pressing it now takes, where a bare "Confirm" with nothing picked
               // hid that it means the "or".
-              label: eitherOr ? (n ? `Spend ${n}` : "Don’t spend") : n ? `Confirm ${n}` : "Confirm",
+              label: spending ? "Spend" : n ? `Confirm ${n}` : "Confirm",
               icon: "next",
-              disabled: n < choice.min || discarding,
-              attention: n >= choice.min,
+              // A spend that can be declined goes through only once the picks pay it: picks that don't would be taken
+              // as not spending, with the "or" happening anyway (Sonic Boom exhausting everyone, the cards kept).
+              // Declining is the first step's other button, so nothing picked spends nothing here.
+              disabled: n < choice.min || discarding || !paysSpend || (spending && n === 0),
+              attention: n >= choice.min && paysSpend && (!spending || n > 0),
               onClick: confirmChoice,
             }
           : null,
     secondary: choice.canCancel
-      ? { label: "Cancel", onClick: cancel }
+      ? { label: spending ? "Back" : "Cancel", onClick: cancel }
       : !multiple && choice.canSkip
         ? { label: choice.decline ?? "Skip", onClick: () => choose(null) }
         : null,
@@ -3882,7 +3893,8 @@ function render() {
     targets:
       state.choice &&
       !defenseQuestion &&
-      state.choice.max <= 1 &&
+      // An either-or's spend step too: the boost card asking steps aside so every card that can pay shows.
+      (state.choice.max <= 1 || state.choice.eitherOr === "spend") &&
       !state.choice.discardFromHand &&
       !state.choice.mulligan
         ? state.choice.options.flatMap((item) => (item.cardId && onTable(item.cardId) ? [item.cardId] : []))
@@ -3937,14 +3949,17 @@ function render() {
     );
   // A question answered only with the dock's buttons softens the table behind it, so it reads as the game waiting on
   // that answer; the card asking it (or the encounter card held up with it) stays sharp.
-  const waiting = waitsOnDock(state.choice, (id) => onTable(id) && actionCard !== id);
+  // An either-or's spend step lets the whole table be reached: the hand and the cards in play that can pay.
+  const waiting =
+    state.choice?.eitherOr !== "spend" && waitsOnDock(state.choice, (id) => onTable(id) && actionCard !== id);
   dockFocus =
     waiting && !revealFocus && !rowFocus.length ? { keep: heldEncounter ?? state.choiceSource ?? null } : null;
   const blurWasHidden = focusBlur.hidden;
   focusBlur.hidden = !handQuestion() && !revealFocus && !dockFocus && !rowFocus.length;
   if (focusBlur.hidden) delete focusBlur.dataset.ready;
   else if (dockFocus && blurWasHidden) requestAnimationFrame(() => dockFocus && (focusBlur.dataset.ready = ""));
-  choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length;
+  choiceShade.hidden =
+    !state.choice || !heldEncounter || !!state.choice.offers?.length || state.choice.eitherOr === "spend";
   const asked = paintDock(dockView());
   // A question about the hand sends a ripple through it, so the eye goes where the answer is.
   if (asked && (state.choice?.discardFromHand || state.choice?.mulligan)) table?.waveHand();
