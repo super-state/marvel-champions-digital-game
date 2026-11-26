@@ -66,10 +66,11 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     await at(page, "decks");
     const bench = room(page).locator('[data-for="decks"]');
 
-    // A deck box (a button over it) for each hero the table deals; Captain Marvel picked by the arrows. Nothing else
-    // on the screen until then: the deck card opens once a hero is picked.
+    // A deck box (a button over it) for every hero in the game, in release order, the five the table deals among
+    // them; Captain Marvel picked by the arrows. The deck card opens once a hero is picked.
     await expect(bench.locator(".bench-card")).toBeHidden();
-    await expect(bench.locator(".bench-hero")).toHaveCount(5);
+    expect(await bench.locator(".bench-hero").count()).toBeGreaterThan(60);
+    await expect(bench.locator('.bench-hero[data-bench^="hero:"]')).toHaveCount(5);
     await expect(bench.locator(".bench-hero").nth(0)).toHaveText("Spider-Man");
     await expect(bench.locator(".bench-hero").nth(1)).toHaveText("Captain Marvel");
     await expect.poll(() => focused(page)).toBe("Spider-Man");
@@ -159,6 +160,12 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     await page.goto("/battle/?room=decks");
     await at(page, "decks");
     const bench = room(page).locator('[data-for="decks"]');
+    // The search finds her by her alter ego; A–Z puts Adam Warlock (not on the table yet) first.
+    await bench.getByRole("searchbox", { name: "Find a hero" }).fill("carol");
+    await expect(bench.locator(".bench-hero:not([hidden])")).toHaveText(["Captain Marvel"]);
+    await bench.getByRole("searchbox", { name: "Find a hero" }).fill("");
+    await bench.getByRole("button", { name: "A–Z" }).click();
+    await expect(bench.locator(".bench-hero").first()).toHaveAccessibleName("Adam Warlock, not on the table yet");
     await bench.getByRole("button", { name: "Captain Marvel", exact: true }).press("Enter");
     const held = bench.locator(".bench-pick", { hasText: "Carol smashes" });
     await expect(held).toHaveAttribute("aria-disabled", "true");

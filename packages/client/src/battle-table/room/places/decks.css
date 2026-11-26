@@ -69,8 +69,96 @@
 }
 .bench-card-head {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 10px;
+}
+.bench-card-words {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 10px;
+}
+.room-panel .bench-star {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-2);
+}
+.room-panel .bench-star[aria-pressed="true"] {
+  color: var(--gold);
+}
+/* The bar over the shelf: find a hero, the sorts, Playable only. */
+.room-panel .bench-tools {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: var(--glass);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-1);
+  pointer-events: auto;
+  white-space: nowrap;
+}
+.bench-search {
+  width: 170px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font: 600 14px var(--font-ui);
+}
+.bench-search::placeholder {
+  color: var(--text-2);
+}
+.bench-sorts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.bench-label {
+  margin: 0 4px 0 6px;
+  color: var(--text-2);
+  font: 700 12px var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.room-panel .bench-chip {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  font: 700 13px var(--font-ui);
+  cursor: pointer;
+}
+.room-panel .bench-chip:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+.room-panel .bench-chip[aria-pressed="true"] {
+  color: #1a1206;
+  background: var(--gold);
+}
+.room-panel .bench-toggle {
+  border-color: var(--line-strong);
+}
+.bench-search:focus-visible,
+.room-panel .bench-chip:focus-visible,
+:root[data-input="pad"] .bench-tools :focus {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
 }
 .bench-who {
   margin: 0;
