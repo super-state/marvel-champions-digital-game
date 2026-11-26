@@ -458,8 +458,9 @@ export function startController(hooks: ControllerHooks): PadController {
   function backOut(): void {
     const dialog = openDialog();
     if (dialog) {
-      // The game-over screen can't be put away; the menu closes as Resume.
+      // The game-over screen can't be put away; the menu closes as Resume; a dialog may name its own (`data-pad-back`).
       if (dialog.id === "menu") clickIfReachable(document.getElementById("menu-resume"));
+      else clickIfReachable(dialog.querySelector<HTMLElement>("[data-pad-back]"));
       return;
     }
     // Closing a card's actions hands the focus back to the card (unpinning a card first leaves them open).
