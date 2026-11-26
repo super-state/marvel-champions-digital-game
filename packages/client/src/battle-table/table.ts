@@ -8,6 +8,7 @@ import { revealAside, type ScreenBox } from "./dock-spot.js";
 import { TokenKit, placeTokens } from "./tokens3d.js";
 import { tuckPath } from "./tuck-path.js";
 import { arrangeHand, moveInHand, rememberOrder, slotAt, type HandSlots } from "./hand-order.js";
+import { type CardRect, type FlightPose, type FlightRoute, flightPose, routeFlight } from "./flight-route.js";
 
 export interface TableCard {
   readonly attachedTo?: string | null;
@@ -116,7 +117,12 @@ interface Flight {
   hidden?: boolean;
   /** Part of that entrance, start to landing. */
   entrance?: boolean;
+  /** Its way round, over or under the cards held up in the air, worked out as it sets off (`flight-route.ts`). */
+  route?: FlightRoute;
 }
+
+/** The flights that go round the cards held up in the air rather than through them. */
+const ROUTED: ReadonlySet<Flight["kind"]> = new Set(["place", "play", "return", "discard"]);
 
 interface Spark {
   sprite: THREE.Sprite;
@@ -3752,6 +3758,45 @@ export class BattleTable {
     root.scale.setScalar(THREE.MathUtils.lerp(from.scale, target.scale, sweep));
   }
 
+  /** The usual path of a flight of `kind` from `from` to `target` (as the flight loop moves it), moment by moment. */
+  #flightPath(kind: Flight["kind"], from: Pose, target: Pose): (progress: number) => FlightPose {
+    return (progress) => {
+      const t = kind === "place" ? Math.min(1, progress / PLACE_CONTACT) ** 2 : easeOutCubic(progress);
+      const position = new THREE.Vector3().lerpVectors(from.position, target.position, t);
+      if (kind === "place") {
+        const settle = Math.max(0, (progress - PLACE_CONTACT) / (1 - PLACE_CONTACT));
+        position.y += Math.sin(Math.PI * settle) * (1 - settle) * 0.24;
+      } else position.y += Math.sin(Math.PI * progress) * (kind === "discard" ? 0.95 : 0.46);
+      return {
+        position,
+        pitch: THREE.MathUtils.lerp(from.pitch, target.pitch, t),
+        roll: THREE.MathUtils.lerp(from.roll, target.roll, t),
+        scale: THREE.MathUtils.lerp(from.scale, target.scale, t),
+      };
+    };
+  }
+
+  /** The way for `piece`, setting off from `from`, round the cards held up in the air (`flight-route.ts`). */
+  #routeFor(id: string, piece: Piece, from: Pose, kind: Flight["kind"]): FlightRoute {
+    const held: CardRect[] = [];
+    const ids = new Set([...this.#parked, this.#revealing, ...this.#deckReveal.map((card) => card.id)]);
+    for (const other of ids) {
+      const holder = other && other !== id ? this.#pieces.get(other) : undefined;
+      if (!holder?.root.visible) continue;
+      held.push({ ...holder.target, ...this.#halfSize(holder) });
+    }
+    const { halfWidth, halfHeight } = this.#halfSize(piece);
+    return routeFlight(this.#flightPath(kind, from, piece.target), piece.target, halfWidth, halfHeight, held);
+  }
+
+  /** Half a card's face across and up, before its scale (a landscape card is the wider). */
+  #halfSize(piece: Piece): { halfWidth: number; halfHeight: number } {
+    const geometry = piece.face.geometry;
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    const box = geometry.boundingBox!;
+    return { halfWidth: (box.max.x - box.min.x) / 2, halfHeight: (box.max.y - box.min.y) / 2 };
+  }
+
   /**
    * Where a card going under `hostId` lands on the mat before sliding in: just past one of the host's edges, the left
    * first, then in front, the right and behind, whichever has no other card lying there. Landing just left of a minion
@@ -4188,6 +4233,18 @@ export class BattleTable {
         piece.root.rotation.x = THREE.MathUtils.lerp(from.pitch, piece.target.pitch, t);
         piece.root.rotation.z = THREE.MathUtils.lerp(from.roll, piece.target.roll, exhausting ? progress ** 2 : t);
         piece.root.scale.setScalar(THREE.MathUtils.lerp(from.scale, piece.target.scale, t));
+        // Round, over or under any card held up in the air, never through it: Vulture, brought in by Shadow of the
+        // Past, flew straight through it where it stood aside beside Rhino (Adam, 2026-11-24).
+        if (ROUTED.has(kind) && !hostPiece && !this.#reduced.matches) {
+          flight.route ??= this.#routeFor(id, piece, from, kind);
+          if (flight.route.kind !== "straight") {
+            const pose = flightPose(flight.route, this.#flightPath(kind, from, piece.target), piece.target, progress);
+            piece.root.position.copy(pose.position);
+            piece.root.rotation.x = pose.pitch;
+            piece.root.rotation.z = pose.roll;
+            piece.root.scale.setScalar(pose.scale);
+          }
+        }
         if (!this.#reduced.matches) {
           if (kind === "play" || kind === "return" || kind === "discard") {
             // Swing into the direction of travel, levelling out as the card arrives.
@@ -4564,6 +4621,10 @@ export class BattleTable {
     for (const id of this.#frontIds) {
       const piece = this.#pieces.get(id);
       if (this.#tucked.has(id)) continue;
+      // Nor one going round a card held up in the air (Vulture, in under Shadow of the Past): drawn over everything,
+      // it was painted over that card all the way in and then dropped behind it.
+      const route = this.#flights.get(id)?.route;
+      if (route && route.kind !== "straight") continue;
       if (!ids.has(id) && piece && piece.root.position.distanceTo(piece.target.position) > piece.target.scale * 0.01)
         ids.add(id);
     }
