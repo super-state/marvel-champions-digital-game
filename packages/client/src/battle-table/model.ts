@@ -1436,7 +1436,9 @@ export class BattleModel {
             ? `Tough prevents ${e.amount} damage to ${name(e.targetInstanceId)}`
             : e.type === "damagePlaced"
               ? `${e.amount} damage lands on ${name(e.targetInstanceId)}`
-              : sourceId
+              : // An ally's own damage for attacking or thwarting (consequential damage) is taken, not dealt to itself:
+                // "Daredevil takes 1 damage", where "Daredevil deals 1 damage to Daredevil" read as a mistake.
+                sourceId && sourceId !== e.targetInstanceId
                 ? `${name(sourceId)} deals ${e.amount} damage to ${name(e.targetInstanceId)}`
                 : `${name(e.targetInstanceId)} takes ${e.amount} damage`,
           hit: {
@@ -1897,7 +1899,16 @@ export class BattleModel {
       pending && state.step.phase === "villain"
         ? choiceSourcePanelOf(state, pending, player.playerId, CORE_DEPS)
         : null;
-    const revealed = panel?.abilityLine?.startsWith("When Revealed") ? panel : null;
+    // The revealed encounter card asking: its ability named on the panel, or, where the panel can't name it (Electric
+    // Whip Attack's "Choose one"), a card just revealed (not a boost card) whose text opens with When Revealed.
+    const revealed =
+      panel?.abilityLine?.startsWith("When Revealed") ||
+      (panel &&
+        !panel.abilityLine &&
+        /^When Revealed\s*:/i.test(panel.rulesText) &&
+        state.players[0]!.dealtEncounter.includes(panel.instanceId))
+        ? panel
+        : null;
     // A boost card's ability asking (Android Efficiency's "Choose to either spend a [energy] resource or put the top card
     // of the deck into play … as a Drone minion"): the question names that card, where it read "Villain phase" and the
     // player looked for it on Ultron (Adam, 2026-11-25: "what is this resource question being triggered from?").
@@ -1951,6 +1962,13 @@ export class BattleModel {
             ...(revealed
               ? {
                   sourceTitle: `${revealed.name} · When Revealed`,
+                  // "Choose a target" for "choose and discard an upgrade you control" (Electric Whip Attack): which.
+                  ...(promptTitleOf(pending.prompt, CORE_DEPS, pending, state) === "Choose a target" &&
+                  /\bchoose and discard an? (upgrade|support)\b/i.exec(revealed.rulesText)
+                    ? {
+                        prompt: `Choose ${/\bchoose and discard an? (upgrade|support)\b/i.exec(revealed.rulesText)![1] === "upgrade" ? "an upgrade" : "a support"} to discard`,
+                      }
+                    : {}),
                   explanation: revealed.rulesText.split(/\n+/)[0]!.replace(/^When Revealed\s*:\s*/i, ""),
                 }
               : {}),
@@ -2187,7 +2205,14 @@ export class BattleModel {
       if (ability?.trigger.kind !== "action") return [];
       const short = abilityShortLabelOf(this.#game, action.instanceId, action.abilityId, CORE_DEPS) ?? "Use ability";
       // The exhaust icon on the button already says "exhaust", so the label is only what the action does.
-      const does = short.replace(/^exhaust\b[^→·:]*[→·:]\s*/i, "");
+      let does = short.replace(/^exhaust\b[^→·:]*[→·:]\s*/i, "");
+      // A short label that is only the cost ("Exhaust", Aunt May's): what the card's text says it does after the
+      // arrow ("heal 4 damage from Peter Parker").
+      if (/^exhaust\b/i.test(does)) {
+        const card = cardOf(this.#game, action.instanceId);
+        const effect = card ? /→\s*([^.(]+)/.exec(plainRulesTextOf(card))?.[1]?.trim() : undefined;
+        if (effect) does = effect;
+      }
       const label =
         action.abilityId === "01092.helicarrier-action"
           ? "Next card costs 1 less"
