@@ -195,6 +195,8 @@ const undoCorner = element("undo-corner");
 const endTurnButton = element<HTMLButtonElement>("end-turn");
 const railToggle = element<HTMLButtonElement>("rail-toggle");
 const hoverPicture = element<HTMLImageElement>("hover-card");
+const hoverPeek = element("hover-peek");
+const previewFlip = element<HTMLButtonElement>("preview-flip");
 const hoverNotes = element("hover-notes");
 const previewNotes = element("preview-notes");
 
@@ -1276,11 +1278,49 @@ function showPreview(card: Pick<BattleCard, "art" | "name" | "landscape">, expan
   preview.hidden = false;
 }
 
+// ── The identity card's other side ─────────────────────────────────────────────────────────────────────────────────
+// Before flipping, the player can read the side they would flip to (hand size, recover, abilities): hovering "Change to
+// …" in the hero's menu shows it in place of the side up, and "Other side" in the card panel turns the picture over at
+// any time (player report #215, Adam's pick, 2026-11-26). Both show the printed card, never a summary of it.
+/** The pointer (or focus) is on the hero's "Change to …" button: the pictures show the side it would flip to. */
+let peekingOtherSide = false;
+/** The card panel's picture is turned over by its "Other side" button, for this card. */
+let panelFlippedFor: string | null = null;
+/** The card the card panel shows. */
+let inspectedId: string | null = null;
+/** The picture to show for `card`: its other side while that is asked for, else the side up. */
+function sideToShow(card: { id: string; art: string; reverseArt?: string | null }, flipped: boolean): string {
+  return flipped && card.reverseArt ? card.reverseArt : card.art;
+}
+function peekOtherSide(on: boolean) {
+  if (peekingOtherSide === on) return;
+  peekingOtherSide = on;
+  placeHoverCard();
+  inspect(inspectedId ?? state.hero.id);
+}
+previewFlip.addEventListener("click", () => {
+  panelFlippedFor = panelFlippedFor === inspectedId ? null : inspectedId;
+  inspect(inspectedId);
+});
+
 function inspect(id: string | null) {
   if (discarding) return;
   const card = cards().find((item) => item.id === id) ?? state.payment?.subject;
   if (card?.art) {
-    showPreview(card, card.id === hoveredCard || card.id === heldEncounter);
+    if (card.id !== inspectedId) panelFlippedFor = null;
+    inspectedId = card.id;
+    const reverse = "reverseArt" in card ? card.reverseArt : null;
+    const flipped = !!reverse && (panelFlippedFor === card.id || (peekingOtherSide && card.id === state.hero.id));
+    previewFlip.hidden = !reverse;
+    if (reverse) {
+      previewFlip.replaceChildren(icon("flip"), make("span", "", flipped ? "This side" : "Other side"));
+      previewFlip.setAttribute("aria-pressed", String(flipped));
+      previewFlip.title = flipped ? "Show the side that's up" : "Show the other side of this card";
+    }
+    showPreview(
+      { ...card, art: sideToShow({ ...card, reverseArt: reverse }, flipped) },
+      card.id === hoveredCard || card.id === heldEncounter,
+    );
     // The notes follow the picture: the panel keeps showing the last card read after the pointer leaves it.
     paintStatusNotes(previewNotes, "markers" in card ? card : null);
   } else if (!heldEncounter) setWidePreview(false);
@@ -4358,6 +4398,11 @@ function renderCardMenu() {
     } else if (action.kind === "changeForm") {
       button.classList.add("form-action");
       button.replaceChildren(icon("flip"), make("span", "", action.label));
+      // Pointing at it shows the side it would flip to, so the player can read it before deciding.
+      button.addEventListener("pointerenter", () => peekOtherSide(true));
+      button.addEventListener("pointerleave", () => peekOtherSide(false));
+      button.addEventListener("focus", () => peekOtherSide(true));
+      button.addEventListener("blur", () => peekOtherSide(false));
     } else if ("exhausts" in action && action.exhausts) {
       const description = `${card?.name ?? "Card"}: ${action.label}`;
       button.setAttribute("aria-label", description);
@@ -4376,6 +4421,7 @@ function renderCardMenu() {
 /** Use one of a card's own actions: a button in its menu, or a controller's LT / RT combo (`controller.ts`). */
 function useCardAction(id: string, kind: string) {
   menuCard = null;
+  peekOtherSide(false);
   act(() => {
     if (id === state.hero.id) model.heroAction(kind);
     else model.fieldAction(id, kind);
@@ -5095,13 +5141,21 @@ function placeHoverCard() {
   if (!preview) {
     hoverPicture.hidden = true;
     hoverNotes.hidden = true;
+    hoverPeek.hidden = true;
     return;
   }
   const { card, size, spot } = preview;
+  const peeking = peekingOtherSide && card.id === state.hero.id && !!card.reverseArt;
+  const art = sideToShow(card, peeking);
   // A short fade as it appears or moves on to another card, so it never snaps in from nowhere.
   const shown = pictureOf(hoverPicture.getAttribute("src") ?? "");
-  const fresh = hoverPicture.hidden || shown !== card.art;
-  if (shown !== card.art) hoverPicture.src = card.art!;
+  const fresh = hoverPicture.hidden || shown !== art;
+  if (shown !== art) hoverPicture.src = art;
+  hoverPeek.hidden = !peeking;
+  if (peeking) {
+    hoverPeek.style.left = `${Math.round(spot.left + size.width / 2)}px`;
+    hoverPeek.style.top = `${Math.round(spot.top)}px`;
+  }
   hoverPicture.alt = card.name;
   if (fresh && !reducedMotion())
     hoverPicture.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
