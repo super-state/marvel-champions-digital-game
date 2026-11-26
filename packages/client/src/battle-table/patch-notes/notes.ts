@@ -80,6 +80,11 @@ export const PATCH_NOTES: readonly PatchNote[] = [
         kind: "fixed",
         text: "The bar asking you to choose no longer leaves extra space after the last choice: it sits evenly in its frame.",
       },
+      {
+        // PR 228.
+        kind: "better",
+        text: "No more empty strip of mat above the villain at the start of a game: until the first encounter card is discarded, the table sits higher and the cards are bigger.",
+      },
     ],
   },
   {
