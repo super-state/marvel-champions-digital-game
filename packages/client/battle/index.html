@@ -148,6 +148,7 @@
           </figure>
           <!-- A hovered table card, full size beside it, while the card panel is folded away. -->
           <img id="hover-card" class="hover-card" alt="" hidden />
+          <div id="hover-peek" class="peek-tag" hidden>Other side</div>
           <!-- What each status on the hovered card does, under its picture (main.ts paintStatusNotes). -->
           <div id="hover-notes" class="status-notes hover-notes" hidden></div>
           <!-- Wider screens: Undo (moved here from the bar) keeps the bottom-left corner, End Turn the bottom-right. -->
@@ -166,6 +167,7 @@
         <aside class="rail" aria-label="Card preview and log" id="rail">
           <div id="reader" class="reader">
             <img id="preview" alt="" hidden />
+            <button type="button" id="preview-flip" class="btn btn-ghost preview-flip" hidden></button>
             <div id="preview-notes" class="status-notes" hidden></div>
           </div>
           <section class="log" aria-labelledby="log-title">

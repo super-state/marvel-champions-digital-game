@@ -456,6 +456,50 @@ button:focus-visible {
   justify-items: center;
   background: radial-gradient(ellipse at center, #2c3a44 0%, #1a252e 52%, var(--bg-2) 82%);
 }
+/* "Other side" on an identity card's picture in the card panel (main.ts inspect). */
+.reader {
+  position: relative;
+}
+.preview-flip {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  background: rgb(10 17 24 / 82%);
+  backdrop-filter: blur(4px);
+  font: 700 13px/1 var(--font-ui);
+}
+.preview-flip[aria-pressed="true"] {
+  border-color: var(--hero);
+  color: var(--hero);
+}
+.preview-flip .icon {
+  width: 16px;
+  height: 16px;
+}
+/* Over the hovered identity's picture while it shows the side "Change to …" would flip to. */
+.peek-tag {
+  position: absolute;
+  z-index: 10;
+  translate: -50% -60%;
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  background: var(--hero-deep);
+  color: var(--hero);
+  box-shadow:
+    0 0 0 1.5px var(--hero),
+    0 4px 12px #000b;
+  font: 800 12px/1 var(--font-ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
 .reader img {
   display: block;
   width: 100%;
