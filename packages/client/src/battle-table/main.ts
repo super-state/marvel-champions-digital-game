@@ -4072,11 +4072,20 @@ function render() {
   if (defenderSelection !== state.choice) defenderSelection = null;
   const defenseQuestion = !!defenseQuestionDecline(state.choice);
   const defending = !!state.choice?.defense && !defenseQuestion;
-  if (state.choice?.defense) aimTarget = state.choice!.defense!.target;
-  else if (!state.choice) aimTarget = null;
+  // While the answer's beats are still to play, the next question's target waits for them: its attack's own aim beat
+  // puts it up, and `present` renders again at the end. Set here, Ultron's "threat or a Drone" put the Drone's coming
+  // attack on Spider-Man while the threat was still landing, two seconds before the Drone attacked (Adam, 2026-11-26:
+  // "there was a target over Spider-Man but I'm not sure why").
+  const beatsToPlay = presented !== state.beats && state.beats.length > 0;
+  if (!beatsToPlay) {
+    if (state.choice?.defense) aimTarget = state.choice!.defense!.target;
+    else if (!state.choice) aimTarget = null;
+  }
   // Asked to defend, the target is on the hero being attacked; it flies there from the attacker if it wasn't showing.
   const aimWasHidden = reticle.hidden;
-  reticle.hidden = !aimTarget || (!state.choice?.defense && !state.choice?.options.some((o) => o.cardId === aimTarget));
+  if (!beatsToPlay)
+    reticle.hidden =
+      !aimTarget || (!state.choice?.defense && !state.choice?.options.some((o) => o.cardId === aimTarget));
   setSpot(null);
   if (presented !== state.beats) {
     presented = state.beats;

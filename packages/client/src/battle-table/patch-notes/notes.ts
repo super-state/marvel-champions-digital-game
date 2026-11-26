@@ -46,6 +46,11 @@ export const PATCH_NOTES: readonly PatchNote[] = [
         text: "The card asking you to choose has a violet outline, so you can tell at a glance which card is acting.",
       },
       {
+        // Branch claude/no-stray-reticle.
+        kind: "fixed",
+        text: "An attack's target no longer appears on your hero early: it shows when the attacker actually turns on you, not while threat from the step before is still landing.",
+      },
+      {
         // PRs 216, 219.
         kind: "better",
         text: "A crowded table uses its space: with a lot of minions out, the encounter deck moves out to the corner of the mat, and the minions stand much bigger and closer together.",
