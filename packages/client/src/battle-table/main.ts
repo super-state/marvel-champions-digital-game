@@ -1506,7 +1506,9 @@ function selectChoice(id: string) {
     choose(id);
     return;
   }
-  if (!choicePicks.delete(id) && choicePicks.size < choice.max) choicePicks.add(id);
+  // A spend already paid takes no more cards: they would be spent for nothing (Sonic Boom took six for three).
+  if (!choicePicks.delete(id) && choicePicks.size < choice.max && !model.spendCovered([...choicePicks]))
+    choicePicks.add(id);
   render();
 }
 
