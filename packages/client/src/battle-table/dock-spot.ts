@@ -64,24 +64,41 @@ export interface ScreenBox {
  * Where a revealed card held up in the middle stands while its own question asks the player to pick cards on the
  * table (Caught Off Guard: "Discard an upgrade or support you control"). Adam, 2026-11-21: the card stood over the very
  * supports it asked for, so nothing could be seen or picked. Covering none of them, it stays put. Otherwise it slides
- * sideways, level with where it was, just far enough to clear them, into the gap between them (or beside them) nearest
- * to it; with no gap wide enough (a phone) it takes the widest one and shrinks to fit, never below half its size.
- * `x` is its new centre, `scale` its size against the old.
+ * up, halfway between just clear of them and half off the top of the screen (Adam, 2026-11-26: sliding left "just
+ * seems a bit odd"). Where even that still covers one (a pick high on the table), it slides sideways, level with where
+ * it was, into the gap between them (or beside them) nearest to it; with no gap wide enough (a phone) it takes the
+ * widest one and shrinks to fit, never below half its size. `x` and `y` are its new centre, `scale` its size against
+ * the old.
  */
 export function revealAside(
   card: ScreenBox,
   picks: readonly ScreenBox[],
   width: number,
   margin = 16,
-): { x: number; scale: number } {
+): { x: number; y: number; scale: number } {
   const x = (card.left + card.right) / 2;
+  const y = (card.top + card.bottom) / 2;
   const size = card.right - card.left;
+  const half = (card.bottom - card.top) / 2;
+  const column = picks.filter((pick) => pick.right > card.left - margin && pick.left < card.right + margin);
+  const clearAt = (at: number) =>
+    column.every((pick) => pick.bottom < at - half - margin || pick.top > at + half + margin);
+  if (clearAt(y)) return { x, y, scale: 1 };
+  // Up: halfway between just clear of the picks below it and half off the top of the screen (its centre on the top
+  // edge). Adam, 2026-11-26: "a bit higher" than just clear, then of half off "it's gone too high ... go halfway between".
+  const lifts = column
+    .map((pick) => pick.top - margin - half - 0.5)
+    .filter((at) => at < y && at >= 0 && clearAt(at))
+    .sort((a, b) => b - a);
+  const halfway = lifts.length ? Math.round(lifts[0]! / 2) : 0;
+  if (clearAt(halfway)) return { x, y: halfway, scale: 1 };
+  if (lifts.length) return { x, y: Math.round(lifts[0]!), scale: 1 };
   // Only the picks level with the card can be covered by it, wherever it slides.
   const level = picks
     .filter((pick) => pick.bottom > card.top - margin && pick.top < card.bottom + margin)
     .map((pick) => [pick.left - margin, pick.right + margin] as const)
     .sort((a, b) => a[0] - b[0]);
-  if (!level.some(([left, right]) => right > card.left && left < card.right)) return { x, scale: 1 };
+  if (!level.some(([left, right]) => right > card.left && left < card.right)) return { x, y, scale: 1 };
   // The open stretches of the screen between and beside the picks.
   const gaps: [number, number][] = [];
   let from = margin;
@@ -94,8 +111,8 @@ export function revealAside(
     .filter(([start, end]) => end - start >= size)
     .map(([start, end]) => Math.min(Math.max(x, start + size / 2), end - size / 2))
     .sort((a, b) => Math.abs(a - x) - Math.abs(b - x));
-  if (fitting.length) return { x: fitting[0]!, scale: 1 };
+  if (fitting.length) return { x: fitting[0]!, y, scale: 1 };
   const widest = gaps.sort((a, b) => b[1] - b[0] - (a[1] - a[0]))[0];
-  if (!widest) return { x, scale: 0.5 };
-  return { x: (widest[0] + widest[1]) / 2, scale: Math.max(0.5, (widest[1] - widest[0]) / size) };
+  if (!widest) return { x, y, scale: 0.5 };
+  return { x: (widest[0] + widest[1]) / 2, y, scale: Math.max(0.5, (widest[1] - widest[0]) / size) };
 }
