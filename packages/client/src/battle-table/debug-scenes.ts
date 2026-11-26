@@ -569,6 +569,17 @@ const SCENES: Record<string, Scene> = {
     dealt: ["01147"],
     encounterTop: ["01189"],
   },
+  /**
+   * Swarm Attack in alter-ego form, two Drones engaged: "your hero" reaches no one, so no Drone attacks and the top
+   * card of the deck becomes a Drone instead (issue 222).
+   */
+  ultronswarmalterego: {
+    scenario: "ultron",
+    hero: { form: "alterEgo" },
+    drones: [{ code: "01005" }, { code: "01002" }],
+    dealt: ["01147"],
+    encounterTop: ["01189"],
+  },
   /** Repair Sequence with two Drones out and Ultron hurt: he heals 2 for each Drone. */
   ultronrepair: {
     scenario: "ultron",
