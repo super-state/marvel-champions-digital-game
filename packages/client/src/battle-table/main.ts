@@ -105,6 +105,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const model = new BattleModel();
 const stage = element("stage");
 const orderLayer = element("order-badges");
+const spendLayer = element("spend-marks");
 const boardLabels = element("board-labels");
 const labelClips = [boardLabels];
 const anchors = element("anchors");
@@ -2480,6 +2481,61 @@ function placeOrderBadges(projected: ReturnType<BattleTable["anchors"]>, clips: 
   }
 }
 
+/**
+ * A spend's picks each wear what they pay: the card tinted in the symbol's colour with the symbol on it, so it shows
+ * which card pays which symbol in the bar (Adam, 2026-11-26). Hand cards are in front of everything, so this layer is
+ * not cut out under them as the plates and order badges are.
+ */
+const spendMarks = new Map<string, HTMLElement>();
+function placeSpendMarks(projected: ReturnType<BattleTable["anchors"]>) {
+  const choice = state.choice;
+  const meter = choice?.eitherOr === "spend" && !discardOpen ? model.spendMeter([...choicePicks]) : null;
+  const marks = new Map<string, readonly string[]>();
+  if (choice && meter)
+    for (const [optionId, types] of meter.paidBy) {
+      const cardId = choice.options.find((option) => option.id === optionId)?.cardId;
+      if (cardId && types.length) marks.set(cardId, types);
+    }
+  for (const [id, mark] of spendMarks)
+    if (!marks.has(id)) {
+      mark.remove();
+      spendMarks.delete(id);
+    }
+  for (const [id, types] of marks) {
+    const card = projected.find((p) => p.id === id);
+    let mark = spendMarks.get(id);
+    if (!card) {
+      mark?.remove();
+      spendMarks.delete(id);
+      continue;
+    }
+    const key = types.join(",");
+    if (!mark || mark.dataset.types !== key) {
+      mark?.remove();
+      mark = make("div", "spend-mark");
+      mark.dataset.types = key;
+      mark.dataset.resource = types[0] === "any" ? "any" : types[0]!;
+      const badges = make("div", "spend-mark-badges");
+      for (const type of types) {
+        const pip = make("span", "pip");
+        pip.dataset.resource = type;
+        pip.append(icon(RESOURCE_ICON[type] ?? "wild"));
+        badges.append(pip);
+      }
+      mark.append(badges);
+      spendLayer.append(mark);
+      spendMarks.set(id, mark);
+    }
+    // A little inside the card's outline, so a hand card's slight tilt never shows the tint past its edge.
+    const inset = card.width * 0.06;
+    const height = card.bottom - card.top;
+    mark.style.width = `${Math.round(card.width - inset * 2)}px`;
+    mark.style.height = `${Math.round(height - inset * 2)}px`;
+    mark.style.transform = `translate(${Math.round(card.left + inset)}px,${Math.round(card.top + inset)}px)`;
+    mark.style.setProperty("--pip", `${Math.round(Math.min(64, Math.max(28, card.width * 0.42)))}px`);
+  }
+}
+
 function syncBoostTags() {
   for (const id of [...boostTags.keys()]) if (!state.facedownBoosts.some((boost) => boost.id === id)) untagBoost(id);
   for (const boost of state.facedownBoosts) tagBoost(boost.id);
@@ -2587,6 +2643,7 @@ function placeLabels() {
     else dropBoostBurst(id);
   }
   placeOrderBadges(projected, clips);
+  placeSpendMarks(projected);
   // Klaw's attacks deal him two boost cards, fanned beside him: one tag, on the outermost card, counts them
   // ("Boost ×2"), rather than a tag per card drawn over each other.
   const boostsBy = new Map<string, string[]>();

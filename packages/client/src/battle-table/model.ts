@@ -903,6 +903,8 @@ export interface SpendMeter {
   readonly need: readonly SpendNeed[];
   /** Options not yet picked that would pay a symbol still unlit. */
   readonly useful: ReadonlySet<string>;
+  /** Each picked option and the symbols it pays, taken in the order picked (the card wears them, `main.ts`). */
+  readonly paidBy: ReadonlyMap<string, readonly SpendNeed["type"][]>;
 }
 type SpendFill = Record<"wild" | "energy" | "mental" | "physical" | "any", number>;
 
@@ -3253,7 +3255,18 @@ export class BattleModel {
     for (const option of choice.options)
       if (!picks.includes(option.optionId) && lit(filled(poolOf([...picks, option.optionId]))) > lit(now))
         useful.add(option.optionId);
-    return { need, useful };
+    // What each pick lit when it was picked: the symbols newly paid as the picks are added one by one.
+    const paidBy = new Map<string, SpendNeed["type"][]>();
+    let before = filled(null);
+    picks.forEach((id, i) => {
+      const after = filled(poolOf(picks.slice(0, i + 1)));
+      const types: SpendNeed["type"][] = [];
+      for (const type of ["wild", "energy", "mental", "physical", "any"] as const)
+        for (let n = before[type]; n < after[type]; n++) types.push(type);
+      paidBy.set(id, types);
+      before = after;
+    });
+    return { need, useful, paidBy };
   }
 
   chooseMany(ids: readonly string[]): boolean {
