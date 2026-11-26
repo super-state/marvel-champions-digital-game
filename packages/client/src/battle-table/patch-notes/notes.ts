@@ -46,6 +46,11 @@ export const PATCH_NOTES: readonly PatchNote[] = [
         text: 'When a card makes you choose (Ultron\'s "threat or a Drone"), the cards your choice would change stay in focus, so you can read the threat or health before you pick.',
       },
       {
+        // Issue 217 (a player's report): branch fix/217-hand-readable-choose-one.
+        kind: "fixed",
+        text: "When a card asks you to spend resources or take its other choice (Android Efficiency, Sonic Boom), your hand rises clear of the dimming, so you can see what you could pay with before you choose.",
+      },
+      {
         // Issue 222 (a player's report): branch claude/swarm-attack-alter-ego.
         kind: "fixed",
         text: "Swarm Attack only sends Drones at your hero. Revealed while you are in alter-ego form, no Drone attacks you: the top card of your deck becomes a new Drone instead, as the card says.",

@@ -220,6 +220,8 @@ describe("Ultron on the table (seed 7 unless a test says otherwise)", () => {
     const boost = beats.find((beat) => beat.reveal?.boost)?.reveal;
     expect(boost?.name).toBe("Android Efficiency");
     expect(battle.snapshot().choiceSource).toBe(boost!.id);
+    // The first step already names the cards that could pay, so the table keeps them readable (issue 217).
+    const payers = choice.payers;
 
     // "Spend 1 energy": the cards that can pay are the picks, and it can be backed out of.
     expect(battle.choose(EITHER_SPEND)).toBe(true);
@@ -227,6 +229,7 @@ describe("Ultron on the table (seed 7 unless a test says otherwise)", () => {
     expect(choice).toMatchObject({ eitherOr: "spend", prompt: "Spend 1 energy", canCancel: true, spend: true });
     expect(choice.options.length).toBeGreaterThan(0);
     expect(choice.options.every((option) => option.cardId)).toBe(true);
+    expect(payers).toEqual(choice.options.map((option) => option.cardId));
     expect(battle.snapshot().choiceSource).toBe(boost!.id);
     battle.cancel();
     expect(battle.snapshot().choice?.eitherOr).toBe("choose");
