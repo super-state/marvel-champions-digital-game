@@ -9,7 +9,8 @@ test("unread patch notes open over the room, close at once, and reopen from the 
   test.setTimeout(180_000);
   await page.goto("/battle/?notes");
   const shelf = page.locator("#shelf");
-  await expect(shelf).toHaveAttribute("data-place", "title", { timeout: 60_000 });
+  // 0.2.8 opens on the box shelf (the room with its title place came later, on the main line).
+  await expect(shelf).toBeVisible({ timeout: 60_000 });
 
   const notes = page.locator("#patch-notes");
   await expect(notes).toBeVisible({ timeout: 30_000 });
@@ -22,7 +23,7 @@ test("unread patch notes open over the room, close at once, and reopen from the 
   // Escape closes it, and only it: the room's doorway is still waiting for its button press.
   await page.keyboard.press("Escape");
   await expect(notes).toHaveCount(0);
-  await expect(shelf).toHaveAttribute("data-place", "title");
+  await expect(shelf).toBeVisible();
   await page.waitForTimeout(400);
   await expect(page.getByRole("navigation", { name: "Main menu" })).toBeHidden();
   const seen = await page.evaluate(() => localStorage.getItem("battle-notes-seen"));
@@ -30,7 +31,8 @@ test("unread patch notes open over the room, close at once, and reopen from the 
 
   // Read once, they stay away (without `?notes`, as a player opens the page).
   await page.goto("/battle/");
-  await expect(shelf).toHaveAttribute("data-place", "title", { timeout: 60_000 });
+  // 0.2.8 opens on the box shelf (the room with its title place came later, on the main line).
+  await expect(shelf).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(1500);
   await expect(notes).toHaveCount(0);
 
