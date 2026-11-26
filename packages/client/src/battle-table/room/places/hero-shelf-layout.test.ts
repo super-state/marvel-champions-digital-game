@@ -91,6 +91,10 @@ describe.each<ShelfLook>(["faces", "spines"])("the bookcase, %s", (look) => {
     }
   });
 
+  test("stands eight boxes (or stacks) to a shelf", () => {
+    expect(frame.across).toBe(8);
+  });
+
   test("reads left to right, then top to bottom, a stack from its top down", () => {
     expect(spots[frame.stack]!.z).toBeLessThan(spots[0]!.z);
     if (frame.stack > 1) expect(spots[1]!.y).toBeLessThan(spots[0]!.y);
