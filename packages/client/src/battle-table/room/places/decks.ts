@@ -5,12 +5,11 @@
  * faded. There is no menu beside it (Adam, 2026-11-26): the boxes are the choice. Over the shelf, a search box, the
  * sorts (release, A–Z, favourites first, last played first) and "Playable only"; the boxes move to their new places.
  *
- * Picking a lit hero's box makes them the chosen hero for Campaign and Free Play (`battle-hero`, which the deal reads),
- * slides their box out, and opens a small card beside it with their decks: the starter deck and every deck saved for
- * them, each either chosen for play (`decks/chosen-deck.ts`) or held back with the reason (`decks/deal-gate.ts`: an
- * aspect not yet on the table, or not legal). Edit, or New deck, lays the deck builder over the room
- * (`decks/deck-screen.ts`, only the heroes and aspects checked on the table); its Back returns to the card. Picking a
- * faded box opens a smaller card: not on the table yet. Either card marks the hero a favourite (a gold star on the box).
+ * Picking a box brings it off the shelf and up close, the rest of the shelf dimmed behind it, with a card beside it:
+ * who, the deck they play (the starter deck, as it comes out of the box: no deck building here yet, Adam 2026-11-26),
+ * a star to make them a favourite (a gold sticker on the box), and for a hero the table deals, Choose: they become the
+ * hero Campaign and Free Play deal (`battle-hero`) with their starter deck. Pointing at a box eases it out a little;
+ * let go, it snaps straight back, as the table's cards do.
  *
  * Every choice is a real button (mouse, touch, the keyboard's arrows here, and the table's own controller, which moves
  * the focus and presses A and B in the room): a see-through button over each box, as the campaign shelf has.
@@ -18,16 +17,12 @@
  */
 import * as THREE from "three";
 import { HEROES, type HeroId } from "../../model.js";
-import { STARTER, chooseDeck, chosenDeck } from "../../decks/chosen-deck.js";
-import { dealVerdict } from "../../decks/deal-gate.js";
-import { ASPECT_NAMES, BUILDER_HEROES, cardCount, type HeroChoice } from "../../decks/deck-model.js";
-import { browserDeckStore, type SavedDeck } from "../../decks/deck-store.js";
-import type { DeckScreen } from "../../decks/deck-screen.js";
-import { TABLE_ASPECTS } from "../../decks/table-pool.js";
+import { STARTER, chooseDeck } from "../../decks/chosen-deck.js";
+import { ASPECT_NAMES, BUILDER_HEROES, type HeroChoice } from "../../decks/deck-model.js";
 import type { FinishedGame } from "../../record/game.js";
 import { spatialPick, type FocusDirection } from "../../pad/spatial.js";
 import { camera, setPose } from "../camera.js";
-import { ROOM, pointer, raycaster, renderer, root, say } from "../room.js";
+import { ROOM, pointer, raycaster, renderer, say } from "../room.js";
 import { followHero } from "./free-play.js";
 import { SHELF_RELEASES } from "./hero-catalogue.js";
 import { CASE, SHELF_LOOK, buildBoxes, buildCase, type ShelfBox } from "./hero-shelf.js";
@@ -152,10 +147,8 @@ function rememberHero(hero: HeroId) {
 
 // ── The bench's state ─────────────────────────────────────────────────────────────────────────────────────────────
 
-const store = browserDeckStore();
 let heroes: BenchHero[] = [];
 let current: BenchHero | null = null;
-let panelRoot: HTMLElement | null = null;
 /** The see-through buttons over the lit boxes, the deck card, the name tag, and the line at the bottom. */
 let picks: HTMLElement | null = null;
 let card: HTMLElement | null = null;
@@ -163,10 +156,6 @@ let tag: HTMLElement | null = null;
 let hint: HTMLElement | null = null;
 let tools: HTMLElement | null = null;
 let searchBox: HTMLInputElement | null = null;
-let screen: DeckScreen | null = null;
-let screenHost: HTMLElement | null = null;
-/** The deck the builder was opened on, to put the focus back on its row afterwards. */
-let editing: string | null = null;
 /** The camera is here: the boxes answer the pointer. */
 let active = false;
 /** The box the pointer (or the focus) is on, by its index in `boxes`; -1 for none. */
@@ -184,13 +173,12 @@ interface Box extends ShelfBox {
   /** How far out it stands (0 back on its shelf, 1 its card open), and how big (0 off the shelf, 1 on it). */
   out: number;
   size01: number;
+  /** It was up close last frame: when it goes back, it is put straight back on its shelf. */
+  wasUp: boolean;
 }
 const boxes: Box[] = [];
 /** The box whose card is open (or was last). */
 let opened: Box | null = null;
-
-const savedFor = (hero: BenchHero): SavedDeck[] =>
-  store.list().filter((deck) => deck.identityCardId === hero.card.identityCardId);
 
 const cardOpen = () => !!card && !card.hidden && !!opened;
 
@@ -284,7 +272,7 @@ function toggleFavourite(box: Box) {
   savePrefs();
   say(favourites.has(code) ? `${name} is a favourite.` : `${name} is no longer a favourite.`);
   if (sort === "favourites") arrange();
-  else box.star.visible = favourites.has(code);
+  box.star.visible = favourites.has(code);
 }
 
 /** The bar over the shelf: find a hero, the sorts, and the playable cut. */
@@ -354,7 +342,7 @@ async function standBoxes(group: THREE.Group) {
     button.onblur = () => {
       if (hovered === index) hovered = -1;
     };
-    boxes.push({ ...box, id, button, home: new THREE.Vector3(), place: -1, out: 0, size01: 0 });
+    boxes.push({ ...box, id, button, home: new THREE.Vector3(), place: -1, out: 0, size01: 0, wasUp: false });
   }
 }
 
@@ -385,61 +373,32 @@ function markChosen() {
 
 const heroButton = (id: HeroId | undefined) => boxes.find((box) => box.id && box.id === id)?.button ?? null;
 
-/** A box picked: a lit hero is chosen and their decks open; a faded one opens its smaller card. */
+/** A box picked: it comes off the shelf and up close, its card beside it. Nothing is chosen until Choose. */
 function pick(box: Box) {
-  if (box.id) pickHero(box.id);
-  else {
-    opened = box;
-    hovered = -1;
-    paintFaded();
-  }
+  opened = box;
+  hovered = -1;
+  paint();
 }
 
-// ── The deck card ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ── Up close ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
+const capital = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+
+/**
+ * The card beside a box up close: who, the deck they play (the starter deck, out of the box: no deck building at the
+ * bench yet, Adam 2026-11-26), the favourite's star, and Choose for a hero the table deals.
+ */
 function paint(focusKey?: string) {
-  if (!card || !current) return;
-  const hero = current;
-  const chosen = chosenDeck(hero.id);
-  const deckList = el("div", "bench-decks");
-  deckList.setAttribute("role", "group");
-  deckList.setAttribute("aria-label", `${hero.name}'s decks`);
-  const starterAspect = ASPECT_NAMES[hero.card.starterAspect];
-  deckList.append(
-    deckRow(
-      hero,
-      STARTER,
-      "Starter deck",
-      `${starterAspect}, as printed`,
-      null,
-      chosen === STARTER || !hasDeck(chosen),
-    ),
-  );
-  for (const deck of savedFor(hero)) {
-    const verdict = dealVerdict(deck, TABLE_ASPECTS);
-    const aspect = deck.aspects[0];
-    const note = `${cardCount(deck)} cards${aspect ? `, ${ASPECT_NAMES[aspect]}` : ""}`;
-    deckList.append(deckRow(hero, deck.id, deck.name, note, verdict.ok ? null : verdict.reason, chosen === deck.id));
-  }
-  const fresh = el("button", "btn btn-secondary bench-new", "New deck");
-  fresh.type = "button";
-  fresh.dataset.bench = "new";
-  fresh.onclick = () => openBuilder("new");
-
-  const line = el("p", "bench-line");
-  line.setAttribute("aria-live", "polite");
-  const deckName = chosen !== STARTER && hasDeck(chosen) ? store.get(chosen)!.name : "their starter deck";
-  line.textContent = `Campaign and Free Play deal ${hero.name} with ${deckName}.`;
-
-  card.replaceChildren(cardHead(`${hero.name}'s decks`, hero.card.alterEgo), deckList, fresh, line);
-  showCard(focusKey);
-}
-
-/** The card's top line: its title, who, and the favourite's star. */
-function cardHead(title: string, who: string): HTMLElement {
-  const head = el("div", "bench-card-head");
+  if (!card || !opened) return;
   const box = opened;
-  const on = !!box && favourites.has(box.hero.code);
+  const { hero } = box;
+  const bench = box.id ? (heroes.find((each) => each.id === box.id) ?? null) : null;
+
+  const head = el("div", "bench-card-head");
+  const words = el("div", "bench-card-words");
+  words.append(el("h3", "bench-title", hero.name));
+  if (hero.alterEgo !== hero.name) words.append(el("p", "bench-who", hero.alterEgo));
+  const on = favourites.has(hero.code);
   const star = el("button", "btn btn-ghost bench-star", on ? "★" : "☆");
   star.type = "button";
   star.dataset.bench = "favourite";
@@ -447,86 +406,64 @@ function cardHead(title: string, who: string): HTMLElement {
   star.setAttribute("aria-label", "Favourite");
   star.title = on ? "A favourite: press to take the star off" : "Mark as a favourite";
   star.onclick = () => {
-    if (!box) return;
     toggleFavourite(box);
-    if (box.id) paint("favourite");
-    else paintFaded("favourite");
+    paint("favourite");
   };
-  const words = el("div", "bench-card-words");
-  words.append(el("h3", "bench-title", title));
-  if (who) words.append(el("p", "bench-who", who));
   head.append(words, star);
-  return head;
-}
 
-function showCard(focusKey?: string) {
-  if (!card) return;
+  const aspect = bench ? ASPECT_NAMES[bench.card.starterAspect] : hero.aspect ? capital(hero.aspect) : null;
+  const parts: HTMLElement[] = [head, el("p", "bench-deck-line", `Starter deck${aspect ? ` · ${aspect}` : ""}`)];
+  if (bench) {
+    const chosen = current?.id === bench.id;
+    const choose = el(
+      "button",
+      "btn btn-primary bench-choose",
+      chosen ? `${bench.name} is chosen` : `Choose ${bench.name}`,
+    );
+    choose.type = "button";
+    choose.dataset.bench = "choose";
+    choose.setAttribute("aria-pressed", String(chosen));
+    choose.onclick = () => chooseHero(bench);
+    parts.push(
+      choose,
+      el(
+        "p",
+        "bench-line",
+        chosen
+          ? `Campaign and Free Play deal ${bench.name} with the starter deck.`
+          : `Choose to play ${bench.name} in Campaign and Free Play.`,
+      ),
+    );
+  } else {
+    const release = SHELF_RELEASES.find((each) => each.id === hero.release)?.name;
+    parts.push(el("p", "bench-line", `Not on the table yet${release ? `: from ${release}` : ""}.`));
+  }
+  const back = el("button", "btn btn-ghost bench-back", "Back to the shelf");
+  back.type = "button";
+  back.dataset.bench = "back";
+  back.onclick = () => closeCard();
+  parts.push(back);
+
+  card.replaceChildren(...parts);
   card.hidden = false;
   if (hint) hint.hidden = true;
-  if (focusKey) card.querySelector<HTMLElement>(`[data-bench="${CSS.escape(focusKey)}"]`)?.focus();
+  card
+    .querySelector<HTMLElement>(`[data-bench="${CSS.escape(focusKey ?? (bench ? "choose" : "favourite"))}"]`)
+    ?.focus({ preventScroll: true });
 }
 
-/** A faded hero's card: who they are, where they come from, and that they aren't on the table yet. */
-function paintFaded(focusKey = "favourite") {
-  if (!card || !opened) return;
-  const { hero } = opened;
-  const release = SHELF_RELEASES.find((each) => each.id === hero.release)?.name;
-  const line = el("p", "bench-line", `Not on the table yet${release ? `: from ${release}` : ""}.`);
-  card.replaceChildren(cardHead(hero.name, hero.alterEgo !== hero.name ? hero.alterEgo : ""), line);
-  showCard(focusKey);
-}
-
-const hasDeck = (id: string) => id !== STARTER && store.get(id) !== undefined;
-
-/** One deck: the button that chooses it for play (or says why it can't), and Edit. */
-function deckRow(
-  hero: BenchHero,
-  id: string,
-  name: string,
-  note: string,
-  heldBack: string | null,
-  chosen: boolean,
-): HTMLElement {
-  const row = el("div", "bench-deck");
-  const pick = el("button", "btn btn-option bench-pick");
-  pick.type = "button";
-  pick.dataset.bench = `deck:${id}`;
-  pick.setAttribute("aria-pressed", String(chosen));
-  if (heldBack) pick.setAttribute("aria-disabled", "true");
-  pick.append(el("strong", "", name), el("small", "", heldBack ?? note));
-  pick.onclick = () => {
-    if (heldBack) {
-      say(`${name} can't be dealt: ${heldBack}`);
-      return;
-    }
-    chooseDeck(hero.id, id);
-    say(`${hero.name} will play ${id === STARTER ? "their starter deck" : name}.`);
-    paint(`deck:${id}`);
-  };
-  const edit = el("button", "btn btn-ghost bench-edit", id === STARTER ? "Build from it" : "Edit");
-  edit.type = "button";
-  edit.dataset.bench = `edit:${id}`;
-  edit.setAttribute("aria-label", id === STARTER ? `Build a deck from ${hero.name}'s starter deck` : `Edit ${name}`);
-  edit.onclick = () => openBuilder(id);
-  row.append(pick, edit);
-  return row;
-}
-
-/** Picks a hero: theirs for Campaign and Free Play, their box out, and their decks in the card. */
-function pickHero(id: HeroId) {
-  const hero = heroes.find((each) => each.id === id);
-  if (!hero) return;
+/** Choose confirmed: the hero (and their starter deck) for Campaign and Free Play; the box goes back on the shelf. */
+function chooseHero(hero: BenchHero) {
   current = hero;
-  opened = boxes.find((box) => box.id === id) ?? null;
-  rememberHero(id);
-  followHero(id);
+  rememberHero(hero.id);
+  followHero(hero.id);
+  chooseDeck(hero.id, STARTER);
   markChosen();
-  hovered = -1;
-  const chosen = chosenDeck(id);
-  paint(`deck:${chosen !== STARTER && hasDeck(chosen) ? chosen : STARTER}`);
+  say(`${hero.name} chosen: Campaign and Free Play deal them with their starter deck.`);
+  closeCard();
 }
 
-/** Puts the card away; the focus goes back to the hero's box. */
+/** Puts the card away and the box back on its shelf; the focus goes back to the box. */
 function closeCard(refocus = true) {
   if (!card) return;
   card.hidden = true;
@@ -534,51 +471,20 @@ function closeCard(refocus = true) {
   if (refocus && opened && !opened.button.hidden) opened.button.focus({ preventScroll: true });
 }
 
-// ── The builder, over the room ────────────────────────────────────────────────────────────────────────────────────
+/** How far in front of the camera a box up close stands, and the veil that dims the shelf behind it. */
+const closeAt = new THREE.Vector3();
+const lookingAt = new THREE.Vector3();
+let veil: THREE.Mesh | null = null;
 
-async function ensureScreen(): Promise<DeckScreen> {
-  if (screen) return screen;
-  const { createDeckScreen } = await import("../../decks/deck-screen.js");
-  screenHost = el("div");
-  screenHost.setAttribute("role", "region");
-  screenHost.setAttribute("aria-label", "Deck builder");
-  root.append(screenHost);
-  screen = createDeckScreen(screenHost, {
-    mode: "room",
-    heroes: heroes.map((hero) => hero.card.identityCardId),
-    aspects: TABLE_ASPECTS,
-    store,
-    backLabel: "‹ Bench",
-    onExit: closeBuilder,
-  });
-  return screen;
-}
-
-function openBuilder(deck: string) {
-  if (!current) return;
-  const hero = current;
-  editing = deck;
-  void ensureScreen().then((built) => {
-    if (panelRoot) panelRoot.inert = true;
-    built.open(hero.card.identityCardId, deck);
-  });
-}
-
-/** The builder was left: back to the bench, its card redrawn (a deck saved or deleted), the focus where it was. */
-function closeBuilder(savedId: string | null) {
-  if (screenHost) screenHost.hidden = true;
-  if (panelRoot) panelRoot.inert = false;
-  // A deck just built (from new, or from the starter deck) is the one this hero plays, when it can be dealt.
-  const saved = savedId ? store.get(savedId) : undefined;
-  const fresh = editing === "new" || editing === STARTER;
-  if (current && fresh && saved && dealVerdict(saved, TABLE_ASPECTS).ok) chooseDeck(current.id, saved.id);
-  const focus = saved
-    ? `deck:${saved.id}`
-    : editing && editing !== "new" && hasDeck(editing)
-      ? `deck:${editing}`
-      : "new";
-  editing = null;
-  paint(focus);
+/** Where a box up close stands: big in front of the camera, a little left of the middle. */
+function closeTo(box: Box, out: THREE.Vector3) {
+  const tan = Math.tan(((camera.fov / 2) * Math.PI) / 180);
+  // Tall enough to fill about 60% of the screen's height (or, for a box lying flat, half its width).
+  const distance = Math.max(box.size.tall / (1.2 * tan), box.size.across / (1.0 * tan * camera.aspect));
+  camera.getWorldDirection(lookingAt);
+  out.copy(camera.position).addScaledVector(lookingAt, distance);
+  // The reader's left is +z here; the box sits a fifth of the screen's width left of the middle.
+  out.z += distance * tan * camera.aspect * 0.42;
 }
 
 // ── The pointer ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -593,7 +499,7 @@ function boxAt(x: number, y: number): number {
   return hit ? (hit.object.userData.box as number) : -1;
 }
 
-const busy = () => !active || !!screen?.isOpen();
+const busy = () => !active;
 
 renderer.domElement.addEventListener("pointermove", (event) => {
   if (busy()) return;
@@ -685,7 +591,7 @@ function placeTag() {
   tag.style.top = `${Math.max(tag.offsetHeight + 8, r.top - 8)}px`;
 }
 
-/** The card beside the chosen box: under it, kept on the screen. On a narrow screen decks.css pins it to the bottom. */
+/** The card beside the box up close: to its right, or under it where there is no room. Narrow: decks.css pins it. */
 function placeCard() {
   if (!card || !cardOpen() || innerWidth <= 600) return;
   const box = opened;
@@ -693,10 +599,13 @@ function placeCard() {
   const r = screenRect(box);
   const width = card.offsetWidth;
   const height = card.offsetHeight;
-  const left = Math.min(innerWidth - width - 16, Math.max(16, (r.left + r.right) / 2 - width / 2));
-  const top = Math.min(innerHeight - height - 16, Math.max(16, r.bottom + 14));
+  const right = r.right + 32 + width <= innerWidth - 16;
+  const left = right
+    ? r.right + 32
+    : Math.min(innerWidth - width - 16, Math.max(16, (r.left + r.right) / 2 - width / 2));
+  const top = right ? (r.top + r.bottom) / 2 - height / 2 : r.bottom + 14;
   card.style.left = `${left}px`;
-  card.style.top = `${top}px`;
+  card.style.top = `${Math.min(innerHeight - height - 16, Math.max(16, top))}px`;
 }
 
 // ── Keys ──────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -710,7 +619,6 @@ const ARROWS: Record<string, FocusDirection> = {
 
 /** The arrows move between the deck card's buttons while it is open, and between the heroes' boxes while it isn't. */
 function key(event: KeyboardEvent): boolean {
-  if (screen?.isOpen()) return screen.key(event);
   // In the search box: typing is its own; Escape empties it first; Down or Enter goes to the first hero found.
   if (searchBox && event.target === searchBox) {
     if (event.key === "Escape" && searchBox.value) {
@@ -761,7 +669,6 @@ export function mountBench(source?: { games(): Promise<readonly FinishedGame[] |
       current = chosenHero(heroes);
       lit = new Set(heroes.map((hero) => hero.card.identityCardId));
       loadPrefs();
-      panelRoot = panel.closest<HTMLElement>(".room-panel") ?? panel;
       panel.classList.add("bench");
       tools = makeTools();
       picks = el("div", "bench-picks");
@@ -776,6 +683,14 @@ export function mountBench(source?: { games(): Promise<readonly FinishedGame[] |
       panel.append(tools, picks, card, tag, hint);
       await document.fonts.load("900 34px 'Public Sans'");
       await standBoxes(group);
+      veil = new THREE.Mesh(
+        new THREE.PlaneGeometry(80, 60),
+        new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false }),
+      );
+      veil.rotation.y = Math.PI / 2;
+      veil.position.set(CASE.back + CASE.depth + 1.6, 0, CASE.z);
+      veil.visible = false;
+      group.add(veil);
       arrange(true);
       markChosen();
       void readPlayed();
@@ -788,9 +703,8 @@ export function mountBench(source?: { games(): Promise<readonly FinishedGame[] |
       if (!heroes.length) return;
       current = chosenHero(heroes);
       markChosen();
-      if (cardOpen()) {
-        if (opened?.id) paint();
-      } else {
+      if (cardOpen()) paint();
+      else {
         // No scrolling to it: the shelf opens at its top. (In a window not in front, the focus event itself only
         // comes once the window is, so the box is marked as shown here rather than by the event.)
         const id = current.id;
@@ -807,7 +721,6 @@ export function mountBench(source?: { games(): Promise<readonly FinishedGame[] |
       if (tag) tag.hidden = true;
     },
     back() {
-      if (screen?.back()) return true;
       if (!cardOpen()) return false;
       closeCard();
       return true;
@@ -819,21 +732,41 @@ export function mountBench(source?: { games(): Promise<readonly FinishedGame[] |
       for (const [i, box] of boxes.entries()) {
         // The open card's box stands right out; the one pointed at comes out a little. A box the search leaves off
         // shrinks away; the rest glide to their places.
-        const target = box === opened && cardOpen() ? 1 : i === hovered ? 0.4 : 0;
-        box.out += (target - box.out) * Math.min(1, dt * 9);
+        const up = box === opened && cardOpen();
+        const target = up ? 0 : i === hovered ? 0.4 : 0;
+        // The board's way with a card under the pointer (`table.ts`, the hand's lean): a box eases out while pointed
+        // at, and snaps straight back the moment it is let go.
+        box.out = target > box.out ? box.out + (target - box.out) * Math.min(1, dt * 12) : target;
         box.size01 += ((box.place >= 0 ? 1 : 0) - box.size01) * Math.min(1, dt * 10);
         box.mesh.visible = box.size01 > 0.02;
         box.mesh.scale.setScalar(Math.max(0.001, box.size01));
-        if (box.place >= 0) {
+        if (up) {
+          // Up close: in front of the camera, left of the middle, its card to its right.
+          closeTo(box, closeAt);
+          box.mesh.position.lerp(closeAt, Math.min(1, dt * 9));
+          box.wasUp = true;
+        } else if (box.wasUp) {
+          box.mesh.position.copy(box.home);
+          box.wasUp = false;
+        } else if (box.place >= 0) {
           // A box on its way to a new place comes forward off the shelf first, clear of the boards and the others.
           const at = box.mesh.position;
           const away = Math.min(1, Math.hypot(box.home.y - at.y, box.home.z - at.z));
+          const x = box.home.x + box.out * 0.8 + away * 1.4;
           at.set(
-            at.x + (box.home.x + box.out * 0.8 + away * 1.4 - at.x) * glide,
+            away < 0.01 ? x : at.x + (x - at.x) * glide,
             at.y + (box.home.y - at.y) * glide,
             at.z + (box.home.z - at.z) * glide,
           );
         }
+      }
+      // The shelf dims behind a box up close (easing in; gone at once when it goes back).
+      if (veil) {
+        const goal = cardOpen() ? 0.62 : 0;
+        const material = veil.material as THREE.MeshBasicMaterial;
+        material.opacity =
+          goal > material.opacity ? material.opacity + (goal - material.opacity) * Math.min(1, dt * 8) : 0;
+        veil.visible = material.opacity > 0.01;
       }
       if (!active) return;
       placePicks();
