@@ -64,7 +64,7 @@ export interface ScreenBox {
  * Where a revealed card held up in the middle stands while its own question asks the player to pick cards on the
  * table (Caught Off Guard: "Discard an upgrade or support you control"). Adam, 2026-11-21: the card stood over the very
  * supports it asked for, so nothing could be seen or picked. Covering none of them, it stays put. Otherwise it slides
- * up, just far enough to clear them, as far as half off the top of the screen (Adam, 2026-11-26: sliding left "just
+ * up, half off the top of the screen (Adam, 2026-11-26: sliding left "just
  * seems a bit odd"). Where even that still covers one (a pick high on the table), it slides sideways, level with where
  * it was, into the gap between them (or beside them) nearest to it; with no gap wide enough (a phone) it takes the
  * widest one and shrinks to fit, never below half its size. `x` and `y` are its new centre, `scale` its size against
@@ -84,7 +84,9 @@ export function revealAside(
   const clearAt = (at: number) =>
     column.every((pick) => pick.bottom < at - half - margin || pick.top > at + half + margin);
   if (clearAt(y)) return { x, y, scale: 1 };
-  // Up: just clear of the picks below it, at most half off the screen (its centre on the top edge).
+  // Up: half off the top of the screen (its centre on the top edge), its text still showing, well clear of the cards
+  // in play below (Adam, 2026-11-26: "we can slide the boost card a bit higher").
+  if (clearAt(0)) return { x, y: 0, scale: 1 };
   const lifts = column
     .map((pick) => pick.top - margin - half - 0.5)
     .filter((at) => at < y && at >= 0 && clearAt(at))
