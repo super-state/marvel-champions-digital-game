@@ -2232,13 +2232,13 @@ async function whenRevealedFires(
     // Its attack finds no hero, so nothing attacks: say so, as a choice with no target does (Adam, 2026-11-26,
     // issue 222: Swarm Attack in alter-ego). What the card does instead follows on its own beats.
     const instead = card.noHeroToAttack.instead;
-    stampCard(card.id, "No hero to attack", "status");
+    stampCard(card.id, "No hero", "status");
     narrate(
       beat,
-      { text: `${card.name}: no hero to attack`, icon: "forced", tone: "villain" },
+      { text: `${card.name}: no hero`, icon: "forced", tone: "villain" },
       {
         eyebrow: { text: eyebrow, icon: "forced", tone: "villain" },
-        title: `${card.name}: no hero to attack`,
+        title: `${card.name}: no hero`,
         help: `You're in alter-ego form, so nothing attacks you${instead ? ": the second half of the card happens instead" : ""}.`,
       },
     );
@@ -2278,7 +2278,7 @@ type Applies = NonNullable<NonNullable<Beat["reveal"]>["applies"]>;
 function appliesHelp(reveal: Beat["reveal"]): string | null {
   const noHero = reveal?.noHeroToAttack;
   if (noHero)
-    return `You're in alter-ego form: no hero to attack${noHero.instead ? ", so the second half of the card happens instead" : ", so nothing attacks you"}.`;
+    return `You're in alter-ego form: no hero${noHero.instead ? ", so the second half of the card happens instead" : ", so nothing attacks you"}.`;
   const applies = reveal?.applies;
   if (!applies) return null;
   return `You're in ${applies.form === "Hero" ? "hero" : "alter-ego"} form: ${applies.text}`;
