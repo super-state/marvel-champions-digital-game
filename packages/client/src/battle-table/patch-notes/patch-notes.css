@@ -1,0 +1,200 @@
+/* "What's new" (patch-notes.ts): a sheet whose notes scroll between a fixed heading and a fixed Continue. */
+.notes-dialog {
+  display: none;
+  box-sizing: border-box;
+  width: min(520px, calc(100% - 32px));
+  max-height: min(680px, calc(100% - 48px));
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: var(--glass, var(--bg-2));
+  color: var(--text);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+}
+.notes-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.notes-dialog::backdrop {
+  background: rgb(4 7 12 / 72%);
+}
+
+.notes-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 22px 18px 14px 24px;
+  border-bottom: 1px solid var(--line);
+}
+.notes-heading {
+  flex: 1;
+  min-width: 0;
+}
+.notes-title {
+  margin: 6px 0 4px;
+  font: italic 900 26px/1.1 var(--font-ui);
+  letter-spacing: -0.01em;
+}
+.notes-sub {
+  margin: 0;
+  color: var(--text-2);
+  font: 500 14px/1.45 var(--font-ui);
+}
+.notes-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--bg-3);
+  color: var(--text);
+  cursor: pointer;
+}
+.notes-close svg {
+  width: 18px;
+  height: 18px;
+}
+.notes-close:hover {
+  background: var(--bg-4);
+}
+.notes-close:focus-visible,
+.notes-body:focus-visible,
+.notes-version-head:focus-visible {
+  outline: 2px solid var(--focus, #ffd23f);
+  outline-offset: 2px;
+}
+
+.notes-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 24px 10px;
+}
+.notes-version {
+  border-bottom: 1px solid var(--line);
+}
+.notes-version:last-child {
+  border-bottom: 0;
+}
+.notes-version-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 14px 0 10px;
+  cursor: pointer;
+  list-style: none;
+}
+.notes-version-head::-webkit-details-marker {
+  display: none;
+}
+.notes-version-head::before {
+  content: "";
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  margin-right: 2px;
+  border-right: 2px solid var(--text-3);
+  border-bottom: 2px solid var(--text-3);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.notes-version[open] > .notes-version-head::before {
+  transform: rotate(45deg);
+}
+.notes-version-number {
+  color: var(--gold);
+  font: 800 12px/1.2 var(--font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.notes-version-title {
+  font: 800 17px/1.25 var(--font-ui);
+}
+.notes-fresh {
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--hero-deep);
+  color: var(--hero);
+  font: 700 11px/1.4 var(--font-ui);
+}
+.notes-changes {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.notes-change {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  align-items: start;
+  gap: 10px;
+}
+.notes-kind {
+  padding: 3px 0;
+  border-radius: var(--r-sm);
+  font: 800 11px/1.3 var(--font-ui);
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.notes-change[data-kind="new"] .notes-kind {
+  background: rgb(245 195 91 / 16%);
+  color: var(--gold-hi);
+}
+.notes-change[data-kind="better"] .notes-kind {
+  background: rgb(92 180 255 / 16%);
+  color: var(--hero);
+}
+.notes-change[data-kind="fixed"] .notes-kind {
+  background: rgb(63 210 127 / 16%);
+  color: var(--heal);
+}
+.notes-text {
+  color: var(--text);
+  font: 500 15px/1.45 var(--font-ui);
+}
+
+.notes-foot {
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--line);
+}
+.notes-continue {
+  width: 100%;
+}
+
+/* The menu's foot holds What's new beside Report a bug. */
+.menu-foot:has(.menu-notes) {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.menu-notes {
+  width: 100%;
+}
+
+@media (max-width: 480px) {
+  .notes-head {
+    padding: 18px 14px 12px 18px;
+  }
+  .notes-body {
+    padding: 4px 18px 8px;
+  }
+  .notes-foot {
+    padding: 12px 18px 14px;
+  }
+  .notes-title {
+    font-size: 22px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notes-version-head::before {
+    transition: none;
+  }
+}
