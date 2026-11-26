@@ -185,6 +185,10 @@ describe("Ultron on the table (seed 7 unless a test says otherwise)", () => {
       "Place 1 threat on the main scheme",
       "Put the top card of your deck into play as a Drone minion",
     ]);
+    // Issue 210 (a player's report, 2026-11-26): the main scheme the threat would go on is named as a card the
+    // question changes, so the table keeps it and its threat in focus while asking.
+    const mainScheme = battle.snapshot().enemyCards.find((card) => card.type === "main_scheme")!;
+    expect(choice.affects).toEqual([mainScheme.id]);
     const before = drones(battle.snapshot()).length;
     expect(battle.choose(choice.options.find((o) => /Drone/.test(o.label))!.id)).toBe(true);
     const view = battle.snapshot();
@@ -264,6 +268,15 @@ describe("Ultron on the table (seed 7 unless a test says otherwise)", () => {
     expect(asked).toContain(
       "Choose one [Place 2 threat here | Put the top card of your deck into play as a Drone minion]",
     );
+  });
+
+  test("ultronassault: Assault on NORAD's own question names the scheme as the card it changes", () => {
+    const battle = deal("ultronassault");
+    untilAsked(battle, /^Choose one$/);
+    const view = battle.snapshot();
+    const norad = view.enemyCards.find((card) => card.type === "main_scheme")!;
+    expect(view.choice!.options.map((o) => o.label)).toContain("Place 2 threat here");
+    expect(view.choice!.affects).toEqual([norad.id]);
   });
 
   test("ultroncountdown: Countdown to Oblivion's threat is locked, and the hero's Thwart goes to Drone Factory", () => {

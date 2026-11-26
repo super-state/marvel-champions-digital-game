@@ -29,6 +29,7 @@ import {
   type InstanceId,
   type LegalAction,
   type LegalActions,
+  type PendingChoice,
   type ResourcePool,
   type ResourceType,
   type TriggerEvent,
@@ -49,6 +50,7 @@ import { plainRulesTextOf } from "../view/card-search-document.js";
 import { missLineOf } from "./deck-reveal.js";
 import { choiceSourcePanelOf } from "../view/choice-source-panel.js";
 import { choiceSourceOf, promptTitleOf } from "../view/choice-source.js";
+import { choiceAffects } from "./choice-affects.js";
 import {
   faceUpName as printedNameOf,
   optionLabelOf as printedOptionLabelOf,
@@ -256,6 +258,11 @@ export interface BattleChoice {
    * 2026-11-25: a playtester was confused when the attack "went straight to the guard one").
    */
   guard?: { blocked: string[]; guards: string[] };
+  /**
+   * The cards a "Choose one" question's options would change (Ultron's "Place 1 threat on the main scheme": the main
+   * scheme), kept in focus while it is asked so their numbers can be read (`choice-affects.ts`; issue 210).
+   */
+  affects?: string[];
   /**
    * Options that are cards in a deck, a discard pile or set aside, which the table doesn't show face up: each one's
    * face and the pile it is in. The table lays them out as cards to read before choosing (Masters of Mayhem searching
@@ -488,6 +495,12 @@ function eitherOrTitle(state: GameState, pending: NonNullable<GameState["pending
 /** The two answers of an either-or spend's first step (`BattleChoice.eitherOr`). */
 export const EITHER_SPEND = "either-or:spend";
 export const EITHER_OTHERWISE = "either-or:otherwise";
+
+/** `BattleChoice.affects`, present only when the question names cards it would change. */
+function affectsOf(state: GameState, pending: PendingChoice): { affects?: string[] } {
+  const affects = choiceAffects(state, pending, CORE_DEPS);
+  return affects.length ? { affects } : {};
+}
 
 function statModifiers(state: GameState, id: InstanceId) {
   const profile = characterProfile(state, id, CORE_DEPS);
@@ -2517,6 +2530,7 @@ export class BattleModel {
               })),
               canSkip: pending.minSelections === 0,
               canCancel: false,
+              ...affectsOf(state, pending),
               min: pending.minSelections,
               max: pending.maxSelections,
               discardFromHand: pending.prompt.kind === "discardDownToHandSize",

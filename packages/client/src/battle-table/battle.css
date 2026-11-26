@@ -328,6 +328,30 @@ button:focus-visible {
   color: var(--text);
   font-weight: 800;
 }
+/* The card's numbers as they stand now (health, threat, counters, stat changes), first under its picture. */
+.live-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #0c141ceb;
+  box-shadow: 0 8px 18px #0008;
+}
+.live-facts .stat-pill[data-kind="counter"],
+.live-facts .stat-pill[data-kind="modifier"],
+.live-facts .stat-pill[data-kind="acceleration"] {
+  padding: 2px 9px;
+  background: linear-gradient(180deg, #24364a, #17232f);
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 1px #7fa7d044;
+  font-weight: 600;
+}
+.live-facts .stat-pill b {
+  color: var(--text);
+  font-weight: 800;
+}
 /* In the panel the picture takes what height the notes leave, so they always show under it. */
 .reader:has(.status-notes:not([hidden])) {
   grid-template-rows: minmax(0, 1fr) auto;

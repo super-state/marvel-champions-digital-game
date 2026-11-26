@@ -46,6 +46,16 @@ export const PATCH_NOTES: readonly PatchNote[] = [
         text: "Resource symbols on the table now look exactly like the ones printed on the cards.",
       },
       {
+        // Issue 210 (a player's report): branch claude/choice-keeps-targets-sharp.
+        kind: "fixed",
+        text: 'When a card makes you choose (Ultron\'s "threat or a Drone"), the cards your choice would change stay in focus, so you can read the threat or health before you pick.',
+      },
+      {
+        // Issue 210, the same branch.
+        kind: "better",
+        text: "Hovering a card in play shows its numbers as they are right now under its picture: the threat on a scheme, the health left, and any counters.",
+      },
+      {
         // PR 199.
         kind: "better",
         text: "Five threat on a scheme becomes one big 5 token, so threat is easy to count at a glance.",
