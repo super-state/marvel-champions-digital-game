@@ -137,3 +137,56 @@ test("a Drone arriving mid-move doesn't count the threat after it twice on the s
   expect(shown.at(-1)).toBe(real);
   expect(Math.max(...shown)).toBe(real);
 });
+
+test("Drone Factory's threat chips land in stages, as its threat is counted, not all at once", async ({ page }) => {
+  // Adam, 2026-11-25: Drone Factory landed with all 7 chips on it while the table said +4 (its starting threat), then
+  // +3 (one per Drone). The scheme lands with the threat it has before those beats, and each adds its own chips.
+  test.setTimeout(180_000);
+  await open(page, "/battle/?scene=ultronfactory&seed=7");
+  await page.evaluate(() => {
+    type Table = { threatChips(id: string): number };
+    const seen: Record<string, number[]> = {};
+    (window as unknown as { __chipsSeen: Record<string, number[]> }).__chipsSeen = seen;
+    const watch = () => {
+      const table = (window as unknown as { battleTable?: Table }).battleTable;
+      for (const label of document.querySelectorAll<HTMLElement>("[data-card]")) {
+        if (!label.querySelector(".scheme-threat") || !/Drone Factory/.test(label.getAttribute("aria-label") ?? ""))
+          continue;
+        const n = table?.threatChips(label.dataset.card!) ?? -1;
+        const list = (seen[label.dataset.card!] ??= []);
+        if (list.at(-1) !== n) list.push(n);
+      }
+      requestAnimationFrame(watch);
+    };
+    requestAnimationFrame(watch);
+  });
+  await play(page, "End Turn");
+  // Play the villain phase through, until the hero's turn comes back.
+  for (let i = 0; i < 60; i++) {
+    const now = await moves(page);
+    if (now.includes("End Turn")) break;
+    const pick =
+      now.find((m) => /^Discard \d/.test(m) || m === "Keep hand") ??
+      now.find((m) => m.startsWith("Pick ")) ??
+      now.find((m) => m.startsWith("Continue")) ??
+      now.find((m) => m.startsWith("Confirm")) ??
+      now.find((m) => m === "Pass" || m === "Don’t defend") ??
+      now[0];
+    if (!pick) {
+      await page.evaluate(() => (window as unknown as { __battlePlay: PlayHook }).__battlePlay.wait());
+      continue;
+    }
+    await play(page, pick);
+  }
+  await page.evaluate(() => (window as unknown as { __battlePlay: PlayHook }).__battlePlay.wait());
+  const real = Number((await look(page)).match(/Drone Factory \([^)]*threat (\d+)/)![1]);
+  const seen = Object.values(
+    await page.evaluate(() => (window as unknown as { __chipsSeen: Record<string, number[]> }).__chipsSeen),
+  );
+  expect(seen).toHaveLength(1);
+  const chips = seen[0]!;
+  // It starts below its threat (4 is printed, and Drones bring more) and only ever gains chips on the way up.
+  expect(chips[0]!, chips.join(" → ")).toBeLessThan(real);
+  for (let i = 1; i < chips.length; i++) expect(chips[i]!, chips.join(" → ")).toBeGreaterThan(chips[i - 1]!);
+  expect(chips.at(-1)).toBe(real);
+});

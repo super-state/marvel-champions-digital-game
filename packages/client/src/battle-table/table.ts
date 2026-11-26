@@ -1717,6 +1717,11 @@ export class BattleTable {
     return this.#flights.has(id);
   }
 
+  /** How many threat chips lie on `id` now (the browser tests count them as a move plays out). */
+  threatChips(id: string): number {
+    return this.#pieces.get(id)?.tokens?.children.length ?? 0;
+  }
+
   /**
    * Hand cards an effect is picking from light up (`ids`), the hand raised so every card shows; none to put it back.
    * The random pick (Highway Robbery, Eviction Notice) hops this light across the hand before it stops.
