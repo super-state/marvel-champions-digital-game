@@ -4080,11 +4080,13 @@ function render() {
   if (asked && (state.choice?.discardFromHand || state.choice?.mulligan)) table?.waveHand();
   // A question darkens the table around what it is about: the attacker (red), or what an interrupt would change.
   setSpot(
-    spotOf(state.choice, state, {
-      offerIndex,
-      choosingDefender: !defenseQuestionDecline(state.choice),
-      heldEncounter,
-    }),
+    clearOfShade(
+      spotOf(state.choice, state, {
+        offerIndex,
+        choosingDefender: !defenseQuestionDecline(state.choice),
+        heldEncounter,
+      }),
+    ),
   );
   // That spotlight shades the table itself, the held card cut out with the cards it asks for (`spotOf`).
   if (spot && heldEncounter && spot.cutouts.includes(heldEncounter)) choiceShade.hidden = true;
@@ -4099,6 +4101,41 @@ function render() {
     );
   }
   showOutcome(state.outcome);
+}
+
+/**
+ * The cards the player can pick right now, on the table or in the hand: the question's cards and, while paying, the
+ * resources that can go in.
+ */
+function selectableCards(): string[] {
+  const ids = new Set<string>();
+  const hand = new Set(displayedHand.map((card) => card.id));
+  const choice = state.choice;
+  if (choice && !defenseQuestionDecline(choice))
+    for (const option of choice.options)
+      if (option.cardId && (onTable(option.cardId) || hand.has(option.cardId))) ids.add(option.cardId);
+  for (const source of state.payment?.sources ?? []) if (source.available) ids.add(resourcePieceId(source));
+  return [...ids];
+}
+
+/**
+ * Nothing the player can pick is ever under the shade (Adam, 2026-11-26: the hand cards that could pay Android
+ * Efficiency glowed under the dark): each one is cut out of it, its nameplate kept bright. A held encounter card asking
+ * about cards in the hand only still gets its shade, the card and its picks cut out of it, rather than the full-screen
+ * one that covers the hand.
+ */
+function clearOfShade(next: Spot | null): Spot | null {
+  const picks = selectableCards();
+  if (!picks.length) return next;
+  if (!next) {
+    if (!heldEncounter || state.choice?.offers?.length) return null;
+    return { glow: [{ id: heldEncounter, tone: "attack" }], cutouts: [heldEncounter, ...picks], plates: picks };
+  }
+  return {
+    ...next,
+    cutouts: [...new Set([...next.cutouts, ...picks])],
+    plates: [...new Set([...(next.plates ?? []), ...picks])],
+  };
 }
 
 /** The hero's or an ally's own menu, opened by clicking the card: its basic powers and abilities. */
