@@ -25,11 +25,24 @@ export interface PatchNote {
 
 export const PATCH_NOTES: readonly PatchNote[] = [
   {
-    // Not shipped yet: written ahead, so the fixes Adam has said go in the next version are listed here. Each change
-    // names its pull request, to pick onto the release branch (cut off table-v0.2.7) when 0.2.8 ships.
     version: "0.2.8",
-    title: "Threat you can watch arrive",
+    title: "Clearer choices",
     changes: [
+      {
+        // PRs 193, 195 (Adam, 2026-11-25).
+        kind: "better",
+        text: "When an encounter card makes you choose, like Android Efficiency's boost (pay a resource or take a Drone), it stays in front of you with its name on the question, and each choice is its own button.",
+      },
+      {
+        // PRs 195, 202, 203, 205 (Adam, 2026-11-26).
+        kind: "better",
+        text: "Choosing to pay lights up everything that can pay, on the table and in your hand, and the card moves up out of the way. Back takes you to the choice again.",
+      },
+      {
+        // PR 202 (Adam, 2026-11-26).
+        kind: "fixed",
+        text: "Cards you can pick are never left in the dark while the table asks you something.",
+      },
       {
         // PR 196 (Adam, 2026-11-26: "lets put this into next release").
         kind: "fixed",
