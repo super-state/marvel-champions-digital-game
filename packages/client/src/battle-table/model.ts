@@ -3166,16 +3166,30 @@ export class BattleModel {
    * character you control"): whether these picks pay it. The engine takes picks that don't pay as not spending, and
    * the "or" happens with the cards still in hand, so the table only lets a spend through that pays (an empty pick is
    * the decline). Null when the question isn't such a spend.
+   *
+   * Every card picked must be needed: one that could be left out and the rest still pay is refused, so the table
+   * never spends cards past the cost (Adam, 2026-11-26: Sonic Boom asked for three and took six). A card making more
+   * than is needed stays allowed: RRG 1.8 (Cost) lets a player generate resources beyond a cost, the excess lost.
    */
   spendPays(ids: readonly string[]): boolean | null {
     const choice = this.#game.pendingChoice;
     if (choice?.prompt.kind !== "spendResources" || choice.prompt.required) return null;
     if (ids.includes(EITHER_SPEND) || ids.includes(EITHER_OTHERWISE)) return null;
     if (!ids.length) return true;
-    const pool = paymentOptionsPool(this.#game, CORE_DEPS, choice.playerId, ids, null);
-    // A spend asking for several different types (none in the Core Set) is left to the engine.
-    if (choice.prompt.distinctTypes) return pool !== null;
-    return pool !== null && satisfies(pool, combineRequirements(choice.prompt.requirement, 0));
+    const prompt = choice.prompt;
+    const pays = (picks: readonly string[]) => {
+      const pool = paymentOptionsPool(this.#game, CORE_DEPS, choice.playerId, picks, null);
+      // A spend asking for several different types (none in the Core Set) is left to the engine.
+      if (prompt.distinctTypes) return pool !== null;
+      return pool !== null && satisfies(pool, combineRequirements(prompt.requirement, 0));
+    };
+    if (!pays(ids)) return false;
+    return ids.length === 1 || ids.every((id) => !pays(ids.filter((other) => other !== id)));
+  }
+
+  /** Whether a spend that can be declined is already paid by these picks, so picking another card would overspend. */
+  spendCovered(ids: readonly string[]): boolean {
+    return ids.length > 0 && this.spendPays(ids) === true;
   }
 
   chooseMany(ids: readonly string[]): boolean {

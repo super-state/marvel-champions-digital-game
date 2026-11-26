@@ -669,6 +669,53 @@ test("01123 Sonic Boom: Spend takes only picks that pay it; picks that don't wou
   expect(snap(battle).hero.exhausted).toBe(true);
 });
 
+test("01123 Sonic Boom: Spend takes only the cards it needs, never more (Adam, 2026-11-26: asked for three, took six)", () => {
+  const battle = scenario({
+    deal: { villain: "klaw" },
+    // The three basic resources, and Spider-Tracer (energy) and Backflip (physical): more than it needs.
+    hand: ["01088", "01089", "01090", "01007", "01003"],
+    top: ["01124", "01122", "01123"],
+  });
+  toHero(battle);
+  expect(battle.endTurn()).toBe(true);
+  for (let i = 0; i < 20 && snap(battle).choice && snap(battle).choice!.eitherOr !== "choose"; i++) {
+    const choice = snap(battle).choice!;
+    const picks = choice.offers?.length
+      ? []
+      : choice.defense
+        ? choice.options.filter((o) => !o.cardId).map((o) => o.id)
+        : choice.options.slice(0, choice.min).map((o) => o.id);
+    expect(battle.chooseMany(picks)).toBe(true);
+  }
+  expect(battle.choose(EITHER_SPEND)).toBe(true);
+  const choice = snap(battle).choice!;
+  expect(choice.eitherOr).toBe("spend");
+  const hand = snap(battle).hand;
+  const handCards = choice.options.filter((o) => hand.some((c) => c.id === o.cardId));
+  // More cards on offer than it needs (the basics, and the Spider-Man cards whose printed resources fit).
+  expect(handCards.length).toBeGreaterThan(3);
+  const all = handCards.map((o) => o.id);
+  // Three cards that pay it between them (one of each type).
+  const threes = all.flatMap((a, i) => all.slice(i + 1).flatMap((b, j) => all.slice(i + j + 2).map((c) => [a, b, c])));
+  const exact = threes.find((three) => battle.spendPays(three) === true)!;
+  expect(exact).toBeDefined();
+  // Every card on offer together pays it too, but not all of them are needed: refused, nothing spent.
+  expect(battle.spendPays(all)).toBe(false);
+  expect(battle.chooseMany(all)).toBe(false);
+  // A fourth card on top of an exact payment is one too many too.
+  expect(battle.spendPays([...exact, all.find((id) => !exact.includes(id))!])).toBe(false);
+  // The three it asks for: covered (the table takes no more picks), and paid with exactly those.
+  expect(battle.spendCovered(exact)).toBe(true);
+  expect(battle.spendCovered(exact.slice(0, 2))).toBe(false);
+  expect(battle.chooseMany(exact)).toBe(true);
+  // Only those three left the hand.
+  expect(snap(battle).hand).toHaveLength(hand.length - 3);
+  expect(snap(battle).hand.some((c) => exact.some((id) => handCards.find((o) => o.id === id)!.cardId === c.id))).toBe(
+    false,
+  );
+  expect(snap(battle).hero.exhausted).toBe(false);
+});
+
 test("an ally's own damage for attacking is taken, not dealt to itself: 'Jessica Jones takes 1 damage'", () => {
   const battle = scenario({ inPlay: ["01059"] });
   const jessica = snap(battle).inPlay.find((c) => c.name === "Jessica Jones")!;
