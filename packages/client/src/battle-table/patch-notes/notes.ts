@@ -31,6 +31,16 @@ export const PATCH_NOTES: readonly PatchNote[] = [
     title: "Read before you choose",
     changes: [
       {
+        // Issue 215 (a player's idea): branch claude/preview-other-side.
+        kind: "new",
+        text: "See your hero card’s other side before you flip: point at “Change to …” in your hero’s actions, or press Other side on the card in the card panel.",
+      },
+      {
+        // PRs 212, 213.
+        kind: "better",
+        text: "New versions arrive between matches, never during one: when you go back to the boxes or play again, the game picks up the latest version by itself.",
+      },
+      {
         // Issue 210 (a player's report): branch claude/choice-keeps-targets-sharp.
         kind: "fixed",
         text: 'When a card makes you choose (Ultron\'s "threat or a Drone"), the cards your choice would change stay in focus, so you can read the threat or health before you pick.',
