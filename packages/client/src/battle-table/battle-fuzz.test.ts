@@ -585,7 +585,12 @@ function playGame(seed: number, policy: Policy, villain: VillainId = "rhino"): G
         guard("cancel()", () => model.cancel());
         return !!snap() && !snap()!.choice?.canCancel;
       }
-      const pool = preferred(s, ch);
+      // A card that can't pay a declinable spend is disabled on the table: only paying cards, else decline.
+      const pool = preferred(s, ch).filter((o) => model.spendPays([o.id]) !== false);
+      if (!pool.length) {
+        trace.push("skip (nothing pays)");
+        return choose(null, "choose(null)");
+      }
       const pick = pool[int(pool.length)]!;
       trace.push(`target ${pick.label}`);
       if (!choose(pick.id, "choose()")) {
@@ -656,7 +661,12 @@ function playGame(seed: number, policy: Policy, villain: VillainId = "rhino"): G
         fail("choice-unsatisfiable", `${pendingKind()}:no-options`, `min=${ch.min} but no options are shown; ${ctx}`);
         return false;
       }
-      const pool = preferred(s, ch);
+      // A card that can't pay a declinable spend is disabled on the table: only paying cards, else decline.
+      const pool = preferred(s, ch).filter((o) => model.spendPays([o.id]) !== false);
+      if (!pool.length) {
+        trace.push("skip (nothing pays)");
+        return choose(null, "choose(null)");
+      }
       const pick = pool[int(pool.length)]!;
       trace.push(`choose ${pick.label}`);
       return choose(pick.id, "choose()");
@@ -671,9 +681,12 @@ function playGame(seed: number, policy: Policy, villain: VillainId = "rhino"): G
     }
     const top = Math.min(ch.max, options.length);
     const k = policy === "decliner" ? ch.min : ch.min + int(top - ch.min + 1);
-    const picks = shuffled(options)
+    let picks = shuffled(options)
       .slice(0, k)
       .map((o) => o.id);
+    // A spend that can be declined (Sonic Boom) goes through only with picks that pay it, as on the table, where its
+    // Spend button stays disabled: picks that don't are declined instead.
+    if (model.spendPays(picks) === false) picks = [];
     trace.push(`choose ${k} of ${options.length}`);
     if (chooseMany(picks, "chooseMany()")) return true;
     fail(
