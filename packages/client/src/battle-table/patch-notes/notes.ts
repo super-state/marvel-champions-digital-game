@@ -25,6 +25,39 @@ export interface PatchNote {
 
 export const PATCH_NOTES: readonly PatchNote[] = [
   {
+    // Not shipped yet: written ahead (Adam, 2026-11-26: "add them"). Each change names its pull request, to pick onto
+    // the release branch (cut off table-v0.2.8) when 0.2.9 ships.
+    version: "0.2.9",
+    title: "Paying, made plain",
+    changes: [
+      {
+        // PRs 206, 208.
+        kind: "fixed",
+        text: "Paying for something like Sonic Boom now takes only the cards it asks for. Before, it let you spend six cards when it needed three.",
+      },
+      {
+        // PR 208.
+        kind: "better",
+        text: "While you pay, the symbols it needs light up as you pick cards, each picked card shows the symbol it pays, and cards that can't help any more go dark.",
+      },
+      {
+        // PR 209.
+        kind: "better",
+        text: "Resource symbols on the table now look exactly like the ones printed on the cards.",
+      },
+      {
+        // PR 199.
+        kind: "better",
+        text: "Five threat on a scheme becomes one big 5 token, so threat is easy to count at a glance.",
+      },
+      {
+        // PR 201.
+        kind: "better",
+        text: "A boost card flies straight in under the villain, even past a minion standing beside them.",
+      },
+    ],
+  },
+  {
     version: "0.2.8",
     title: "Clearer choices",
     changes: [
