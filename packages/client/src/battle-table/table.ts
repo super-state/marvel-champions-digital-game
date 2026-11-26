@@ -699,7 +699,7 @@ export class BattleTable {
    */
   readonly #parked = new Set<string>();
   /** Where a revealed card stands aside for its question's picks (`revealAside`), held for that question. */
-  #aside: { key: string; x: number; scale: number } | null = null;
+  #aside: { key: string; x: number; y: number; scale: number } | null = null;
   /** Where the card being paid for waits, and every card that could pay for it or be picked so far (see #layout). */
   #stagedSpot: { id: string; sources: Set<string>; spot: [number, number] | null; key: string } | null = null;
   #actor: string | null = null;
@@ -3656,8 +3656,8 @@ export class BattleTable {
         };
       }
       const aside = this.#aside!;
-      if (aside.x !== reveal.x || aside.scale !== 1)
-        this.#pose(revealPose.id, aside.x, revealPose.y, revealPose.width * aside.scale, 1.75, this.#camera.rotation.x);
+      if (aside.x !== reveal.x || aside.y !== reveal.y || aside.scale !== 1)
+        this.#pose(revealPose.id, aside.x, aside.y, revealPose.width * aside.scale, 1.75, this.#camera.rotation.x);
     }
     const base2 = discardGoal.position;
     const scale = discardGoal.scale;
@@ -3830,8 +3830,13 @@ export class BattleTable {
    * first, then in front, the right and behind, whichever has no other card lying there. Landing just left of a minion
    * put it on the villain beside it, and it slid through him on its way in (Adam, 2026-11-23: "make sure that things
    * that are sliding like this don't go through the thing that they're passing over").
+   *
+   * `straight`: the side it goes in by, clear or not. A boost card only waits a moment before it is turned up, so it
+   * flies from the encounter deck straight to the villain's right edge and slides under, overlapping a minion standing
+   * there if need be, rather than going round to another side (Adam, 2026-11-26). It lies low, so it slides under that
+   * minion as it does under the villain.
    */
-  #clearLanding(piece: Piece, hostId: string, out: THREE.Vector3): THREE.Vector3 {
+  #clearLanding(piece: Piece, hostId: string, out: THREE.Vector3, straight = false): THREE.Vector3 {
     const { target } = piece;
     const host = this.#pieces.get(hostId)?.target;
     out.copy(target.position);
@@ -3871,6 +3876,11 @@ export class BattleTable {
     ];
     // A card going under the right-hand edge (a boost card) tries the right side first.
     if (target.position.x > host.position.x) [spots[0], spots[2]] = [spots[2]!, spots[0]!];
+    if (straight) {
+      out.x = spots[0]![0];
+      out.z = spots[0]![1];
+      return out;
+    }
     let best = spots[0]!;
     let least = Infinity;
     for (const spot of spots) {
@@ -4201,8 +4211,9 @@ export class BattleTable {
           // slide in flat: it passes under that card, never over it and down through it.
           const { fly, hop, slide } = tuckPath(progress);
           // Beside the edge it goes under if that is clear, else another clear side: a minion right of the villain
-          // had the boost card land on it, drop under it and slide on (Adam, 2026-11-24).
-          const landing = this.#clearLanding(piece, underHost!, TUCK_LANDING);
+          // had the boost card land on it, drop under it and slide on (Adam, 2026-11-24). A boost card goes straight
+          // in by the villain's right edge, minion or not (Adam, 2026-11-26).
+          const landing = this.#clearLanding(piece, underHost!, TUCK_LANDING, kind === "tuck");
           if (slide > 0) piece.root.position.lerpVectors(landing, piece.target.position, slide);
           else {
             piece.root.position.lerpVectors(from.position, landing, fly);
