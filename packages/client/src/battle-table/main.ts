@@ -30,6 +30,7 @@ import {
 import { spreadPlates, type Obstacle, type Plate, type PlateShift } from "./plate-spread.js";
 import { installReport } from "./report/report.js";
 import { installPatchNotesButton, offerPatchNotes } from "./patch-notes/patch-notes.js";
+import { takeNewVersion } from "./test-site/update-check.js";
 import { momentOf } from "./report/capture.js";
 import { eventLook, offerDoes, spotOf, waitsOnDock, type GlowTone, type Spot } from "./spotlight.js";
 import {
@@ -4471,7 +4472,13 @@ for (const button of gameMenu.querySelectorAll<HTMLButtonElement>("[data-sound]"
 paintSound();
 for (const type of ["pointerdown", "keydown", "touchend"] as const)
   addEventListener(type, () => sfx.unlock(), { capture: true, passive: true });
-tryAgain.onclick = start;
+// Playing again after a match takes a new version first, if one is out: the page comes back with the same villain dealt
+// (test-site/update-check.ts).
+tryAgain.onclick = () => {
+  void takeNewVersion().then((reloading) => {
+    if (!reloading) start();
+  });
+};
 gameOverUndo.onclick = () => undoButton.click();
 gameOver.oncancel = (event) => event.preventDefault();
 pile.onclick = () => setDiscardOpen(!discardOpen || viewingEncounterDiscard, false);
@@ -4941,6 +4948,8 @@ function tableInert(inert: boolean) {
   for (const child of document.body.children)
     if (child instanceof HTMLElement && child.id !== "shelf") child.inert = inert;
 }
+/** The shelf has opened once on this page: later openings come after a match (`showShelf`). */
+let shelfOpened = false;
 async function showShelf() {
   shelfUp = true;
   // No game on the shelf yet: the tab says the game's name, not the last matchup.
@@ -4955,6 +4964,10 @@ async function showShelf() {
       location.reload();
       return;
     }
+    // Back at the boxes after a match: a new version on the test site is taken now, between games, never during one
+    // (test-site/update-check.ts). Not on the first opening, which has just loaded the newest.
+    if (shelfOpened && (await takeNewVersion())) return;
+    shelfOpened = true;
     const { openShelf } = await import("./boxes/boxes.js");
     shelfDrawn();
     await openShelf({
@@ -4989,7 +5002,11 @@ function begin() {
   addRecordButton(document.querySelector("#menu .menu-actions"), () => gameMenu.close());
   // The patch notes the player hasn't read come up over the boxes once they are drawn (patch-notes/).
   if (opensOnShelf()) void showShelf().then(offerPatchNotes);
-  else start();
+  else {
+    // Dealt straight onto the table (Try again on a new version, a reload mid-game): the notes still come up.
+    start();
+    offerPatchNotes();
+  }
 }
 if (import.meta.env.VITE_TABLE_VERSION) void playerReady.then(begin);
 else begin();

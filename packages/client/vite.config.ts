@@ -20,6 +20,22 @@ import { soundStudioPlugin } from "./vite-sound-studio.js";
  * vite-marvelcdb-import.ts.
  */
 /**
+ * A shipped 3D table build (`pnpm table:ship` sets `VITE_TABLE_VERSION`) carries `table-version.json`, so a friend's open
+ * page can ask which version is live and take a new one between matches (`src/battle-table/test-site/update-check.ts`).
+ */
+function tableVersionPlugin() {
+  return {
+    name: "table-version",
+    apply: "build" as const,
+    generateBundle(this: { emitFile(file: { type: "asset"; fileName: string; source: string }): string }) {
+      const version = process.env.VITE_TABLE_VERSION;
+      if (version)
+        this.emitFile({ type: "asset", fileName: "table-version.json", source: JSON.stringify({ version }) });
+    },
+  };
+}
+
+/**
  * The commit this bundle is built from, for the Title footer's version stamp (`src/view/app-version.ts`). Netlify
  * sets `COMMIT_REF` on every deploy; a local or CI build asks git; with neither, the stamp is just the release.
  */
@@ -52,6 +68,7 @@ export default defineConfig(({ command }) => ({
     ),
   },
   plugins: [
+    tableVersionPlugin(),
     cardArtPlugin(),
     marvelcdbImportPlugin(),
     releaseHistoryPlugin(),
