@@ -2503,8 +2503,10 @@ function placeSpendMarks(projected: ReturnType<BattleTable["anchors"]>) {
     }
   for (const [id, types] of marks) {
     const card = projected.find((p) => p.id === id);
+    // The card's own outline on screen, tilt and all, so the tint covers the whole card and nothing past it.
+    const outline = table?.cardOutline(id) ?? [];
     let mark = spendMarks.get(id);
-    if (!card) {
+    if (!card || !outline.length) {
       mark?.remove();
       spendMarks.delete(id);
       continue;
@@ -2515,24 +2517,22 @@ function placeSpendMarks(projected: ReturnType<BattleTable["anchors"]>) {
       mark = make("div", "spend-mark");
       mark.dataset.types = key;
       mark.dataset.resource = types[0] === "any" ? "any" : types[0]!;
-      const badges = make("div", "spend-mark-badges");
+      const symbols = make("div", "spend-mark-symbols");
       for (const type of types) {
-        const pip = make("span", "pip");
-        pip.dataset.resource = type;
-        pip.append(icon(RESOURCE_ICON[type] ?? "wild"));
-        badges.append(pip);
+        const symbol = make("span", "spend-mark-symbol");
+        symbol.dataset.resource = type;
+        symbol.append(icon(RESOURCE_ICON[type] ?? "wild"));
+        symbols.append(symbol);
       }
-      mark.append(badges);
+      mark.append(make("div", "spend-mark-tint"), symbols);
       spendLayer.append(mark);
       spendMarks.set(id, mark);
     }
-    // A little inside the card's outline, so a hand card's slight tilt never shows the tint past its edge.
-    const inset = card.width * 0.06;
-    const height = card.bottom - card.top;
-    mark.style.width = `${Math.round(card.width - inset * 2)}px`;
-    mark.style.height = `${Math.round(height - inset * 2)}px`;
-    mark.style.transform = `translate(${Math.round(card.left + inset)}px,${Math.round(card.top + inset)}px)`;
-    mark.style.setProperty("--pip", `${Math.round(Math.min(64, Math.max(28, card.width * 0.42)))}px`);
+    mark.querySelector<HTMLElement>(".spend-mark-tint")!.style.clipPath =
+      `polygon(${outline.map((point) => point.replace(" ", "px ") + "px").join(",")})`;
+    const symbols = mark.querySelector<HTMLElement>(".spend-mark-symbols")!;
+    symbols.style.transform = `translate(${Math.round(card.x)}px,${Math.round((card.top + card.bottom) / 2)}px) translate(-50%,-50%)`;
+    symbols.style.setProperty("--symbol", `${Math.round(Math.min(96, Math.max(32, card.width * 0.5)))}px`);
   }
 }
 
