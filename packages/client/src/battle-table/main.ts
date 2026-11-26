@@ -1513,14 +1513,20 @@ function resolveChoice(id: string | null) {
 }
 
 /**
- * The options that glow as pickable. In a spend's second step only the cards picked and those that would pay a symbol
- * still unlit: a card paying only what is already paid stops glowing (Adam, 2026-11-26).
+ * In a spend's second step the table dims as it does while paying for a card, leaving lit only the cards picked, the
+ * cards that would pay a symbol still unlit, and the card asking: a card paying only what is already paid goes dark
+ * and can't be picked (Adam, 2026-11-26). Null otherwise.
  */
-function spendTargets(choice: Choice): Choice["options"] {
-  if (choice.eitherOr !== "spend") return choice.options;
+function spendSources(): string[] | null {
+  const choice = state.choice;
+  if (choice?.eitherOr !== "spend") return null;
   const meter = model.spendMeter([...choicePicks]);
-  if (!meter) return choice.options;
-  return choice.options.filter((option) => choicePicks.has(option.id) || meter.useful.has(option.id));
+  if (!meter) return null;
+  const lit = choice.options.flatMap((option) =>
+    option.cardId && (choicePicks.has(option.id) || meter.useful.has(option.id)) ? [option.cardId] : [],
+  );
+  if (state.choiceSource) lit.push(state.choiceSource);
+  return lit;
 }
 
 function selectChoice(id: string) {
@@ -4020,6 +4026,7 @@ function render() {
     [];
   if (state.payment || state.choice || discardOpen || state.turn !== "player") menuCard = null;
   paintReading();
+  const spendLit = state.payment ? null : spendSources();
   table?.setCards({
     handPick: !!(state.choice?.discardFromHand || state.choice?.mulligan),
     defending,
@@ -4042,8 +4049,16 @@ function render() {
       (state.choice.max <= 1 || state.choice.eitherOr === "spend") &&
       !state.choice.discardFromHand &&
       !state.choice.mulligan
-        ? spendTargets(state.choice).flatMap((item) => (item.cardId && onTable(item.cardId) ? [item.cardId] : []))
+        ? state.choice.options.flatMap((item) =>
+            item.cardId && onTable(item.cardId) && (!spendLit || spendLit.includes(item.cardId)) ? [item.cardId] : [],
+          )
         : [],
+    // A spend's asking card stays clear of every payer, lit or not (`TableCards.asideFor`).
+    ...(spendLit && state.choice
+      ? {
+          asideFor: state.choice.options.flatMap((item) => (item.cardId && onTable(item.cardId) ? [item.cardId] : [])),
+        }
+      : {}),
     discardOpen,
     hand: displayedHand,
     // An upgrade being paid for knows its host by now (Inspired on an ally): the table holds it by that card.
@@ -4052,7 +4067,7 @@ function render() {
         ? { ...staged, attachedTo: state.payment.subject.attachedTo ?? null }
         : staged,
     stagedOverEnemies: !!staged && staged.id === stagedAttachment,
-    paymentSources: state.payment?.sources.filter((s) => s.available).map(resourcePieceId) ?? null,
+    paymentSources: state.payment?.sources.filter((s) => s.available).map(resourcePieceId) ?? spendLit,
     selected,
   });
   table?.markActor(state.choiceSource);

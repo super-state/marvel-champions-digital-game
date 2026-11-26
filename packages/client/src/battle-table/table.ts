@@ -47,6 +47,11 @@ export interface TableCards {
   readonly discard: readonly TableCard[];
   readonly drawn: readonly string[];
   readonly targets: readonly string[];
+  /**
+   * The cards a revealed card asking for picks stands clear of, when not the cards glowing (`targets`): a spend's
+   * every payer, so the card stays put while payers go dark as their symbol is paid. Defaults to `targets`.
+   */
+  readonly asideFor?: readonly string[];
   readonly encounterCount: number;
   readonly encounterDiscard: readonly TableCard[];
   readonly viewingEncounterDiscard: boolean;
@@ -3632,12 +3637,13 @@ export class BattleTable {
     // choose from shows clear of it (Adam, 2026-11-23: "you have to always be able to see what you're choosing").
     // The revealed card asking itself (Caught Off Guard, marked as the actor), or a question that came up after it
     // did; never the picks left over from before it (Adam, 2026-11-24: Breakin' & Takin' kept going left).
-    const asking = this.#actor === revealPose?.id || state.targets.join(",") !== this.#revealStartTargets;
-    if (revealPose && revealRect && state.targets.length && asking) {
-      const key = `${revealPose.id}|${state.targets.join(",")}|${w}x${h}|${this.#question}|${this.#hand.sunk}`;
+    const clearOf = state.asideFor ?? state.targets;
+    const asking = this.#actor === revealPose?.id || clearOf.join(",") !== this.#revealStartTargets;
+    if (revealPose && revealRect && clearOf.length && asking) {
+      const key = `${revealPose.id}|${clearOf.join(",")}|${w}x${h}|${this.#question}|${this.#hand.sunk}`;
       const reveal = revealRect as { x: number; y: number; halfWidth: number; halfHeight: number };
       if (this.#aside?.key !== key) {
-        const picks = state.targets.flatMap((id) => {
+        const picks = clearOf.flatMap((id) => {
           const box = id === revealPose!.id ? null : this.#screenBox(id);
           return box ? [box] : [];
         });
