@@ -125,8 +125,12 @@ const focusBlur = element("focus-blur");
 let revealFocus: string | null = null;
 /** Cards turned up off the top of the deck (Black Cat's discard): the table blurs around them while they are dealt with. */
 let rowFocus: string[] = [];
-/** A question answered only in the dock ("Choose one"): the table blurs, all but the card asking it, if on the table. */
-let dockFocus: { keep: string | null } | null = null;
+/**
+ * A question answered only in the dock ("Choose one"): the table blurs, all but the card asking it, if on the table,
+ * and the cards its options would change (`also`: Ultron's "Place 1 threat on the main scheme" keeps the main scheme
+ * and its threat readable; a player's report, 2026-11-26, issue 210).
+ */
+let dockFocus: { keep: string | null; also: string[] } | null = null;
 const defenseShade = document.querySelector<SVGSVGElement>("#defense-shade")!;
 const abilityGlow = document.querySelector<SVGSVGElement>("#ability-glow")!;
 const abilityOutlines = document.querySelector<SVGGElement>("#ability-outlines")!;
@@ -202,10 +206,63 @@ const STATUS_NOTES: Record<string, { title: string; text: string }> = {
   },
 };
 
-/** Under a card's picture, a note for each status it has, saying what that status does (Adam, 2026-11-23). */
-function paintStatusNotes(box: HTMLElement, card: { markers?: readonly { name: string; count: number }[] } | null) {
+/** Stat changes a card wears as markers (`statModifiers` in the model): "+1 ATK", not a counter. */
+const STAT_MARKERS = new Set(["THW", "ATK", "DEF", "SCH", "REC", "HP"]);
+/** Markers the preview's numbers leave out: damage is in the health shown, a tucked card is under it. */
+const UNSHOWN_MARKERS = new Set(["damage", "tucked"]);
+
+/**
+ * A card's numbers as they stand on the table now, for its preview: the health and threat its plate shows (read off
+ * the plate, so the preview never runs ahead of a count still ticking up), and its counters and stat changes (a
+ * player's report, 2026-11-26: the preview showed only the printed card, never the threat on the scheme). Only for a
+ * card in play: a card in the hand or a pile has nothing on it.
+ */
+function liveFacts(card: Partial<BattleCard> & { id?: string }): HTMLElement[] {
+  if (!card.id || !onTable(card.id) || inHand(card.id)) return [];
+  const facts: HTMLElement[] = [];
+  const plate = labels.get(card.id);
+  const hp =
+    plate?.dataset.hp !== undefined
+      ? Number(plate.dataset.hp)
+      : card.id === state.hero.id
+        ? state.heroHp
+        : card.id === state.villain.id
+          ? state.villainHp
+          : card.hp;
+  if (hp !== undefined) facts.push(hpPill(hp));
+  if (card.threat !== null && card.threat !== undefined) {
+    const shown = plate?.querySelector<HTMLElement>(".scheme-threat")?.dataset.count;
+    facts.push(
+      threatPill(shown !== undefined ? Number(shown) : card.threat, card.threatTarget ?? null, card.threatLock),
+    );
+  }
+  for (const { name, count } of card.markers ?? []) {
+    if (!count || STATUS_NOTES[name] || UNSHOWN_MARKERS.has(name)) continue;
+    const pill = make("span", "stat-pill");
+    if (STAT_MARKERS.has(name)) {
+      pill.dataset.kind = "modifier";
+      pill.append(make("b", "", `${count > 0 ? "+" : "−"}${Math.abs(count)}`), ` ${name}`);
+    } else {
+      pill.dataset.kind = name === "threat" || name === "acceleration" ? name : "counter";
+      if (name === "threat" || name === "acceleration") pill.append(icon(name));
+      pill.append(make("b", "", String(count)), name === "threat" ? " threat" : ` ${name}`);
+    }
+    facts.push(pill);
+  }
+  return facts;
+}
+
+/**
+ * Under a card's picture: its live numbers (`liveFacts`), then a note for each status it has, saying what that
+ * status does (Adam, 2026-11-23).
+ */
+function paintStatusNotes(box: HTMLElement, card: (Partial<BattleCard> & { id?: string }) | null) {
   const notes = (card?.markers ?? []).filter((m) => m.count > 0 && STATUS_NOTES[m.name]);
+  const facts = card ? liveFacts(card) : [];
+  const row = facts.length ? make("div", "live-facts") : null;
+  row?.append(...facts);
   box.replaceChildren(
+    ...(row ? [row] : []),
     ...notes.map(({ name }) => {
       const note = make("div", "status-note");
       const text = make("span", "");
@@ -214,8 +271,8 @@ function paintStatusNotes(box: HTMLElement, card: { markers?: readonly { name: s
       return note;
     }),
   );
-  box.hidden = !notes.length;
-  return notes.length > 0;
+  box.hidden = !notes.length && !row;
+  return !box.hidden;
 }
 const pinnedCard = element("pinned-card");
 const pinnedPicture = pinnedCard.querySelector("img")!;
@@ -2643,6 +2700,30 @@ function placeLabels() {
     focusBlur.style.clipPath = "";
     focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = `url("data:image/svg+xml,${svg}")`;
     focusBlur.style.maskSize = focusBlur.style.webkitMaskSize = "100% 100%";
+  } else if (!focusBlur.hidden && !revealFocus && dockFocus?.also.length) {
+    // The card asking and the cards its options would change, each with its plate (the threat or health being
+    // decided on), cut out of the blur. A mask, as for a row: the holes may overlap.
+    const box = focusBlur.getBoundingClientRect();
+    const sharp = [dockFocus.keep, ...dockFocus.also].filter((id): id is string => !!id);
+    const holes = sharp.flatMap((id) => {
+      const outline = table!.cardOutline(id);
+      const shapes = outline.length ? [`<polygon points='${outline.join(" ")}'/>`] : [];
+      const plate = labels.get(id);
+      if (plate?.isConnected && plate.childElementCount) {
+        const r = plate.getBoundingClientRect();
+        const pad = 4;
+        shapes.push(
+          `<rect x='${Math.round(r.left - box.left - pad)}' y='${Math.round(r.top - box.top - pad)}' width='${Math.round(r.width + pad * 2)}' height='${Math.round(r.height + pad * 2)}' rx='12'/>`,
+        );
+      }
+      return shapes;
+    });
+    const w = Math.round(box.width);
+    const h = Math.round(box.height);
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}' viewBox='0 0 ${w} ${h}'><mask id='m'><rect width='${w}' height='${h}' fill='white'/><g fill='black'>${holes.join("")}</g></mask><rect width='${w}' height='${h}' mask='url(%23m)'/></svg>`;
+    focusBlur.style.clipPath = "";
+    focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = `url("data:image/svg+xml,${svg}")`;
+    focusBlur.style.maskSize = focusBlur.style.webkitMaskSize = "100% 100%";
   } else if (!focusBlur.hidden && (revealFocus || dockFocus)) {
     const sharp = revealFocus ?? dockFocus?.keep ?? null;
     // Everything but the revealed card (or the card asking the dock's question), cut out along its outline.
@@ -4148,8 +4229,11 @@ function render() {
   // An either-or's spend step lets the whole table be reached: the hand and the cards in play that can pay.
   const waiting =
     state.choice?.eitherOr !== "spend" && waitsOnDock(state.choice, (id) => onTable(id) && actionCard !== id);
+  const keep = heldEncounter ?? state.choiceSource ?? null;
   dockFocus =
-    waiting && !revealFocus && !rowFocus.length ? { keep: heldEncounter ?? state.choiceSource ?? null } : null;
+    waiting && !revealFocus && !rowFocus.length
+      ? { keep, also: (state.choice?.affects ?? []).filter((id) => id !== keep && onTable(id)) }
+      : null;
   const blurWasHidden = focusBlur.hidden;
   focusBlur.hidden = !handQuestion() && !revealFocus && !dockFocus && !rowFocus.length;
   if (focusBlur.hidden) delete focusBlur.dataset.ready;
