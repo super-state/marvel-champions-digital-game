@@ -66,6 +66,24 @@ describe("fitBoard", () => {
     expect(fitBoard(huge, project, rect, { minScale: 0.5 }).scale).toBe(0.5);
   });
 
+  test("fitted card by card, a wide far row and a narrow near one grow past where the box's corners would stop them", () => {
+    // Piles out at the sides of the far row, the hero's cards in the middle of the near one: the box round them has
+    // near corners where no card stands (Adam, 2026-11-26: room unused above the hand).
+    const parts = [
+      { x0: -5, x1: -4, z0: -3, z1: -2 },
+      { x0: 4, x1: 5, z0: -3, z1: -2 },
+      { x0: -1, x1: 1, z0: 0, z1: 1.5 },
+    ];
+    const box = { x0: -5, x1: 5, z0: -3, z1: 1.5 };
+    const byBox = fitBoard(box, project, rect);
+    const byCards = fitBoard(box, project, rect, {}, parts);
+    expect(byCards.scale).toBeGreaterThan(byBox.scale * 1.05);
+    expect(parts.every((part) => inside(corners(part, byCards), rect))).toBe(true);
+    // Any bigger and some card leaves the room.
+    const bigger = { ...byCards, scale: byCards.scale * 1.03 };
+    expect(parts.every((part) => inside(corners(part, bigger), rect))).toBe(false);
+  });
+
   test("a phone's narrow table is fitted across", () => {
     const phone = tableCamera(375, 440);
     const narrow: ScreenRect = { left: 12, right: 363, top: 44, bottom: 250 };

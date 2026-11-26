@@ -51,6 +51,11 @@ export function fitToBox(fit: BoardFit, p: { x: number; y: number; z: number }):
  * room above and below, projects inside `rect`. Past `minScale` the box is placed at `minScale` and may overflow.
  * `height` is how far above the table the card faces sit, so their projection is measured where they are drawn.
  * `nearest` is the world z the box's near edge may not pass: the camera's side of the table.
+ *
+ * `parts`, when given, are the cards that make up the box: the fit keeps each of them on screen rather than the box's
+ * corners. Seen in perspective the table narrows away from the camera, so a box's near corners stand out wider than
+ * any card there may reach: a pile at the side of the far row and the hero's row at the front made a corner where no
+ * card stands, and it held the whole table small, leaving room unused above the hand (Adam, 2026-11-26).
  */
 export function fitBoard(
   box: TableBox,
@@ -62,10 +67,10 @@ export function fitBoard(
     height = 0.06,
     nearest = 4,
   }: Partial<Record<"minScale" | "maxScale" | "height" | "nearest", number>> = {},
+  parts: readonly TableBox[] = [box],
 ): BoardFit {
   const cx = (box.x0 + box.x1) / 2;
   const cz = (box.z0 + box.z1) / 2;
-  const halfWidth = (box.x1 - box.x0) / 2;
   const halfDepth = (box.z1 - box.z0) / 2;
   // Slide the box towards or away from the camera until the room above it equals the room below.
   const place = (scale: number): number => {
@@ -84,11 +89,13 @@ export function fitBoard(
     const z = place(scale);
     const y = height * scale;
     let ok = true;
-    for (const dz of [-scale * halfDepth, scale * halfDepth]) {
-      for (const dx of [-scale * halfWidth, scale * halfWidth]) {
-        const point = project(dx, y, z + dz);
-        if (point.x < rect.left - 0.5 || point.x > rect.right + 0.5) ok = false;
-        if (point.y < rect.top - 0.5 || point.y > rect.bottom + 0.5) ok = false;
+    for (const part of parts) {
+      for (const pz of [part.z0, part.z1]) {
+        for (const px of [part.x0, part.x1]) {
+          const point = project(scale * (px - cx), y, z + scale * (pz - cz));
+          if (point.x < rect.left - 0.5 || point.x > rect.right + 0.5) ok = false;
+          if (point.y < rect.top - 0.5 || point.y > rect.bottom + 0.5) ok = false;
+        }
       }
     }
     return { z, ok };
