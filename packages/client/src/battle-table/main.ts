@@ -4044,7 +4044,13 @@ function render() {
   droneIds = new Set(state.enemyCards.flatMap((card) => (card.drone ? [card.id] : [])));
   const selected =
     state.payment?.sources.filter((item) => item.selected).map(resourcePieceId) ??
-    state.choice?.options.flatMap((option) => (option.cardId && choicePicks.has(option.id) ? [option.cardId] : [])) ??
+    // In the order picked: the table stacks the last one picked in front (`TableCards.selected`).
+    (state.choice
+      ? [...choicePicks].flatMap((id) => {
+          const cardId = state.choice!.options.find((option) => option.id === id)?.cardId;
+          return cardId ? [cardId] : [];
+        })
+      : null) ??
     [];
   if (state.payment || state.choice || discardOpen || state.turn !== "player") menuCard = null;
   paintReading();

@@ -605,7 +605,7 @@ const SPEND_SYMBOL_COLOR: Readonly<Record<string, string>> = {
   wild: "#34d08b",
 };
 
-/** A resource's printed symbol, white with a dark edge and a glow of its colour, on a clear square. */
+/** A resource's printed symbol, white with a glow of its colour, on a clear square. */
 function paintSpendSymbol(canvas: HTMLCanvasElement, type: string): void {
   const ctx = canvas.getContext("2d")!;
   const size = canvas.width;
@@ -614,14 +614,12 @@ function paintSpendSymbol(canvas: HTMLCanvasElement, type: string): void {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const glyph = SPEND_GLYPH[type] ?? "";
+  // White with a glow of its colour, and no dark outline (Adam, 2026-11-26).
   ctx.shadowColor = SPEND_SYMBOL_COLOR[type] ?? "#ffffff";
   ctx.shadowBlur = size * 0.09;
-  ctx.lineJoin = "round";
-  ctx.lineWidth = size * 0.05;
-  ctx.strokeStyle = "rgba(10, 17, 24, 0.9)";
-  ctx.strokeText(glyph, size / 2, size / 2);
-  ctx.shadowBlur = 0;
   ctx.fillStyle = "#ffffff";
+  ctx.fillText(glyph, size / 2, size / 2);
+  ctx.shadowBlur = size * 0.03;
   ctx.fillText(glyph, size / 2, size / 2);
 }
 
@@ -3471,7 +3469,10 @@ export class BattleTable {
       .sub(eye)
       .dot(forward);
     // A picked card keeps its layer when hovered: popping in front of a picked neighbour looks like the two clip.
-    const picked = hand.filter((card) => state.selected.includes(card.id));
+    // The last one picked is in front, as it was while hovered when it was picked (Adam, 2026-11-26: a card picked
+    // last went behind the one picked before it): `selected` comes in the order picked.
+    const picked = state.selected.filter((id) => hand.some((card) => card.id === id));
+    const pickedBehind = (id: string) => picked.length - 1 - picked.indexOf(id);
     // Hovering a sunk hand card shows it full size where it is, standing on the bottom edge, so it reads without the
     // card panel. Not while paying or picking from the hand, where the whole hand is up and a card only lifts a step.
     const zoomWidth = cardWidth * 1.45;
@@ -3509,7 +3510,8 @@ export class BattleTable {
       const pose = this.#pieces.get(card.id)!.target;
       const ray = pose.position.clone().sub(eye);
       const ratio = raised
-        ? (raisedDepth + (picked.includes(card) ? picked.indexOf(card) * 0.026 : -0.16) * pose.scale) / ray.dot(forward)
+        ? (raisedDepth + (picked.includes(card.id) ? pickedBehind(card.id) * 0.026 : -0.16) * pose.scale) /
+          ray.dot(forward)
         : (planeDistance + i * 0.12 * pose.scale) / ray.dot(normal);
       pose.position.copy(eye).addScaledVector(ray, ratio);
       pose.scale *= ratio;
