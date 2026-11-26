@@ -18,7 +18,8 @@
   overflow: hidden;
   pointer-events: none;
 }
-.bench-picks button:focus-visible,
+/* The ring round a box only once the keyboard (or a pad) is in use, not for the focus the bench gives on arrival. */
+.bench[data-input="keys"] .bench-picks button:focus,
 :root[data-input="pad"] .bench-picks button:focus {
   outline: 3px solid var(--gold);
   outline-offset: 6px;

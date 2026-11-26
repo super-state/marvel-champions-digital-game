@@ -222,8 +222,11 @@ export interface ShelfBox {
   readonly star: THREE.Mesh;
 }
 
-/** How tall a face-out deck box's lid is: it sits over the top of the box, a touch bigger, so its seam shows. */
-const LID = 0.72;
+/**
+ * How tall a face-out deck box's lid is: it sits over the top of the box, a touch bigger, so its seam shows. The seam
+ * runs just above the art window (`frontPrint`: the window starts 92 of the print's 560 down), never through it.
+ */
+const LID = 0.44;
 
 /** A face-out deck box: the box, and its lid over the top, both printed. Every part answers the pointer as box `i`. */
 function deckBox(size: BoxSize, front: THREE.Texture, side: THREE.Texture, lit: boolean, colour: number, i: number) {
@@ -315,12 +318,12 @@ export async function buildBoxes(group: THREE.Group, look: ShelfLook, lit: Reado
       body.userData.box = i;
       parts = [body];
     }
-    // The favourite's sticker, on the front's top right corner (the reader's right is -z), on the lid face-out.
+    // The favourite's sticker, on the front's top right corner (the reader's right is -z): face-out, on the art window, under the lid.
     const star = new THREE.Mesh(starGeometry, starMaterial);
     star.rotation.y = Math.PI / 2;
     star.position.set(
-      size.deep / 2 + (face ? 0.035 : 0.006),
-      face ? size.tall / 2 - 0.36 : 0,
+      size.deep / 2 + (face ? 0.008 : 0.006),
+      face ? size.tall / 2 - 0.78 : 0,
       -size.across / 2 + (face ? 0.32 : 0.24),
     );
     star.visible = false;
