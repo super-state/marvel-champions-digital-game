@@ -234,6 +234,13 @@ export interface BattleChoice {
    * this pill").
    */
   spend?: boolean;
+  /**
+   * A spend the player may decline (Android Efficiency's boost: "spend a [energy] resource or put the top card of the
+   * deck into play ... as a Drone minion"; Sonic Boom), asked in two steps like any other card's choice (Adam,
+   * 2026-11-25): "choose" offers the two halves as buttons; picking "Spend ..." opens "spend", where the cards that
+   * can pay are picked, and Cancel goes back to "choose".
+   */
+  eitherOr?: "choose" | "spend";
   /** The opening-hand mulligan: pick any cards to discard, then draw back up to hand size. */
   mulligan: boolean;
   /**
@@ -476,6 +483,10 @@ function eitherOrTitle(state: GameState, pending: NonNullable<GameState["pending
   });
   return `Spend ${parts.join(", ")}, or ${otherwise}?`;
 }
+
+/** The two answers of an either-or spend's first step (`BattleChoice.eitherOr`). */
+export const EITHER_SPEND = "either-or:spend";
+export const EITHER_OTHERWISE = "either-or:otherwise";
 
 function statModifiers(state: GameState, id: InstanceId) {
   const profile = characterProfile(state, id, CORE_DEPS);
@@ -895,6 +906,8 @@ export class BattleModel {
    * Station), waiting for the player to pick which: the engine's own example would pick for them.
    */
   #costDiscard: { entry: LegalAction; candidates: readonly InstanceId[]; min: number; max: number } | null = null;
+  /** The either-or spend whose "Spend" half the player picked (its engine choice id): its second step is up. */
+  #eitherOrSpending: string | null = null;
   #view: BattleSnapshot | null = null;
   #matchup: { hero: HeroId; villain: VillainId } = { hero: "spider-man", villain: "rhino" };
   /** The shuffle this game was dealt with: with the matchup, it deals the same game again (a bug report keeps it). */
@@ -1001,7 +1014,7 @@ export class BattleModel {
   }
 
   get canUndo(): boolean {
-    return this.#history.length > 0;
+    return this.#history.length > 0 || this.snapshot().choice?.eitherOr === "spend";
   }
 
   /** Paying for a reaction the player chose in a window (Enhanced Spider-Sense), not for a card played from hand. */
@@ -1010,6 +1023,11 @@ export class BattleModel {
   }
 
   undo(): boolean {
+    // Picking "Spend ..." on an either-or is no move of its own: undoing it goes back to the two halves.
+    if (this.snapshot().choice?.eitherOr === "spend") {
+      this.cancel();
+      return true;
+    }
     const previous = this.#history.pop();
     if (!previous) return false;
     // Undo from the middle of paying (for a reaction) drops the payment too: `#setGame` clears it.
@@ -1083,6 +1101,7 @@ export class BattleModel {
     this.#handOrder = [...new Set([...newCards, ...this.#handOrder.filter((id) => hand.includes(id)), ...hand])];
     this.#drawn = drawn;
     this.#game = state;
+    this.#eitherOrSpending = null;
     this.#actions = legalActions(state, state.players[0]!.playerId, CORE_DEPS);
     this.#plays.clear();
     if (this.#actions.kind === "turn") {
@@ -2487,6 +2506,7 @@ export class BattleModel {
     enemyIds.delete(villain.instanceId);
     for (const host of enemyIds) for (const id of getInstance(state, host)?.attachments ?? []) enemyIds.add(id);
     const searched = choice ? this.#searched(choice.options) : undefined;
+    const asked = this.#eitherOrStep(choice && searched ? { ...choice, searched } : choice);
     this.#view = {
       beats: this.#beats,
       choiceSource: pending ? (choiceSourceOf(state, pending)?.instanceId ?? null) : null,
@@ -2545,7 +2565,7 @@ export class BattleModel {
         .filter((id) => !enemyIds.has(id))
         .map((id) => this.#card(id)),
       payment,
-      choice: choice && searched ? { ...choice, searched } : choice,
+      choice: asked,
       turn: state.outcome
         ? "finished"
         : state.step.phase === "villain"
@@ -2644,6 +2664,12 @@ export class BattleModel {
   }
 
   cancel(): void {
+    // Spending an either-or's resources called off: back to its two halves.
+    if (this.snapshot().choice?.eitherOr === "spend") {
+      this.#eitherOrSpending = null;
+      this.#view = null;
+      return;
+    }
     if (!this.#payment && this.snapshot().payment) this.chooseMany([]);
     else this.#clearPayment();
   }
@@ -3072,6 +3098,46 @@ export class BattleModel {
     return true;
   }
 
+  /**
+   * An either-or spend shown in two steps (`BattleChoice.eitherOr`): first its two halves as buttons, then, once
+   * "Spend ..." is picked, the cards that pay it. Any other question passes through.
+   */
+  #eitherOrStep(choice: BattleChoice | null): BattleChoice | null {
+    const pending = this.#game.pendingChoice;
+    if (!choice || !pending || pending.prompt.kind !== "spendResources" || pending.prompt.required) return choice;
+    if (choice.id !== pending.choiceId) return choice;
+    const halves = /^Spend (.+?), or (.+)\?$/.exec(choice.prompt);
+    if (!halves) return choice;
+    if (this.#eitherOrSpending === pending.choiceId)
+      return { ...choice, prompt: `Spend ${halves[1]}`, eitherOr: "spend", canSkip: false, canCancel: true };
+    return {
+      ...choice,
+      prompt: "Choose one",
+      eitherOr: "choose",
+      options: [
+        { id: EITHER_SPEND, label: `Spend ${halves[1]}`, cardId: null },
+        { id: EITHER_OTHERWISE, label: halves[2]!.charAt(0).toUpperCase() + halves[2]!.slice(1), cardId: null },
+      ],
+      min: 1,
+      max: 1,
+      canSkip: false,
+      canCancel: false,
+    };
+  }
+
+  /** An answer to an either-or spend's first step; null when `ids` isn't one. */
+  #answerEitherOr(ids: readonly string[]): boolean | null {
+    if (ids.length !== 1 || (ids[0] !== EITHER_SPEND && ids[0] !== EITHER_OTHERWISE)) return null;
+    if (this.snapshot().choice?.eitherOr !== "choose") return false;
+    if (ids[0] === EITHER_OTHERWISE) {
+      this.#eitherOrSpending = null;
+      return this.chooseMany([]);
+    }
+    this.#eitherOrSpending = this.#game.pendingChoice!.choiceId;
+    this.#view = null;
+    return true;
+  }
+
   choose(id: string | null): boolean {
     if (this.#targetPick) {
       const entry = this.#targetPick;
@@ -3104,6 +3170,7 @@ export class BattleModel {
   spendPays(ids: readonly string[]): boolean | null {
     const choice = this.#game.pendingChoice;
     if (choice?.prompt.kind !== "spendResources" || choice.prompt.required) return null;
+    if (ids.includes(EITHER_SPEND) || ids.includes(EITHER_OTHERWISE)) return null;
     if (!ids.length) return true;
     const pool = paymentOptionsPool(this.#game, CORE_DEPS, choice.playerId, ids, null);
     // A spend asking for several different types (none in the Core Set) is left to the engine.
@@ -3112,6 +3179,8 @@ export class BattleModel {
   }
 
   chooseMany(ids: readonly string[]): boolean {
+    const answered = this.#answerEitherOr(ids);
+    if (answered !== null) return answered;
     if (this.spendPays(ids) === false) return false;
     if (this.#costDiscard) {
       const { entry, candidates, min, max } = this.#costDiscard;

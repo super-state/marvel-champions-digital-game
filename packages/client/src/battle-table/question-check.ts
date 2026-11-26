@@ -7,7 +7,7 @@
  *
  * Used twice: the dev table wears a "No designed screen" tag while such a question is up (main.ts), and every driven
  * game in the tests (the fuzz, the deck audits) fails on one that is not in `KNOWN_PLAIN` (question-watch.ts).
- * The map of every kind, and the cards that raise each: https://claude.ai/artifact/JhpB3AJgJcdqBAMVNcVwr4
+ * The map of every kind, and the cards that raise each: https://claude.ai/artifact/KuRruTjfX6Jc5HwzpJNEFg
  */
 import type { ChoicePrompt, GameState } from "@mc/engine";
 import type { BattleSnapshot } from "./model.js";
@@ -118,6 +118,8 @@ export function plainQuestion(snapshot: BattleSnapshot, game: GameState): PlainQ
   )
     return { key: `${kind}: boost card unnamed`, kind, why: "boost card unnamed", asker };
   if (handling === "designed") return null;
+  // An either-or spend says both halves on its buttons (Sonic Boom, Android Efficiency): designed for that.
+  if (kind === "spendResources" && choice.eitherOr) return null;
   // Asked in a designed way whatever its kind: defending, reaction offers, a search panel, picks in the hand, Guard.
   if (choice.defense || choice.offers?.length || choice.mulligan || choice.discardFromHand || choice.guard) return null;
   const shown = new Set<string>([
@@ -147,8 +149,6 @@ export function plainQuestion(snapshot: BattleSnapshot, game: GameState): PlainQ
   // The cards offered are all ones the player can see and pick on the table (any other option is a plain answer
   // beside them, like declining): that is the table's own way of asking.
   if (cards > 0) return null;
-  // An either-or spend says both halves on its buttons (Sonic Boom): designed for that.
-  if (kind === "spendResources" && /^Spend .+, or .+\?$/.test(choice.prompt)) return null;
   return { key: `${kind}: buttons only`, kind, why: "buttons only", asker };
 }
 
