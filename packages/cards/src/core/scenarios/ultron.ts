@@ -191,8 +191,10 @@ export const ULTRON = defineAbilities({
   "01146.boost": boost(heal(countOf(YOUR_DRONES), theVillain)),
   // Swarm Attack — When Revealed: Each Drone minion engaged with your hero attacks. If no attacks were made this way, put the top
   // card of your deck into play facedown, engaged with you as a Drone minion.
+  // A player in alter-ego form has no hero (RRG 1.8 "Form, Change Form", p. 21, as Under Attack below reads "their
+  // hero"), so no Drone is engaged with "your hero": none attacks and the second sentence resolves (issue #222).
   "01147.when-revealed": whenRevealed(
-    enemyAttack(each(YOUR_DRONES), { bind: "swarm" }),
+    ifThen(isHero(), enemyAttack(each(YOUR_DRONES), { bind: "swarm" })),
     ifThen(not(made("swarm")), droneFromDeck(you)),
   ),
   // Drone Factory — When Revealed: Each player puts the top card of their deck into play facedown as a Drone minion. Place 1 threat here for each Drone minion in play.
