@@ -53,7 +53,7 @@ export const PATCH_NOTES: readonly PatchNote[] = [
       {
         // Issue 222 (a player's report): branch claude/swarm-attack-alter-ego.
         kind: "fixed",
-        text: "Swarm Attack only sends Drones at your hero. Revealed while you are in alter-ego form, no Drone attacks you: the top card of your deck becomes a new Drone instead, as the card says.",
+        text: "Swarm Attack only sends Drones at your hero. Revealed while you are in alter-ego form, no Drone attacks you: the top card of your deck becomes a new Drone instead, as the card says, and the table tells you there is no hero to attack.",
       },
       {
         // Issue 210, the same branch.
