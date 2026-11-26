@@ -305,6 +305,20 @@ function cards() {
  * by the end of a move it may already lie faceup in the discard pile under its own name.
  */
 let droneIds = new Set<string>();
+/** The beats still to play after the one playing now (empty outside a move). */
+let beatsToCome: readonly Beat[] = [];
+
+/**
+ * The threat a scheme shows as it arrives mid-move: the snapshot holds its threat once the whole move is done, so a
+ * scheme revealed with threat still to come (Drone Factory's starting 4, then 1 per Drone) would land with all of it
+ * and the chips the beats add would already be there (Adam, 2026-11-25: 7 chips at once while it said +4, then +3).
+ * It shows what it had before the first threat beat still to come for it.
+ */
+function threatOnArrival<T extends { id: string; threat: number | null }>(card: T): T {
+  if (card.threat === null) return card;
+  const first = beatsToCome.find((beat) => beat.threat?.scheme === card.id)?.threat;
+  return first ? { ...card, threat: Math.max(0, first.to - first.delta) } : card;
+}
 
 function nameOf(id: string | null | undefined): string {
   if (!id) return "";
@@ -1869,8 +1883,9 @@ function synchronizeLabels() {
     // the beats still to come will add one by one. A Drone arriving mid-way (Ultron) redraws every label, and the
     // threat landing after it was counted twice, 8/10 showing until the move ended at the true 4/10 (a player's
     // report, 2026-11-25).
+    // A scheme arriving mid-move has no count yet: it starts from what it had before the threat still to come.
     const shownThreat = stage.dataset.resolving
-      ? label.querySelector<HTMLElement>(".scheme-threat")?.dataset.count
+      ? (label.querySelector<HTMLElement>(".scheme-threat")?.dataset.count ?? threatOnArrival(card).threat ?? undefined)
       : undefined;
     label.replaceChildren();
     // Characters and schemes wear a nameplate; a support or upgrade only does while a question involves it.
@@ -2162,7 +2177,7 @@ function revealedBy(reveal: NonNullable<Beat["reveal"]>): string {
 function leaveEncounter(id: string, upcoming: readonly Beat[]): "landed" | "parked" | "retired" {
   const permanent = state.enemyCards.find((c) => c.id === id);
   if (permanent) {
-    table?.landEncounter(permanent);
+    table?.landEncounter(threatOnArrival(permanent));
     return "landed";
   }
   const leaves = upcoming.findIndex((beat) => beat.encounterResolved === id);
@@ -3090,6 +3105,7 @@ async function present(beats: Snapshot["beats"]) {
   let dealtLit: string[] = [];
   for (let index = 0; index < beats.length; index++) {
     const beat = beats[index]!;
+    beatsToCome = beats.slice(index + 1);
     if (!beat.encounterDeal) dealtLit = [];
     if (spotted) {
       if (!beat.encounterDeal) setSpot(null);
@@ -3351,7 +3367,7 @@ async function present(beats: Snapshot["beats"]) {
       if (card) {
         const from = reducedMotion() ? undefined : foundAt.get(card.id);
         foundAt.delete(card.id);
-        table?.bringInEnemy(card, from);
+        table?.bringInEnemy(threatOnArrival(card), from);
         sfx.play("deal");
         await sleep(reducedMotion() ? 200 : 700);
         synchronizeLabels();
@@ -3734,7 +3750,7 @@ async function present(beats: Snapshot["beats"]) {
       setWidePreview(false);
       const permanent = state.enemyCards.find((c) => c.id === beat.reveal!.id);
       if (permanent) {
-        table?.landEncounter(permanent);
+        table?.landEncounter(threatOnArrival(permanent));
         sfx.play("place");
         if (beat.reveal.whenRevealed && !reducedMotion()) {
           // Lands on the mat first, then its When Revealed fires: it rises with a flash before the effect hits.
@@ -3858,6 +3874,7 @@ async function present(beats: Snapshot["beats"]) {
   announcement.hidden = true;
   setSpot(null);
   checkShownNumbers();
+  beatsToCome = [];
   delete stage.dataset.resolving;
   anchors.inert = false;
   presenting = false;
