@@ -3,6 +3,7 @@
  * by the 3D tokens (painted onto canvas textures). Every icon sits on a 24×24 grid. Original drawings, kept simple
  * so they read at 14px and on a token seen at an angle.
  */
+import "../fonts/champions-icons.css";
 
 interface Layer {
   readonly d: string;
@@ -244,6 +245,19 @@ export type IconName = keyof typeof ICONS;
 
 const SVG = "http://www.w3.org/2000/svg";
 
+/**
+ * The resource symbols are drawn as the cards print them, from the community Champions icon font
+ * (`src/fonts/champions-icons.css`), never our own drawings: a symbol on the table that differs from the one on the
+ * card is confusing (Adam, 2026-11-26). The drawings above stay as the fallback while the font loads.
+ */
+export const PRINTED_FONT = "Champions Icons";
+export const PRINTED_GLYPH: Readonly<Partial<Record<IconName, string>>> = {
+  energy: "e",
+  mental: "m",
+  physical: "p",
+  wild: "w",
+};
+
 /** An inline icon in `currentColor`, hidden from assistive tech unless it carries a title. */
 export function icon(name: IconName, title?: string): SVGSVGElement {
   const svg = document.createElementNS(SVG, "svg");
@@ -253,6 +267,20 @@ export function icon(name: IconName, title?: string): SVGSVGElement {
     svg.setAttribute("role", "img");
     svg.setAttribute("aria-label", title);
   } else svg.setAttribute("aria-hidden", "true");
+  const glyph = PRINTED_GLYPH[name];
+  if (glyph) {
+    const text = document.createElementNS(SVG, "text");
+    text.setAttribute("x", "12");
+    text.setAttribute("y", "12");
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("dominant-baseline", "central");
+    text.setAttribute("fill", "currentColor");
+    text.setAttribute("font-family", `"${PRINTED_FONT}"`);
+    text.setAttribute("font-size", "22");
+    text.textContent = glyph;
+    svg.append(text);
+    return svg;
+  }
   for (const layer of ICONS[name] as readonly Layer[]) {
     const path = document.createElementNS(SVG, "path");
     path.setAttribute("d", layer.d);
@@ -281,6 +309,15 @@ function path2d(d: string): Path2D {
 /** Paint an icon centred on (x, y) at `size` pixels, for token faces. */
 export function paintIcon(ctx: CanvasRenderingContext2D, name: IconName, x: number, y: number, size: number): void {
   ctx.save();
+  const glyph = PRINTED_GLYPH[name];
+  if (glyph && document.fonts?.check(`${Math.round(size)}px "${PRINTED_FONT}"`)) {
+    ctx.font = `${Math.round(size * 0.92)}px "${PRINTED_FONT}"`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(glyph, x, y);
+    ctx.restore();
+    return;
+  }
   ctx.translate(x - size / 2, y - size / 2);
   ctx.scale(size / 24, size / 24);
   for (const layer of ICONS[name] as readonly Layer[]) {

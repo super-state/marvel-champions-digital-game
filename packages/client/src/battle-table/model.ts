@@ -889,6 +889,9 @@ export class BattleModel {
     );
     // The card whose ability is resolving: its effects (Black Cat discarding from the deck) are its doing.
     let resolving: { card: InstanceId; label: string } | null = null;
+    // Cards dealt to the player (the deal, a hazard icon, a surge), this move or waiting facedown from an earlier one:
+    // each is revealed in its turn, never "brought in" by the ability that resolved before it.
+    const dealt = new Set<string>(this.#game.players[0]!.dealtEncounter);
     // The card whose question this move answers (Eviction Notice's "Choose one"): what follows is still its doing.
     const answered = this.#game.pendingChoice;
     const askedBy = answered ? (choiceSourceOf(this.#game, answered)?.instanceId ?? null) : null;
@@ -980,6 +983,7 @@ export class BattleModel {
       if (e.type === "deckShuffled" && e.zone.kind === "deck") shuffledDeck = deckLeft = e.order.length;
       // Every card that leaves the deck is a move off it, a draw included (the engine reports the draw as well).
       else if (e.type === "cardMoved" && e.from.kind === "deck" && !facedownPuts.has(e.instanceId)) deckLeft--;
+      if (e.type === "encounterCardDealt") dealt.add(e.instanceId);
       if (e.type === "abilityResolved") resolving = { card: e.instanceId, label: triggerLabel(e.abilityId) };
       // Only the ability that resolved last owns what follows; a move into play or a new step ends its say.
       else if (e.type === "stepChanged" || e.type === "cardPlayed") resolving = null;
@@ -1142,7 +1146,7 @@ export class BattleModel {
         const title = card?.name ?? name(e.instanceId);
         // Revealed by another card's ability rather than dealt (Shadow of the Past bringing in Vulture): it says so.
         const broughtBy =
-          e.type === "encounterCardRevealed" && resolving && resolving.card !== e.instanceId
+          e.type === "encounterCardRevealed" && resolving && resolving.card !== e.instanceId && !dealt.has(e.instanceId)
             ? name(resolving.card)
             : "";
         const nemesis = isNemesisCard(card);
