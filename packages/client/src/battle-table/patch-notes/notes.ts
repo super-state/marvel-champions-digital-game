@@ -40,6 +40,11 @@ export const PATCH_NOTES: readonly PatchNote[] = [
         kind: "better",
         text: "Hovering a card in play shows its numbers as they are right now under its picture: the threat on a scheme, the health left, and any counters.",
       },
+      {
+        // PRs 216, 219.
+        kind: "better",
+        text: "A crowded table uses its space: with a lot of minions out, the encounter deck moves out to the corner of the mat, and the minions stand much bigger and closer together.",
+      },
     ],
   },
   {
