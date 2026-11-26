@@ -691,6 +691,18 @@ const SCENES: Record<string, Scene> = {
     mainThreat: 0,
     clearMinions: true,
   },
+  /**
+   * Black Panther (`?scene=wakanda&hero=black-panther`) with Energy Daggers, Panther Claws and Tactical Genius out and
+   * Wakanda Forever! in hand, a Hydra Bomber engaged: play it (pay with Energy) and the order of the Specials is asked
+   * (on the question map as waiting for a design: the upgrades are shown as buttons of their names).
+   */
+  wakanda: {
+    anyHero: true,
+    hero: { form: "hero" },
+    play: [{ code: "01046" }, { code: "01047" }, { code: "01048" }],
+    hand: ["01043a", "01088", "01089"],
+    minions: [{ code: "01110" }],
+  },
   /** Nick Fury in hand with the resources to pay for him: his "Choose one" waits in the dock, the table blurred behind. */
   fury: {
     hero: { form: "hero" },
