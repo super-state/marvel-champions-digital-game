@@ -69,8 +69,9 @@ test("Sonic Boom's Choose one shows the whole hand, risen and sharp, before the 
   const viewport = page.viewportSize()!;
   const choosing = await settledHand(page);
   expect(choosing.length).toBeGreaterThanOrEqual(3);
-  // Risen whole: the label on each hand card, low on the card, is on screen, not sunk below its edge.
-  for (const box of choosing) expect(box.top, box.card).toBeLessThan(viewport.height - 20);
+  // Risen whole: the label low on each hand card stands about 50px over the bottom edge; sunk, it sits about 8px over
+  // it (802 of 810 before the fix).
+  for (const box of choosing) expect(box.top, box.card).toBeLessThan(viewport.height - 30);
   // Not under the shade, and cut out of the blur along with the card asking.
   await expect(page.locator("#choice-shade")).toBeHidden();
   const holes = await page.evaluate(
@@ -83,8 +84,7 @@ test("Sonic Boom's Choose one shows the whole hand, risen and sharp, before the 
   const card = page.locator(".anchor.in-hand").first();
   const box = (await card.boundingBox())!;
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-  await page.waitForTimeout(600);
-  expect(await moves(page)).toContain(spend);
+  await expect.poll(() => moves(page), { timeout: 3_000 }).toContain(spend);
   expect(await handBoxes(page)).toHaveLength(choosing.length);
 
   // "Spend ..." opens the second step with the hand where it already was.
