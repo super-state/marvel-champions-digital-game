@@ -22,6 +22,7 @@ import { ASPECT_NAMES, BUILDER_HEROES, type HeroChoice } from "../../decks/deck-
 import type { FinishedGame } from "../../record/game.js";
 import { spatialPick, type FocusDirection } from "../../pad/spatial.js";
 import { camera, setPose } from "../camera.js";
+import { ease } from "../motion.js";
 import { ROOM, pointer, raycaster, renderer, say } from "../room.js";
 import { followHero } from "./free-play.js";
 import { SHELF_RELEASES } from "./hero-catalogue.js";
@@ -155,6 +156,8 @@ let card: HTMLElement | null = null;
 let tag: HTMLElement | null = null;
 let hint: HTMLElement | null = null;
 let tools: HTMLElement | null = null;
+/** Back to the shelf, top left while a box is up close: apart from its card, so it is plain to find. */
+let backBar: HTMLElement | null = null;
 let searchBox: HTMLInputElement | null = null;
 /** The camera is here: the boxes answer the pointer. */
 let active = false;
@@ -175,6 +178,8 @@ interface Box extends ShelfBox {
   size01: number;
   /** It was up close last frame: when it goes back, it is put straight back on its shelf. */
   wasUp: boolean;
+  /** How far through its flight up close (0 on the shelf, 1 there). */
+  fly: number;
 }
 const boxes: Box[] = [];
 /** The box whose card is open (or was last). */
@@ -342,7 +347,7 @@ async function standBoxes(group: THREE.Group) {
     button.onblur = () => {
       if (hovered === index) hovered = -1;
     };
-    boxes.push({ ...box, id, button, home: new THREE.Vector3(), place: -1, out: 0, size01: 0, wasUp: false });
+    boxes.push({ ...box, id, button, home: new THREE.Vector3(), place: -1, out: 0, size01: 0, wasUp: false, fly: 0 });
   }
 }
 
@@ -438,14 +443,9 @@ function paint(focusKey?: string) {
     const release = SHELF_RELEASES.find((each) => each.id === hero.release)?.name;
     parts.push(el("p", "bench-line", `Not on the table yet${release ? `: from ${release}` : ""}.`));
   }
-  const back = el("button", "btn btn-ghost bench-back", "Back to the shelf");
-  back.type = "button";
-  back.dataset.bench = "back";
-  back.onclick = () => closeCard();
-  parts.push(back);
-
   card.replaceChildren(...parts);
   card.hidden = false;
+  if (backBar) backBar.hidden = false;
   if (hint) hint.hidden = true;
   card
     .querySelector<HTMLElement>(`[data-bench="${CSS.escape(focusKey ?? (bench ? "choose" : "favourite"))}"]`)
@@ -467,9 +467,13 @@ function chooseHero(hero: BenchHero) {
 function closeCard(refocus = true) {
   if (!card) return;
   card.hidden = true;
+  if (backBar) backBar.hidden = true;
   if (hint) hint.hidden = false;
   if (refocus && opened && !opened.button.hidden) opened.button.focus({ preventScroll: true });
 }
+
+/** How long a box takes to come up close, in seconds. */
+const FLY = 0.42;
 
 /** How far in front of the camera a box up close stands, and the veil that dims the shelf behind it. */
 const closeAt = new THREE.Vector3();
@@ -503,6 +507,11 @@ const busy = () => !active;
 
 renderer.domElement.addEventListener("pointermove", (event) => {
   if (busy()) return;
+  if (cardOpen()) {
+    hovered = -1;
+    renderer.domElement.style.cursor = "default";
+    return;
+  }
   hovered = boxAt(event.clientX, event.clientY);
   renderer.domElement.style.cursor = hovered >= 0 ? "pointer" : "default";
 });
@@ -511,11 +520,11 @@ renderer.domElement.addEventListener("pointerleave", () => {
 });
 renderer.domElement.addEventListener("click", (event) => {
   if (busy()) return;
-  const index = boxAt(event.clientX, event.clientY);
-  const box = boxes[index];
-  if (box) pick(box);
-  // A click on the room away from the boxes puts the card away.
-  else if (cardOpen()) closeCard();
+  const box = boxes[boxAt(event.clientX, event.clientY)];
+  // A box up close: a click anywhere off it is a step back, never another box picked from the shelf behind.
+  if (cardOpen()) {
+    if (box !== opened) closeCard();
+  } else if (box) pick(box);
 });
 
 renderer.domElement.addEventListener(
@@ -631,7 +640,7 @@ function key(event: KeyboardEvent): boolean {
     return true;
   }
   const direction = ARROWS[event.key];
-  const areas = cardOpen() ? [card] : [tools, picks];
+  const areas = cardOpen() ? [backBar, card] : [tools, picks];
   if (!direction || !areas.every(Boolean)) return false;
   // Where the boxes are now, not where the last frame left them (a slow frame can still be to come).
   placePicks();
@@ -680,7 +689,14 @@ export function mountBench(source?: { games(): Promise<readonly FinishedGame[] |
       tag = el("p", "bench-tag");
       tag.hidden = true;
       hint = el("p", "bench-hint", "Pick a hero");
-      panel.append(tools, picks, card, tag, hint);
+      backBar = el("div", "bench-back-bar");
+      backBar.hidden = true;
+      const back = el("button", "btn btn-secondary bench-back", "‹ Back to the shelf");
+      back.type = "button";
+      back.dataset.bench = "back";
+      back.onclick = () => closeCard();
+      backBar.append(back);
+      panel.append(tools, picks, card, tag, hint, backBar);
       await document.fonts.load("900 34px 'Public Sans'");
       await standBoxes(group);
       veil = new THREE.Mesh(
@@ -741,12 +757,21 @@ export function mountBench(source?: { games(): Promise<readonly FinishedGame[] |
         box.mesh.visible = box.size01 > 0.02;
         box.mesh.scale.setScalar(Math.max(0.001, box.size01));
         if (up) {
-          // Up close: in front of the camera, left of the middle, its card to its right.
+          // Up close, as a campaign box comes off its shelf (`campaign.ts`): one short eased move with a hop and a
+          // turn, ending in front of the camera left of the middle (its card to its right), turned a little to show
+          // its side.
           closeTo(box, closeAt);
-          box.mesh.position.lerp(closeAt, Math.min(1, dt * 9));
+          box.fly = Math.min(1, box.fly + dt / FLY);
+          const e = ease(box.fly);
+          box.mesh.position.lerpVectors(box.home, closeAt, e);
+          box.mesh.position.y += Math.sin(Math.PI * e) * 0.9;
+          box.mesh.rotation.y = 0.3 * e + Math.sin(Math.PI * e) * 0.5;
           box.wasUp = true;
         } else if (box.wasUp) {
+          // Let go: straight back on its shelf.
           box.mesh.position.copy(box.home);
+          box.mesh.rotation.y = 0;
+          box.fly = 0;
           box.wasUp = false;
         } else if (box.place >= 0) {
           // A box on its way to a new place comes forward off the shelf first, clear of the boards and the others.

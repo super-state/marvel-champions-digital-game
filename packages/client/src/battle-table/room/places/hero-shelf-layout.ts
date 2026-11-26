@@ -34,7 +34,7 @@ export const CASE_SPAN = { z: 0, width: 18, depth: 1.75 };
 /** A deck box: across its face, tall, and thick (the spine's width). */
 const BOX = { across: 1.4, tall: 1.96, thick: 0.66 };
 /** Face-out, the boxes stand bigger: eight to a shelf, so each hero's card reads (Adam, 2026-11-26: "like 8"). */
-const FACE_BOX = { across: 2.0, tall: 2.8, thick: 0.94 };
+const FACE_BOX = { across: 2.0, tall: 2.8, thick: 1.05 };
 
 /** Its size as it stands: along the shelf (z), tall (y), and deep into the shelf (x). */
 export interface BoxSize {
