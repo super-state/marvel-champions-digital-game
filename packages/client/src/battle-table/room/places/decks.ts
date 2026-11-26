@@ -22,7 +22,6 @@ import { ASPECT_NAMES, BUILDER_HEROES, type HeroChoice } from "../../decks/deck-
 import type { FinishedGame } from "../../record/game.js";
 import { spatialPick, type FocusDirection } from "../../pad/spatial.js";
 import { camera, setPose } from "../camera.js";
-import { ease } from "../motion.js";
 import { ROOM, pointer, raycaster, renderer, say } from "../room.js";
 import { followHero } from "./free-play.js";
 import { SHELF_RELEASES } from "./hero-catalogue.js";
@@ -493,8 +492,47 @@ function closeCard(refocus = true) {
   if (refocus && opened && !opened.button.hidden) opened.button.focus({ preventScroll: true });
 }
 
-/** How long a box takes to come up close, in seconds. */
-const FLY = 0.42;
+/** How long a box takes to come up close, in seconds, and how fast it then turns side to side (radians a second). */
+const FLY = 0.62;
+const SWAY = 0.35;
+
+const easeOut = (x: number) => 1 - (1 - x) ** 3;
+/** Past the end and back: the landing's overshoot. */
+const easeOutBack = (x: number) => 1 + 2.4 * (x - 1) ** 3 + 1.4 * (x - 1) ** 2;
+const pulled = new THREE.Vector3();
+const over = new THREE.Vector3();
+
+/**
+ * A box coming off the shelf, `t` from 0 to 1 (Adam, 2026-11-26: "more juice, a slightly different path"). First it
+ * slides straight out of its slot, leaning back as if pulled by its top; then it swoops up and over towards the camera
+ * on a curve, spinning once round, and lands up close a touch past its place and settles back, with a small pop.
+ */
+function flyUp(box: Box, t: number) {
+  const out = 1.3;
+  const slide = 0.24;
+  pulled.copy(box.home).setX(box.home.x + out);
+  const mesh = box.mesh;
+  if (t < slide) {
+    const a = easeOut(t / slide);
+    mesh.position.lerpVectors(box.home, pulled, a);
+    mesh.rotation.set(0, 0, 0.22 * a);
+    mesh.scale.setScalar(1);
+    return;
+  }
+  const b = (t - slide) / (1 - slide);
+  const k = easeOutBack(b);
+  // A curve over the top: from the slot's mouth, up past the shelf above, to up close.
+  over.copy(pulled).lerp(closeAt, 0.35);
+  over.y = Math.max(pulled.y, closeAt.y) + 2.6;
+  const u = 1 - k;
+  mesh.position.set(
+    u * u * pulled.x + 2 * u * k * over.x + k * k * closeAt.x,
+    u * u * pulled.y + 2 * u * k * over.y + k * k * closeAt.y,
+    u * u * pulled.z + 2 * u * k * over.z + k * k * closeAt.z,
+  );
+  mesh.rotation.set(0, Math.PI * 2 * easeOut(b), 0.22 * (1 - b) - Math.sin(Math.PI * b) * 0.18);
+  mesh.scale.setScalar(1 + Math.sin(Math.PI * Math.min(1, b * 1.25)) * 0.08);
+}
 
 /** How far in front of the camera a box up close stands, and the veil that dims the shelf behind it. */
 const closeAt = new THREE.Vector3();
@@ -504,10 +542,14 @@ let veil: THREE.Mesh | null = null;
 /** Where a box up close stands: big in front of the camera, a little left of the middle. */
 function closeTo(box: Box, out: THREE.Vector3) {
   const tan = Math.tan(((camera.fov / 2) * Math.PI) / 180);
-  // Tall enough to fill about 60% of the screen's height (or, for a box lying flat, half its width).
-  const distance = Math.max(box.size.tall / (1.2 * tan), box.size.across / (1.0 * tan * camera.aspect));
+  // Its front fills a little over half the screen's height (or, for a box lying flat, half its width): measured to the
+  // front, which stands half the box's depth nearer than its middle.
+  const front = Math.max(box.size.tall / (1.1 * tan), box.size.across / (1.0 * tan * camera.aspect));
+  const distance = front + box.size.deep / 2;
   camera.getWorldDirection(lookingAt);
   out.copy(camera.position).addScaledVector(lookingAt, distance);
+  // A touch above the middle, clear of the bottom of the screen.
+  out.y += front * tan * 0.06;
   // The reader's left is +z here; the box sits a fifth of the screen's width left of the middle.
   out.z += distance * tan * camera.aspect * 0.42;
 }
@@ -783,22 +825,20 @@ export function mountBench(source?: { games(): Promise<readonly FinishedGame[] |
         box.mesh.visible = box.size01 > 0.02;
         box.mesh.scale.setScalar(Math.max(0.001, box.size01));
         if (up) {
-          // Up close, as a campaign box comes off its shelf (`campaign.ts`): one short eased move with a hop and a
-          // turn, ending in front of the camera left of the middle (its card to its right), turned a little to show
-          // its side.
           closeTo(box, closeAt);
           box.fly = Math.min(1, box.fly + dt / FLY);
-          const e = ease(box.fly);
-          box.mesh.position.lerpVectors(box.home, closeAt, e);
-          box.mesh.position.y += Math.sin(Math.PI * e) * 0.9;
+          flyUp(box, box.fly);
           // Once there, it turns slowly from side to side, so it reads as a box in the hand.
-          box.sway += dt;
-          box.mesh.rotation.y = 0.12 * e + Math.sin(Math.PI * e) * 0.5 + e * Math.sin(box.sway * 0.7) * 0.42;
+          if (box.fly >= 1) {
+            box.sway += dt;
+            box.mesh.rotation.y = Math.sin(box.sway * SWAY) * 0.42;
+          }
           box.wasUp = true;
         } else if (box.wasUp) {
           // Let go: straight back on its shelf.
           box.mesh.position.copy(box.home);
-          box.mesh.rotation.y = 0;
+          box.mesh.rotation.set(0, 0, 0);
+          box.mesh.scale.setScalar(1);
           box.fly = 0;
           box.sway = 0;
           box.wasUp = false;
