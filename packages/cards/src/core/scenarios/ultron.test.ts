@@ -72,6 +72,33 @@ describe("Ultron", () => {
   });
 });
 
+describe("Swarm Attack (01147)", () => {
+  const swarmIn = (state: GameState) =>
+    activeEncounterDeck(state).deck.find((id) => inst(state, id).cardId === "01147") as InstanceId;
+
+  // "Each Drone minion engaged with your hero attacks." A player in alter-ego form has no hero (RRG 1.8 "Form, Change
+  // Form", p. 21), so no Drone attacks and the second sentence gives them a Drone instead (issue #222).
+  it("in alter-ego form: no Drone attacks, and the top card of your deck becomes a Drone", () => {
+    // The same villain phase with Under Attack (placing threat, as an alter-ego must) dealt instead: Ultron's scheme
+    // completes 1A either way, so 2A's own Drone is in both games.
+    const control = settle(run(stackEncounterDeck(vsUltron(), "01149", "01151"), endTurn()));
+    const start = stackEncounterDeck(vsUltron(), "01149", "01147");
+    const after = settle(run(start, endTurn()));
+    expect(activeEncounterDeck(after).discard).toContain(swarmIn(start));
+    expect(inst(after, identityOf(after)).damage).toBe(0);
+    expect(dronesOf(after)).toHaveLength(dronesOf(control).length + 1);
+  });
+
+  it("in hero form: each Drone engaged with you attacks, so no Drone is added", () => {
+    const hero = run(stackEncounterDeck(vsUltron(), "01149", "01147"), toHero());
+    const before = dronesOf(hero).length;
+    expect(before).toBeGreaterThan(0);
+    const after = settle(run(hero, endTurn()));
+    expect(activeEncounterDeck(after).discard).toContain(swarmIn(hero));
+    expect(dronesOf(after)).toHaveLength(before);
+  });
+});
+
 describe("Assault on NORAD (main scheme 2B)", () => {
   const atNorad = (): GameState => {
     const start = vsUltron();
