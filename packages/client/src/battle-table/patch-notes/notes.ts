@@ -70,6 +70,11 @@ export const PATCH_NOTES: readonly PatchNote[] = [
         kind: "better",
         text: "A crowded table uses its space: with a lot of minions out, the encounter deck moves out to the corner of the mat, and the minions stand much bigger and closer together.",
       },
+      {
+        // Branch claude/dock-right-gap.
+        kind: "fixed",
+        text: "The bar asking you to choose no longer leaves extra space after the last choice: it sits evenly in its frame.",
+      },
     ],
   },
   {
