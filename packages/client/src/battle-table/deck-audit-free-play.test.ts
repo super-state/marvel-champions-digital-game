@@ -705,8 +705,24 @@ test("01123 Sonic Boom: Spend takes only the cards it needs, never more (Adam, 2
   // A fourth card on top of an exact payment is one too many too.
   expect(battle.spendPays([...exact, all.find((id) => !exact.includes(id))!])).toBe(false);
   // The three it asks for: covered (the table takes no more picks), and paid with exactly those.
-  expect(battle.spendCovered(exact)).toBe(true);
-  expect(battle.spendCovered(exact.slice(0, 2))).toBe(false);
+  // The bar's symbols: energy, mental, physical, none lit until picked; every card that can pay one glows.
+  const before = battle.spendMeter([])!;
+  expect(before.need).toEqual([
+    { type: "energy", paid: false },
+    { type: "mental", paid: false },
+    { type: "physical", paid: false },
+  ]);
+  expect([...before.useful].sort()).toEqual([...all].sort());
+  // Strength pays the physical: Backflip, whose only resource is physical, stops being pickable.
+  const strength = handCards.find((o) => o.label === "Strength")!.id;
+  const backflip = handCards.find((o) => o.label === "Backflip")!.id;
+  const afterStrength = battle.spendMeter([strength])!;
+  expect(afterStrength.need.find((n) => n.type === "physical")!.paid).toBe(true);
+  expect(afterStrength.useful.has(backflip)).toBe(false);
+  // The three it asks for light every symbol, and nothing else is pickable.
+  const paid = battle.spendMeter(exact)!;
+  expect(paid.need.every((n) => n.paid)).toBe(true);
+  expect(paid.useful.size).toBe(0);
   expect(battle.chooseMany(exact)).toBe(true);
   // Only those three left the hand.
   expect(snap(battle).hand).toHaveLength(hand.length - 3);

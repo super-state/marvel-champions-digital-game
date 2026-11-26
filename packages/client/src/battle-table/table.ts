@@ -47,6 +47,11 @@ export interface TableCards {
   readonly discard: readonly TableCard[];
   readonly drawn: readonly string[];
   readonly targets: readonly string[];
+  /**
+   * The cards a revealed card asking for picks stands clear of, when not the cards glowing (`targets`): a spend's
+   * every payer, so the card stays put while payers go dark as their symbol is paid. Defaults to `targets`.
+   */
+  readonly asideFor?: readonly string[];
   readonly encounterCount: number;
   readonly encounterDiscard: readonly TableCard[];
   readonly viewingEncounterDiscard: boolean;
@@ -59,6 +64,12 @@ export interface TableCards {
   readonly defending: boolean;
   readonly menuCard: string | null;
   readonly paymentSources: readonly string[] | null;
+  /**
+   * Cards picked for a spend and the resource each pays (`energy`, `mental`, `physical`, `wild`): the card is tinted in
+   * that resource's colour with its printed symbol on it, drawn on the card itself so a card in front covers it as it
+   * covers the card (Adam, 2026-11-26).
+   */
+  readonly spendMarks?: Readonly<Record<string, string>> | undefined;
   /** Cards are being picked from the hand (a mulligan, the hand limit): a sunk hand rises so every card shows. */
   readonly handPick?: boolean;
   /** Cards lying facedown under an enemy card, each naming it in `under`. */
@@ -574,6 +585,42 @@ function chipValue(chip: THREE.Object3D): number {
 function chipSpot(value: 1 | 5, i: number): { x: number; y: number; z: number } {
   if (value === 5) return { x: 0.46 - (i % 3) * 0.4, y: -0.1, z: 0.03 + Math.floor(i / 3) * 0.07 };
   return { x: 0.52 - i * 0.25, y: -0.35, z: 0.03 };
+}
+
+/** The community Champions icon font (`src/fonts/champions-icons.css`): the game's printed symbols as letters. */
+const SYMBOL_FONT = "Champions Icons";
+/** Each resource's letter in that font (as `view/removal-cost-icons.ts` has them). */
+export const SPEND_GLYPH: Readonly<Record<string, string>> = { energy: "e", mental: "m", physical: "p", wild: "w" };
+/** A card picked for a spend, washed in its resource's colour (the face's colour multiplies its picture). */
+const SPEND_TINT: Readonly<Record<string, number>> = {
+  energy: 0xffd25a,
+  mental: 0x6fa8ff,
+  physical: 0xff7a6e,
+  wild: 0x6fe0a8,
+};
+const SPEND_SYMBOL_COLOR: Readonly<Record<string, string>> = {
+  energy: "#ffc935",
+  mental: "#4a93ff",
+  physical: "#ef4a3c",
+  wild: "#34d08b",
+};
+
+/** A resource's printed symbol, white with a glow of its colour, on a clear square. */
+function paintSpendSymbol(canvas: HTMLCanvasElement, type: string): void {
+  const ctx = canvas.getContext("2d")!;
+  const size = canvas.width;
+  ctx.clearRect(0, 0, size, size);
+  ctx.font = `${Math.round(size * 0.72)}px "${SYMBOL_FONT}"`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const glyph = SPEND_GLYPH[type] ?? "";
+  // White with a glow of its colour, and no dark outline (Adam, 2026-11-26).
+  ctx.shadowColor = SPEND_SYMBOL_COLOR[type] ?? "#ffffff";
+  ctx.shadowBlur = size * 0.09;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(glyph, size / 2, size / 2);
+  ctx.shadowBlur = size * 0.03;
+  ctx.fillText(glyph, size / 2, size / 2);
 }
 
 export class BattleTable {
@@ -1170,6 +1217,29 @@ export class BattleTable {
       });
   }
 
+  /** The printed resource symbols drawn on cards picked for a spend (`TableCards.spendMarks`), one texture a type. */
+  readonly #spendSymbolTextures = new Map<string, THREE.CanvasTexture>();
+  readonly #spendSymbolPlane = new THREE.PlaneGeometry(0.62, 0.62);
+  #spendSymbolTexture(type: string): THREE.CanvasTexture {
+    let texture = this.#spendSymbolTextures.get(type);
+    if (!texture) {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 256;
+      const made = new THREE.CanvasTexture(canvas);
+      made.colorSpace = THREE.SRGBColorSpace;
+      this.#spendSymbolTextures.set(type, made);
+      texture = made;
+      paintSpendSymbol(canvas, type);
+      // The icon font may still be loading: paint again once it has.
+      void document.fonts?.load(`200px "${SYMBOL_FONT}"`).then(() => {
+        paintSpendSymbol(canvas, type);
+        made.needsUpdate = true;
+        this.#requestFrame();
+      });
+    }
+    return texture;
+  }
+
   #lightCards(state: TableCards): void {
     this.#cloth.color.setHex(state.paymentSources ? 0x3d444e : 0xffffff);
     this.#deckBack.material.color.setHex(state.paymentSources ? 0x51545b : 0xffffff);
@@ -1184,8 +1254,31 @@ export class BattleTable {
           : state.discardOpen && !this.#viewedPile(state).some((card) => card.id === id)
             ? 0x848993
             : 0xffffff;
-      piece.face.material.color.setHex(color);
+      const mark = state.spendMarks?.[id];
+      piece.face.material.color.setHex(mark ? (SPEND_TINT[mark] ?? color) : color);
       this.#shadeTokens(piece, !!state.paymentSources && !state.paymentSources.includes(id));
+      let symbol = piece.root.getObjectByName("spend-symbol") as
+        | THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>
+        | undefined;
+      if (mark && SPEND_GLYPH[mark]) {
+        if (!symbol) {
+          symbol = new THREE.Mesh(
+            this.#spendSymbolPlane,
+            new THREE.MeshBasicMaterial({ transparent: true, toneMapped: false, depthWrite: false }),
+          );
+          symbol.name = "spend-symbol";
+          symbol.position.z = 0.0205;
+          piece.root.add(symbol);
+        }
+        const texture = this.#spendSymbolTexture(mark);
+        if (symbol.material.map !== texture) {
+          symbol.material.map = texture;
+          symbol.material.needsUpdate = true;
+        }
+      } else if (symbol) {
+        symbol.removeFromParent();
+        symbol.material.dispose();
+      }
     }
   }
 
@@ -1197,7 +1290,7 @@ export class BattleTable {
       return;
     }
     if (this.#state) {
-      this.#state = { ...this.#state, paymentSources: null };
+      this.#state = { ...this.#state, paymentSources: null, spendMarks: undefined };
       this.#lightCards(this.#state);
     }
     const started = performance.now();
@@ -1219,6 +1312,16 @@ export class BattleTable {
     const s = this.#state;
     if (!s?.paymentSources) return;
     this.setCards({ ...s, paymentSources: null, selected: [], hand, staged });
+  }
+
+  /**
+   * A spend answered: the tint, symbols, glow and dimming come off at once, before the cards it spent fly to the
+   * discard pile, so none of them lands there still coloured (Adam, 2026-11-26).
+   */
+  clearSpendMarks(): void {
+    const s = this.#state;
+    if (s?.spendMarks || s?.paymentSources)
+      this.setCards({ ...s, spendMarks: undefined, paymentSources: null, selected: [], targets: [] });
   }
 
   /** Paid: the table stops dimming for the payment (a payment with no hand cards to fly off never got there). */
@@ -3376,7 +3479,10 @@ export class BattleTable {
       .sub(eye)
       .dot(forward);
     // A picked card keeps its layer when hovered: popping in front of a picked neighbour looks like the two clip.
-    const picked = hand.filter((card) => state.selected.includes(card.id));
+    // The last one picked is in front, as it was while hovered when it was picked (Adam, 2026-11-26: a card picked
+    // last went behind the one picked before it): `selected` comes in the order picked.
+    const picked = state.selected.filter((id) => hand.some((card) => card.id === id));
+    const pickedBehind = (id: string) => picked.length - 1 - picked.indexOf(id);
     // Hovering a sunk hand card shows it full size where it is, standing on the bottom edge, so it reads without the
     // card panel. Not while paying or picking from the hand, where the whole hand is up and a card only lifts a step.
     const zoomWidth = cardWidth * 1.45;
@@ -3414,7 +3520,8 @@ export class BattleTable {
       const pose = this.#pieces.get(card.id)!.target;
       const ray = pose.position.clone().sub(eye);
       const ratio = raised
-        ? (raisedDepth + (picked.includes(card) ? picked.indexOf(card) * 0.026 : -0.16) * pose.scale) / ray.dot(forward)
+        ? (raisedDepth + (picked.includes(card.id) ? pickedBehind(card.id) * 0.026 : -0.16) * pose.scale) /
+          ray.dot(forward)
         : (planeDistance + i * 0.12 * pose.scale) / ray.dot(normal);
       pose.position.copy(eye).addScaledVector(ray, ratio);
       pose.scale *= ratio;
@@ -3632,12 +3739,13 @@ export class BattleTable {
     // choose from shows clear of it (Adam, 2026-11-23: "you have to always be able to see what you're choosing").
     // The revealed card asking itself (Caught Off Guard, marked as the actor), or a question that came up after it
     // did; never the picks left over from before it (Adam, 2026-11-24: Breakin' & Takin' kept going left).
-    const asking = this.#actor === revealPose?.id || state.targets.join(",") !== this.#revealStartTargets;
-    if (revealPose && revealRect && state.targets.length && asking) {
-      const key = `${revealPose.id}|${state.targets.join(",")}|${w}x${h}|${this.#question}|${this.#hand.sunk}`;
+    const clearOf = state.asideFor ?? state.targets;
+    const asking = this.#actor === revealPose?.id || clearOf.join(",") !== this.#revealStartTargets;
+    if (revealPose && revealRect && clearOf.length && asking) {
+      const key = `${revealPose.id}|${clearOf.join(",")}|${w}x${h}|${this.#question}|${this.#hand.sunk}`;
       const reveal = revealRect as { x: number; y: number; halfWidth: number; halfHeight: number };
       if (this.#aside?.key !== key) {
-        const picks = state.targets.flatMap((id) => {
+        const picks = clearOf.flatMap((id) => {
           const box = id === revealPose!.id ? null : this.#screenBox(id);
           return box ? [box] : [];
         });

@@ -1,6 +1,8 @@
 import { statHue } from "../tokens.js";
 import { searchQuestion } from "./search-question.js";
 import { plainQuestion, tagsQuestion, type PlainQuestion } from "./question-check.js";
+// The game's printed symbols as letters (resource icons in a spend's bar and on the cards picked to pay it).
+import "../fonts/champions-icons.css";
 import "./design.css";
 import "./battle.css";
 import { padActive, startController } from "./pad/controller.js";
@@ -63,6 +65,7 @@ import {
   READY_MS,
   HIT_CONTACT_MS,
   isTuckedUpgrade,
+  SPEND_GLYPH,
 } from "./table.js";
 
 type Snapshot = ReturnType<BattleModel["snapshot"]>;
@@ -172,6 +175,7 @@ const dockEyebrow = element("dock-eyebrow");
 const dockOptions = element("dock-options");
 const dockFeed = element("dock-feed");
 const dockMeter = element("dock-meter");
+const dockNeed = element("dock-need");
 const dockPrimary = element<HTMLButtonElement>("dock-primary");
 const dockSecondary = element<HTMLButtonElement>("dock-secondary");
 const dockActions = dock.querySelector<HTMLElement>(".dock-actions")!;
@@ -395,6 +399,8 @@ interface DockView {
   /** Cards offered from a deck or discard pile, laid out face up to read before choosing (`BattleChoice.searched`). */
   cards?: readonly DockCard[];
   meter?: { paid: number; required: number; balance: string } | null;
+  /** The symbols a spend asks for, each lit once the picks pay it (`BattleModel.spendMeter`). */
+  need?: readonly { type: string; paid: boolean }[] | null;
   primary?: DockButton | null;
   secondary?: DockButton | null;
   /** Nothing to say or answer: on a wider screen the bar folds away and End Turn waits in the turn corner. */
@@ -587,6 +593,24 @@ function paintDock(view: DockView): boolean {
       `scaleX(${required ? Math.min(1, paid / required) : 1})`;
     element("payment-balance").textContent = balance;
   }
+  dockNeed.hidden = !view.need?.length;
+  dockNeed.replaceChildren(
+    ...(view.need ?? []).map(({ type, paid }) => {
+      const pip = make("span", "pip need-pip");
+      pip.dataset.resource = type === "any" ? "any" : type;
+      pip.toggleAttribute("data-paid", paid);
+      // The symbol as printed on the cards (the Champions icon font), so the bar and the cards look alike.
+      const glyph = SPEND_GLYPH[type];
+      pip.append(glyph ? make("span", "need-glyph", glyph) : icon("wild"));
+      return pip;
+    }),
+  );
+  dockNeed.setAttribute(
+    "aria-label",
+    (view.need ?? [])
+      .map(({ type, paid }) => `${type === "any" ? "any resource" : type}: ${paid ? "paid" : "needed"}`)
+      .join(", "),
+  );
   const focusedOption = dockOptions.contains(document.activeElement)
     ? (document.activeElement as HTMLElement).dataset.option
     : undefined;
@@ -933,6 +957,7 @@ function choiceView(choice: Choice): DockView {
   // An either-or spend's second step: the cards that pay it are picked, and Back returns to its two halves.
   const spending = choice.eitherOr === "spend";
   const paysSpend = model.spendPays([...choicePicks]) !== false;
+  const spendMeter = spending ? model.spendMeter([...choicePicks]) : null;
   const order = pickOrder(choice, choicePicks);
   return {
     tone,
@@ -945,6 +970,7 @@ function choiceView(choice: Choice): DockView {
         }
       : null,
     title: heading,
+    need: spendMeter?.need ?? null,
     // Guard keeping the villain out of reach says so under the question (`BattleChoice.guard`).
     help: choice.guard ? (choice.explanation ?? null) : (asked?.help ?? null),
     options: listed.map((option) => ({
@@ -1491,6 +1517,23 @@ function resolveChoice(id: string | null) {
   });
 }
 
+/**
+ * In a spend's second step the table dims as it does while paying for a card, leaving lit only the cards picked, the
+ * cards that would pay a symbol still unlit, and the card asking: a card paying only what is already paid goes dark
+ * and can't be picked (Adam, 2026-11-26). Null otherwise.
+ */
+function spendSources(): string[] | null {
+  const choice = state.choice;
+  if (choice?.eitherOr !== "spend") return null;
+  const meter = model.spendMeter([...choicePicks]);
+  if (!meter) return null;
+  const lit = choice.options.flatMap((option) =>
+    option.cardId && (choicePicks.has(option.id) || meter.useful.has(option.id)) ? [option.cardId] : [],
+  );
+  if (state.choiceSource) lit.push(state.choiceSource);
+  return lit;
+}
+
 function selectChoice(id: string) {
   actionCard = null;
   const choice = state.choice;
@@ -1506,9 +1549,13 @@ function selectChoice(id: string) {
     choose(id);
     return;
   }
-  // A spend already paid takes no more cards: they would be spent for nothing (Sonic Boom took six for three).
-  if (!choicePicks.delete(id) && choicePicks.size < choice.max && !model.spendCovered([...choicePicks]))
-    choicePicks.add(id);
+  // A spend takes only a card that pays a symbol still unlit: one more would be spent for nothing (Sonic Boom took six
+  // for three; Adam, 2026-11-26).
+  const meter = choice.eitherOr === "spend" ? model.spendMeter([...choicePicks]) : null;
+  if (!choicePicks.delete(id) && choicePicks.size < choice.max) {
+    if (meter && !meter.useful.has(id)) sfx.play("error");
+    else choicePicks.add(id);
+  }
   render();
 }
 
@@ -1516,6 +1563,8 @@ function confirmChoice() {
   const choice = state.choice;
   const picks = [...choicePicks];
   if (discarding || !choice || !model.chooseMany(picks)) return;
+  // A spend paid: its colours and glow come off the cards straight away, not when the phase is over.
+  if (choice.eitherOr === "spend") table?.clearSpendMarks();
   const discarded =
     choice.discardFromHand || choice.mulligan
       ? picks.map((id) => choice.options.find((option) => option.id === id)?.cardId ?? id)
@@ -2436,6 +2485,23 @@ function placeOrderBadges(projected: ReturnType<BattleTable["anchors"]>, clips: 
     badge.style.setProperty("--size", `${Math.round(Math.min(44, Math.max(24, card.width * 0.26)))}px`);
     badge.style.transform = `translate(${Math.round(card.left)}px,${Math.round(card.top)}px)`;
   }
+}
+
+/**
+ * A spend's picks and the resource each pays, for the table to tint the card in that colour with the printed symbol on
+ * it (`TableCards.spendMarks`), matching the lit symbol in the bar (Adam, 2026-11-26).
+ */
+function spendMarks(): Record<string, string> | undefined {
+  const choice = state.choice;
+  const meter = choice?.eitherOr === "spend" ? model.spendMeter([...choicePicks]) : null;
+  if (!choice || !meter) return undefined;
+  const marks: Record<string, string> = {};
+  for (const [optionId, types] of meter.paidBy) {
+    const cardId = choice.options.find((option) => option.id === optionId)?.cardId;
+    const type = types.find((each) => each !== "any");
+    if (cardId && type) marks[cardId] = type;
+  }
+  return marks;
 }
 
 function syncBoostTags() {
@@ -3980,10 +4046,17 @@ function render() {
   droneIds = new Set(state.enemyCards.flatMap((card) => (card.drone ? [card.id] : [])));
   const selected =
     state.payment?.sources.filter((item) => item.selected).map(resourcePieceId) ??
-    state.choice?.options.flatMap((option) => (option.cardId && choicePicks.has(option.id) ? [option.cardId] : [])) ??
+    // In the order picked: the table stacks the last one picked in front (`TableCards.selected`).
+    (state.choice
+      ? [...choicePicks].flatMap((id) => {
+          const cardId = state.choice!.options.find((option) => option.id === id)?.cardId;
+          return cardId ? [cardId] : [];
+        })
+      : null) ??
     [];
   if (state.payment || state.choice || discardOpen || state.turn !== "player") menuCard = null;
   paintReading();
+  const spendLit = state.payment ? null : spendSources();
   table?.setCards({
     handPick: !!(state.choice?.discardFromHand || state.choice?.mulligan),
     defending,
@@ -4006,8 +4079,16 @@ function render() {
       (state.choice.max <= 1 || state.choice.eitherOr === "spend") &&
       !state.choice.discardFromHand &&
       !state.choice.mulligan
-        ? state.choice.options.flatMap((item) => (item.cardId && onTable(item.cardId) ? [item.cardId] : []))
+        ? state.choice.options.flatMap((item) =>
+            item.cardId && onTable(item.cardId) && (!spendLit || spendLit.includes(item.cardId)) ? [item.cardId] : [],
+          )
         : [],
+    // A spend's asking card stays clear of every payer, lit or not (`TableCards.asideFor`).
+    ...(spendLit && state.choice
+      ? {
+          asideFor: state.choice.options.flatMap((item) => (item.cardId && onTable(item.cardId) ? [item.cardId] : [])),
+        }
+      : {}),
     discardOpen,
     hand: displayedHand,
     // An upgrade being paid for knows its host by now (Inspired on an ally): the table holds it by that card.
@@ -4016,7 +4097,8 @@ function render() {
         ? { ...staged, attachedTo: state.payment.subject.attachedTo ?? null }
         : staged,
     stagedOverEnemies: !!staged && staged.id === stagedAttachment,
-    paymentSources: state.payment?.sources.filter((s) => s.available).map(resourcePieceId) ?? null,
+    paymentSources: state.payment?.sources.filter((s) => s.available).map(resourcePieceId) ?? spendLit,
+    spendMarks: spendMarks(),
     selected,
   });
   table?.markActor(state.choiceSource);
