@@ -67,7 +67,7 @@ export function watchQuestions(name?: string): void {
       fresh,
       "A question came up that the table shows only as a plain bar of buttons, or cannot show at all " +
         "(question-check.ts). Design a screen for it, or ask Adam whether the plain version will do; only then list it " +
-        "in KNOWN_PLAIN. The map of every question: https://claude.ai/artifact/JhpB3AJgJcdqBAMVNcVwr4",
+        "in KNOWN_PLAIN. The map of every question: https://claude.ai/artifact/KuRruTjfX6Jc5HwzpJNEFg",
     ).toEqual([]);
   });
 }
