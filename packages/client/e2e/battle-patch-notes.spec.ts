@@ -3,18 +3,11 @@ import { expect, test } from "./battle-test";
 /**
  * "What's new" (src/battle-table/patch-notes/): the patch notes a player hasn't read open over the room once the boxes
  * are up, close by any route without the room or the table taking the key, stay closed once read, and open again from
- * the table's menu. (The fixture marks every note read; this test starts as a player who has read none.)
+ * the table's menu. (Browser tests only get them when they ask, with `?notes`.)
  */
 test("unread patch notes open over the room, close at once, and reopen from the menu", async ({ page }) => {
   test.setTimeout(180_000);
-  await page.addInitScript(() => {
-    // Only on the first load: the reload below must find the notes read.
-    if (!sessionStorage.getItem("notes-test")) {
-      sessionStorage.setItem("notes-test", "1");
-      localStorage.removeItem("battle-notes-seen");
-    }
-  });
-  await page.goto("/battle/");
+  await page.goto("/battle/?notes");
   const shelf = page.locator("#shelf");
   await expect(shelf).toHaveAttribute("data-place", "title", { timeout: 60_000 });
 
@@ -30,12 +23,13 @@ test("unread patch notes open over the room, close at once, and reopen from the 
   await page.keyboard.press("Escape");
   await expect(notes).toHaveCount(0);
   await expect(shelf).toHaveAttribute("data-place", "title");
-  await expect(shelf.getByRole("button", { name: /^Campaign/ })).not.toBeFocused();
+  await page.waitForTimeout(400);
+  await expect(page.getByRole("navigation", { name: "Main menu" })).toBeHidden();
   const seen = await page.evaluate(() => localStorage.getItem("battle-notes-seen"));
   expect(seen).toMatch(/^\d+\.\d+\.\d+$/);
 
-  // Read once, they stay away.
-  await page.reload();
+  // Read once, they stay away (without `?notes`, as a player opens the page).
+  await page.goto("/battle/");
   await expect(shelf).toHaveAttribute("data-place", "title", { timeout: 60_000 });
   await page.waitForTimeout(1500);
   await expect(notes).toHaveCount(0);

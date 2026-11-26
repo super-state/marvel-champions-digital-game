@@ -12,7 +12,7 @@ import { icon } from "../icons.js";
 import { PATCH_NOTES, type ChangeKind, type PatchNote } from "./notes.js";
 import { notesUpTo, unseenNotes } from "./versions.js";
 
-/** The last version whose notes this browser has seen. The browser tests set it (`e2e/battle-test.ts`). */
+/** The last version whose notes this browser has seen. */
 export const SEEN_KEY = "battle-notes-seen";
 
 /** The version being played: the one `table:ship` builds, which the main line keeps in step. */
@@ -151,11 +151,13 @@ export const patchNotesOpen = () => !!dialog?.open;
 
 /**
  * Opens the notes the player hasn't seen, if there are any. `?notes` opens them whatever was seen (to look at them).
- * Not inside the Sound Studio's frame.
+ * Not inside the Sound Studio's frame, and not for a browser test that hasn't asked (`?notes`): every test starts with
+ * nothing read, and the notes would stand over whatever it came to check.
  */
 export function offerPatchNotes(): void {
   if (window.top !== window || patchNotesOpen()) return;
   const forced = new URLSearchParams(location.search).has("notes");
+  if (navigator.webdriver && !forced && !lastSeen()) return;
   const unread = unseenNotes(PATCH_NOTES, forced ? null : lastSeen(), CURRENT_VERSION);
   if (!unread.length) return;
   show(unread, new Set(unread.map((note) => note.version)));
