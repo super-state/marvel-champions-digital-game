@@ -172,6 +172,7 @@ const dockEyebrow = element("dock-eyebrow");
 const dockOptions = element("dock-options");
 const dockFeed = element("dock-feed");
 const dockMeter = element("dock-meter");
+const dockNeed = element("dock-need");
 const dockPrimary = element<HTMLButtonElement>("dock-primary");
 const dockSecondary = element<HTMLButtonElement>("dock-secondary");
 const dockActions = dock.querySelector<HTMLElement>(".dock-actions")!;
@@ -395,6 +396,8 @@ interface DockView {
   /** Cards offered from a deck or discard pile, laid out face up to read before choosing (`BattleChoice.searched`). */
   cards?: readonly DockCard[];
   meter?: { paid: number; required: number; balance: string } | null;
+  /** The symbols a spend asks for, each lit once the picks pay it (`BattleModel.spendMeter`). */
+  need?: readonly { type: string; paid: boolean }[] | null;
   primary?: DockButton | null;
   secondary?: DockButton | null;
   /** Nothing to say or answer: on a wider screen the bar folds away and End Turn waits in the turn corner. */
@@ -587,6 +590,22 @@ function paintDock(view: DockView): boolean {
       `scaleX(${required ? Math.min(1, paid / required) : 1})`;
     element("payment-balance").textContent = balance;
   }
+  dockNeed.hidden = !view.need?.length;
+  dockNeed.replaceChildren(
+    ...(view.need ?? []).map(({ type, paid }) => {
+      const pip = make("span", "pip need-pip");
+      pip.dataset.resource = type === "any" ? "any" : type;
+      pip.toggleAttribute("data-paid", paid);
+      pip.append(icon(RESOURCE_ICON[type] ?? "wild"));
+      return pip;
+    }),
+  );
+  dockNeed.setAttribute(
+    "aria-label",
+    (view.need ?? [])
+      .map(({ type, paid }) => `${type === "any" ? "any resource" : type}: ${paid ? "paid" : "needed"}`)
+      .join(", "),
+  );
   const focusedOption = dockOptions.contains(document.activeElement)
     ? (document.activeElement as HTMLElement).dataset.option
     : undefined;
@@ -933,6 +952,7 @@ function choiceView(choice: Choice): DockView {
   // An either-or spend's second step: the cards that pay it are picked, and Back returns to its two halves.
   const spending = choice.eitherOr === "spend";
   const paysSpend = model.spendPays([...choicePicks]) !== false;
+  const spendMeter = spending ? model.spendMeter([...choicePicks]) : null;
   const order = pickOrder(choice, choicePicks);
   return {
     tone,
@@ -945,6 +965,7 @@ function choiceView(choice: Choice): DockView {
         }
       : null,
     title: heading,
+    need: spendMeter?.need ?? null,
     // Guard keeping the villain out of reach says so under the question (`BattleChoice.guard`).
     help: choice.guard ? (choice.explanation ?? null) : (asked?.help ?? null),
     options: listed.map((option) => ({
@@ -1491,6 +1512,17 @@ function resolveChoice(id: string | null) {
   });
 }
 
+/**
+ * The options that glow as pickable. In a spend's second step only the cards picked and those that would pay a symbol
+ * still unlit: a card paying only what is already paid stops glowing (Adam, 2026-11-26).
+ */
+function spendTargets(choice: Choice): Choice["options"] {
+  if (choice.eitherOr !== "spend") return choice.options;
+  const meter = model.spendMeter([...choicePicks]);
+  if (!meter) return choice.options;
+  return choice.options.filter((option) => choicePicks.has(option.id) || meter.useful.has(option.id));
+}
+
 function selectChoice(id: string) {
   actionCard = null;
   const choice = state.choice;
@@ -1506,9 +1538,13 @@ function selectChoice(id: string) {
     choose(id);
     return;
   }
-  // A spend already paid takes no more cards: they would be spent for nothing (Sonic Boom took six for three).
-  if (!choicePicks.delete(id) && choicePicks.size < choice.max && !model.spendCovered([...choicePicks]))
-    choicePicks.add(id);
+  // A spend takes only a card that pays a symbol still unlit: one more would be spent for nothing (Sonic Boom took six
+  // for three; Adam, 2026-11-26).
+  const meter = choice.eitherOr === "spend" ? model.spendMeter([...choicePicks]) : null;
+  if (!choicePicks.delete(id) && choicePicks.size < choice.max) {
+    if (meter && !meter.useful.has(id)) sfx.play("error");
+    else choicePicks.add(id);
+  }
   render();
 }
 
@@ -4006,7 +4042,7 @@ function render() {
       (state.choice.max <= 1 || state.choice.eitherOr === "spend") &&
       !state.choice.discardFromHand &&
       !state.choice.mulligan
-        ? state.choice.options.flatMap((item) => (item.cardId && onTable(item.cardId) ? [item.cardId] : []))
+        ? spendTargets(state.choice).flatMap((item) => (item.cardId && onTable(item.cardId) ? [item.cardId] : []))
         : [],
     discardOpen,
     hand: displayedHand,

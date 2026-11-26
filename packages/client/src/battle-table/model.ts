@@ -29,6 +29,7 @@ import {
   type InstanceId,
   type LegalAction,
   type LegalActions,
+  type ResourcePool,
   type ResourceType,
   type TriggerEvent,
 } from "@mc/engine";
@@ -891,6 +892,42 @@ let commitObserver: CommitObserver | null = null;
  */
 export function observeCommits(observer: CommitObserver | null): void {
   commitObserver = observer;
+}
+
+/** One symbol a spend asks for (`BattleModel.spendMeter`): a resource type, or "any" for a resource of any type. */
+export interface SpendNeed {
+  readonly type: "wild" | "energy" | "mental" | "physical" | "any";
+  readonly paid: boolean;
+}
+export interface SpendMeter {
+  readonly need: readonly SpendNeed[];
+  /** Options not yet picked that would pay a symbol still unlit. */
+  readonly useful: ReadonlySet<string>;
+}
+type SpendFill = Record<"wild" | "energy" | "mental" | "physical" | "any", number>;
+
+/**
+ * How many of each symbol a pool pays, the way the engine's `satisfies` counts it (RRG 1.8 "Cost"): wild slots take
+ * wilds only, typed slots their own type first, wilds left over cover a typed shortfall, and what remains pays the
+ * "any" slots.
+ */
+function fillSpend(req: ReturnType<typeof combineRequirements>, pool: ResourcePool | null): SpendFill {
+  const fill: SpendFill = { wild: 0, energy: 0, mental: 0, physical: 0, any: 0 };
+  if (!pool) return fill;
+  fill.wild = Math.min(pool.wild, req.wild ?? 0);
+  let wilds = pool.wild - fill.wild;
+  let spare = 0;
+  for (const type of ["energy", "mental", "physical"] as const) {
+    fill[type] = Math.min(pool[type], req[type]);
+    spare += pool[type] - fill[type];
+  }
+  for (const type of ["energy", "mental", "physical"] as const) {
+    const cover = Math.min(wilds, req[type] - fill[type]);
+    fill[type] += cover;
+    wilds -= cover;
+  }
+  fill.any = Math.min(req.generic, spare + wilds);
+  return fill;
 }
 
 export class BattleModel {
@@ -3187,9 +3224,36 @@ export class BattleModel {
     return ids.length === 1 || ids.every((id) => !pays(ids.filter((other) => other !== id)));
   }
 
-  /** Whether a spend that can be declined is already paid by these picks, so picking another card would overspend. */
-  spendCovered(ids: readonly string[]): boolean {
-    return ids.length > 0 && this.spendPays(ids) === true;
+  /**
+   * The symbols a spend that can be declined asks for, each lit once the picks pay it, and which cards not yet picked
+   * would still pay one (Adam, 2026-11-26: "if we have the science symbol paid for then others with the science symbol
+   * become not selectable"). A card is only pickable when it pays a symbol still unlit; once every symbol is lit,
+   * none is. Null when the question isn't such a spend (or asks for several different types, left to the engine).
+   */
+  spendMeter(ids: readonly string[]): SpendMeter | null {
+    const choice = this.#game.pendingChoice;
+    if (choice?.prompt.kind !== "spendResources" || choice.prompt.required || choice.prompt.distinctTypes) return null;
+    const picks = ids.filter((id) => id !== EITHER_SPEND && id !== EITHER_OTHERWISE);
+    const req = combineRequirements(choice.prompt.requirement, 0);
+    const poolOf = (list: readonly string[]) =>
+      list.length ? paymentOptionsPool(this.#game, CORE_DEPS, choice.playerId, list, null) : null;
+    const filled = (pool: ReturnType<typeof poolOf>) => fillSpend(req, pool);
+    const now = filled(poolOf(picks));
+    const lit = (counts: SpendFill) => counts.wild + counts.energy + counts.mental + counts.physical + counts.any;
+    const need: SpendNeed[] = [];
+    const slots: [SpendNeed["type"], number, number][] = [
+      ["wild", req.wild ?? 0, now.wild],
+      ["energy", req.energy, now.energy],
+      ["mental", req.mental, now.mental],
+      ["physical", req.physical, now.physical],
+      ["any", req.generic, now.any],
+    ];
+    for (const [type, asked, paid] of slots) for (let i = 0; i < asked; i++) need.push({ type, paid: i < paid });
+    const useful = new Set<string>();
+    for (const option of choice.options)
+      if (!picks.includes(option.optionId) && lit(filled(poolOf([...picks, option.optionId]))) > lit(now))
+        useful.add(option.optionId);
+    return { need, useful };
   }
 
   chooseMany(ids: readonly string[]): boolean {
