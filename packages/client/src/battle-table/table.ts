@@ -3642,8 +3642,10 @@ export class BattleTable {
     };
     const encounterDiscardGoal = encounterPile(piles.discardY);
     this.#encounterDiscardSlot.visible = state.encounterDiscard.length > 0;
-    // The piles are part of the table too, the encounter discard pile even while it is empty, so a first discard
-    // doesn't move everything (the first encounter card discarded once shrank and slid the whole board).
+    // The piles are part of the table too. The encounter discard pile counts only once it holds a card: it stands
+    // above the encounter deck, further back than the villain, and kept empty it held the whole table lower and
+    // smaller under a band of bare mat (Adam, 2026-11-26: "if there is nothing there yet then no reason for it to
+    // extend the mat"). The table eases down once, at the first encounter discard.
     if (!this.#fittingPiles && rests.length) {
       // How far the cards reach either side of the villain's line, and where a pile just past that would stand.
       const middle = this.#point(w * 0.5, h * 0.237, 0).x;
@@ -3661,13 +3663,17 @@ export class BattleTable {
         return;
       }
     }
-    for (const goal of [discardGoal, deckGoal, encounterGoal, encounterDiscardGoal])
-      rest(goal.position, goal.scale, false);
     // A discard pile stands taller than its well (each card a little above the last), so its top card reaches further
     // up the screen: room is kept for that, so the mat's edge stays clear above it.
     const stackRoom = (count: number, scale: number) => scale * Math.min(0.3, 0.05 + 0.012 * count);
-    rests[rests.length - 1]!.z0 -= stackRoom(state.encounterDiscard.length, encounterDiscardGoal.scale);
-    rests[rests.length - 4]!.z0 -= stackRoom(state.discard.length, discardGoal.scale);
+    rest(discardGoal.position, discardGoal.scale, false);
+    rests[rests.length - 1]!.z0 -= stackRoom(state.discard.length, discardGoal.scale);
+    rest(deckGoal.position, deckGoal.scale, false);
+    rest(encounterGoal.position, encounterGoal.scale, false);
+    if (state.encounterDiscard.length) {
+      rest(encounterDiscardGoal.position, encounterDiscardGoal.scale, false);
+      rests[rests.length - 1]!.z0 -= stackRoom(state.encounterDiscard.length, encounterDiscardGoal.scale);
+    }
     this.#fitTable(onBoard, rests, [
       [this.#discardSlot, discardGoal],
       [this.#deckSlot, deckGoal],

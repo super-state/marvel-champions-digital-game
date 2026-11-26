@@ -1,8 +1,8 @@
 /**
- * Heroes & Decks: the bench on the left wall (room plan steps 0.6.0 and 0.9.0). A deck box stands on it for each hero
- * the table can deal (`HEROES` in `model.ts`, read here rather than named, so a hero task's new entry shows up). Picking
- * a hero makes them the chosen hero for Campaign and Free Play (`battle-hero`, which the deal reads) and slides their
- * box forward; the panel then lists their decks: the starter deck and every deck saved for them, each either chosen
+ * Heroes & Decks: the bench on the left wall (room plan steps 0.6.0 and 0.9.0), with the hero shelf on it: a deck box
+ * for every hero in the game (`hero-shelf.ts`), lit for each hero the table can deal (`HEROES` in `model.ts`, read here
+ * rather than named, so a hero task's new entry lights up) and greyed out for the rest. Picking a hero makes them the
+ * chosen hero for Campaign and Free Play (`battle-hero`, which the deal reads) and slides their box forward; the panel then lists their decks: the starter deck and every deck saved for them, each either chosen
  * for play (`decks/chosen-deck.ts`) or held back with the reason (`decks/deal-gate.ts`: an aspect not yet on the table,
  * or not legal). Edit, or New deck, lays the deck builder over the room (`decks/deck-screen.ts`, only the heroes and
  * aspects checked on the table); its Back returns to the bench.
@@ -12,7 +12,6 @@
  */
 import * as THREE from "three";
 import { HEROES, type HeroId } from "../../model.js";
-import { cardArtUrl } from "../../decks/card-art.js";
 import { STARTER, chooseDeck, chosenDeck } from "../../decks/chosen-deck.js";
 import { dealVerdict } from "../../decks/deal-gate.js";
 import { ASPECT_NAMES, BUILDER_HEROES, cardCount, type HeroChoice } from "../../decks/deck-model.js";
@@ -20,23 +19,51 @@ import { browserDeckStore, type SavedDeck } from "../../decks/deck-store.js";
 import type { DeckScreen } from "../../decks/deck-screen.js";
 import { TABLE_ASPECTS } from "../../decks/table-pool.js";
 import { spatialPick, type FocusDirection } from "../../pad/spatial.js";
-import { canvas, loadImage, texture } from "../canvas.js";
 import { setPose } from "../camera.js";
 import { ROOM, root, say } from "../room.js";
 import { followHero } from "./free-play.js";
-import { fitNarrow, furniturePlace } from "./place.js";
+import { CASE, buildBoxes, buildCase, type ShelfBox, type ShelfLayout } from "./hero-shelf.js";
+import { layoutShelf } from "./hero-shelf-layout.js";
+import { furniturePlace } from "./place.js";
 import "./decks.css";
 
-/** The bench top: its middle, how long it runs along the wall (z) and how deep it is (x). */
-export const BENCH = { x: -ROOM.HALF_WIDTH + 1.7, z: -1, top: -1.4, length: 9.5, depth: 3.1 };
+/** The bench top: its middle, how long it runs along the wall (z) and how deep it is (x). The hero shelf stands on it. */
+export const BENCH = { x: -ROOM.HALF_WIDTH + 1.7, z: CASE.z, top: -1.4, length: CASE.width + 0.9, depth: 3.1 };
+
+/** The shelf's layout: worked out once, from the heroes the table deals (they stand face-out). */
+let shelfLayout: ShelfLayout | null = null;
+const shelf = (): ShelfLayout =>
+  (shelfLayout ??= layoutShelf(new Set(benchHeroes().map((hero) => hero.card.identityCardId)), {
+    back: CASE.back,
+    bottom: BENCH.top,
+  }));
 
 export const decks = furniturePlace({
   id: "decks",
   label: "Heroes & Decks",
   promise: "a deck box for each hero, and the card binder to build decks with.",
   view(out, aspect) {
-    setPose(out, [-5.5, 6.8, 11.5], [BENCH.x + 0.6, BENCH.top + 1.2, BENCH.z - 1.2], 40, [12, 44], 0);
-    fitNarrow(out, aspect, 1.2);
+    // Square on to the shelf, far enough back to see all of it in the room the panel leaves: to the panel's right on
+    // a wide screen, above it on a narrow one (decks.css puts it along the bottom there).
+    const { top, bottom } = shelf();
+    const fov = 38;
+    const tanV = Math.tan((fov / 2) * (Math.PI / 180));
+    const tanH = tanV * aspect;
+    const narrow = aspect < 1.2;
+    const panelEdge = narrow ? -0.96 : Math.min(0.1, -1 + (2 * 500) / Math.max(1, innerWidth));
+    const across: [number, number] = [panelEdge, 0.97];
+    const upDown: [number, number] = [narrow ? 0.05 : -0.86, 0.84];
+    const wide = CASE.width + 0.8;
+    const tall = top - bottom + 0.8;
+    const distance = Math.max(wide / (across[1] - across[0]) / tanH, tall / (upDown[1] - upDown[0]) / tanV);
+    // Where the shelf's middle sits on the screen (-1 to 1), and how far that is from the camera's aim.
+    const z = CASE.z + ((across[0] + across[1]) / 2) * distance * tanH;
+    const y = (top + bottom) / 2 - ((upDown[0] + upDown[1]) / 2) * distance * tanV;
+    // High enough to see the bottom shelf over the games table's near edge (x = -TABLE_WIDTH / 2, its top at 0).
+    const at = CASE.back + CASE.depth;
+    const overTable = (0.4 - bottom) / (at + ROOM.TABLE_WIDTH / 2);
+    const height = Math.max(y + 0.8, bottom + 0.2 + overTable * -distance);
+    setPose(out, [at + distance, height, z], [at, y, z], fov, [distance + 4, distance + 40], 0);
   },
   furniture(group) {
     const wood = new THREE.MeshStandardMaterial({ color: 0x3a2818, roughness: 0.6 });
@@ -46,9 +73,9 @@ export const decks = furniturePlace({
     const slab = new THREE.Mesh(new THREE.BoxGeometry(depth, 0.35, length), wood);
     slab.position.set(x, top - 0.175, z);
     slab.castShadow = slab.receiveShadow = true;
-    // A green baize mat to work on, like a card player's desk.
-    const mat = new THREE.Mesh(new THREE.BoxGeometry(depth - 0.6, 0.04, length - 0.8), baize);
-    mat.position.set(x + 0.1, top + 0.02, z);
+    // A green baize mat along the front, like a card player's desk.
+    const mat = new THREE.Mesh(new THREE.BoxGeometry(depth - CASE.depth - 0.25, 0.04, length - 0.8), baize);
+    mat.position.set(x + CASE.depth / 2 + 0.05, top + 0.02, z);
     mat.receiveShadow = true;
     group.add(slab, mat);
     const legHeight = top - 0.35 - ROOM.FLOOR;
@@ -62,27 +89,12 @@ export const decks = furniturePlace({
     const drawer = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.7, length - 1.4), dark);
     drawer.position.set(x + depth / 2 - 0.05, top - 0.75, z);
     group.add(drawer);
-    // A shelf on the wall above.
-    const shelf = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.22, length - 1.5), wood);
-    shelf.position.set(-ROOM.HALF_WIDTH + 0.95, top + 4.3, z);
-    shelf.castShadow = true;
-    group.add(shelf);
-    for (const dz of [-1, 1]) {
-      const bracket = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.7, 0.16), dark);
-      bracket.position.set(-ROOM.HALF_WIDTH + 0.75, top + 3.85, z + dz * (length / 2 - 1.6));
-      group.add(bracket);
-    }
+    // The hero shelf: the bookcase now, its boxes once the bench is filled (`mountBench`).
+    buildCase(group, shelf());
   },
 });
 
 // ── Who and what ──────────────────────────────────────────────────────────────────────────────────────────────────
-
-const ASPECT_COLOURS: Record<string, number> = {
-  justice: 0xf2c230,
-  leadership: 0x3d8fe0,
-  aggression: 0xd8342b,
-  protection: 0x3fae4a,
-};
 
 interface BenchHero {
   readonly id: HeroId;
@@ -129,11 +141,10 @@ let screenHost: HTMLElement | null = null;
 /** The deck the builder was opened on, to put the focus back on its row afterwards. */
 let editing: string | null = null;
 
-interface Box {
-  readonly hero: HeroId;
-  readonly mesh: THREE.Group;
-  readonly home: THREE.Vector3;
-  /** How far forward it stands (0 back on the bench, 1 chosen). */
+interface Box extends ShelfBox {
+  /** The hero the table deals with it (none for a greyed-out box). */
+  readonly id: HeroId | null;
+  /** How far forward it stands (0 back on its shelf, 1 chosen). */
   out: number;
 }
 const boxes: Box[] = [];
@@ -143,49 +154,10 @@ const savedFor = (hero: BenchHero): SavedDeck[] =>
 
 // ── The deck boxes ────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The box's side: dark card stock with the hero's name, and their starter aspect's colour along the edge. */
-function sidePrint(hero: BenchHero): HTMLCanvasElement {
-  const [cv, g] = canvas(256, 384);
-  g.fillStyle = "#15110d";
-  g.fillRect(0, 0, 256, 384);
-  g.fillStyle = `#${(ASPECT_COLOURS[hero.card.starterAspect] ?? 0x8d877d).toString(16).padStart(6, "0")}`;
-  g.fillRect(0, 0, 256, 26);
-  g.save();
-  g.translate(128, 200);
-  g.rotate(-Math.PI / 2);
-  g.fillStyle = "#f3eee3";
-  g.font = "900 34px 'Public Sans', sans-serif";
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  g.fillText(hero.name.toUpperCase(), 0, 0);
-  g.restore();
-  return cv;
-}
-
-async function buildBoxes(group: THREE.Group) {
-  const spacing = Math.min(2.1, (BENCH.length - 2) / Math.max(1, heroes.length));
-  const first = BENCH.z - (spacing * (heroes.length - 1)) / 2;
-  const scans = await Promise.all(heroes.map((hero) => loadImage(cardArtUrl(hero.card.identity))));
-  heroes.forEach((hero, i) => {
-    const stock = new THREE.MeshStandardMaterial({ map: texture(sidePrint(hero)), roughness: 0.7 });
-    const scan = scans[i];
-    const front = scan
-      ? new THREE.MeshStandardMaterial({ map: texture(scan), roughness: 0.55 })
-      : new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 0.7 });
-    const lid = new THREE.MeshStandardMaterial({
-      color: ASPECT_COLOURS[hero.card.starterAspect] ?? 0x8d877d,
-      roughness: 0.5,
-    });
-    // A deck box standing upright, its front (the hero's card) facing the room: +x, -x, +y, -y, +z, -z.
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.75, 2.1, 1.5), [front, stock, lid, stock, stock, stock]);
-    body.castShadow = true;
-    const mesh = new THREE.Group();
-    mesh.add(body);
-    const home = new THREE.Vector3(BENCH.x - 0.4, BENCH.top + 1.07, first + i * spacing);
-    mesh.position.copy(home);
-    group.add(mesh);
-    boxes.push({ hero: hero.id, mesh, home, out: 0 });
-  });
+async function standBoxes(group: THREE.Group) {
+  const byCard = new Map(heroes.map((hero) => [hero.card.identityCardId, hero.id]));
+  const built = await buildBoxes(group, shelf(), new Set(byCard.keys()));
+  for (const box of built) boxes.push({ ...box, id: byCard.get(box.hero.code) ?? null, out: 0 });
 }
 
 // ── The panel ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -385,7 +357,8 @@ export function mountBench() {
       panelRoot = panel.closest<HTMLElement>(".room-panel") ?? panel;
       panel.classList.add("bench");
       contents = panel;
-      await Promise.all([document.fonts.load("900 34px 'Public Sans'"), buildBoxes(group)]);
+      await document.fonts.load("900 34px 'Public Sans'");
+      await standBoxes(group);
       paint();
     },
     enter() {
@@ -399,10 +372,12 @@ export function mountBench() {
     key,
     step(dt) {
       for (const box of boxes) {
-        const target = box.hero === current?.id ? 1 : 0;
+        if (!box.id) continue;
+        const target = box.id === current?.id ? 1 : 0;
         box.out += (target - box.out) * Math.min(1, dt * 8);
-        box.mesh.position.set(box.home.x + box.out * 0.9, box.home.y + box.out * 0.25, box.home.z);
-        box.mesh.rotation.y = box.out * 0.18;
+        // Out over the shelf's edge, lifted a little and turned towards the room.
+        box.mesh.position.set(box.home.x + box.out * 0.75, box.home.y + box.out * 0.12, box.home.z);
+        box.mesh.rotation.y = box.out * 0.12;
       }
     },
   });

@@ -31,6 +31,16 @@ export const PATCH_NOTES: readonly PatchNote[] = [
     title: "Read before you choose",
     changes: [
       {
+        // Issue 215 (a player's idea): branch claude/preview-other-side.
+        kind: "new",
+        text: "See your hero card’s other side before you flip: point at “Change to …” in your hero’s actions, or press Other side on the card in the card panel.",
+      },
+      {
+        // PRs 212, 213.
+        kind: "better",
+        text: "New versions arrive between matches, never during one: when you go back to the boxes or play again, the game picks up the latest version by itself.",
+      },
+      {
         // Issue 210 (a player's report): branch claude/choice-keeps-targets-sharp.
         kind: "fixed",
         text: 'When a card makes you choose (Ultron\'s "threat or a Drone"), the cards your choice would change stay in focus, so you can read the threat or health before you pick.',
@@ -39,6 +49,11 @@ export const PATCH_NOTES: readonly PatchNote[] = [
         // Issue 217 (a player's report): branch fix/217-hand-readable-choose-one.
         kind: "fixed",
         text: "When a card asks you to spend resources or take its other choice (Android Efficiency, Sonic Boom), your hand rises clear of the dimming, so you can see what you could pay with before you choose.",
+      },
+      {
+        // Issue 222 (a player's report): branch claude/swarm-attack-alter-ego.
+        kind: "fixed",
+        text: "Swarm Attack only sends Drones at your hero. Revealed while you are in alter-ego form, no Drone attacks you: the top card of your deck becomes a new Drone instead, as the card says.",
       },
       {
         // Issue 210, the same branch.
@@ -51,9 +66,19 @@ export const PATCH_NOTES: readonly PatchNote[] = [
         text: "The card asking you to choose has a violet outline, so you can tell at a glance which card is acting.",
       },
       {
+        // Branch claude/no-stray-reticle.
+        kind: "fixed",
+        text: "An attack's target no longer appears on your hero early: it shows when the attacker actually turns on you, not while threat from the step before is still landing.",
+      },
+      {
         // PRs 216, 219.
         kind: "better",
         text: "A crowded table uses its space: with a lot of minions out, the encounter deck moves out to the corner of the mat, and the minions stand much bigger and closer together.",
+      },
+      {
+        // Branch claude/dock-right-gap.
+        kind: "fixed",
+        text: "The bar asking you to choose no longer leaves extra space after the last choice: it sits evenly in its frame.",
       },
     ],
   },

@@ -620,6 +620,11 @@
   gap: 8px;
   margin-left: auto;
 }
+/* With nothing in it (a question answered by the choices alone, Undo in its corner) the slot goes, so the bar's own gap
+   doesn't leave extra room right of the last answer (Adam, 2026-11-26). */
+.dock-actions:not(:has(> :not([hidden]))) {
+  display: none;
+}
 /* What just happened, newest first, in the rail beside the card being read. */
 .dock-feed {
   display: grid;

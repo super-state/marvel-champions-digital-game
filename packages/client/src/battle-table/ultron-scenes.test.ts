@@ -366,6 +366,17 @@ describe("Ultron on the table (seed 7 unless a test says otherwise)", () => {
     expect(attackers).toHaveLength(inPlay);
   });
 
+  test("ultronswarmalterego: in alter-ego no Drone attacks, and a Drone comes off the deck instead (01147, issue 222)", () => {
+    const battle = deal("ultronswarmalterego");
+    const { beats } = throughVillainPhase(battle, /Drone/);
+    const reveal = beats.findIndex((beat) => beat.reveal?.name === "Swarm Attack");
+    expect(reveal).toBeGreaterThan(-1);
+    const end = beats.findIndex((beat, i) => i > reveal && (beat.reveal || beat.leftPlay || beat.phase));
+    const swarm = beats.slice(reveal, end);
+    expect(swarm.filter((beat) => beat.hit)).toEqual([]);
+    expect(swarm.filter((beat) => beat.droneIn?.from === "deck")).toHaveLength(1);
+  });
+
   test("ultronrepair: Repair Sequence heals Ultron 2 for each Drone engaged (01146)", () => {
     const battle = deal("ultronrepair");
     const start = drones(battle.snapshot()).length;
