@@ -61,11 +61,10 @@ describe("revealAside", () => {
     expect(revealAside(card, [box(900, 1000, 900, 1100)], 1900)).toEqual({ x: 950, y: 475, scale: 1 });
   });
 
-  test("slides up just clear of the picks it covers, at most half off the screen (Adam, 2026-11-26)", () => {
-    // Web-Shooter under it (Android Efficiency's spend): its bottom edge rises just clear of Web-Shooter's top.
-    expect(revealAside(card, [box(960, 1060), box(1190, 1350)], 1900)).toEqual({ x: 950, y: 249, scale: 1 });
-    // A pick lower down only needs a smaller lift.
-    expect(revealAside(card, [box(700, 800, 700, 900)], 1900)).toEqual({ x: 950, y: 389, scale: 1 });
+  test("slides up, half off the top of the screen, clear of the picks it covers (Adam, 2026-11-26)", () => {
+    // Web-Shooter under it (Android Efficiency's spend): its centre goes to the top edge.
+    expect(revealAside(card, [box(960, 1060), box(1190, 1350)], 1900)).toEqual({ x: 950, y: 0, scale: 1 });
+    expect(revealAside(card, [box(700, 800, 700, 900)], 1900)).toEqual({ x: 950, y: 0, scale: 1 });
   });
 
   test("where a lift would still cover a pick high on the table, it slides sideways instead", () => {
