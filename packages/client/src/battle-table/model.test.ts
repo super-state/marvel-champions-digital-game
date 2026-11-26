@@ -8,6 +8,7 @@ import {
   recommendedModule,
   VILLAINS,
   whenRevealedMissesHeroes,
+  whenRevealedAttacksYourHero,
   type BattleSnapshot,
 } from "./model.js";
 import { arrangeScene } from "./debug-scenes.js";
@@ -422,6 +423,24 @@ describe("a treachery that makes the villain attack (Assault)", () => {
         "alterEgo",
       ),
     ).toBe(false);
+  });
+
+  test("a When Revealed that attacks your hero finds no hero in alter-ego form, and says what happens instead", () => {
+    const swarm =
+      "When Revealed: Each Drone minion engaged with your hero attacks. If no attacks were made this way, put the top card of your deck into play facedown, engaged with you as a Drone minion.";
+    expect(whenRevealedAttacksYourHero(swarm, "alterEgo")).toEqual({
+      noHeroToAttack: {
+        instead: "Put the top card of your deck into play facedown, engaged with you as a Drone minion.",
+      },
+    });
+    expect(whenRevealedAttacksYourHero(swarm, "hero")).toEqual({});
+    const tailSweep =
+      "When Revealed: Scorpion attacks your hero. If no attack was made this way, you are stunned. Boost: You are stunned.";
+    expect(whenRevealedAttacksYourHero(tailSweep, "alterEgo")).toEqual({
+      noHeroToAttack: { instead: "You are stunned." },
+    });
+    expect(whenRevealedAttacksYourHero("When Revealed: Klaw attacks you.", "alterEgo")).toEqual({});
+    expect(whenRevealedAttacksYourHero("When Revealed: Deal 1 damage to each hero.", "alterEgo")).toEqual({});
   });
 
   test("in hero form: Rhino's attack is aimed, lands, and only then does Assault go to the discard pile", () => {

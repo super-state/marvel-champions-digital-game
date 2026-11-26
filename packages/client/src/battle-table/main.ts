@@ -2217,11 +2217,34 @@ async function convertThreat(scheme: string, target: string, amount: number) {
 /** A When Revealed firing: the card rises with a flash, and the dock says what is happening. */
 async function whenRevealedFires(
   beat: Beat,
-  card: { id: string; name: string; applies?: Applies | undefined; noHeroes?: true | undefined },
+  card: {
+    id: string;
+    name: string;
+    applies?: Applies | undefined;
+    noHeroes?: true | undefined;
+    noHeroToAttack?: { instead: string | null } | undefined;
+  },
   eyebrow = "When Revealed",
 ) {
   table?.activateWhenRevealed(card.id);
   sfx.play("ability");
+  if (card.noHeroToAttack) {
+    // Its attack finds no hero, so nothing attacks: say so, as a choice with no target does (Adam, 2026-11-26,
+    // issue 222: Swarm Attack in alter-ego). What the card does instead follows on its own beats.
+    const instead = card.noHeroToAttack.instead;
+    stampCard(card.id, "No hero to attack", "status");
+    narrate(
+      beat,
+      { text: `${card.name}: no hero to attack`, icon: "forced", tone: "villain" },
+      {
+        eyebrow: { text: eyebrow, icon: "forced", tone: "villain" },
+        title: `${card.name}: no hero to attack`,
+        help: `You're in alter-ego form, so nothing attacks you${instead ? ": the second half of the card happens instead" : ""}.`,
+      },
+    );
+    await sleep(Math.max(ACTIVATION_MS, 1600));
+    return;
+  }
   if (card.noHeroes) {
     // It fires, but on no one: say so, or the flash looks like something went missing (Adam, 2026-11-22: Shocker).
     // Stamped on the card itself, because on a wide screen the bar stays folded while the villain side plays.
@@ -2253,6 +2276,9 @@ type Applies = NonNullable<NonNullable<Beat["reveal"]>["applies"]>;
 
 /** What the card being read will do, in the turn bar under its name: the half of it that matches the hero's form. */
 function appliesHelp(reveal: Beat["reveal"]): string | null {
+  const noHero = reveal?.noHeroToAttack;
+  if (noHero)
+    return `You're in alter-ego form: no hero to attack${noHero.instead ? ", so the second half of the card happens instead" : ", so nothing attacks you"}.`;
   const applies = reveal?.applies;
   if (!applies) return null;
   return `You're in ${applies.form === "Hero" ? "hero" : "alter-ego"} form: ${applies.text}`;
