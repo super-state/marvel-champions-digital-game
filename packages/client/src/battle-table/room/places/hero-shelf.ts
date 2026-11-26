@@ -1,15 +1,15 @@
 /**
  * The hero shelf: a bookcase standing on the bench (`decks.ts`) with a deck box for every hero in the game
- * (`hero-catalogue.ts`), in release order and grouped by release, each group named on the shelf's edge. The heroes the
- * table can deal stand lit; the rest are greyed out, to show the whole game the room is growing towards.
- * Where each box stands is `hero-shelf-layout.ts`.
+ * (`hero-catalogue.ts`). The heroes the table can deal stand lit, face-out on the display shelf at the top; the rest
+ * are greyed out below, to show the whole game the room is growing towards. Where each box stands is
+ * `hero-shelf-layout.ts`.
  */
 import * as THREE from "three";
 import { CARD_ART_ROUTE } from "../../decks/card-art.js";
 import { canvas, greyOut, loadImage, texture } from "../canvas.js";
 import { ROOM } from "../room.js";
 import type { ShelfHero } from "./hero-catalogue.js";
-import { BOARD, CASE_SPAN, type ShelfLayout } from "./hero-shelf-layout.js";
+import { BOARD, CASE_SPAN, STAND, type ShelfLayout, type ShelfSlot } from "./hero-shelf-layout.js";
 
 export { SHELF_LOOK, type ShelfLayout } from "./hero-shelf-layout.js";
 
@@ -18,56 +18,56 @@ export const CASE = { ...CASE_SPAN, back: -ROOM.HALF_WIDTH + 0.05 };
 
 // ── The bookcase ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The bookcase's wood: its sides, top, shelves and back, and a brass plate on the shelf's edge under each release. */
+/**
+ * The bookcase: dark wood sides, top and shelves, a warmer back, and a strip of warm light under the front of each
+ * shelf, the way a collector lights a cabinet. The display shelf at the top has its own light on the heroes.
+ */
 export function buildCase(group: THREE.Group, layout: ShelfLayout) {
-  const wood = new THREE.MeshStandardMaterial({ color: 0x3a2818, roughness: 0.6 });
-  const back = new THREE.MeshStandardMaterial({ color: 0x1d130c, roughness: 0.85 });
+  const wood = new THREE.MeshStandardMaterial({ color: 0x3a2818, roughness: 0.55 });
+  const back = new THREE.MeshStandardMaterial({ color: 0x2a1b11, roughness: 0.85 });
+  const strip = new THREE.MeshStandardMaterial({ color: 0xffd9a0, emissive: 0xffc27a, emissiveIntensity: 2.2 });
   const { back: x0, z, width, depth } = CASE;
   const height = layout.top - layout.bottom;
   const midX = x0 + depth / 2;
-  const add = (mesh: THREE.Mesh) => {
-    mesh.castShadow = mesh.receiveShadow = true;
+  const add = (mesh: THREE.Mesh, shadows = true) => {
+    mesh.castShadow = mesh.receiveShadow = shadows;
     group.add(mesh);
   };
   const panel = new THREE.Mesh(new THREE.BoxGeometry(0.08, height, width + 0.5), back);
   panel.position.set(x0 + 0.04, layout.bottom + height / 2, z);
   add(panel);
   for (const side of [-1, 1]) {
-    const end = new THREE.Mesh(new THREE.BoxGeometry(depth, height + 0.2, 0.24), wood);
-    end.position.set(midX, layout.bottom + (height + 0.2) / 2, z + side * (width / 2 + 0.12));
+    const end = new THREE.Mesh(new THREE.BoxGeometry(depth + 0.1, height + 0.2, 0.28), wood);
+    end.position.set(midX + 0.05, layout.bottom + (height + 0.2) / 2, z + side * (width / 2 + 0.14));
     add(end);
   }
-  const lid = new THREE.Mesh(new THREE.BoxGeometry(depth + 0.2, 0.22, width + 0.9), wood);
-  lid.position.set(midX + 0.05, layout.top + 0.11, z);
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(depth + 0.3, 0.26, width + 1.0), wood);
+  lid.position.set(midX + 0.1, layout.top + 0.13, z);
   add(lid);
-  for (const floor of layout.floors) {
+  // The top of each shelf's opening: the board above it, or the lid. A light strip runs under its front edge.
+  const ceilings = layout.floors.map((_, i) => (i ? layout.floors[i - 1]! - BOARD : layout.top));
+  layout.floors.forEach((floor, i) => {
     const board = new THREE.Mesh(new THREE.BoxGeometry(depth, BOARD, width), wood);
     board.position.set(midX, floor - BOARD / 2, z);
     add(board);
+    const light = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.035, width - 0.3), strip);
+    light.position.set(x0 + depth - 0.22, ceilings[i]! - 0.02, z);
+    add(light, false);
+  });
+  // Light on the display shelf, and a softer wash over the rest.
+  const display = new THREE.PointLight(0xffd6a0, 26, 9, 1.6);
+  display.position.set(x0 + depth + 0.9, ceilings[0]! - 0.5, z);
+  const wash = new THREE.SpotLight(0xffcf96, 240, 0, 0.62, 0.7, 1.6);
+  wash.position.set(x0 + 11, layout.top + 6, z);
+  wash.target.position.set(x0, (layout.top + layout.bottom) / 2, z);
+  group.add(display, wash, wash.target);
+  // The display shelf's stands: a little dark plinth under each hero's box.
+  const plinth = new THREE.MeshStandardMaterial({ color: 0x141009, roughness: 0.35, metalness: 0.2 });
+  for (const slot of layout.slots.filter((each) => each.onDisplay)) {
+    const stand = new THREE.Mesh(new THREE.BoxGeometry(slot.size.deep + 0.5, STAND, slot.size.across + 0.2), plinth);
+    stand.position.set(slot.at.x, slot.at.y - slot.size.tall / 2 - STAND / 2, slot.at.z);
+    add(stand);
   }
-  for (const label of layout.labels) {
-    const length = Math.abs(label.from - label.to);
-    const plate = new THREE.Mesh(
-      new THREE.PlaneGeometry(Math.min(length, 4.2), 0.26),
-      new THREE.MeshStandardMaterial({ map: texture(platePrint(label.text)), roughness: 0.45, metalness: 0.35 }),
-    );
-    plate.rotation.y = Math.PI / 2;
-    plate.position.set(x0 + depth + 0.005, label.y - BOARD / 2, (label.from + label.to) / 2);
-    group.add(plate);
-  }
-}
-
-/** A release's name on a small brass plate. */
-function platePrint(text: string): HTMLCanvasElement {
-  const [cv, g] = canvas(640, 40);
-  g.fillStyle = "#8a6a32";
-  g.fillRect(0, 0, 640, 40);
-  g.fillStyle = "#2a1c0c";
-  g.font = "800 26px 'Public Sans', sans-serif";
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  g.fillText(text.toUpperCase(), 320, 21, 620);
-  return cv;
 }
 
 // ── The boxes ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -83,31 +83,27 @@ export const ASPECT_COLOURS: Record<string, number> = {
 const hex = (colour: number) => `#${colour.toString(16).padStart(6, "0")}`;
 const aspectColour = (hero: ShelfHero) => ASPECT_COLOURS[hero.aspect ?? ""] ?? 0x8d877d;
 
-/** A box's spine: dark card stock, the aspect's colour at the top, the hero's name up it and who they are under it. */
-function spinePrint(hero: ShelfHero, lit: boolean): HTMLCanvasElement {
-  const [cv, g] = canvas(96, 288);
+/** A box lying flat: its spine reads straight across, the aspect's colour at its left end. */
+function flatPrint(hero: ShelfHero, lit: boolean): HTMLCanvasElement {
+  const [cv, g] = canvas(288, 96);
   g.fillStyle = "#15110d";
-  g.fillRect(0, 0, 96, 288);
+  g.fillRect(0, 0, 288, 96);
   g.fillStyle = hex(aspectColour(hero));
-  g.fillRect(0, 0, 96, 22);
-  g.save();
-  g.translate(48, 160);
-  g.rotate(-Math.PI / 2);
+  g.fillRect(0, 0, 18, 96);
   g.textAlign = "center";
   g.textBaseline = "middle";
   g.fillStyle = "#f3eee3";
   const name = hero.name.toUpperCase();
-  let size = 38;
+  let size = 34;
   g.font = `900 ${size}px 'Public Sans', sans-serif`;
-  while (size > 18 && g.measureText(name).width > 240) g.font = `900 ${--size}px 'Public Sans', sans-serif`;
+  while (size > 16 && g.measureText(name).width > 250) g.font = `900 ${--size}px 'Public Sans', sans-serif`;
   const twoLines = hero.alterEgo !== hero.name;
-  g.fillText(name, 0, twoLines ? -11 : 0);
+  g.fillText(name, 153, twoLines ? 38 : 48);
   if (twoLines) {
     g.fillStyle = "#b7ad9c";
-    g.font = "700 17px 'Public Sans', sans-serif";
-    g.fillText(hero.alterEgo, 0, 22, 240);
+    g.font = "700 18px 'Public Sans', sans-serif";
+    g.fillText(hero.alterEgo, 153, 70, 250);
   }
-  g.restore();
   if (!lit) greyOut(cv);
   return cv;
 }
@@ -137,46 +133,55 @@ function frontPrint(hero: ShelfHero, scan: HTMLImageElement | null, lit: boolean
 const scanOf = (hero: ShelfHero) => `${CARD_ART_ROUTE}bundles/cards/${hero.code}.png`;
 
 export interface ShelfBox {
-  readonly hero: ShelfHero;
-  readonly lit: boolean;
+  readonly slot: ShelfSlot;
   readonly mesh: THREE.Group;
   readonly home: THREE.Vector3;
 }
 
-/** Every hero's deck box, on its shelf. Face-out boxes show the hero's card, so their scans load first. */
-export async function buildBoxes(
-  group: THREE.Group,
-  layout: ShelfLayout,
-  lit: ReadonlySet<string>,
-): Promise<ShelfBox[]> {
-  const scans = await Promise.all(layout.slots.map((slot) => (slot.faceOut ? loadImage(scanOf(slot.hero)) : null)));
+/**
+ * Every hero's deck box, on its shelf. Face-out boxes show the hero's card, so their scans load first. Each box's
+ * mesh carries `userData.box`, its index, for the pointer to find it.
+ */
+export async function buildBoxes(group: THREE.Group, layout: ShelfLayout): Promise<ShelfBox[]> {
+  const scans = await Promise.all(
+    layout.slots.map((slot) => (slot.pose === "face" ? loadImage(scanOf(slot.hero)) : null)),
+  );
   const stockLit = new THREE.MeshStandardMaterial({ color: 0x15110d, roughness: 0.7 });
-  const stockGrey = new THREE.MeshStandardMaterial({ color: 0x141312, roughness: 0.8 });
+  const stockGrey = new THREE.MeshStandardMaterial({ color: 0x1a1816, roughness: 0.8 });
   const lidGrey = new THREE.MeshStandardMaterial({ color: 0x3b3936, roughness: 0.6 });
   return layout.slots.map((slot, i) => {
-    const { hero, size } = slot;
-    const on = lit.has(hero.code);
-    const stock = on ? stockLit : stockGrey;
-    const lid = on ? new THREE.MeshStandardMaterial({ color: aspectColour(hero), roughness: 0.5 }) : lidGrey;
+    const { hero, size, lit } = slot;
+    const stock = lit ? stockLit : stockGrey;
+    const lid = lit ? new THREE.MeshStandardMaterial({ color: aspectColour(hero), roughness: 0.5 }) : lidGrey;
+    const print = slot.pose === "face" ? frontPrint(hero, scans[i] ?? null, lit) : flatPrint(hero, lit);
+    // The lit boxes glow softly from their own print, so they stand out from the greyed ones round them; the greyed
+    // ones are dimmed further than the print's own greying.
+    const map = texture(print);
     const show = new THREE.MeshStandardMaterial({
-      map: texture(slot.faceOut ? frontPrint(hero, scans[i] ?? null, on) : spinePrint(hero, on)),
-      roughness: on ? 0.55 : 0.8,
+      map,
+      roughness: lit ? 0.5 : 0.8,
+      color: lit ? 0xffffff : 0x8a8a8a,
+      ...(lit ? { emissive: 0xffffff, emissiveMap: map, emissiveIntensity: 0.28 } : {}),
     });
-    // Its showing side faces the room (+x): +x, -x, +y, -y, +z, -z.
+    // Its showing side faces the room (+x): +x, -x, +y, -y, +z, -z. A flat box's top is its big back, plain stock.
+    const top = slot.pose === "flat" ? stock : lid;
     const body = new THREE.Mesh(new THREE.BoxGeometry(size.deep, size.tall, size.across), [
       show,
       stock,
-      lid,
+      top,
       stock,
       stock,
       stock,
     ]);
     body.castShadow = true;
     body.receiveShadow = true;
+    body.userData.box = i;
     const mesh = new THREE.Group();
     mesh.add(body);
     mesh.position.copy(slot.at);
+    // On display: leaning back a touch on its stand.
+    if (slot.onDisplay) body.rotation.z = 0.06;
     group.add(mesh);
-    return { hero, lit: on, mesh, home: slot.at.clone() };
+    return { slot, mesh, home: slot.at.clone() };
   });
 }
