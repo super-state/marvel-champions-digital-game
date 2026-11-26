@@ -56,19 +56,23 @@ export const decks = furniturePlace({
     // Square on to the shelf, near enough that it fills the screen's width (clear of the title in the top corner). A
     // shelf taller than the screen starts at its top, and the wheel scrolls down it (`scroll`, in the room's units).
     const { top, bottom } = shelf();
-    const fov = 38;
-    const tanV = Math.tan((fov / 2) * (Math.PI / 180));
-    const tanH = tanV * aspect;
+    // The camera never stands back past the lamp over the games table (room.ts: hanging at x = 0, its shade 2.3
+    // wide at the rim): on a screen too narrow to fit the shelf from in front of it, it looks wider instead.
+    const at = CASE.back + CASE.depth;
+    const nearestLamp = -2.8;
     const across = 0.9;
     const upDown: [number, number] = [-0.92, 0.8];
-    const distance = (CASE.width + 0.8) / (2 * across) / tanH;
+    const half = (CASE.width + 0.8) / (2 * across);
+    const usual = Math.tan((38 / 2) * (Math.PI / 180));
+    const distance = Math.min(half / (usual * aspect), nearestLamp - at);
+    const tanV = half / distance / aspect;
+    const fov = (2 * Math.atan(tanV) * 180) / Math.PI;
     const seen = distance * tanV * (upDown[1] - upDown[0]);
     scrollRange = Math.max(0, top + 0.4 - (bottom - 0.4) - seen);
     scroll = Math.min(scrollRange, Math.max(0, scroll));
     // The aim: the shelf's top at the top of the view, less how far down it has scrolled.
     const y = top + 0.4 - upDown[1] * distance * tanV - scroll;
     // High enough to see the shelf over the games table's near edge (x = -TABLE_WIDTH / 2, its top at 0).
-    const at = CASE.back + CASE.depth;
     const lowest = Math.max(bottom + 0.2, y - distance * tanV);
     const overTable = (0.4 - lowest) / (at + ROOM.TABLE_WIDTH / 2);
     const height = Math.max(y + 0.8, lowest + overTable * -distance);
