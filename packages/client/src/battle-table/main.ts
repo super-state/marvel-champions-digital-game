@@ -1,6 +1,8 @@
 import { statHue } from "../tokens.js";
 import { searchQuestion } from "./search-question.js";
 import { plainQuestion, tagsQuestion, type PlainQuestion } from "./question-check.js";
+// The game's printed symbols as letters (resource icons in a spend's bar and on the cards picked to pay it).
+import "../fonts/champions-icons.css";
 import "./design.css";
 import "./battle.css";
 import { padActive, startController } from "./pad/controller.js";
@@ -63,6 +65,7 @@ import {
   READY_MS,
   HIT_CONTACT_MS,
   isTuckedUpgrade,
+  SPEND_GLYPH,
 } from "./table.js";
 
 type Snapshot = ReturnType<BattleModel["snapshot"]>;
@@ -105,7 +108,6 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const model = new BattleModel();
 const stage = element("stage");
 const orderLayer = element("order-badges");
-const spendLayer = element("spend-marks");
 const boardLabels = element("board-labels");
 const labelClips = [boardLabels];
 const anchors = element("anchors");
@@ -597,7 +599,9 @@ function paintDock(view: DockView): boolean {
       const pip = make("span", "pip need-pip");
       pip.dataset.resource = type === "any" ? "any" : type;
       pip.toggleAttribute("data-paid", paid);
-      pip.append(icon(RESOURCE_ICON[type] ?? "wild"));
+      // The symbol as printed on the cards (the Champions icon font), so the bar and the cards look alike.
+      const glyph = SPEND_GLYPH[type];
+      pip.append(glyph ? make("span", "need-glyph", glyph) : icon("wild"));
       return pip;
     }),
   );
@@ -2482,58 +2486,20 @@ function placeOrderBadges(projected: ReturnType<BattleTable["anchors"]>, clips: 
 }
 
 /**
- * A spend's picks each wear what they pay: the card tinted in the symbol's colour with the symbol on it, so it shows
- * which card pays which symbol in the bar (Adam, 2026-11-26). Hand cards are in front of everything, so this layer is
- * not cut out under them as the plates and order badges are.
+ * A spend's picks and the resource each pays, for the table to tint the card in that colour with the printed symbol on
+ * it (`TableCards.spendMarks`), matching the lit symbol in the bar (Adam, 2026-11-26).
  */
-const spendMarks = new Map<string, HTMLElement>();
-function placeSpendMarks(projected: ReturnType<BattleTable["anchors"]>) {
+function spendMarks(): Record<string, string> | undefined {
   const choice = state.choice;
-  const meter = choice?.eitherOr === "spend" && !discardOpen ? model.spendMeter([...choicePicks]) : null;
-  const marks = new Map<string, readonly string[]>();
-  if (choice && meter)
-    for (const [optionId, types] of meter.paidBy) {
-      const cardId = choice.options.find((option) => option.id === optionId)?.cardId;
-      if (cardId && types.length) marks.set(cardId, types);
-    }
-  for (const [id, mark] of spendMarks)
-    if (!marks.has(id)) {
-      mark.remove();
-      spendMarks.delete(id);
-    }
-  for (const [id, types] of marks) {
-    const card = projected.find((p) => p.id === id);
-    // The card's own outline on screen, tilt and all, so the tint covers the whole card and nothing past it.
-    const outline = table?.cardOutline(id) ?? [];
-    let mark = spendMarks.get(id);
-    if (!card || !outline.length) {
-      mark?.remove();
-      spendMarks.delete(id);
-      continue;
-    }
-    const key = types.join(",");
-    if (!mark || mark.dataset.types !== key) {
-      mark?.remove();
-      mark = make("div", "spend-mark");
-      mark.dataset.types = key;
-      mark.dataset.resource = types[0] === "any" ? "any" : types[0]!;
-      const symbols = make("div", "spend-mark-symbols");
-      for (const type of types) {
-        const symbol = make("span", "spend-mark-symbol");
-        symbol.dataset.resource = type;
-        symbol.append(icon(RESOURCE_ICON[type] ?? "wild"));
-        symbols.append(symbol);
-      }
-      mark.append(make("div", "spend-mark-tint"), symbols);
-      spendLayer.append(mark);
-      spendMarks.set(id, mark);
-    }
-    mark.querySelector<HTMLElement>(".spend-mark-tint")!.style.clipPath =
-      `polygon(${outline.map((point) => point.replace(" ", "px ") + "px").join(",")})`;
-    const symbols = mark.querySelector<HTMLElement>(".spend-mark-symbols")!;
-    symbols.style.transform = `translate(${Math.round(card.x)}px,${Math.round((card.top + card.bottom) / 2)}px) translate(-50%,-50%)`;
-    symbols.style.setProperty("--symbol", `${Math.round(Math.min(96, Math.max(32, card.width * 0.5)))}px`);
+  const meter = choice?.eitherOr === "spend" ? model.spendMeter([...choicePicks]) : null;
+  if (!choice || !meter) return undefined;
+  const marks: Record<string, string> = {};
+  for (const [optionId, types] of meter.paidBy) {
+    const cardId = choice.options.find((option) => option.id === optionId)?.cardId;
+    const type = types.find((each) => each !== "any");
+    if (cardId && type) marks[cardId] = type;
   }
+  return marks;
 }
 
 function syncBoostTags() {
@@ -2643,7 +2609,6 @@ function placeLabels() {
     else dropBoostBurst(id);
   }
   placeOrderBadges(projected, clips);
-  placeSpendMarks(projected);
   // Klaw's attacks deal him two boost cards, fanned beside him: one tag, on the outermost card, counts them
   // ("Boost ×2"), rather than a tag per card drawn over each other.
   const boostsBy = new Map<string, string[]>();
@@ -4125,6 +4090,7 @@ function render() {
         : staged,
     stagedOverEnemies: !!staged && staged.id === stagedAttachment,
     paymentSources: state.payment?.sources.filter((s) => s.available).map(resourcePieceId) ?? spendLit,
+    spendMarks: spendMarks(),
     selected,
   });
   table?.markActor(state.choiceSource);

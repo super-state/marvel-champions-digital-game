@@ -750,6 +750,10 @@
   width: 18px;
   height: 18px;
 }
+/* The symbol as printed on the cards: the Champions icon font's letter (main.ts). */
+.need-glyph {
+  font: 400 19px/1 "Champions Icons";
+}
 .need-pip[data-paid] {
   opacity: 1;
   filter: none;

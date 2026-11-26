@@ -64,6 +64,12 @@ export interface TableCards {
   readonly defending: boolean;
   readonly menuCard: string | null;
   readonly paymentSources: readonly string[] | null;
+  /**
+   * Cards picked for a spend and the resource each pays (`energy`, `mental`, `physical`, `wild`): the card is tinted in
+   * that resource's colour with its printed symbol on it, drawn on the card itself so a card in front covers it as it
+   * covers the card (Adam, 2026-11-26).
+   */
+  readonly spendMarks?: Readonly<Record<string, string>> | undefined;
   /** Cards are being picked from the hand (a mulligan, the hand limit): a sunk hand rises so every card shows. */
   readonly handPick?: boolean;
   /** Cards lying facedown under an enemy card, each naming it in `under`. */
@@ -579,6 +585,44 @@ function chipValue(chip: THREE.Object3D): number {
 function chipSpot(value: 1 | 5, i: number): { x: number; y: number; z: number } {
   if (value === 5) return { x: 0.46 - (i % 3) * 0.4, y: -0.1, z: 0.03 + Math.floor(i / 3) * 0.07 };
   return { x: 0.52 - i * 0.25, y: -0.35, z: 0.03 };
+}
+
+/** The community Champions icon font (`src/fonts/champions-icons.css`): the game's printed symbols as letters. */
+const SYMBOL_FONT = "Champions Icons";
+/** Each resource's letter in that font (as `view/removal-cost-icons.ts` has them). */
+export const SPEND_GLYPH: Readonly<Record<string, string>> = { energy: "e", mental: "m", physical: "p", wild: "w" };
+/** A card picked for a spend, washed in its resource's colour (the face's colour multiplies its picture). */
+const SPEND_TINT: Readonly<Record<string, number>> = {
+  energy: 0xffd25a,
+  mental: 0x6fa8ff,
+  physical: 0xff7a6e,
+  wild: 0x6fe0a8,
+};
+const SPEND_SYMBOL_COLOR: Readonly<Record<string, string>> = {
+  energy: "#ffc935",
+  mental: "#4a93ff",
+  physical: "#ef4a3c",
+  wild: "#34d08b",
+};
+
+/** A resource's printed symbol, white with a dark edge and a glow of its colour, on a clear square. */
+function paintSpendSymbol(canvas: HTMLCanvasElement, type: string): void {
+  const ctx = canvas.getContext("2d")!;
+  const size = canvas.width;
+  ctx.clearRect(0, 0, size, size);
+  ctx.font = `${Math.round(size * 0.72)}px "${SYMBOL_FONT}"`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const glyph = SPEND_GLYPH[type] ?? "";
+  ctx.shadowColor = SPEND_SYMBOL_COLOR[type] ?? "#ffffff";
+  ctx.shadowBlur = size * 0.09;
+  ctx.lineJoin = "round";
+  ctx.lineWidth = size * 0.05;
+  ctx.strokeStyle = "rgba(10, 17, 24, 0.9)";
+  ctx.strokeText(glyph, size / 2, size / 2);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(glyph, size / 2, size / 2);
 }
 
 export class BattleTable {
@@ -1175,6 +1219,29 @@ export class BattleTable {
       });
   }
 
+  /** The printed resource symbols drawn on cards picked for a spend (`TableCards.spendMarks`), one texture a type. */
+  readonly #spendSymbolTextures = new Map<string, THREE.CanvasTexture>();
+  readonly #spendSymbolPlane = new THREE.PlaneGeometry(0.62, 0.62);
+  #spendSymbolTexture(type: string): THREE.CanvasTexture {
+    let texture = this.#spendSymbolTextures.get(type);
+    if (!texture) {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 256;
+      const made = new THREE.CanvasTexture(canvas);
+      made.colorSpace = THREE.SRGBColorSpace;
+      this.#spendSymbolTextures.set(type, made);
+      texture = made;
+      paintSpendSymbol(canvas, type);
+      // The icon font may still be loading: paint again once it has.
+      void document.fonts?.load(`200px "${SYMBOL_FONT}"`).then(() => {
+        paintSpendSymbol(canvas, type);
+        made.needsUpdate = true;
+        this.#requestFrame();
+      });
+    }
+    return texture;
+  }
+
   #lightCards(state: TableCards): void {
     this.#cloth.color.setHex(state.paymentSources ? 0x3d444e : 0xffffff);
     this.#deckBack.material.color.setHex(state.paymentSources ? 0x51545b : 0xffffff);
@@ -1189,8 +1256,31 @@ export class BattleTable {
           : state.discardOpen && !this.#viewedPile(state).some((card) => card.id === id)
             ? 0x848993
             : 0xffffff;
-      piece.face.material.color.setHex(color);
+      const mark = state.spendMarks?.[id];
+      piece.face.material.color.setHex(mark ? (SPEND_TINT[mark] ?? color) : color);
       this.#shadeTokens(piece, !!state.paymentSources && !state.paymentSources.includes(id));
+      let symbol = piece.root.getObjectByName("spend-symbol") as
+        | THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>
+        | undefined;
+      if (mark && SPEND_GLYPH[mark]) {
+        if (!symbol) {
+          symbol = new THREE.Mesh(
+            this.#spendSymbolPlane,
+            new THREE.MeshBasicMaterial({ transparent: true, toneMapped: false, depthWrite: false }),
+          );
+          symbol.name = "spend-symbol";
+          symbol.position.z = 0.0205;
+          piece.root.add(symbol);
+        }
+        const texture = this.#spendSymbolTexture(mark);
+        if (symbol.material.map !== texture) {
+          symbol.material.map = texture;
+          symbol.material.needsUpdate = true;
+        }
+      } else if (symbol) {
+        symbol.removeFromParent();
+        symbol.material.dispose();
+      }
     }
   }
 

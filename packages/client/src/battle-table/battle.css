@@ -716,67 +716,6 @@ button:focus-visible {
     0 4px 12px #000c;
 }
 
-/* A spend's picks, each tinted in the colour of the symbol it pays, with that symbol on it (main.ts placeSpendMarks). */
-#spend-marks {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-}
-.spend-mark {
-  --tint: #ffffff;
-  position: absolute;
-  inset: 0;
-  animation: spend-mark-in 220ms var(--ease-spring, ease-out);
-}
-.spend-mark[data-resource="energy"] {
-  --tint: #ffc935;
-}
-.spend-mark[data-resource="mental"] {
-  --tint: #4a93ff;
-}
-.spend-mark[data-resource="physical"] {
-  --tint: #ef4a3c;
-}
-.spend-mark[data-resource="wild"] {
-  --tint: #34d08b;
-}
-/* The whole card, clipped to its outline (set in main.ts). */
-.spend-mark-tint {
-  position: absolute;
-  inset: 0;
-  background: color-mix(in srgb, var(--tint) 42%, transparent);
-}
-.spend-mark-symbols {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: flex;
-  gap: 4px;
-}
-.spend-mark-symbol {
-  display: block;
-  width: var(--symbol, 48px);
-  height: var(--symbol, 48px);
-  color: #ffffff;
-  filter: drop-shadow(0 0 2px #0a1118) drop-shadow(0 0 10px var(--tint)) drop-shadow(0 3px 6px #000c);
-}
-.spend-mark-symbol .icon {
-  width: 100%;
-  height: 100%;
-}
-@keyframes spend-mark-in {
-  from {
-    opacity: 0;
-    scale: 0.9;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .spend-mark {
-    animation: none;
-  }
-}
-
 /* ── Card menu: a hero's or ally's own actions, over the card ───────────── */
 #decision[data-identity] {
   position: absolute;
