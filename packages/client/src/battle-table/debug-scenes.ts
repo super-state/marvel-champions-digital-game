@@ -500,11 +500,14 @@ const SCENES: Record<string, Scene> = {
   },
   /**
    * Spider-Man in hero form: end the turn, and Ultron's attack turns over Android Efficiency as its boost card, which
-   * asks "Spend 1 energy, or put the top card of the deck into play … as a Drone minion?". The card stays up while it asks.
+   * asks "Spend 1 energy, or put the top card of the deck into play … as a Drone minion?": first its two halves, then,
+   * for "Spend 1 energy", Web-Shooter (in play) and the Energy (in hand) to pay with, and Back to the two halves.
    */
   ultronboost: {
     scenario: "ultron",
     hero: { form: "hero" },
+    play: [{ code: "01008", counters: { web: 3 } }],
+    hand: ["01088"],
     encounterTop: ["01144a", "01189", "01188"],
   },
   /**

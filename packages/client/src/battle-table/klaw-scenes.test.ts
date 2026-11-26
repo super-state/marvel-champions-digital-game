@@ -82,13 +82,15 @@ describe("Klaw's dev scenes", () => {
     const battle = new BattleModel();
     battle.reset({ villain: "klaw", seed: 7, arrange: arrangeScene("klawsonic")! });
     expect(battle.endTurn()).toBe(true);
-    for (let i = 0; i < 6 && !(battle.snapshot().choice?.prompt ?? "").startsWith("Spend"); i++) {
+    for (let i = 0; i < 6 && !battle.snapshot().choice?.eitherOr; i++) {
       const options = battle.snapshot().choice?.options ?? [];
       battle.choose(options.at(-1)?.id ?? null);
     }
-    expect(battle.snapshot().choice?.prompt).toBe(
-      "Spend 1 energy, 1 mental, 1 physical, or exhaust each character you control?",
-    );
+    // Its two halves, as buttons (`BattleChoice.eitherOr`).
+    expect(battle.snapshot().choice?.options.map((option) => option.label)).toEqual([
+      "Spend 1 energy, 1 mental, 1 physical",
+      "Exhaust each character you control",
+    ]);
   });
 
   test("klawgear: Sonic Converter and Solid-Sound Body each offer to be paid off Klaw", () => {
