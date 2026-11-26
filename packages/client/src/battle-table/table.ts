@@ -1290,7 +1290,7 @@ export class BattleTable {
       return;
     }
     if (this.#state) {
-      this.#state = { ...this.#state, paymentSources: null };
+      this.#state = { ...this.#state, paymentSources: null, spendMarks: undefined };
       this.#lightCards(this.#state);
     }
     const started = performance.now();
@@ -1312,6 +1312,16 @@ export class BattleTable {
     const s = this.#state;
     if (!s?.paymentSources) return;
     this.setCards({ ...s, paymentSources: null, selected: [], hand, staged });
+  }
+
+  /**
+   * A spend answered: the tint, symbols, glow and dimming come off at once, before the cards it spent fly to the
+   * discard pile, so none of them lands there still coloured (Adam, 2026-11-26).
+   */
+  clearSpendMarks(): void {
+    const s = this.#state;
+    if (s?.spendMarks || s?.paymentSources)
+      this.setCards({ ...s, spendMarks: undefined, paymentSources: null, selected: [], targets: [] });
   }
 
   /** Paid: the table stops dimming for the payment (a payment with no hand cards to fly off never got there). */

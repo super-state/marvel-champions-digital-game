@@ -1563,6 +1563,8 @@ function confirmChoice() {
   const choice = state.choice;
   const picks = [...choicePicks];
   if (discarding || !choice || !model.chooseMany(picks)) return;
+  // A spend paid: its colours and glow come off the cards straight away, not when the phase is over.
+  if (choice.eitherOr === "spend") table?.clearSpendMarks();
   const discarded =
     choice.discardFromHand || choice.mulligan
       ? picks.map((id) => choice.options.find((option) => option.id === id)?.cardId ?? id)
