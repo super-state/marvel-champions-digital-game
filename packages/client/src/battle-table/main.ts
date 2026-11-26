@@ -4177,6 +4177,12 @@ function render() {
           asideFor: state.choice.options.flatMap((item) => (item.cardId && onTable(item.cardId) ? [item.cardId] : [])),
         }
       : {}),
+    // An either-or's "Choose one" lifts the hand so what could pay reads before choosing, and puts the asking card
+    // where "Spend ..." will, clear of the same payers, so nothing moves between the two steps (issue 217). Nothing is
+    // lit or picked: its answers are the bar's two buttons.
+    ...(state.choice?.eitherOr === "choose"
+      ? { handUp: true, asideFor: (state.choice.payers ?? []).filter((id) => onTable(id)) }
+      : {}),
     discardOpen,
     hand: displayedHand,
     // An upgrade being paid for knows its host by now (Inspired on an ally): the table holds it by that card.
@@ -4236,16 +4242,27 @@ function render() {
   const waiting =
     state.choice?.eitherOr !== "spend" && waitsOnDock(state.choice, (id) => onTable(id) && actionCard !== id);
   const keep = heldEncounter ?? state.choiceSource ?? null;
+  // An either-or's "Choose one" keeps the whole hand and the cards in play that could pay sharp: the player reads
+  // what they could spend before choosing (issue 217).
+  const readable =
+    state.choice?.eitherOr === "choose"
+      ? [...displayedHand.map((card) => card.id), ...(state.choice.payers ?? [])]
+      : [];
   dockFocus =
     waiting && !revealFocus && !rowFocus.length
-      ? { keep, also: (state.choice?.affects ?? []).filter((id) => id !== keep && onTable(id)) }
+      ? {
+          keep,
+          also: [...new Set([...(state.choice?.affects ?? []), ...readable])].filter(
+            (id) => id !== keep && onTable(id),
+          ),
+        }
       : null;
   const blurWasHidden = focusBlur.hidden;
   focusBlur.hidden = !handQuestion() && !revealFocus && !dockFocus && !rowFocus.length;
   if (focusBlur.hidden) delete focusBlur.dataset.ready;
   else if (dockFocus && blurWasHidden) requestAnimationFrame(() => dockFocus && (focusBlur.dataset.ready = ""));
-  choiceShade.hidden =
-    !state.choice || !heldEncounter || !!state.choice.offers?.length || state.choice.eitherOr === "spend";
+  // Not over an either-or in either step: the hand under it must read (issue 217).
+  choiceShade.hidden = !state.choice || !heldEncounter || !!state.choice.offers?.length || !!state.choice.eitherOr;
   const asked = paintDock(dockView());
   if (import.meta.env.DEV) {
     const found = state.choice ? plainQuestion(state, model.game) : null;
