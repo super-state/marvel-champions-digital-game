@@ -685,7 +685,7 @@ export class BattleTable {
    */
   readonly #parked = new Set<string>();
   /** Where a revealed card stands aside for its question's picks (`revealAside`), held for that question. */
-  #aside: { key: string; x: number; scale: number } | null = null;
+  #aside: { key: string; x: number; y: number; scale: number } | null = null;
   /** Where the card being paid for waits, and every card that could pay for it or be picked so far (see #layout). */
   #stagedSpot: { id: string; sources: Set<string>; spot: [number, number] | null; key: string } | null = null;
   #actor: string | null = null;
@@ -3621,8 +3621,8 @@ export class BattleTable {
         };
       }
       const aside = this.#aside!;
-      if (aside.x !== reveal.x || aside.scale !== 1)
-        this.#pose(revealPose.id, aside.x, revealPose.y, revealPose.width * aside.scale, 1.75, this.#camera.rotation.x);
+      if (aside.x !== reveal.x || aside.y !== reveal.y || aside.scale !== 1)
+        this.#pose(revealPose.id, aside.x, aside.y, revealPose.width * aside.scale, 1.75, this.#camera.rotation.x);
     }
     const base2 = discardGoal.position;
     const scale = discardGoal.scale;

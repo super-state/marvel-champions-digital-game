@@ -56,22 +56,33 @@ describe("revealAside", () => {
   const box = (left: number, right: number, top = 560, bottom = 780) => ({ left, right, top, bottom });
 
   test("stays put when it covers none of the cards to pick", () => {
-    expect(revealAside(card, [box(1300, 1450)], 1900)).toEqual({ x: 950, scale: 1 });
-    // Picks above or below it can't be covered, wherever it is.
-    expect(revealAside(card, [box(900, 1000, 900, 1100)], 1900)).toEqual({ x: 950, scale: 1 });
+    expect(revealAside(card, [box(1300, 1450)], 1900)).toEqual({ x: 950, y: 475, scale: 1 });
+    // Picks above or below it can't be covered where it is.
+    expect(revealAside(card, [box(900, 1000, 900, 1100)], 1900)).toEqual({ x: 950, y: 475, scale: 1 });
   });
 
-  test("slides just clear of the picks it covers, to the nearer open side (Caught Off Guard's supports)", () => {
-    // Web-Shooter and Helicarrier right of the middle: it slides left until its right edge clears Web-Shooter.
-    expect(revealAside(card, [box(960, 1060), box(1190, 1350)], 1900)).toEqual({ x: 734, scale: 1 });
+  test("slides up just clear of the picks it covers, at most half off the screen (Adam, 2026-11-26)", () => {
+    // Web-Shooter under it (Android Efficiency's spend): its bottom edge rises just clear of Web-Shooter's top.
+    expect(revealAside(card, [box(960, 1060), box(1190, 1350)], 1900)).toEqual({ x: 950, y: 249, scale: 1 });
+    // A pick lower down only needs a smaller lift.
+    expect(revealAside(card, [box(700, 800, 700, 900)], 1900)).toEqual({ x: 950, y: 389, scale: 1 });
+  });
+
+  test("where a lift would still cover a pick high on the table, it slides sideways instead", () => {
+    // Web-Shooter and Helicarrier right of the middle, high up: it slides left until its right edge clears Web-Shooter.
+    expect(revealAside(card, [box(960, 1060, 200, 400), box(1190, 1350, 200, 400)], 1900)).toEqual({
+      x: 734,
+      y: 475,
+      scale: 1,
+    });
     // Picks left of the middle: it slides right.
-    expect(revealAside(card, [box(700, 800)], 1900)).toEqual({ x: 1026, scale: 1 });
+    expect(revealAside(card, [box(700, 800, 200, 400)], 1900)).toEqual({ x: 1026, y: 475, scale: 1 });
   });
 
   test("with no gap wide enough it takes the widest and shrinks to fit, never below half size", () => {
-    const aside = revealAside(card, [box(200, 900), box(1200, 1800)], 1900);
+    const aside = revealAside(card, [box(200, 900, 100, 400), box(1200, 1800, 100, 400)], 1900);
     expect(aside.x).toBe(1050);
     expect(aside.scale).toBeCloseTo((1184 - 916) / 420);
-    expect(revealAside(card, [box(16, 1884)], 1900).scale).toBe(0.5);
+    expect(revealAside(card, [box(16, 1884, 100, 400)], 1900).scale).toBe(0.5);
   });
 });
