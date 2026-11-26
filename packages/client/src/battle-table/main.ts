@@ -5001,12 +5001,10 @@ async function showShelf() {
 function begin() {
   addRecordButton(document.querySelector("#menu .menu-actions"), () => gameMenu.close());
   // The patch notes the player hasn't read come up over the boxes once they are drawn (patch-notes/).
+  // Only there, never over a game (Adam, 2026-11-26): a page dealt straight onto the table (a reload mid-game, Try again
+  // on a new version) shows them the next time the boxes come up.
   if (opensOnShelf()) void showShelf().then(offerPatchNotes);
-  else {
-    // Dealt straight onto the table (Try again on a new version, a reload mid-game): the notes still come up.
-    start();
-    offerPatchNotes();
-  }
+  else start();
 }
 if (import.meta.env.VITE_TABLE_VERSION) void playerReady.then(begin);
 else begin();
