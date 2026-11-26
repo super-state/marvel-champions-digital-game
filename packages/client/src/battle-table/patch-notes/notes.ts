@@ -25,8 +25,6 @@ export interface PatchNote {
 
 export const PATCH_NOTES: readonly PatchNote[] = [
   {
-    // Not shipped yet: written ahead, so the fixes already on the main line are listed for the next version. Each
-    // change names its pull request or branch, to pick onto the release branch (cut off table-v0.2.9) when 0.2.10 ships.
     version: "0.2.10",
     title: "Read before you choose",
     changes: [
