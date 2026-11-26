@@ -25,6 +25,57 @@ export interface PatchNote {
 
 export const PATCH_NOTES: readonly PatchNote[] = [
   {
+    version: "0.2.9",
+    title: "Paying, made plain",
+    changes: [
+      {
+        // PRs 206, 208.
+        kind: "fixed",
+        text: "Paying for something like Sonic Boom now takes only the cards it asks for. Before, it let you spend six cards when it needed three.",
+      },
+      {
+        // PR 208.
+        kind: "better",
+        text: "While you pay, the symbols it needs light up as you pick cards, each picked card shows the symbol it pays, and cards that can't help any more go dark.",
+      },
+      {
+        // PR 209.
+        kind: "better",
+        text: "Resource symbols on the table now look exactly like the ones printed on the cards.",
+      },
+      {
+        // PR 199.
+        kind: "better",
+        text: "Five threat on a scheme becomes one big 5 token, so threat is easy to count at a glance.",
+      },
+      {
+        // PR 201.
+        kind: "better",
+        text: "A boost card flies straight in under the villain, even past a minion standing beside them.",
+      },
+      {
+        // PR 130.
+        kind: "fixed",
+        text: "A card coming onto the table goes round a card held up in the air instead of flying straight through it.",
+      },
+      {
+        // PR 154.
+        kind: "fixed",
+        text: "The banner no longer says a card was brought in by another when it was simply dealt to you.",
+      },
+      {
+        // PR 143.
+        kind: "fixed",
+        text: 'An ally hurt by its own attack or thwart now "takes 1 damage" instead of dealing damage to itself, and Aunt May\'s button says what she does.',
+      },
+      {
+        // PR 159.
+        kind: "fixed",
+        text: "Electric Whip Attack's question names the card and asks you to choose an upgrade to discard.",
+      },
+    ],
+  },
+  {
     version: "0.2.8",
     title: "Clearer choices",
     changes: [
