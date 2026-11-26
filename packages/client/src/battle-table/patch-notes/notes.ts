@@ -25,8 +25,6 @@ export interface PatchNote {
 
 export const PATCH_NOTES: readonly PatchNote[] = [
   {
-    // Not shipped yet: written ahead (Adam, 2026-11-26: "add them"). Each change names its pull request, to pick onto
-    // the release branch (cut off table-v0.2.8) when 0.2.9 ships.
     version: "0.2.9",
     title: "Paying, made plain",
     changes: [
@@ -64,6 +62,26 @@ export const PATCH_NOTES: readonly PatchNote[] = [
         // PR 201.
         kind: "better",
         text: "A boost card flies straight in under the villain, even past a minion standing beside them.",
+      },
+      {
+        // PR 130.
+        kind: "fixed",
+        text: "A card coming onto the table goes round a card held up in the air instead of flying straight through it.",
+      },
+      {
+        // PR 154.
+        kind: "fixed",
+        text: "The banner no longer says a card was brought in by another when it was simply dealt to you.",
+      },
+      {
+        // PR 143.
+        kind: "fixed",
+        text: 'An ally hurt by its own attack or thwart now "takes 1 damage" instead of dealing damage to itself, and Aunt May\'s button says what she does.',
+      },
+      {
+        // PR 159.
+        kind: "fixed",
+        text: "Electric Whip Attack's question names the card and asks you to choose an upgrade to discard.",
       },
     ],
   },
