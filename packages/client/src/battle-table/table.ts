@@ -562,6 +562,20 @@ export function matPrint(
 }
 
 /** The scene presents engine state. Only the UI can decide what picking a particular card does. */
+/** What a threat chip counts for: 5 for the big five-chip, else 1 (`TokenKit.threatChip`). */
+function chipValue(chip: THREE.Object3D): number {
+  return chip.userData.value === 5 ? 5 : 1;
+}
+
+/**
+ * Where the `i`th chip of its kind lies on a scheme, in the card's own units (a scheme lies landscape, 1.4 wide): the
+ * fives in a row across the lower right, the ones in a row beneath them; a fourth five stacks on the first.
+ */
+function chipSpot(value: 1 | 5, i: number): { x: number; y: number; z: number } {
+  if (value === 5) return { x: 0.46 - (i % 3) * 0.4, y: -0.1, z: 0.03 + Math.floor(i / 3) * 0.07 };
+  return { x: 0.52 - i * 0.25, y: -0.35, z: 0.03 };
+}
+
 export class BattleTable {
   readonly #viewport: HTMLElement;
   readonly #handlers: Handlers;
@@ -696,6 +710,8 @@ export class BattleTable {
   /** Threat chips taken off a card, sizzling out where they lay: when each started and whether it has sparked yet. */
   readonly #sizzling = new Map<THREE.Group, { start: number; x: number; y: number; sparked: boolean }>();
   readonly #drops = new Map<THREE.Group, number>();
+  /** Single threat chips gathering into the five-chip that replaces them, then gone. */
+  readonly #merging = new Map<THREE.Group, { start: number; x: number; y: number; toX: number; toY: number }>();
   readonly #observer: ResizeObserver;
   readonly #reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
   #state: TableCards | null = null;
@@ -1693,6 +1709,7 @@ export class BattleTable {
     for (const vapour of this.#vapours.splice(0)) this.#releaseVapour(vapour);
     this.#liftedTokens.clear();
     this.#sizzling.clear();
+    this.#merging.clear();
     this.#hostRest.clear();
     this.#drops.clear();
     for (const slot of this.#slotEntrances.keys()) slot.visible = true;
@@ -1828,7 +1845,7 @@ export class BattleTable {
 
   /** How many threat chips lie on `id` now (the browser tests count them as a move plays out). */
   threatChips(id: string): number {
-    return this.#pieces.get(id)?.tokens?.children.length ?? 0;
+    return (this.#pieces.get(id)?.tokens?.children ?? []).reduce((sum, chip) => sum + chipValue(chip), 0);
   }
 
   /**
@@ -2276,31 +2293,49 @@ export class BattleTable {
         staged: s.staged && replace(s.staged),
       };
     }
-    while (group.children.length > total) {
-      const token = group.children.at(-1)! as THREE.Group;
+    // Threat lies as fives and ones, like the printed game's tokens: 7 threat is a big 5 chip and two single chips.
+    const fives = Math.floor(total / 5);
+    const ones = total % 5;
+    const chips = group.children as THREE.Group[];
+    const haveFives = chips.filter((chip) => chipValue(chip) === 5);
+    const haveOnes = chips.filter((chip) => chipValue(chip) === 1);
+    const now = performance.now();
+    // Threat taken off sizzles out where it lay rather than lifting away (Adam, 2026-11-22).
+    const sizzle = (token: THREE.Group) => {
       this.#drops.delete(token);
       group.parent?.add(token);
-      // Threat taken off sizzles out where it lay rather than lifting away (Adam, 2026-11-22).
       this.#sizzling.set(token, {
-        start: performance.now() + this.#sizzling.size * 70,
+        start: now + this.#sizzling.size * 70,
         x: token.position.x,
         y: token.position.y,
         sparked: false,
       });
+    };
+    let delay = 0;
+    if (haveFives.length < fives) {
+      // Reaching a five: the single chips slide together into it, and the five drops where they met.
+      const at = chipSpot(5, haveFives.length);
+      for (const token of haveOnes) {
+        this.#drops.delete(token);
+        group.parent?.add(token);
+        this.#merging.set(token, { start: now, x: token.position.x, y: token.position.y, toX: at.x, toY: at.y });
+      }
+      haveOnes.length = 0;
+      delay = this.#reduced.matches ? 0 : 220;
     }
-    while (group.children.length < total) {
-      const i = group.children.length;
-      const token = this.#kit.threatChip();
-      // Chips settle in a loose three-by-two tray in the corner of the scheme, then stack.
-      token.position.set(
-        0.48 - (i % 3) * 0.235,
-        -0.29 + Math.floor((i % 6) / 3) * 0.21,
-        0.03 + Math.floor(i / 6) * 0.047,
-      );
-      token.rotation.z = ((i * 0.61) % 0.5) - 0.25;
+    while (haveFives.length > fives) sizzle(haveFives.pop()!);
+    while (haveOnes.length > ones) sizzle(haveOnes.pop()!);
+    const lay = (value: 1 | 5, i: number, wait: number) => {
+      const token = this.#kit.threatChip(value);
+      const spot = chipSpot(value, i);
+      token.position.set(spot.x, spot.y, spot.z);
+      token.rotation.z = value === 5 ? ((i * 0.37) % 0.24) - 0.12 : ((i * 0.61) % 0.5) - 0.25;
       group.add(token);
-      this.#drops.set(token, performance.now() + Math.min(i, 4) * 45);
-    }
+      this.#drops.set(token, now + wait);
+      return token;
+    };
+    for (let i = haveFives.length; i < fives; i++) haveFives.push(lay(5, i, delay + (i - haveFives.length) * 60));
+    for (let i = haveOnes.length; i < ones; i++) haveOnes.push(lay(1, i, delay + Math.min(i, 4) * 45));
     this.#shadeTokens(piece, this.#dimFor(id));
     this.#requestFrame();
   }
@@ -3795,8 +3830,13 @@ export class BattleTable {
    * first, then in front, the right and behind, whichever has no other card lying there. Landing just left of a minion
    * put it on the villain beside it, and it slid through him on its way in (Adam, 2026-11-23: "make sure that things
    * that are sliding like this don't go through the thing that they're passing over").
+   *
+   * `straight`: the side it goes in by, clear or not. A boost card only waits a moment before it is turned up, so it
+   * flies from the encounter deck straight to the villain's right edge and slides under, overlapping a minion standing
+   * there if need be, rather than going round to another side (Adam, 2026-11-26). It lies low, so it slides under that
+   * minion as it does under the villain.
    */
-  #clearLanding(piece: Piece, hostId: string, out: THREE.Vector3): THREE.Vector3 {
+  #clearLanding(piece: Piece, hostId: string, out: THREE.Vector3, straight = false): THREE.Vector3 {
     const { target } = piece;
     const host = this.#pieces.get(hostId)?.target;
     out.copy(target.position);
@@ -3836,6 +3876,11 @@ export class BattleTable {
     ];
     // A card going under the right-hand edge (a boost card) tries the right side first.
     if (target.position.x > host.position.x) [spots[0], spots[2]] = [spots[2]!, spots[0]!];
+    if (straight) {
+      out.x = spots[0]![0];
+      out.z = spots[0]![1];
+      return out;
+    }
     let best = spots[0]!;
     let least = Infinity;
     for (const spot of spots) {
@@ -4166,8 +4211,9 @@ export class BattleTable {
           // slide in flat: it passes under that card, never over it and down through it.
           const { fly, hop, slide } = tuckPath(progress);
           // Beside the edge it goes under if that is clear, else another clear side: a minion right of the villain
-          // had the boost card land on it, drop under it and slide on (Adam, 2026-11-24).
-          const landing = this.#clearLanding(piece, underHost!, TUCK_LANDING);
+          // had the boost card land on it, drop under it and slide on (Adam, 2026-11-24). A boost card goes straight
+          // in by the villain's right edge, minion or not (Adam, 2026-11-26).
+          const landing = this.#clearLanding(piece, underHost!, TUCK_LANDING, kind === "tuck");
           if (slide > 0) piece.root.position.lerpVectors(landing, piece.target.position, slide);
           else {
             piece.root.position.lerpVectors(from.position, landing, fly);
@@ -4402,6 +4448,18 @@ export class BattleTable {
       if (t === 1) {
         chip.removeFromParent();
         this.#sizzling.delete(chip);
+      } else moving = true;
+    }
+    for (const [chip, merge] of this.#merging) {
+      const t = this.#reduced.matches ? 1 : THREE.MathUtils.clamp((now - merge.start) / 240, 0, 1);
+      const ease = t * t * (3 - 2 * t);
+      chip.position.x = merge.x + (merge.toX - merge.x) * ease;
+      chip.position.y = merge.y + (merge.toY - merge.y) * ease;
+      chip.position.z = 0.03 + 0.08 * Math.sin(Math.PI * t);
+      chip.scale.setScalar(1 - 0.6 * THREE.MathUtils.smoothstep(t, 0.55, 1));
+      if (t === 1) {
+        chip.removeFromParent();
+        this.#merging.delete(chip);
       } else moving = true;
     }
     for (const [chip, start] of this.#liftedTokens) {
