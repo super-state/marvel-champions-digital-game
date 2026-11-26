@@ -25,6 +25,19 @@ export interface PatchNote {
 
 export const PATCH_NOTES: readonly PatchNote[] = [
   {
+    // Not shipped yet: written ahead, so the fixes Adam has said go in the next version are listed here. Each change
+    // names its pull request, to pick onto the release branch (cut off table-v0.2.7) when 0.2.8 ships.
+    version: "0.2.8",
+    title: "Threat you can watch arrive",
+    changes: [
+      {
+        // PR 196 (Adam, 2026-11-26: "lets put this into next release").
+        kind: "fixed",
+        text: "A side scheme now lands on the table empty and gets its threat one step at a time, as the table counts it. Before, Drone Factory landed with all its threat at once, then lost some and got it back.",
+      },
+    ],
+  },
+  {
     version: "0.2.7",
     title: "A smoother shelf",
     changes: [
