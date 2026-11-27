@@ -113,7 +113,9 @@
     0 0 0 3px var(--gold),
     0 0 28px 6px rgb(242 194 48 / 45%);
 }
+/* Read by a screen reader, not shown: the scenario's picture says it (Adam, 2026-11-27: "it says the same thing"). */
 .scn-float-words {
+  clip-path: inset(50%);
   position: absolute;
   top: calc(100% + 10px);
   left: 50%;
