@@ -633,7 +633,7 @@ test("02049 Media Coverage: revealed, it attaches to your identity", () => {
 // BUG: Media Coverage's reveal beat says `whenRevealed: true` (the table flashes for a When Revealed about to fire):
 // its text only quotes the words ("Resolve each "When Revealed" ability ...") and it has no When Revealed of its own.
 // Table bug (`/\bWhen Revealed\b/` over the card's text in model.ts).
-test.fails("02049 Media Coverage: its reveal doesn't flash for a When Revealed it doesn't have", () => {
+test("02049 Media Coverage: its reveal doesn't flash for a When Revealed it doesn't have", () => {
   const p = deal(stack(QUIET, "02049"));
   villainPhase(p);
   expect(p.beats[revealOf(p, "Media Coverage")]!.reveal!.whenRevealed).toBe(false);

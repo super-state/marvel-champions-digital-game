@@ -522,9 +522,19 @@ export const EITHER_SPEND = "either-or:spend";
 export const EITHER_OTHERWISE = "either-or:otherwise";
 
 /** `BattleChoice.affects`, present only when the question names cards it would change. */
-function affectsOf(state: GameState, pending: PendingChoice): { affects?: string[] } {
+function affectsOf(state: GameState, pending: PendingChoice): { affects?: string[]; prompt?: string } {
   const affects = choiceAffects(state, pending, TABLE_DEPS);
-  return affects.length ? { affects } : {};
+  // A card the question is about that isn't on the table (a Goblin minion Wicked Ambitions just discarded): named in
+  // the question, so two in a row can be told apart.
+  const offTable = affects.find((id) => isInEncounterDiscard(state, id));
+  return affects.length
+    ? { affects, ...(offTable ? { prompt: `Choose one for ${faceUpName(state, offTable)}` } : {}) }
+    : {};
+}
+
+/** The card lies in an encounter discard pile. */
+function isInEncounterDiscard(state: GameState, id: InstanceId): boolean {
+  return Object.values(state.encounterDecks).some((piles) => piles.discard.includes(id));
 }
 
 function statModifiers(state: GameState, id: InstanceId) {
@@ -1703,7 +1713,9 @@ export class BattleModel {
             art: artFor(card, { kind: "front" })?.url ?? "",
             landscape: isLandscapeType(card?.type ?? ""),
             quick: card?.type === "minion",
-            whenRevealed: !!card && /\bWhen Revealed\b/i.test(plainRulesTextOf(card)),
+            // An ability of its own ("When Revealed (Hero):"), not the words quoted (Media Coverage's "Resolve each
+            // "When Revealed" ability ... 1 additional time").
+            whenRevealed: !!card && /\bWhen Revealed(?:\s*\([^)]*\))?\s*:/i.test(plainRulesTextOf(card)),
             ...(card && e.type === "encounterCardRevealed"
               ? formWhenRevealed(plainRulesTextOf(card), result.state.players[0]!.identity.form)
               : {}),

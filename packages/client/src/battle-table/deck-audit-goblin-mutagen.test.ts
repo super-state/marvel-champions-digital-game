@@ -1123,7 +1123,7 @@ test("02032 Wicked Ambitions: at stage II it discards 4, and asks once per Gobli
 // hero (`affects`). At stage II, with a Goblin Soldier and a Goblin Thrall discarded, the player is asked the same
 // question twice and can't tell which minion each one is about (Wicked Ambitions: "Each time a Goblin minion is
 // discarded this way, choose to either take 3 damage or put that minion into play engaged with you").
-test.fails("02032 Wicked Ambitions: each question shows which Goblin minion it is about", () => {
+test("02032 Wicked Ambitions: each question shows which Goblin minion it is about", () => {
   const p = expertDeal(noDealt, noThrall, stack(QUIET, "02032", "02023", "02029", "02024", "02036"));
   const questions: Choice[] = [];
   p.mark();

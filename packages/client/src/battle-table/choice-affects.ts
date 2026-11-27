@@ -35,6 +35,9 @@ function collectTargets(value: unknown, into: TargetRef[]) {
   const node = value as { kind?: unknown; target?: unknown };
   if (typeof node.kind === "string" && CHANGES_ITS_TARGET.has(node.kind) && node.target)
     into.push(node.target as TargetRef);
+  // A card one option puts into play (Wicked Ambitions' "put that minion into play"): the card the question is about.
+  const card = (node as { card?: unknown }).card;
+  if (node.kind === "putIntoPlay" && card) into.push(card as TargetRef);
   for (const child of Object.values(value)) if (child && typeof child === "object") collectTargets(child, into);
 }
 
