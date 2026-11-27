@@ -12,6 +12,7 @@ import {
   type BattleBeat,
   type BattleCard,
   type BattleSnapshot,
+  type DealOptions,
   type HeroId,
   type VillainId,
 } from "./model.js";
@@ -165,8 +166,14 @@ export const compose =
   (state) =>
     steps.reduce((s, step) => step(s), state);
 
-/** Deal `hero` against `villain` (Rhino unless given), with the set-up steps applied to the opening state. */
-export function scenarioOf(deal: { hero: HeroId; villain?: VillainId }, ...steps: Setup[]) {
+/**
+ * Deal `hero` against `villain` (Rhino unless given), with the set-up steps applied to the opening state. `modules` and
+ * `difficulty` as Free Play deals them (a scenario pack's modular sets for its audit).
+ */
+export function scenarioOf(
+  deal: { hero: HeroId; villain?: VillainId } & Pick<DealOptions, "modules" | "difficulty" | "seed">,
+  ...steps: Setup[]
+) {
   const setup = compose(...steps);
   const create = engine.createGame;
   const mock = vi.spyOn(engine, "createGame").mockImplementationOnce((...args) => {
