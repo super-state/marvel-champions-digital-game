@@ -7,7 +7,7 @@
  *
  * Picking a box brings it off the shelf and up close, the rest of the shelf dimmed behind it, with a card beside it:
  * who, the deck they play (the starter deck, as it comes out of the box: no deck building here yet, Adam 2026-11-26),
- * a star to make them a favourite (a gold sticker on the box), and for a hero the table deals, Choose: they become the
+ * Add to favourites (a gold sticker on the box), and for a hero the table deals, Play as: they become the
  * hero Campaign and Free Play deal (`battle-hero`) with their starter deck. Pointing at a box eases it out a little;
  * let go, it snaps straight back, as the table's cards do.
  *
@@ -398,7 +398,7 @@ function markChosen() {
 
 const heroButton = (id: HeroId | undefined) => boxes.find((box) => box.id && box.id === id)?.button ?? null;
 
-/** A box picked: it comes off the shelf and up close, its card beside it. Nothing is chosen until Choose. */
+/** A box picked: it comes off the shelf and up close, its card beside it. Nothing is chosen until Play as. */
 function pick(box: Box) {
   opened = box;
   hovered = -1;
@@ -411,7 +411,7 @@ const capital = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
 
 /**
  * The card beside a box up close: who, the deck they play (the starter deck, out of the box: no deck building at the
- * bench yet, Adam 2026-11-26), the favourite's star, and Choose for a hero the table deals.
+ * bench yet, Adam 2026-11-26), Play as for a hero the table deals, and Add to favourites under it.
  */
 function paint(focusKey?: string) {
   if (!card || !opened) return;
@@ -423,18 +423,18 @@ function paint(focusKey?: string) {
   const words = el("div", "bench-card-words");
   words.append(el("h3", "bench-title", hero.name));
   if (hero.alterEgo !== hero.name) words.append(el("p", "bench-who", hero.alterEgo));
+  head.append(words);
+  // Favourite: a plain secondary button under Play (Adam, 2026-11-27: a star in the corner read as a close button).
   const on = favourites.has(hero.code);
-  const star = el("button", "btn btn-ghost bench-star", on ? "★" : "☆");
+  const star = el("button", "btn btn-secondary bench-fav", on ? "★ In your favourites" : "☆ Add to favourites");
   star.type = "button";
   star.dataset.bench = "favourite";
   star.setAttribute("aria-pressed", String(on));
   star.setAttribute("aria-label", "Favourite");
-  star.title = on ? "A favourite: press to take the star off" : "Mark as a favourite";
   star.onclick = () => {
     toggleFavourite(box);
     paint("favourite");
   };
-  head.append(words, star);
 
   const aspect = bench ? ASPECT_NAMES[bench.card.starterAspect] : hero.aspect ? capital(hero.aspect) : null;
   const parts: HTMLElement[] = [head, el("p", "bench-deck-line", `Starter deck${aspect ? ` · ${aspect}` : ""}`)];
@@ -443,7 +443,7 @@ function paint(focusKey?: string) {
     const choose = el(
       "button",
       "btn btn-primary bench-choose",
-      chosen ? `${bench.name} is chosen` : `Choose ${bench.name}`,
+      chosen ? `Playing as ${bench.name}` : `Play as ${bench.name}`,
     );
     choose.type = "button";
     choose.dataset.bench = "choose";
@@ -451,17 +451,18 @@ function paint(focusKey?: string) {
     choose.onclick = () => chooseHero(bench);
     parts.push(
       choose,
+      star,
       el(
         "p",
         "bench-line",
         chosen
           ? `Campaign and Free Play deal ${bench.name} with the starter deck.`
-          : `Choose to play ${bench.name} in Campaign and Free Play.`,
+          : `Play as ${bench.name} in Campaign and Free Play.`,
       ),
     );
   } else {
     const release = SHELF_RELEASES.find((each) => each.id === hero.release)?.name;
-    parts.push(el("p", "bench-line", `Not on the table yet${release ? `: from ${release}` : ""}.`));
+    parts.push(el("p", "bench-line", `Not on the table yet${release ? `: from ${release}` : ""}.`), star);
   }
   card.replaceChildren(...parts);
   card.hidden = false;
@@ -472,7 +473,7 @@ function paint(focusKey?: string) {
     ?.focus({ preventScroll: true });
 }
 
-/** Choose confirmed: the hero (and their starter deck) for Campaign and Free Play; the box goes back on the shelf. */
+/** Play as confirmed: the hero (and their starter deck) for Campaign and Free Play; the box goes back on the shelf. */
 function chooseHero(hero: BenchHero) {
   current = hero;
   rememberHero(hero.id);
@@ -677,8 +678,14 @@ function placeCard() {
     ? r.right + 32
     : Math.min(innerWidth - width - 16, Math.max(16, (r.left + r.right) / 2 - width / 2));
   const top = right ? (r.top + r.bottom) / 2 - height / 2 : r.bottom + 14;
+  // Back sits just above the card, lined up with its left edge; the card leaves room for it.
+  const cardTop = Math.min(innerHeight - height - 16, Math.max(72, top));
   card.style.left = `${left}px`;
-  card.style.top = `${Math.min(innerHeight - height - 16, Math.max(16, top))}px`;
+  card.style.top = `${cardTop}px`;
+  if (backBar) {
+    backBar.style.left = `${left}px`;
+    backBar.style.top = `${cardTop - 58}px`;
+  }
 }
 
 // ── Keys ──────────────────────────────────────────────────────────────────────────────────────────────────────────
