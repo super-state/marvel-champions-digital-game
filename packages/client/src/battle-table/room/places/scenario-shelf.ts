@@ -3,12 +3,14 @@
  * different size, scenario packs, and the bigger packs; inside will be the scenarios in that set"). A bookcase on the
  * back wall, right of the sideboard, with every box that has scenarios in it (`scenario-catalogue.ts`), face-out in
  * the order they came out (`scenario-shelf-layout.ts`): the Core Set and the campaign boxes big and square, the
- * scenario packs smaller. The boxes the table can deal from are lit; the rest stand among them, faded.
+ * scenario packs smaller. The boxes the table can deal from are lit; the rest stand among them, faded, and a box the
+ * road hasn't reached yet (`road.ts`) wears a padlock and says what reaches it.
  *
  * Pointing at a box eases it out; let go, it snaps back. Picking one brings it up close as the hero shelf's boxes come
  * (`close-up.ts`), the shelf dimmed behind: its lid lifts away and the scenarios inside rise, a villain card each, with
- * a card beside listing them. Picking a scenario the table deals hands it to Campaign (`campaign.ts`), which takes it to
- * the table; a sealed one says what opens it. A click off the box, Back (above the card), Escape or B puts it back.
+ * a card beside listing them in the road's order (the Core Set: its three on Standard, then on Expert): beaten ones
+ * ticked, the next one lit, later ones locked. Picking one Campaign deals hands it to Campaign (`campaign.ts`), which
+ * takes it to the table; any other says why not. A click off the box, Back (above the card), Escape or B puts it back.
  *
  * Every choice is a real button (mouse, touch, the arrows, a pad): a see-through button over each box, and the card's
  * buttons while one is up close.
@@ -34,16 +36,31 @@ const FACING: Facing = { out: new THREE.Vector3(0, 0, 1), left: new THREE.Vector
 /** On the shelf a box is turned a quarter round, its right-hand side (the spine, printed) to the room. */
 const SPINE_TURN = -Math.PI / 2;
 
-/** How a scenario stands for this player: one the table deals, sealed with a reason, or not on the table yet. */
-export interface ScenarioState {
+/**
+ * A line on a box's card: one of its scenarios as the road has it (the Core Set's are each there twice, on Standard and
+ * on Expert). `absent` is a scenario the table doesn't deal yet.
+ */
+export interface ShelfRow {
+  /** Unique in the box: the scenario's id, with `:expert` on the Expert half. */
+  readonly key: string;
+  readonly scenario: ShelfScenario;
+  readonly name: string;
+  readonly status: "beaten" | "next" | "open" | "locked" | "absent";
+  /** Campaign deals it now. */
   readonly playable: boolean;
-  readonly lock: string | null;
+  /** The line under its name ("Next on the road", "Beat Rhino first"). */
+  readonly line: string;
 }
 
 export interface ScenarioShelfHooks {
-  state(scenario: ShelfScenario): ScenarioState;
-  /** A scenario the table deals, picked. */
-  pick(scenario: ShelfScenario): void;
+  /** A box's scenarios, in the road's order. Read each time a box opens, so a game won since shows. */
+  rows(product: ShelfProduct): readonly ShelfRow[];
+  /** Why the road hasn't reached a box yet, or null when it has. */
+  boxLock(product: ShelfProduct): string | null;
+  /** The table deals something in the box (its print is lit). */
+  onTable(product: ShelfProduct): boolean;
+  /** A row Campaign deals, picked. */
+  pick(row: ShelfRow): void;
 }
 
 // ── Prints ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -115,6 +132,74 @@ function coverFit(
   g.drawImage(image, (iw - sw) / 2, (ih - sh) * focusY, sw, sh, x, y, w, h);
 }
 
+/** A padlock, its body's middle at (x, y), `size` tall: a box or a scenario the road hasn't reached. */
+function padlock(g: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  const w = size * 0.78;
+  const h = size * 0.58;
+  g.save();
+  g.shadowColor = "rgba(0,0,0,0.7)";
+  g.shadowBlur = size * 0.12;
+  g.strokeStyle = "#e9dcc4";
+  g.lineWidth = size * 0.13;
+  g.beginPath();
+  g.moveTo(x - w * 0.3, y - h / 2 + size * 0.04);
+  g.arc(x, y - h / 2, w * 0.3, Math.PI, 0);
+  g.lineTo(x + w * 0.3, y - h / 2 + size * 0.04);
+  g.stroke();
+  g.fillStyle = "#e9dcc4";
+  g.fillRect(x - w / 2, y - h / 2, w, h);
+  g.shadowBlur = 0;
+  g.fillStyle = "#2a1f16";
+  g.beginPath();
+  g.arc(x, y - h * 0.08, size * 0.08, 0, Math.PI * 2);
+  g.fill();
+  g.fillRect(x - size * 0.035, y - h * 0.08, size * 0.07, h * 0.3);
+  g.restore();
+}
+
+/** A dark disc with a padlock on it, its middle at (x, y), `r` its radius: reads over any art. */
+function lockBadge(g: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  g.fillStyle = "rgba(14,10,8,0.85)";
+  g.beginPath();
+  g.arc(x, y, r, 0, Math.PI * 2);
+  g.fill();
+  padlock(g, x, y + r * 0.12, r * 1.25);
+}
+
+/** A tick in a green ring, its middle at (x, y): a scenario beaten on the road. */
+function tick(g: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  g.save();
+  g.shadowColor = "rgba(0,0,0,0.6)";
+  g.shadowBlur = size * 0.15;
+  g.fillStyle = "#3f9b4a";
+  g.beginPath();
+  g.arc(x, y, size / 2, 0, Math.PI * 2);
+  g.fill();
+  g.shadowBlur = 0;
+  g.strokeStyle = "#f6f0e2";
+  g.lineWidth = size * 0.07;
+  g.stroke();
+  g.lineWidth = size * 0.13;
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  g.beginPath();
+  g.moveTo(x - size * 0.22, y + size * 0.01);
+  g.lineTo(x - size * 0.05, y + size * 0.18);
+  g.lineTo(x + size * 0.24, y - size * 0.16);
+  g.stroke();
+  g.restore();
+}
+
+/** A print as it stands: faded unless lit, a padlock in its top right corner when the road hasn't reached it. */
+function finish(print: HTMLCanvasElement, lit: boolean, locked: boolean): HTMLCanvasElement {
+  const out = lit ? print : faded(print);
+  if (locked) {
+    const r = out.width * 0.09;
+    lockBadge(out.getContext("2d")!, out.width - r * 1.5, r * 1.5, r);
+  }
+  return out;
+}
+
 /** A box's front from its own art: the rulebook's cover as it is, or the key art with the title across the foot. */
 function artPrint(
   product: ShelfProduct,
@@ -122,6 +207,7 @@ function artPrint(
   titled: boolean,
   cut: number,
   lit: boolean,
+  locked: boolean,
 ): HTMLCanvasElement {
   const big = product.size === "big";
   const [w, h] = printSize(product, 512);
@@ -147,11 +233,16 @@ function artPrint(
     g.fillText(name, w / 2, h - 64);
     g.shadowBlur = 0;
   }
-  return lit ? cv : faded(cv);
+  return finish(cv, lit, locked);
 }
 
 /** A box's front: its release's colours, the first villain's art filling it, and the box's name across the foot. */
-function frontPrint(product: ShelfProduct, art: HTMLImageElement | null, lit: boolean): HTMLCanvasElement {
+function frontPrint(
+  product: ShelfProduct,
+  art: HTMLImageElement | null,
+  lit: boolean,
+  locked: boolean,
+): HTMLCanvasElement {
   const big = product.size === "big";
   const [w, h] = printSize(product, 384);
   const [cv, g] = canvas(w, h);
@@ -194,7 +285,7 @@ function frontPrint(product: ShelfProduct, art: HTMLImageElement | null, lit: bo
   g.strokeStyle = accent;
   g.lineWidth = 8;
   g.strokeRect(4, 4, w - 8, h - 8);
-  return lit ? cv : faded(cv);
+  return finish(cv, lit, locked);
 }
 
 /**
@@ -202,7 +293,7 @@ function frontPrint(product: ShelfProduct, art: HTMLImageElement | null, lit: bo
  * (Adam, 2026-11-27): its release's colour, the red MARVEL tab at the top with CHAMPIONS under it, its title running up
  * the middle, and the kind of box (core set, campaign, scenario pack) at the foot.
  */
-function sidePrint(product: ShelfProduct, lit: boolean): HTMLCanvasElement {
+function sidePrint(product: ShelfProduct, lit: boolean, locked: boolean): HTMLCanvasElement {
   const [w, h] = [128, 512];
   const [cv, g] = canvas(w, h);
   const [ground, accent] = coloursOf(product);
@@ -249,11 +340,33 @@ function sidePrint(product: ShelfProduct, lit: boolean): HTMLCanvasElement {
   const kind = product.code === "core" ? "CORE SET" : product.size === "big" ? "CAMPAIGN" : "SCENARIO";
   fit(g, kind, (size) => `900 ${size}px 'Public Sans', sans-serif`, 15, w - 28);
   g.fillText(kind, w / 2, h - 30);
-  return lit ? cv : faded(cv);
+  const out = lit ? cv : faded(cv);
+  // Not reached on the road yet: a padlock under CHAMPIONS, where it shows on the shelf.
+  if (locked) lockBadge(out.getContext("2d")!, w / 2, 124, 40);
+  return out;
 }
 
-/** A scenario's card in the box: its villain's card, greyed when the table doesn't deal it. */
-function scenarioPrint(scan: HTMLImageElement | null, scenario: ShelfScenario, lit: boolean): HTMLCanvasElement {
+/** How a scenario's card in the box shows: lit (Campaign deals it), ticked (beaten), padlocked (not reached). */
+interface CardLook {
+  readonly lit: boolean;
+  readonly ticked: boolean;
+  readonly locked: boolean;
+}
+
+/** A scenario's card's look from its rows: lit if one plays, ticked if one is beaten, locked if none plays yet. */
+function cardLook(rows: readonly ShelfRow[], scenario: ShelfScenario): CardLook {
+  const own = rows.filter((row) => row.scenario.id === scenario.id);
+  const lit = own.some((row) => row.playable);
+  return {
+    lit,
+    ticked: own.some((row) => row.status === "beaten"),
+    locked: !lit && own.some((row) => row.status === "locked"),
+  };
+}
+const lookKey = (look: CardLook) => `${look.lit}/${look.ticked}/${look.locked}`;
+
+/** A scenario's card in the box: its villain's card, greyed when Campaign doesn't deal it, ticked once beaten. */
+function scenarioPrint(scan: HTMLImageElement | null, scenario: ShelfScenario, look: CardLook): HTMLCanvasElement {
   const [cv, g] = canvas(300, 420);
   if (scan) g.drawImage(scan, 0, 0, 300, 420);
   else {
@@ -264,7 +377,10 @@ function scenarioPrint(scan: HTMLImageElement | null, scenario: ShelfScenario, l
     g.font = "900 30px 'Public Sans', sans-serif";
     g.fillText(scenario.name.toUpperCase(), 150, 210, 270);
   }
-  return lit ? cv : faded(cv);
+  const out = look.lit ? cv : faded(cv);
+  if (look.ticked) tick(out.getContext("2d")!, 250, 50, 68);
+  else if (look.locked) lockBadge(out.getContext("2d")!, 250, 50, 34);
+  return out;
 }
 
 /**
@@ -341,6 +457,14 @@ interface Box {
   readonly size: ProductMeasure;
   /** The table deals something in it. */
   readonly lit: boolean;
+  /** Why the road hasn't reached it yet, as its prints show it (a padlock); null when it has. */
+  lock: string | null;
+  /** What its prints are drawn from, to draw them again when the road reaches it. */
+  readonly art: HTMLImageElement | null;
+  readonly own: { image: HTMLImageElement; titled: boolean; cut: number } | null;
+  readonly faces: { front: THREE.MeshStandardMaterial; sides: THREE.MeshStandardMaterial };
+  /** Its scenarios' cards' looks as drawn: they are drawn again when a game won since changes one. */
+  looks: string;
   readonly mesh: THREE.Group;
   readonly lid: THREE.Group;
   readonly home: THREE.Vector3;
@@ -358,10 +482,27 @@ interface Box {
 /** The lid runs nearly the box's whole depth, so a box spine-out shows its printed side, not its tray. */
 const LID_SHARE = 0.94;
 
+/** A box's two prints, its front and its side (the spine on the shelf). */
+function boxPrints(
+  product: ShelfProduct,
+  lit: boolean,
+  locked: boolean,
+  art: HTMLImageElement | null,
+  own: { image: HTMLImageElement; titled: boolean; cut: number } | null,
+) {
+  return {
+    front: texture(
+      own ? artPrint(product, own.image, own.titled, own.cut, lit, locked) : frontPrint(product, art, lit, locked),
+    ),
+    side: texture(sidePrint(product, lit, locked)),
+  };
+}
+
 function buildBox(
   product: ShelfProduct,
   size: ProductMeasure,
   lit: boolean,
+  locked: boolean,
   art: HTMLImageElement | null,
   own: { image: HTMLImageElement; titled: boolean; cut: number } | null,
   i: number,
@@ -372,8 +513,7 @@ function buildBox(
     color: new THREE.Color(ground).multiplyScalar(lit ? 0.8 : 0.35),
     roughness: 0.7,
   });
-  const front = texture(own ? artPrint(product, own.image, own.titled, own.cut, lit) : frontPrint(product, art, lit));
-  const side = texture(sidePrint(product, lit));
+  const { front, side } = boxPrints(product, lit, locked, art, own);
   const printed = (map: THREE.Texture) =>
     new THREE.MeshStandardMaterial({
       map,
@@ -423,17 +563,47 @@ function buildBox(
     part.castShadow = part.receiveShadow = true;
     lid.add(part);
   };
-  wall(across, tall, 0.03, [stock, stock, stock, stock, printed(front), stock], 0, 0, deep / 2 - 0.015);
+  const face = printed(front);
+  wall(across, tall, 0.03, [stock, stock, stock, stock, face, stock], 0, 0, deep / 2 - 0.015);
   wall(0.03, tall, lidDeep, [sides, stock, stock, stock, stock, stock], across / 2 - 0.015, 0, deep / 2 - lidDeep / 2);
   wall(0.03, tall, lidDeep, [stock, sides, stock, stock, stock, stock], -across / 2 + 0.015, 0, deep / 2 - lidDeep / 2);
   wall(across, 0.03, lidDeep, stock, 0, tall / 2 - 0.015, deep / 2 - lidDeep / 2);
   wall(across, 0.03, lidDeep, stock, 0, -tall / 2 + 0.015, deep / 2 - lidDeep / 2);
   mesh.add(tray, lid);
   mesh.traverse((o) => (o.userData.box = i));
-  return { mesh, lid, maps: [front, side] };
+  return { mesh, lid, maps: [front, side], faces: { front: face, sides } };
 }
 
-/** The scenarios in a box, laid on its tray's floor in rows, a villain card each. */
+/** Puts a new print on a box's printed face (its lit glow follows it). */
+function reprint(material: THREE.MeshStandardMaterial, map: THREE.Texture) {
+  const old = material.map;
+  material.map = map;
+  if (material.emissiveMap) material.emissiveMap = map;
+  material.needsUpdate = true;
+  old?.dispose();
+}
+
+/** Draws a box's prints again when the road has reached it since they were drawn (or locked it, as a friend). */
+function repaintBox(box: Box, lock: string | null) {
+  if ((lock === null) === (box.lock === null)) {
+    box.lock = lock;
+    return;
+  }
+  box.lock = lock;
+  const { front, side } = boxPrints(box.product, box.lit, lock !== null, box.art, box.own);
+  reprint(box.faces.front, front);
+  reprint(box.faces.sides, side);
+  const label = boxLabel(box);
+  if (label !== box.product.name) box.button.setAttribute("aria-label", label);
+  else box.button.removeAttribute("aria-label");
+}
+
+/** A box's button's name for a screen reader: its name, and why it's locked or not on the table. */
+function boxLabel(box: Pick<Box, "product" | "lit" | "lock">): string {
+  if (box.lock) return `${box.product.name}, locked: ${box.lock}`;
+  return box.lit ? box.product.name : `${box.product.name}, not on the table yet`;
+}
+
 /**
  * Where a scenario's card floats once it has come out of its box up close: to the box's right, in columns of three, a
  * little in front of it, big enough to read (Adam, 2026-11-27: "the villain decks come out to the side ... click them
@@ -457,7 +627,7 @@ function floatSpot(box: Box, i: number): THREE.Vector3 {
 /** A floating scenario card's width (a card is 0.715 as wide as it is tall). */
 const FLOAT_W = 0.88;
 
-async function buildCards(box: Box, state: (s: ShelfScenario) => ScenarioState): Promise<THREE.Mesh[]> {
+async function buildCards(box: Box, road: readonly ShelfRow[]): Promise<THREE.Mesh[]> {
   const { across, tall, deep } = box.size;
   const n = box.product.scenarios.length;
   const perRow = n <= 3 ? n : Math.ceil(n / 2);
@@ -473,8 +643,9 @@ async function buildCards(box: Box, state: (s: ShelfScenario) => ScenarioState):
     const row = Math.floor(i / perRow);
     const inRow = Math.min(perRow, n - row * perRow);
     const col = i % perRow;
-    const lit = state(scenario).playable;
-    const map = texture(scenarioPrint(scans[i] ?? null, scenario, lit));
+    const look = cardLook(road, scenario);
+    const lit = look.lit;
+    const map = texture(scenarioPrint(scans[i] ?? null, scenario, look));
     const card = new THREE.Mesh(
       new THREE.PlaneGeometry(cardW, cardH),
       new THREE.MeshStandardMaterial({
@@ -527,44 +698,55 @@ function el<K extends keyof HTMLElementTagNameMap>(name: K, className = "", text
   return node;
 }
 
-function lineFor(scenario: ShelfScenario, state: ScenarioState): string {
-  if (state.playable) return "";
-  return state.lock ?? "Not on the table yet";
+/** A tick or a padlock before a row's name: the row's line says it in words, so a screen reader skips it. */
+function mark(kind: string, glyph: string): HTMLElement {
+  const node = el("span", `scn-mark ${kind}`, glyph);
+  node.setAttribute("aria-hidden", "true");
+  return node;
 }
 
-/** The card beside a box up close: its name, and a button for each scenario inside. */
+/** The words over a box's list: what the road says about it. */
+function whoLine(box: Box, rows: readonly ShelfRow[]): string {
+  const count = box.product.scenarios.length;
+  const inside = `${count} ${count === 1 ? "scenario" : "scenarios"} inside`;
+  if (box.lock) return `Locked · ${box.lock}`;
+  if (!box.lit) return inside;
+  const next = rows.find((row) => row.status === "next");
+  if (next) return `Next on the road: ${next.name}`;
+  if (rows.length && rows.every((row) => row.status === "beaten")) return "All beaten · the prologue is done";
+  return `Pick a scenario · ${count} inside`;
+}
+
+/** The card beside a box up close: its name, and a button for each scenario inside, in the road's order. */
 function paint(focusKey?: string) {
   if (!card || !opened || !hooks) return;
   const box = opened;
+  const rows = hooks.rows(box.product);
   const head = el("div", "scn-card-head");
   head.append(el("h3", "scn-title", box.product.name));
-  const count = box.product.scenarios.length;
-  head.append(
-    el(
-      "p",
-      "scn-who",
-      box.lit ? `Pick a scenario · ${count} inside` : `${count} ${count === 1 ? "scenario" : "scenarios"} inside`,
-    ),
-  );
+  head.append(el("p", "scn-who", whoLine(box, rows)));
   const list = el("div", "scn-list");
   list.setAttribute("role", "group");
   list.setAttribute("aria-label", `${box.product.name}'s scenarios`);
-  box.product.scenarios.forEach((scenario, i) => {
-    const state = hooks!.state(scenario);
-    const button = el("button", `btn ${state.playable ? "btn-primary" : "btn-secondary"} scn-pick`);
+  for (const row of rows) {
+    const scenarioAt = box.product.scenarios.indexOf(row.scenario);
+    const button = el("button", `btn ${row.status === "next" ? "btn-primary" : "btn-secondary"} scn-pick`);
     button.type = "button";
-    button.dataset.scn = `scenario:${scenario.id}`;
-    if (!state.playable) button.setAttribute("aria-disabled", "true");
-    button.append(el("strong", "", scenario.name));
-    const why = lineFor(scenario, state);
-    if (why) button.append(el("small", "", why));
-    button.onclick = () => choose(i);
-    button.onfocus = () => (hoveredCard = i);
+    button.dataset.scn = `scenario:${row.key}`;
+    button.dataset.road = row.status;
+    if (!row.playable) button.setAttribute("aria-disabled", "true");
+    const name = el("strong", "", row.name);
+    if (row.status === "beaten") name.prepend(mark("scn-tick", "✓"));
+    else if (row.status === "locked") name.prepend(mark("scn-lock", "🔒"));
+    button.append(name);
+    if (row.line) button.append(el("small", "", row.line));
+    button.onclick = () => choose(row);
+    button.onfocus = () => (hoveredCard = scenarioAt);
     button.onblur = () => {
-      if (hoveredCard === i) hoveredCard = -1;
+      if (hoveredCard === scenarioAt) hoveredCard = -1;
     };
     list.append(button);
-  });
+  }
   const parts: HTMLElement[] = [head, list];
   if (!box.lit) parts.push(el("p", "scn-line", "Not on the table yet: these come later."));
   card.replaceChildren(...parts);
@@ -573,32 +755,77 @@ function paint(focusKey?: string) {
   if (picks) picks.inert = true;
   if (backBar) backBar.hidden = false;
   if (hint) hint.hidden = true;
-  const first = box.product.scenarios.findIndex((s) => hooks!.state(s).playable);
-  const key = focusKey ?? `scenario:${box.product.scenarios[Math.max(0, first)]!.id}`;
+  // The focus starts on the road's next scenario (else the first that plays, else the first).
+  const start = rows.find((row) => row.status === "next") ?? rows.find((row) => row.playable) ?? rows[0];
+  const key = focusKey ?? (start ? `scenario:${start.key}` : "");
   card.querySelector<HTMLElement>(`[data-scn="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
 }
 
-/** A scenario picked in the box up close. */
-function choose(i: number) {
-  if (!opened || !hooks) return;
-  const scenario = opened.product.scenarios[i]!;
-  const state = hooks.state(scenario);
-  if (!state.playable) {
-    say(state.lock ? `${scenario.name} is locked. ${state.lock}.` : `${scenario.name} isn't on the table yet.`);
+/** A row picked in the box up close: Campaign deals it, or it says why not. */
+function choose(row: ShelfRow) {
+  if (!hooks) return;
+  if (row.playable) {
+    hooks.pick(row);
     return;
   }
-  hooks.pick(scenario);
+  if (row.status === "beaten") say(`${row.name} is beaten. Play it again in Free Play.`);
+  else if (row.status === "locked") say(`${row.name} is locked. ${row.line}.`);
+  else say(`${row.name} isn't on the table yet.`);
+}
+
+/** A scenario's card picked in the box up close: its row Campaign deals (the road's next first), else its first. */
+function chooseCard(i: number) {
+  if (!opened || !hooks) return;
+  const scenario = opened.product.scenarios[i]!;
+  const own = hooks.rows(opened.product).filter((row) => row.scenario === scenario);
+  const row = own.find((each) => each.status === "next") ?? own.find((each) => each.playable) ?? own[0];
+  if (row) choose(row);
+}
+
+/** Makes a box's scenarios' cards, or makes them again when a game won since has changed how one looks. */
+function readyCards(box: Box) {
+  if (!hooks) return;
+  const rows = hooks.rows(box.product);
+  const looks = box.product.scenarios.map((scenario) => lookKey(cardLook(rows, scenario))).join();
+  if (box.cards && box.looks === looks) return;
+  for (const old of box.cards ?? []) {
+    box.mesh.remove(old);
+    old.geometry.dispose();
+    const material = old.material as THREE.MeshStandardMaterial;
+    material.map?.dispose();
+    material.dispose();
+  }
+  box.cards = null;
+  box.looks = looks;
+  void buildCards(box, rows).then((cards) => {
+    // Drawn again meanwhile: these are the old ones.
+    if (box.looks !== looks || box.cards) {
+      for (const each of cards) box.mesh.remove(each);
+      return;
+    }
+    box.cards = cards;
+  });
 }
 
 function pickBox(box: Box) {
   opened = box;
   hovered = -1;
   hoveredCard = -1;
-  if (!box.cards && hooks) {
-    const forBox = box;
-    void buildCards(forBox, hooks.state).then((cards) => (forBox.cards = cards));
-  }
+  readyCards(box);
   paint();
+}
+
+/**
+ * The road has moved (a game won since the shelf was drawn): the boxes it has reached lose their padlocks, and a box up
+ * close lists its scenarios again. Each box's scenario cards are drawn again the next time it opens.
+ */
+export function refreshScenarioShelf() {
+  if (!hooks) return;
+  for (const box of boxes) repaintBox(box, hooks.boxLock(box.product));
+  if (upClose() && opened) {
+    readyCards(opened);
+    paint(document.activeElement instanceof HTMLElement ? document.activeElement.dataset.scn : undefined);
+  }
 }
 
 /** Puts the box back on its shelf; the focus goes back to it. */
@@ -657,7 +884,7 @@ renderer.domElement.addEventListener("click", (event) => {
   if (upClose()) {
     // A scenario's card in the box up close picks it; a click anywhere off the box is a step back, never another box.
     const inBox = hit && opened && hit.object.userData.box === opened.mesh.userData.box;
-    if (inBox && hit.object.userData.scenario !== undefined) choose(hit.object.userData.scenario as number);
+    if (inBox && hit.object.userData.scenario !== undefined) chooseCard(hit.object.userData.scenario as number);
     else if (!inBox) closeBox();
     return;
   }
@@ -709,7 +936,7 @@ function placeTag() {
     return;
   }
   const count = box.product.scenarios.length;
-  const text = `${box.product.name} · ${count} ${count === 1 ? "scenario" : "scenarios"}${box.lit ? "" : " · not on the table yet"}`;
+  const text = `${box.product.name} · ${count} ${count === 1 ? "scenario" : "scenarios"}${box.lock ? ` · locked: ${box.lock}` : box.lit ? "" : " · not on the table yet"}`;
   if (text !== tagText || tag.hidden) {
     tag.textContent = tagText = text;
     tag.hidden = false;
@@ -925,8 +1152,11 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
         ? requestIdleCallback(() => done(), { timeout: 1500 })
         : setTimeout(done, 16),
     );
-    const lit = slot.product.scenarios.some((s) => given.state(s).playable || given.state(s).lock !== null);
-    const { mesh, lid, maps } = buildBox(slot.product, slot.size, lit, arts[i] ?? null, owns[i] ?? null, i);
+    const lit = given.onTable(slot.product);
+    const lock = given.boxLock(slot.product);
+    const art = arts[i] ?? null;
+    const own = owns[i] ?? null;
+    const { mesh, lid, maps, faces } = buildBox(slot.product, slot.size, lit, lock !== null, art, own, i);
     for (const map of maps) renderer.initTexture(map);
     mesh.position.copy(slot.at);
     mesh.rotation.y = SPINE_TURN;
@@ -934,7 +1164,8 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
     const button = el("button", "scn-box", slot.product.name);
     button.type = "button";
     button.dataset.scn = `box:${slot.product.code}`;
-    if (!lit) button.setAttribute("aria-label", `${slot.product.name}, not on the table yet`);
+    const label = boxLabel({ product: slot.product, lit, lock });
+    if (label !== slot.product.name) button.setAttribute("aria-label", label);
     button.onclick = () => pickBox(boxes[i]!);
     button.onfocus = () => {
       if (!upClose()) hovered = i;
@@ -947,6 +1178,11 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
       product: slot.product,
       size: slot.size,
       lit,
+      lock,
+      art,
+      own,
+      faces,
+      looks: "",
       mesh,
       lid,
       home: slot.at.clone(),

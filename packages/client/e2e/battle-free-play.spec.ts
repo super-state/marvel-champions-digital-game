@@ -86,9 +86,9 @@ test.describe("battle table: Free Play", () => {
     await at(page, "free-play");
     await expect(room(page).getByRole("heading", { name: "Free Play" })).toBeVisible();
 
-    // The villain row, Rhino chosen, his recommended module with him, Standard, Spider-Man and his starter deck.
+    // The scenario row, Rhino chosen, his recommended module with him, Standard, Spider-Man and his starter deck.
     await expect.poll(() => focused(page)).toBe("Rhino");
-    await expect(option(page, "Villain", "Rhino")).toHaveAttribute("aria-pressed", "true");
+    await expect(option(page, "Scenario", "Rhino")).toHaveAttribute("aria-pressed", "true");
     await expect(option(page, "Module", /^Bomb Scare/)).toHaveAttribute("aria-pressed", "true");
     await expect(option(page, "Difficulty", "Standard")).toHaveAttribute("aria-pressed", "true");
     await expect(option(page, "Deck", "Justice starter deck")).toHaveAttribute("aria-pressed", "true");
@@ -97,7 +97,7 @@ test.describe("battle table: Free Play", () => {
     await page.keyboard.press("ArrowRight");
     await expect.poll(() => focused(page)).toBe("Klaw");
     await page.keyboard.press("Enter");
-    await expect(option(page, "Villain", "Klaw")).toHaveAttribute("aria-pressed", "true");
+    await expect(option(page, "Scenario", "Klaw")).toHaveAttribute("aria-pressed", "true");
     await expect(option(page, "Module", /^Masters of Evil/)).toHaveAttribute("aria-pressed", "true");
 
     // Down onto the module row's chosen one, along to Legions of Hydra: a module is a toggle, so it goes in beside
@@ -168,7 +168,7 @@ test.describe("battle table: Free Play", () => {
 
       // Legions of Hydra goes in beside Klaw's own Masters of Evil: two modules at once.
       for (const [slot, name] of [
-        ["Villain", /^Klaw$/],
+        ["Scenario", /^Klaw$/],
         ["Module", /^Legions of Hydra$/],
         ["Difficulty", /^Expert$/],
         ["Hero", /^Captain Marvel$/],

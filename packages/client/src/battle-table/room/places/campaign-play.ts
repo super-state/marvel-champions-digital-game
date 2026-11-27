@@ -12,6 +12,7 @@ import { currentMat, matLook } from "../../mats.js";
 import type { Difficulty, HeroId, ModuleId, VillainId } from "../../model.js";
 import { anisotropy } from "../canvas.js";
 import type { RoomSetting } from "./settings.js";
+import type { FinishedGame } from "../../record/game.js";
 import { CAM_GAME, camera } from "../camera.js";
 import { span } from "../motion.js";
 import { el, raycaster, root, scene } from "../room.js";
@@ -29,8 +30,9 @@ const ENTER_AT = FADE_AT + FADE_LENGTH * 0.7;
 type Quad = [THREE.Vector2, THREE.Vector2, THREE.Vector2, THREE.Vector2];
 
 /**
- * The game Play deals: a campaign box names only its villain (Standard, its recommended module, the player's hero);
- * Free Play's tray names the hero, the difficulty and the modules too.
+ * The game Play deals: a campaign box names its villain, and Expert on the road's Expert half (otherwise Standard; its
+ * recommended module and the player's hero either way); Free Play's tray names the hero, the difficulty and the modules
+ * too.
  */
 export interface RoomGame {
   villain: VillainId;
@@ -49,6 +51,8 @@ export interface ShelfHost {
   shown(): void;
   /** Why a villain is still sealed for this player ("Beat Rhino to unlock"), or null when it is open (the test site). */
   lock?(villain: VillainId): string | null;
+  /** The player's finished games (this browser's, or the test site's), for the road; null when none are saved. */
+  games?(): Promise<readonly FinishedGame[] | null>;
   /** The settings the table's own menu offers, for the radio (Settings). */
   settings?(): readonly RoomSetting[];
   /** Who is playing, for the title (the test site knows; elsewhere null). */
