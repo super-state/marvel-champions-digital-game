@@ -214,13 +214,15 @@ export function askForHero(ask: HeroRequest | null) {
   showAsk();
 }
 
-/** The line at the top saying who the hero is for, while Campaign is asking. */
-let ask: HTMLElement | null = null;
+/**
+ * The place's title, which says what to do while Campaign is asking (Adam, 2026-11-27: "make the title Pick your
+ * hero"): "Pick your hero", the scenario over it; otherwise "Heroes & Decks".
+ */
+let heading: HTMLElement | null = null;
+let eyebrow: HTMLElement | null = null;
 function showAsk() {
-  if (ask) {
-    ask.hidden = !request;
-    ask.textContent = request ? `Pick your hero for ${request.forName}` : "";
-  }
+  if (heading) heading.textContent = request ? "Pick your hero" : "Heroes & Decks";
+  if (eyebrow) eyebrow.textContent = request ? `Campaign · ${request.forName}` : "Marvel Champions";
   if (hint) hint.textContent = shownCount ? (request ? "Pick a hero, then Play as" : "Pick a hero") : "No heroes match";
 }
 
@@ -498,6 +500,8 @@ function paint(focusKey?: string) {
   }
   card.replaceChildren(...parts);
   card.hidden = false;
+  // The boxes behind are out of reach while one is up close: a pad's D-pad stays on the card.
+  if (picks) picks.inert = true;
   if (backBar) backBar.hidden = false;
   if (hint) hint.hidden = true;
   card
@@ -520,6 +524,7 @@ function chooseHero(hero: BenchHero) {
 function closeCard(refocus = true) {
   if (!card) return;
   card.hidden = true;
+  if (picks) picks.inert = false;
   if (backBar) backBar.hidden = true;
   if (hint) hint.hidden = false;
   if (refocus && opened && !opened.button.hidden) opened.button.focus({ preventScroll: true });
@@ -735,10 +740,10 @@ export function mountBench(source?: { games(): Promise<readonly FinishedGame[] |
       tag = el("p", "bench-tag");
       tag.hidden = true;
       hint = el("p", "bench-hint", "Pick a hero");
-      ask = el("p", "bench-ask");
-      ask.setAttribute("role", "status");
-      ask.hidden = true;
-      panel.append(ask);
+      const head = panel.closest(".room-panel")?.querySelector(".room-place-head");
+      heading = head?.querySelector<HTMLElement>("h2") ?? null;
+      eyebrow = head?.querySelector<HTMLElement>(".eyebrow") ?? null;
+      showAsk();
       backBar = el("div", "bench-back-bar");
       backBar.hidden = true;
       const back = el("button", "btn btn-secondary bench-back", "‹ Back to the shelf");

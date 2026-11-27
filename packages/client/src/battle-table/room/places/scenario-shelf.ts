@@ -16,7 +16,7 @@
 import * as THREE from "three";
 import { camera, setPose, type Pose } from "../camera.js";
 import { CAMPAIGN_ART } from "../../../art/campaign-art.js";
-import { canvas, greyOut, loadImage, texture } from "../canvas.js";
+import { canvas, loadImage, texture } from "../canvas.js";
 import { ROOM, pointer, raycaster, renderer, say, scene } from "../room.js";
 import { spatialPick, type FocusDirection } from "../../pad/spatial.js";
 import { FLY, closeSpot, flyUp, sway, type Facing } from "./close-up.js";
@@ -145,8 +145,7 @@ function artPrint(
     g.fillText(name, w / 2, h - 64);
     g.shadowBlur = 0;
   }
-  if (!lit) greyOut(cv);
-  return cv;
+  return lit ? cv : faded(cv);
 }
 
 /** A box's side from its own art: a strip of it, darkened, the box's name running up it. */
@@ -165,8 +164,7 @@ function artSidePrint(product: ShelfProduct, art: HTMLImageElement, lit: boolean
   fit(g, name, (size) => `${size}px Bangers, 'Public Sans', sans-serif`, 44, 350);
   g.fillText(name, 0, 2);
   g.restore();
-  if (!lit) greyOut(cv);
-  return cv;
+  return lit ? cv : faded(cv);
 }
 
 /** A box's front: its release's colours, the first villain's art filling it, and the box's name across the foot. */
@@ -213,8 +211,7 @@ function frontPrint(product: ShelfProduct, art: HTMLImageElement | null, lit: bo
   g.strokeStyle = accent;
   g.lineWidth = 8;
   g.strokeRect(4, 4, w - 8, h - 8);
-  if (!lit) greyOut(cv);
-  return cv;
+  return lit ? cv : faded(cv);
 }
 
 /** A box's side: its colours, its name running up it. */
@@ -236,8 +233,7 @@ function sidePrint(product: ShelfProduct, lit: boolean): HTMLCanvasElement {
   fit(g, name, (s) => `${s}px Bangers, 'Public Sans', sans-serif`, 44, 350);
   g.fillText(name, 0, 2);
   g.restore();
-  if (!lit) greyOut(cv);
-  return cv;
+  return lit ? cv : faded(cv);
 }
 
 /** A scenario's card in the box: its villain's card, greyed when the table doesn't deal it. */
@@ -252,8 +248,28 @@ function scenarioPrint(scan: HTMLImageElement | null, scenario: ShelfScenario, l
     g.font = "900 30px 'Public Sans', sans-serif";
     g.fillText(scenario.name.toUpperCase(), 150, 210, 270);
   }
-  if (!lit) greyOut(cv);
-  return cv;
+  return lit ? cv : faded(cv);
+}
+
+/**
+ * A print greyed and dimmed, for a box the table doesn't deal from yet: by the canvas's own filter, which costs next to
+ * nothing (greying pixel by pixel, for every box as the room opened, stalled the title's frames).
+ */
+function faded(print: HTMLCanvasElement): HTMLCanvasElement {
+  const [out, g] = canvas(print.width, print.height);
+  g.filter = "grayscale(0.88) brightness(0.72)";
+  g.drawImage(print, 0, 0);
+  return out;
+}
+
+/**
+ * Loads a picture and has the browser decode it off the page's thread: the box fronts are big (up to 2000 pixels), and
+ * decoding one as it was first drawn stalled the title's frames (a pad's press then read as held, and repeated).
+ */
+async function loadDecoded(url: string): Promise<HTMLImageElement | null> {
+  const image = await loadImage(url);
+  await image?.decode().catch(() => undefined);
+  return image;
 }
 
 // ── The bookcase ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -511,6 +527,8 @@ function paint(focusKey?: string) {
   if (!box.lit) parts.push(el("p", "scn-line", "Not on the table yet: these come later."));
   card.replaceChildren(...parts);
   card.hidden = false;
+  // The boxes behind are out of reach while one is up close: a pad's D-pad stays on the card.
+  if (picks) picks.inert = true;
   if (backBar) backBar.hidden = false;
   if (hint) hint.hidden = true;
   const first = box.product.scenarios.findIndex((s) => hooks!.state(s).playable);
@@ -545,6 +563,7 @@ function pickBox(box: Box) {
 export function closeBox(refocus = true) {
   if (!card) return;
   card.hidden = true;
+  if (picks) picks.inert = false;
   if (backBar) backBar.hidden = true;
   if (hint) hint.hidden = false;
   hoveredCard = -1;
@@ -818,20 +837,24 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
   const arts = await Promise.all(
     layout.slots.map((slot) => {
       const scan = slot.product.scenarios[0]?.scan;
-      return scan ? loadImage(`${CARDS}${scan}`) : null;
+      return scan ? loadDecoded(`${CARDS}${scan}`) : null;
     }),
   );
   const owns = await Promise.all(
     layout.slots.map(async (slot) => {
       const own = boxArtUrl(slot.product);
-      const image = own ? await loadImage(own.url) : null;
+      const image = own ? await loadDecoded(own.url) : null;
       return own && image ? { image, titled: own.titled, cut: own.cut } : null;
     }),
   );
-  // One box at a time, the page free to draw between: greying a print and sending it to the graphics card all at once stalled the title's frames
+  // One box at a time, while the page is idle between frames: greying a print and sending it to the graphics card all at once stalled the title's frames
   // (a pad's press then read as held, and repeated).
   for (const [i, slot] of layout.slots.entries()) {
-    await new Promise((done) => setTimeout(done, 0));
+    await new Promise<void>((done) =>
+      typeof requestIdleCallback === "function"
+        ? requestIdleCallback(() => done(), { timeout: 1500 })
+        : setTimeout(done, 16),
+    );
     const lit = slot.product.scenarios.some((s) => given.state(s).playable || given.state(s).lock !== null);
     const { mesh, lid, maps } = buildBox(slot.product, slot.size, lit, arts[i] ?? null, owns[i] ?? null, i);
     for (const map of maps) renderer.initTexture(map);

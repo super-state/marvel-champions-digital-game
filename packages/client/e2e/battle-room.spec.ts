@@ -96,7 +96,7 @@ test.describe("battle table: the room", () => {
     await expect.poll(() => focused(page)).toBe("Rhino");
     await page.keyboard.press("Enter");
     await at(page, "decks");
-    await expect(room(page).locator(".bench-ask")).toHaveText("Pick your hero for Rhino");
+    await expect(room(page).locator('[data-for="decks"] .room-place-head h2')).toHaveText("Pick your hero");
     await expect.poll(() => focused(page)).toBe("Spider-Man");
     await page.keyboard.press("Enter");
     await expect.poll(() => focused(page)).toBe("Play as Spider-Man");

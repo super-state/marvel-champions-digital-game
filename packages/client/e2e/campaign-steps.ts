@@ -17,8 +17,12 @@ export async function arrivedAt(page: Page, place: string): Promise<void> {
 export async function pickCoreScenario(page: Page, villain: "Rhino" | "Klaw" | "Ultron", hero?: string): Promise<void> {
   // The room may still be building the shelf (New game opens it afresh): its buttons answer once the camera is there.
   await arrivedAt(page, "campaign");
-  await room(page).locator('[data-scn="box:core"]').focus();
-  await page.keyboard.press("Enter");
+  // The Core Set's box up close already (Back from the heroes leaves it so): its card is open, the shelf behind out of
+  // reach. Otherwise, its box from the shelf.
+  if (!(await room(page).locator(".scn-card").isVisible())) {
+    await room(page).locator('[data-scn="box:core"]').focus();
+    await page.keyboard.press("Enter");
+  }
   const scenario = room(page).locator(`[data-scn="scenario:${villain.toLowerCase()}"]`);
   await expect(scenario).toBeVisible({ timeout: 30_000 });
   await scenario.focus();
@@ -30,7 +34,8 @@ export async function pickCoreScenario(page: Page, villain: "Rhino" | "Klaw" | "
 export async function pickHeroForCampaign(page: Page, villain: string, hero?: string): Promise<void> {
   await arrivedAt(page, "decks");
   const bench = room(page).locator('[data-for="decks"]');
-  await expect(bench.locator(".bench-ask")).toHaveText(`Pick your hero for ${villain}`);
+  await expect(bench.locator(".room-place-head h2")).toHaveText("Pick your hero");
+  await expect(bench.locator(".room-place-head .eyebrow")).toHaveText(`Campaign · ${villain}`);
   const box = hero
     ? bench.locator(`[data-bench="hero:${hero}"]`)
     : bench.locator('.bench-hero[data-bench^="hero:"][aria-pressed="true"]');
