@@ -14,6 +14,7 @@
 import { writeFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { replayGame } from "./record/replay.js";
+import { indirectClick } from "./indirect-split.js";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import * as engine from "@mc/engine";
 import { watchThisFile } from "./shown-check.js";
@@ -73,6 +74,16 @@ const HERO_GAMES = HERO_SEEDS.flatMap(({ hero, first, env }) =>
   })),
 );
 const VILLAIN_ROTA: readonly VillainId[] = ["rhino", "klaw", "ultron"];
+
+/**
+ * The Green Goblin pack's two scenarios, Risky Business and Mutagen Formula, in turn with each hero
+ * (GOBLIN_FUZZ_GAMES=250 for the deep run).
+ */
+const GOBLIN_SEEDS: readonly number[] = Array.from(
+  { length: Number(process.env.GOBLIN_FUZZ_GAMES ?? 10) },
+  (_, i) => 12000 + i * 59,
+);
+const GOBLIN_ROTA: readonly VillainId[] = ["risky-business", "mutagen-formula"];
 
 /**
  * Free Play's deals: Expert, and the two modules no villain recommends, in turn against each villain and with each hero
@@ -739,6 +750,25 @@ function playGame(
       return choose(pick.id, "choose(defender)");
     }
 
+    // Dividing indirect damage (main.ts `pick`, `indirect-split.ts`): characters clicked on the table until it is all
+    // placed, a click on a full one taking its damage back off, as a player would.
+    if (ch.indirect) {
+      const cards = [...new Set(ch.options.flatMap((o) => (o.cardId ? [o.cardId] : [])))];
+      for (const card of cards)
+        if (!onTable(s, card)) fail("choice-unreachable", "indirect-offtable", `${card} is not on the table; ${ctx}`);
+      let picks = new Set<string>();
+      for (let clicks = 0; picks.size < ch.indirect.amount && clicks < 200; clicks++)
+        picks = indirectClick(ch, picks, cards[int(cards.length)]!).picks;
+      trace.push(`divide ${picks.size} damage among ${cards.length}`);
+      if (chooseMany([...picks], "chooseMany(indirect)")) return true;
+      fail(
+        "choose-refused",
+        "assignIndirectDamage:chooseMany",
+        `${picks.size} of ${ch.indirect.amount} refused; ${ctx}`,
+      );
+      return false;
+    }
+
     // Everything else. An option is reachable as a button (not on the table) or by clicking its card (on the table).
     const multiple = ch.discardFromHand || ch.max > 1;
     const options = ch.options;
@@ -1106,6 +1136,22 @@ test.each(
   "fuzz game in Free Play ($label) as $hero against $villain, seed $seed ($policy)",
   ({ seed, policy, villain, hero, encounter }) => {
     const game = playGame(seed, policy, villain, hero, encounter);
+    results.push(game);
+  },
+  60_000,
+);
+
+test.each(
+  GOBLIN_SEEDS.map((seed, i) => ({
+    seed,
+    policy: POLICIES[i % POLICIES.length]!,
+    villain: GOBLIN_ROTA[i % GOBLIN_ROTA.length]!,
+    hero: HEROES[Math.floor(i / GOBLIN_ROTA.length) % HEROES.length]!.id,
+  })).filter((g) => !process.env.FUZZ_ONLY || String(g.seed) === process.env.FUZZ_ONLY),
+)(
+  "fuzz game as $hero against $villain, seed $seed ($policy)",
+  ({ seed, policy, villain, hero }) => {
+    const game = playGame(seed, policy, villain, hero);
     results.push(game);
   },
   60_000,

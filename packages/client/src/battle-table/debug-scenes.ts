@@ -99,6 +99,16 @@ const SCENES: Record<string, Scene> = {
     hand: ["01002", "01090"],
     deckTop: ["01089", "01087"],
   },
+  /**
+   * Mutagen Formula: Pumpkin Bombs on the Green Goblin, Black Cat out beside Spider-Man. End the turn: after his attack
+   * the bombs' 2 indirect damage is divided between them, a click a point (`indirect-split.ts`).
+   */
+  pumpkin: {
+    scenario: "mutagen-formula",
+    hero: { form: "hero" },
+    play: [{ code: "01002" }],
+    villainAttachments: [{ code: "02021" }],
+  },
   /** Black Cat with no printed [mental] resource on top of the deck: "No mental resources", nothing goes to the hand. */
   blackcatmiss: {
     hand: ["01002", "01090"],

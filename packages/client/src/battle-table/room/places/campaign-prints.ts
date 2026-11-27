@@ -5,7 +5,8 @@
 import type { VillainId } from "../../model.js";
 import { canvas, greyOut, halftone, polygon } from "../canvas.js";
 
-export type CampaignId = "rhino" | "klaw" | "ultron";
+/** The scenario the box deals (`VillainId`): the Core Set's villains, a scenario pack's scenarios. */
+export type CampaignId = VillainId;
 
 export interface Campaign {
   id: CampaignId;
@@ -27,7 +28,27 @@ export interface Campaign {
   lock?: string;
   /** The villain Play deals; absent while that villain's game isn't on the table yet. */
   villain?: VillainId;
+  /** The line over the name when the box is open: "Campaign 01" unless it says otherwise (a scenario pack's). */
+  kicker?: string;
+  /** Who Play is against, when it isn't the box's name (a scenario pack's box is named by its scenario). */
+  versus?: string;
+  /** The tag printed on the box: "CAMPAIGN 01" unless it says otherwise (a scenario pack's "SCENARIO 1"). */
+  tag?: string;
 }
+
+const tagOf = (c: Campaign) => c.tag ?? `CAMPAIGN ${c.number}`;
+
+/** Sets a font of `size` px, smaller if need be so `text` is no wider than `width` (a long name: MUTAGEN FORMULA). */
+function fitFont(g: CanvasRenderingContext2D, text: string, size: number, family: string, width: number): number {
+  g.font = `${size}px ${family}`;
+  const fitted = Math.floor(size * Math.min(1, width / g.measureText(text).width));
+  g.font = `${fitted}px ${family}`;
+  return fitted;
+}
+
+/** A box's name as words read it ("RISKY BUSINESS" → "Risky Business"). */
+export const titleOf = (name: string): string =>
+  name.toLowerCase().replace(/(^|\s)\S/g, (start) => start.toUpperCase());
 
 export const CARDS = "/card-art/bundles/cards/";
 export const CAMPAIGNS: readonly Campaign[] = [
@@ -75,6 +96,44 @@ export const CAMPAIGNS: readonly Campaign[] = [
     blurb: "Ultron turns the cards in your own deck into his Drones. Break them, then him, before his countdown ends.",
     open: true,
     villain: "ultron",
+  },
+  // The Green Goblin scenario pack: a side story on the road, open from the start (`road.ts`, `boxLock`).
+  {
+    id: "risky-business",
+    name: "RISKY BUSINESS",
+    number: "01",
+    kicker: "The Green Goblin · Scenario 1",
+    tag: "SCENARIO 1",
+    versus: "Norman Osborn",
+    scan: `${CARDS}02001a.png`,
+    crop: [150, 128, 460, 372],
+    deep: "#140c1f",
+    mid: "#46306b",
+    accent: "#8fd94f",
+    ink: "#0e1a06",
+    difficulty: 2,
+    blurb: "Norman Osborn is buying up the city. Push him too hard and the Green Goblin comes out to play.",
+    open: true,
+    villain: "risky-business",
+  },
+  {
+    id: "mutagen-formula",
+    name: "MUTAGEN FORMULA",
+    number: "02",
+    kicker: "The Green Goblin · Scenario 2",
+    tag: "SCENARIO 2",
+    versus: "Green Goblin",
+    scan: `${CARDS}02014.png`,
+    crop: [150, 128, 460, 372],
+    deep: "#0b1a0d",
+    mid: "#2f5d2b",
+    accent: "#b072ff",
+    ink: "#ffffff",
+    difficulty: 2,
+    blurb:
+      "The Green Goblin is turning hired muscle into goblins with his formula. Hold the line, then bring him down.",
+    open: true,
+    villain: "mutagen-formula",
   },
 ];
 
@@ -154,7 +213,7 @@ export function frontPrint(c: Campaign, art: HTMLImageElement | null): HTMLCanva
   g.stroke();
   g.fillStyle = c.ink;
   g.font = "900 44px 'Public Sans'";
-  g.fillText(`CAMPAIGN ${c.number}`, 62, 88);
+  g.fillText(tagOf(c), 62, 88);
   g.fillStyle = "#f4ead8";
   g.textAlign = "right";
   g.font = "900 30px 'Public Sans'";
@@ -165,7 +224,7 @@ export function frontPrint(c: Campaign, art: HTMLImageElement | null): HTMLCanva
   g.translate(512, 1118);
   g.rotate(-0.045);
   g.textAlign = "center";
-  g.font = "270px Bangers";
+  fitFont(g, c.name, 270, "Bangers", 940);
   g.lineJoin = "round";
   g.lineWidth = 34;
   g.strokeStyle = "#0b0705";
@@ -251,7 +310,7 @@ export function spinePrint(c: Campaign): HTMLCanvasElement {
   g.textAlign = "center";
   g.fillText(c.number, 84, 138);
   g.textAlign = "left";
-  g.font = "138px Bangers";
+  fitFont(g, c.name, 138, "Bangers", 1020);
   g.lineWidth = 16;
   g.lineJoin = "round";
   g.strokeStyle = "#0b0705";
@@ -261,7 +320,7 @@ export function spinePrint(c: Campaign): HTMLCanvasElement {
   g.textAlign = "right";
   g.fillStyle = "#e9dcc4";
   g.font = "900 34px 'Public Sans'";
-  g.fillText("CAMPAIGN", 1500, 106);
+  g.fillText(c.tag ? "SCENARIO" : "CAMPAIGN", 1500, 106);
   g.fillStyle = "#0b0705";
   g.fillRect(0, 0, 1536, 6);
   g.fillRect(0, 178, 1536, 6);
@@ -279,7 +338,7 @@ export function bandPrint(c: Campaign): HTMLCanvasElement {
   g.fillStyle = "#e9dcc4";
   g.font = "900 40px 'Public Sans'";
   g.textAlign = "center";
-  g.fillText(`CAMPAIGN ${c.number}  ·  ${c.name}`, 512, 78);
+  g.fillText(`${tagOf(c)}  ·  ${c.name}`, 512, 78);
   if (!c.open) greyOut(cv);
   return cv;
 }
@@ -350,7 +409,7 @@ export function guidePrint(c: Campaign, art: HTMLImageElement | null): HTMLCanva
   g.save();
   g.translate(56, 560);
   g.rotate(-0.04);
-  g.font = "150px Bangers";
+  fitFont(g, c.name, 150, "Bangers", 900);
   g.lineJoin = "round";
   g.lineWidth = 18;
   g.strokeStyle = "#0b0705";
@@ -363,7 +422,7 @@ export function guidePrint(c: Campaign, art: HTMLImageElement | null): HTMLCanva
   g.fillText("CAMPAIGN GUIDE", 60, 650);
   g.fillStyle = "#6f6352";
   g.font = "700 28px 'Public Sans'";
-  g.fillText(`STORY  ·  SETUP  ·  RULES  ·  CAMPAIGN ${c.number}`, 60, 702);
+  g.fillText(`STORY  ·  SETUP  ·  RULES  ·  ${tagOf(c)}`, 60, 702);
   g.fillStyle = c.mid;
   g.fillRect(0, h - 26, 1024, 26);
   // The stapled spine down the left edge.

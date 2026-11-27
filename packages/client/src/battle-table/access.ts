@@ -55,7 +55,8 @@ export function friendLocks(games: readonly FinishedGame[] | null): ((villain: s
   if (!seeingAsFriend()) return null;
   const open = new Set(unlockedFrom(games ?? []));
   return (villain) => {
-    if (open.has(villain)) return null;
+    // Only the Core Set's three unlock one by one; a scenario pack's opens with its box on the road (`road.ts`).
+    if (open.has(villain) || !CHAIN.includes(villain as (typeof CHAIN)[number])) return null;
     const at = CHAIN.indexOf(villain as (typeof CHAIN)[number]);
     return at > 0 ? `Beat ${NAMES[CHAIN[at - 1]!]} to unlock` : "Locked";
   };

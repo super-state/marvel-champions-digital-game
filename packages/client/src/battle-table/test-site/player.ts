@@ -217,6 +217,8 @@ const unlockKey = () => (profile?.saving ? profile.unlocked.join(",") : "all");
 export function lockReason(villain: string): string | null {
   if (!profile?.saving || profile.unlocked.includes(villain)) return null;
   const at = CHAIN.indexOf(villain as (typeof CHAIN)[number]);
+  // Only the Core Set's three unlock one by one; a scenario pack's opens with its box on the road (`road.ts`).
+  if (at < 0) return null;
   return at > 0 ? `Beat ${NAMES[CHAIN[at - 1]!]} to unlock` : "Locked";
 }
 

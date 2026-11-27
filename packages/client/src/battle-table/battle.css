@@ -767,6 +767,17 @@ button:focus-visible {
   font: 900 13px/1 var(--font-ui);
   font-variant-numeric: tabular-nums;
 }
+/* Dividing indirect damage: the damage placed on a character so far, in the damage red. */
+.pick-order[data-damage] {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--damage) 80%, white), var(--damage));
+  color: #fff;
+}
+#order-badges .pick-order[data-damage] {
+  box-shadow:
+    0 0 0 2px #0a1118,
+    0 0 14px color-mix(in srgb, var(--damage) 60%, transparent),
+    0 4px 12px #000c;
+}
 /* On the table the number sits on each picked card's top-left corner, above the question's shade. */
 #order-badges {
   position: absolute;

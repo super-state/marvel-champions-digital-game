@@ -11,6 +11,7 @@ import { whileStillThere } from "./beat-order.js";
 import { handBetweenBeats } from "./hand-flow.js";
 import { nextOfferIndex } from "./offer-queue.js";
 import { cardPlaces, pickOrder } from "./pick-order.js";
+import { indirectClick, indirectShares } from "./indirect-split.js";
 import { holdsEncounter, revealWindowFor, type Reaction } from "./reveal-hold.js";
 import { arrangeScene, sceneOptions, sceneVillain } from "./debug-scenes.js";
 import { sfx, type SoundName } from "./sound.js";
@@ -23,7 +24,7 @@ import {
   isHeroId,
   isModuleId,
   isVillainId,
-  MODULES,
+  moduleName,
   recommendedModule,
   VILLAINS,
   type BattleCard,
@@ -950,6 +951,39 @@ function choiceView(choice: Choice): DockView {
     };
   }
   const n = choicePicks.size;
+  if (choice.indirect) {
+    // Dividing indirect damage: the characters that can take it are lit; each click puts 1 on one, counted on its card.
+    const left = choice.indirect.amount - n;
+    return {
+      tone: "villain",
+      asking: true,
+      eyebrow: {
+        text: choice.sourceTitle?.replace(/ · When Revealed$/, "") ?? "Indirect damage",
+        icon: "damage",
+        tone: "villain",
+      },
+      title: choice.prompt,
+      help: left
+        ? `Click your hero or an ally to put 1 damage on it: ${left} left to place.`
+        : "Click a character again to take its damage back.",
+      primary: {
+        label: left ? `${left} to place` : `Take ${choice.indirect.amount} damage`,
+        icon: "damage",
+        disabled: left > 0,
+        attention: left === 0,
+        onClick: confirmChoice,
+      },
+      secondary: n
+        ? {
+            label: "Start again",
+            onClick: () => {
+              choicePicks.clear();
+              render();
+            },
+          }
+        : null,
+    };
+  }
   if (choice.mulligan) {
     return {
       tone: "hero",
@@ -1415,6 +1449,16 @@ function pick(id: string) {
       sfx.play("error");
       guardHintAt = 0;
       showGuardHint(id);
+      return;
+    }
+    // Dividing indirect damage: each click puts 1 more on the character, or takes its damage back off.
+    if (state.choice.indirect) {
+      const split = indirectClick(state.choice, choicePicks, id);
+      if (split.did === "none") return void sfx.play("error");
+      choicePicks.clear();
+      for (const each of split.picks) choicePicks.add(each);
+      sfx.play(split.did === "add" ? "select" : "cancel");
+      render();
       return;
     }
     const targets = state.choice.options.filter((option) => option.cardId === id);
@@ -2576,7 +2620,13 @@ const orderHost = orderLayer.appendChild(make("div", "label-clip"));
 const orderClips = [orderHost];
 function placeOrderBadges(projected: ReturnType<BattleTable["anchors"]>, clips: readonly string[]) {
   // The discard pile's fan covers the table: its cards wear no numbers.
-  const order = discardOpen ? new Map<string, number>() : cardPlaces(state.choice, choicePicks);
+  // Dividing indirect damage, each character wears the damage placed on it instead (`indirect-split.ts`).
+  const damage = !!state.choice?.indirect;
+  const order = discardOpen
+    ? new Map<string, number>()
+    : damage
+      ? indirectShares(state.choice, choicePicks)
+      : cardPlaces(state.choice, choicePicks);
   // Cut out under the cards held in front (the hand, a card being read), as the plates are (`placeLabels`).
   while (orderClips.length < clips.length) {
     const inner = orderClips[orderClips.length - 1]!;
@@ -2608,6 +2658,7 @@ function placeOrderBadges(projected: ReturnType<BattleTable["anchors"]>, clips: 
       orderBadges.set(id, badge);
     }
     badge.textContent = String(place);
+    badge.toggleAttribute("data-damage", damage);
     badge.style.setProperty("--size", `${Math.round(Math.min(44, Math.max(24, card.width * 0.26)))}px`);
     badge.style.transform = `translate(${Math.round(card.left)}px,${Math.round(card.top)}px)`;
   }
@@ -4627,7 +4678,7 @@ function encounterNote(): string {
   return [
     ...(deckDealt ? [deckDealt] : []),
     ...(difficulty === "expert" ? ["Expert"] : []),
-    ...(recommended ? [] : modules.map((id) => MODULES.find((module) => module.id === id)!.name)),
+    ...(recommended ? [] : modules.map(moduleName)),
   ].join(" · ");
 }
 
@@ -4849,7 +4900,7 @@ installReport({
         hero: heroName(heroDealt),
         villain: villainName(villainDealt),
         difficulty: model.encounter.difficulty,
-        modules: model.encounter.modules.map((id) => MODULES.find((each) => each.id === id)?.name ?? id),
+        modules: model.encounter.modules.map(moduleName),
         seed: model.seed,
         story,
         asking: [dockTitle.textContent, instruction.textContent]

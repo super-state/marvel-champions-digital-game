@@ -62,6 +62,8 @@ export interface Road {
   readonly standardDone: boolean;
   /** Everything playable (Adam's own table, or no saved record). */
   readonly allOpen: boolean;
+  /** Every scenario won at least once, by its id (`rhino`, `risky-business`). */
+  readonly beaten: ReadonlySet<string>;
 }
 
 export type RoadGame = Pick<FinishedGame, "villain" | "result" | "facts">;
@@ -106,7 +108,27 @@ export function roadFrom({ games, lock, allOpen }: RoadInput): Road {
     if (everything) return { step, status: "open", playable: true, line: "" };
     return { step, status: "locked", playable: false, line: why ?? "Locked" };
   });
-  return { steps, next, standardDone, allOpen: everything };
+  return { steps, next, standardDone, allOpen: everything, beaten };
+}
+
+/**
+ * A side story's scenario (a scenario pack's, The Green Goblin's Risky Business): a one-off game, played from Campaign
+ * once the road reaches its box (`boxLock`, `lock`), ticked once won. As on the prologue, a beaten one is replayed in
+ * Free Play unless everything is open.
+ */
+export function sideStoryStep(
+  scenario: string,
+  road: Pick<Road, "beaten" | "allOpen">,
+  lock: string | null,
+): Pick<StepState, "status" | "playable" | "line"> {
+  if (road.beaten.has(scenario))
+    return {
+      status: "beaten",
+      playable: road.allOpen,
+      line: road.allOpen ? "Beaten" : "Beaten · play it again in Free Play",
+    };
+  if (lock) return { status: "locked", playable: false, line: lock };
+  return { status: "open", playable: true, line: "A side story: play it any time" };
 }
 
 // ── Boxes on the road ─────────────────────────────────────────────────────────────────────────────────────────────
