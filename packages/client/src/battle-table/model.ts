@@ -412,7 +412,7 @@ export interface BattleBeat {
    * The card whose ability discarded `milled` (Black Cat), when one did, and what kind of ability it was. `miss`: what
    * the table says when none of the cards is one the effect keeps for the hand ("No mental resources").
    */
-  millSource?: { card: string; label: string; miss?: string };
+  millSource?: { card: string; label: string; miss?: string; by?: string };
   /** On a facedown deal: the enemy the card goes to as its boost card. */
   boostFor?: string;
   /** The encounter card whose surge deals the player another encounter card (the deal beat follows). */
@@ -431,7 +431,7 @@ export interface BattleBeat {
      * A card with a When Revealed for each form (Assault): the one that applies to the hero's form right now, so the
      * player is told which half of the card is about to happen.
      */
-    applies?: { form: "Hero" | "Alter-Ego"; text: string };
+    applies?: { form: "Hero" | "Alter-Ego"; text: string } | { villain: string; text: string };
     /**
      * Its When Revealed hits "each hero" while the player is in alter-ego form, so it fires on no one (Shocker). An
      * alter-ego is not a hero (Rules Reference v1.8, "Hero"), and the table says so rather than flashing for nothing.
@@ -522,9 +522,19 @@ export const EITHER_SPEND = "either-or:spend";
 export const EITHER_OTHERWISE = "either-or:otherwise";
 
 /** `BattleChoice.affects`, present only when the question names cards it would change. */
-function affectsOf(state: GameState, pending: PendingChoice): { affects?: string[] } {
+function affectsOf(state: GameState, pending: PendingChoice): { affects?: string[]; prompt?: string } {
   const affects = choiceAffects(state, pending, TABLE_DEPS);
-  return affects.length ? { affects } : {};
+  // A card the question is about that isn't on the table (a Goblin minion Wicked Ambitions just discarded): named in
+  // the question, so two in a row can be told apart.
+  const offTable = affects.find((id) => isInEncounterDiscard(state, id));
+  return affects.length
+    ? { affects, ...(offTable ? { prompt: `Choose one for ${faceUpName(state, offTable)}` } : {}) }
+    : {};
+}
+
+/** The card lies in an encounter discard pile. */
+function isInEncounterDiscard(state: GameState, id: InstanceId): boolean {
+  return Object.values(state.encounterDecks).some((piles) => piles.discard.includes(id));
 }
 
 function statModifiers(state: GameState, id: InstanceId) {
@@ -561,6 +571,24 @@ export function formWhenRevealed(
     "is",
   ).exec(text);
   return line ? { applies: { form: label, text: line[1]!.trim() } } : {};
+}
+
+/**
+ * Of a card's When Revealed lines for each side of the villain (Mad Genius: "When Revealed (Green Goblin): ... /
+ * When Revealed (Norman Osborn): ..."), the one for the side showing. Nothing for a card without them.
+ */
+export function villainWhenRevealed(
+  text: string,
+  villain: string,
+): { applies: { villain: string; text: string } } | Record<string, never> {
+  // A face name is plain words ("Green Goblin", "Norman Osborn"): nothing in it needs escaping for the pattern.
+  const at = text.search(new RegExp(String.raw`When Revealed \(${villain}\)\s*:`, "i"));
+  if (at < 0) return {};
+  const line =
+    /:\s*(.+?)\s*(?=\n|When Revealed\b|(?:Hero |Alter-Ego )?(?:Forced )?(?:Interrupt|Response)\b|Boost\b|$)/is.exec(
+      text.slice(at),
+    );
+  return line ? { applies: { villain, text: line[1]!.trim() } } : {};
 }
 
 /**
@@ -723,6 +751,33 @@ const SCHEME_ICON_TEXT: Record<string, string> = {
  * The question for an encounter attachment's host, when the engine leaves the pick to the player (two minions tied on
  * Biomechanical Upgrades' "highest printed hit points"): it names the card and gives its "Attach to" rule.
  */
+/**
+ * A pick from the player's hand that a card's text discards (Tombstone's "discard a [mental] or a [physical] resource
+ * from your hand", Power Drain's "choose and discard 1 resource ... for each boost icon"): asked as a discard, named by
+ * the card, with the words that say why ("Choose a target" said neither). Null for any other pick.
+ */
+function handDiscardQuestion(
+  state: GameState,
+  pending: NonNullable<GameState["pendingChoice"]>,
+): Pick<BattleChoice, "prompt" | "sourceTitle" | "explanation"> | null {
+  if (pending.prompt.kind !== "chooseCards" && pending.prompt.kind !== "chooseTarget") return null;
+  const hand = new Set<string>(state.players.flatMap((seat) => seat.hand));
+  const cards = pending.options.filter((o) => o.ref.kind === "card");
+  if (!cards.length || cards.length !== pending.options.length) return null;
+  if (!cards.every((o) => o.ref.kind === "card" && hand.has(o.ref.instanceId))) return null;
+  const panel = choiceSourcePanelOf(state, pending, pending.playerId, TABLE_DEPS);
+  const said = panel?.rulesText
+    .split(/(?<=\.)\s+|\n+/)
+    .find((sentence) => /\bdiscard\b/i.test(sentence) && /\bhand\b/i.test(sentence));
+  if (!panel || !said) return null;
+  const n = pending.minSelections === pending.maxSelections ? pending.minSelections : 0;
+  return {
+    prompt: n ? `Choose ${n === 1 ? "a card" : `${n} cards`} to discard` : "Choose cards to discard",
+    sourceTitle: panel.name,
+    explanation: said.trim(),
+  };
+}
+
 /**
  * The question for a pick among cards one of the player's abilities turned up (Futurist: "Choose cards" said nothing):
  * "Choose a card to add to your hand", titled "Tony Stark · Futurist", with the ability's words.
@@ -1324,17 +1379,38 @@ export class BattleModel {
     const drones = new Set<string>(
       this.#game.players.flatMap((seat) => seat.playArea.filter((id) => isFacedownMinion(this.#game, id))),
     );
+    // The main scheme is one card through all its stages: until it advances in these events, it is still called by
+    // the stage it was on (the threat that completes Underground Distribution goes on Underground Distribution, and
+    // Hostile Takeover's When Completed discard is Hostile Takeover's, not the next stage's).
+    const mainId = this.#game.mainScheme.instanceId;
+    let mainStageName = faceUpName(this.#game, mainId);
+    // A card that turns over in these events (Norman Osborn into the Green Goblin, Criminal Enterprise into State of
+    // Madness) is called by the side it showed until its flip comes round: "Norman Osborn interrupts", then the flip.
+    const turnsHere = new Set<string>(
+      events.flatMap((e) => (e.type === "villainFlipped" || e.type === "cardFlipped" ? [e.instanceId] : [])),
+    );
+    const turned = new Set<string>();
     const name = (id: InstanceId) =>
-      drones.has(id) ? DRONE_NAME : (shortIdentityNameOf(result.state, id) ?? faceUpName(result.state, id));
+      drones.has(id)
+        ? DRONE_NAME
+        : id === mainId
+          ? mainStageName
+          : turnsHere.has(id) && !turned.has(id)
+            ? (shortIdentityNameOf(this.#game, id) ?? faceUpName(this.#game, id))
+            : (shortIdentityNameOf(result.state, id) ?? faceUpName(result.state, id));
     /** The cards these events put into play facedown as minions: each is seen leaving its pile as it moves. */
     const facedownPuts = new Set<string>(
       events.flatMap((e) => (e.type === "cardPutIntoPlayFacedown" && e.as === "minion" ? [e.instanceId] : [])),
     );
-    // The main scheme is one card through all its stages: until it advances in these events, it is still called by
-    // the stage it was on (the threat that completes Underground Distribution goes on Underground Distribution).
-    const mainId = this.#game.mainScheme.instanceId;
-    let mainStageName = faceUpName(this.#game, mainId);
-    const schemeName = (id: InstanceId) => (id === mainId ? mainStageName : name(id));
+    const schemeName = name;
+    /** The boost cards of these events: one shuffled back into the encounter deck after its activation is shown going. */
+    const boostedHere = new Set<string>(
+      events.flatMap((e) => (e.type === "cardMoved" && e.from.kind === "boost" ? [e.instanceId] : [])),
+    );
+    /** The cards these events bring into a play area (a minion engaging): only those attack by Quickstrike. */
+    const enteredHere = new Set<string>(
+      events.flatMap((e) => (e.type === "cardMoved" && e.to.kind === "playArea" ? [e.instanceId] : [])),
+    );
     // Cards that come in face up off the encounter deck are presented by their reveal; the rest just enter play.
     const revealedHere = new Set(
       events.flatMap((e) =>
@@ -1368,7 +1444,9 @@ export class BattleModel {
     const millSourceOf = (source: { card: InstanceId; label: string }) => {
       const card = cardOf(result.state, source.card) ?? cardOf(this.#game, source.card);
       const miss = card ? missLineOf(plainRulesTextOf(card)) : null;
-      return { ...source, ...(miss ? { miss } : {}) };
+      // Named as it was when it discarded: Hostile Takeover's When Completed is Hostile Takeover's, though the main
+      // scheme has turned to Corporate Acquisition by the end of the move.
+      return { ...source, ...(miss ? { miss } : {}), by: name(source.card) };
     };
     /** Its text discards from a deck ("Discard the top card of your deck for each ...", Black Cat's "top 2 cards"). */
     /** Its text discards the cards it looked at ("Add 1 to your hand and discard the others", Futurist). */
@@ -1521,7 +1599,7 @@ export class BattleModel {
         const card = cardOf(result.state, mainId);
         const stage = card?.type === "main_scheme" ? card.stages[e.stageIndex] : undefined;
         const from = mainStageName;
-        mainStageName = stage?.name ?? card?.name ?? name(mainId);
+        mainStageName = stage?.name ?? card?.name ?? mainStageName;
         const players = result.state.players.length;
         const amount = (value: { base: number; perPlayer: number } | undefined) =>
           value ? value.base + value.perPlayer * players : 0;
@@ -1542,8 +1620,12 @@ export class BattleModel {
       } else if (
         e.type === "cardMoved" &&
         e.to.kind === "playArea" &&
-        (e.from.kind === "encounterDeck" || e.from.kind === "encounterDiscard" || e.from.kind === "setAside") &&
-        !revealedHere.has(e.instanceId) &&
+        (e.from.kind === "encounterDeck" ||
+          e.from.kind === "encounterDiscard" ||
+          e.from.kind === "setAside" ||
+          // A boost card whose Boost puts it into play (Goblin Soldier, Goblin Thrall): turned up, then in play.
+          e.from.kind === "boost") &&
+        (!revealedHere.has(e.instanceId) || e.from.kind === "boost") &&
         cardOf(result.state, e.instanceId)?.type === "minion"
       ) {
         this.#beats.push({
@@ -1577,7 +1659,14 @@ export class BattleModel {
             deckCount: Math.max(0, deckLeft),
           },
         });
+      } else if (e.type === "cardFlipped") {
+        // A card in play turning over to its other side (Criminal Enterprise to State of Madness and back): named by
+        // the side it leaves, then the side it shows.
+        const from = name(e.instanceId);
+        turned.add(e.instanceId);
+        this.#beats.push({ enemy, actor: e.instanceId, text: `${from} turns over: ${name(e.instanceId)}` });
       } else if (e.type === "villainFlipped") {
+        turned.add(e.instanceId);
         this.#beats.push({
           enemy,
           actor: e.instanceId,
@@ -1642,9 +1731,17 @@ export class BattleModel {
             art: artFor(card, { kind: "front" })?.url ?? "",
             landscape: isLandscapeType(card?.type ?? ""),
             quick: card?.type === "minion",
-            whenRevealed: !!card && /\bWhen Revealed\b/i.test(plainRulesTextOf(card)),
+            // An ability of its own ("When Revealed (Hero):"), not the words quoted (Media Coverage's "Resolve each
+            // "When Revealed" ability ... 1 additional time").
+            whenRevealed: !!card && /\bWhen Revealed(?:\s*\([^)]*\))?\s*:/i.test(plainRulesTextOf(card)),
             ...(card && e.type === "encounterCardRevealed"
               ? formWhenRevealed(plainRulesTextOf(card), result.state.players[0]!.identity.form)
+              : {}),
+            ...(card && e.type === "encounterCardRevealed"
+              ? villainWhenRevealed(
+                  plainRulesTextOf(card),
+                  faceUpName(result.state, result.state.villains[0]!.instanceId),
+                )
               : {}),
             ...(card &&
             e.type === "encounterCardRevealed" &&
@@ -1746,7 +1843,13 @@ export class BattleModel {
           text: "Your deck ran out: shuffle your discard pile into a new deck",
           deckReset: shuffledDeck ?? this.#game.players[0]!.discard.length,
         });
-      } else if (e.type === "cardMoved" && e.from.kind === "setAside" && e.to.kind === "encounterDeck") {
+      } else if (
+        e.type === "cardMoved" &&
+        // A boost card shuffled back after its activation (Goblin Knight, Monster: discarded, then shuffled in) goes
+        // the same way; a whole discard pile reshuffled when the deck runs out does not (it has a beat of its own).
+        (e.from.kind === "setAside" || (e.from.kind === "encounterDiscard" && boostedHere.has(e.instanceId))) &&
+        e.to.kind === "encounterDeck"
+      ) {
         const last = this.#beats.at(-1);
         // Cards of a nemesis set (Shadow of the Past bringing in the rest of Vulture's) are named as such.
         const card = cardOf(result.state, e.instanceId);
@@ -1846,7 +1949,9 @@ export class BattleModel {
         // once, Spider-Man would sit under the reticle through all of that with no attack in sight.
         const attacker = e.event.enemyInstanceId;
         const card = drones.has(attacker) ? undefined : cardOf(result.state, attacker);
-        const quickstrike = !!card && /\bQuickstrike\b/i.test(plainRulesTextOf(card));
+        // Quickstrike only as he engages: a minion already engaged that a card makes attack (Gang-Up, Tail Sweep with
+        // Scorpion out) is not attacking by his keyword.
+        const quickstrike = !!card && /\bQuickstrike\b/i.test(plainRulesTextOf(card)) && enteredHere.has(attacker);
         this.#effectAttack = { enemy: attacker, activity: this.#villainActivity };
         heldAim = {
           attacker,
@@ -2075,7 +2180,7 @@ export class BattleModel {
     for (const beat of this.#beats) {
       if (!beat.milled) continue;
       const names = beat.milled.map((id) => cardOf(result.state, id as InstanceId)?.name ?? "a card").join(", ");
-      const by = beat.millSource ? `${name(beat.millSource.card as InstanceId)}: d` : "D";
+      const by = beat.millSource ? `${beat.millSource.by ?? name(beat.millSource.card as InstanceId)}: d` : "D";
       beat.text = `${by}iscard ${beat.milled.length === 1 ? "the top card" : `the top ${beat.milled.length} cards`} of your deck (${names})`;
     }
     for (const beat of this.#beats) {
@@ -2084,11 +2189,12 @@ export class BattleModel {
       const names = beat.encounterMilled
         .map((id) => cardOf(result.state, id as InstanceId)?.name ?? "a card")
         .join(", ");
-      const by = beat.millSource ? `${name(beat.millSource.card as InstanceId)}: d` : "D";
+      const by = beat.millSource ? `${beat.millSource.by ?? name(beat.millSource.card as InstanceId)}: d` : "D";
       beat.text = `${by}iscard ${count === 1 ? "the top card" : `the top ${count} cards`} of the encounter deck (${names})`;
     }
-    // The attack waits on a question (whether to defend): it is aimed now, as the question asks.
-    if (heldAim) {
+    // The attack waits on a question (whether to defend): it is aimed now, as the question asks. With no question
+    // waiting, the attack never came (Norman Osborn's was replaced by his infamy interrupt): nothing to aim.
+    if (heldAim && result.state.pendingChoice) {
       this.#villainActivity = heldAim.activity;
       this.#beats.push({ ...heldAim.beat, activity: heldAim.activity });
     }
@@ -2556,6 +2662,7 @@ export class BattleModel {
               ...(!revealed && pending.prompt.kind === "chooseCards" && state.step.phase !== "villain"
                 ? pickQuestion(state, pending)
                 : {}),
+              ...handDiscardQuestion(state, pending),
               // An attack card's enemy pick that guard narrows (Swinging Web Kick with Hydra Mercenary out): why the
               // villain isn't among the answers.
               ...this.#guardFields(this.#attackPickGuard(state, pending)),
@@ -2636,11 +2743,17 @@ export class BattleModel {
         shownType(state, id) ?? "",
       ),
     );
+    // Encounter attachments on the player's own cards (All Tied Up, Media Coverage on the hero): the villain's cards,
+    // drawn on their host, so the player sees why the form change is gone and can click them for their Actions.
+    const onYours = [player.identity.instanceId, ...player.playArea].flatMap((host) =>
+      (getInstance(state, host)?.attachments ?? []).filter((id) => ENCOUNTER_TYPES.has(cardOf(state, id)?.type ?? "")),
+    );
     const enemyIds = new Set([
       state.mainScheme.instanceId,
       ...state.villainArea,
       ...(getInstance(state, villain.instanceId)?.attachments ?? []),
       ...hostile,
+      ...onYours,
     ]);
     enemyIds.delete(villain.instanceId);
     for (const host of enemyIds) for (const id of getInstance(state, host)?.attachments ?? []) enemyIds.add(id);

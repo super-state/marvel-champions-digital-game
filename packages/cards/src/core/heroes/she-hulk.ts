@@ -31,6 +31,7 @@ import {
   heal,
   heroAction,
   ifThen,
+  isHero,
   interrupt,
   made,
   extraBoostCardsForVillain,
@@ -137,8 +138,10 @@ export const SHE_HULK_NEMESIS = defineAbilities({
   // Attached minion gets +3 hit points.
   "01163.genetically-enhanced-constant-2": constant(gets("hp", 3, { hostOfSelf: true })),
   // Titania's Fury — When Revealed: Titania attacks your hero. If Titania did not attack, heal all damage from Titania and this card gains surge.
+  // A player in alter-ego form has no hero (RRG 1.8 "Form, Change Form", p. 21; as Swarm Attack, issue #222): Titania
+  // makes no attack, so she heals and the card surges.
   "01164.when-revealed": whenRevealed(
-    enemyAttack(named(TITANIA), { against: you, bind: "fury" }),
+    ifThen(isHero(), enemyAttack(named(TITANIA), { against: you, bind: "fury" })),
     ifThen(not(made("fury")), [heal(damageOn(named(TITANIA)), named(TITANIA)), surge()]),
   ),
   // [star] Boost: Give the villain 1 additional boost card for this activation.

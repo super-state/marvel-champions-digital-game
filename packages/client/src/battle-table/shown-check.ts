@@ -218,6 +218,7 @@ export const EVENT_RULES: Record<string, Rule> = {
   villainStageAdvanced: state(),
   villainStageRevealed: state(),
   villainFlipped: state(),
+  cardFlipped: beat("a card turned over to its other side"),
   accelerationTokenAdded: state(),
   playerDeckReset: state(),
   cardTurnedFaceup: state(),

@@ -3382,10 +3382,18 @@ export class BattleTable {
     // An upgrade on an ally (Inspired) is tucked under that ally, as the hero's are under the hero.
     const onAlly = (card: TableCard) =>
       !!card.attachedTo && card.attachedTo !== state.hero.id && permanents.some((host) => host.id === card.attachedTo);
-    const upgrades = permanents.filter((card) => isTuckedUpgrade(card) && !onAlly(card));
+    // An encounter attachment on the player's own cards (All Tied Up, Media Coverage on the hero) is tucked under its
+    // host the same way, its tab showing: it has no enemy to stand under.
+    const onYours = state.enemyCards.filter(
+      (card) => card.attachedTo === state.hero.id || permanents.some((host) => host.id === card.attachedTo),
+    );
+    const upgrades = [
+      ...permanents.filter((card) => isTuckedUpgrade(card) && !onAlly(card)),
+      ...onYours.filter((card) => card.attachedTo === state.hero.id),
+    ];
     const allyUpgrades = new Map<string, TableCard[]>();
-    for (const card of permanents)
-      if (isTuckedUpgrade(card) && onAlly(card))
+    for (const card of [...permanents.filter((each) => isTuckedUpgrade(each) && onAlly(each)), ...onYours])
+      if (card.attachedTo !== state.hero.id)
         allyUpgrades.set(card.attachedTo!, [...(allyUpgrades.get(card.attachedTo!) ?? []), card]);
     const visibleUpgrades = permanents.filter((card) => card.type === "upgrade" && card.showAsFullCard);
     const row = [state.hero, ...visibleUpgrades, ...permanents.filter((card) => card.type !== "upgrade")];

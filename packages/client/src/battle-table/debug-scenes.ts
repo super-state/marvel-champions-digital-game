@@ -1,5 +1,5 @@
 import { activeEncounterDeck, activeEncounterDeckId, cardOf, type GameState, type InstanceId } from "@mc/engine";
-import type { VillainId } from "./model.js";
+import type { ModuleId, VillainId } from "./model.js";
 
 /**
  * Table set-ups for looking at the presentation without playing a game to them: `/battle/?scene=crowded`.
@@ -20,6 +20,8 @@ interface Placement {
 interface Scene {
   /** The scenario it is dealt from: Rhino unless it says otherwise. */
   scenario?: VillainId;
+  /** The modular sets dealt in, when not the scenario's recommended one (a card the scene needs is in another). */
+  modules?: ModuleId[];
   hero?: { form?: "hero" | "alterEgo"; damage?: number; statuses?: Record<string, number>; exhausted?: boolean };
   /** `lastStage`: the stage the villain is on is his last, so defeating it wins the game (a scene's shortcut). */
   villain?: { damage?: number; statuses?: Record<string, number>; lastStage?: boolean };
@@ -713,6 +715,22 @@ const SCENES: Record<string, Scene> = {
     clearMinions: true,
   },
   /**
+   * All Tied Up (Running Interference) comes up in the villain phase and ties Peter Parker up: end the turn and it is
+   * on the hero, drawn there, with no "Change to" until its Action (spend [mental][physical]) discards it.
+   */
+  tiedup: {
+    scenario: "mutagen-formula",
+    modules: ["goblin_gimmicks", "running_interference"],
+    hero: { form: "alterEgo" },
+    encounterTop: ["02031", "02048"],
+  },
+  /** End the turn: the Green Goblin's boost card is a Goblin Soldier, which comes into play engaged with Spider-Man. */
+  goblinboost: {
+    scenario: "mutagen-formula",
+    hero: { form: "hero" },
+    encounterTop: ["02023", "02031"],
+  },
+  /**
    * `finish` against the Green Goblin in Mutagen Formula (16 hit points): one basic attack wins, for the end of a
    * scenario pack's game (the record, the replay) to be looked at. Recorded only with `&record=1`, as `finish`.
    */
@@ -755,8 +773,9 @@ export function arrangeScene(name: string): ((state: GameState) => GameState) | 
 }
 
 /** Whether a scene is dealt for any hero and goes on the record (the finish); the others are Spider-Man's checks. */
-export function sceneOptions(name: string): { anyHero: boolean; recorded: boolean } {
-  return { anyHero: !!SCENES[name]?.anyHero, recorded: !!SCENES[name]?.recorded };
+export function sceneOptions(name: string): { anyHero: boolean; recorded: boolean; modules?: ModuleId[] } {
+  const modules = SCENES[name]?.modules;
+  return { anyHero: !!SCENES[name]?.anyHero, recorded: !!SCENES[name]?.recorded, ...(modules ? { modules } : {}) };
 }
 
 /** The villain a scene is dealt against: it must be dealt from that scenario for its cards to be there. */
