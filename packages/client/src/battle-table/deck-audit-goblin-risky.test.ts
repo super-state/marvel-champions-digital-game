@@ -299,7 +299,7 @@ test("02006a Criminal Enterprise: the last infamy counter off flips Norman to Gr
   expect(counterBeat(p, "madness", 2)).toBeGreaterThan(flip);
 });
 
-test.fails("02006a Criminal Enterprise: the beats before the flip name Norman Osborn and Criminal Enterprise", () => {
+test("02006a Criminal Enterprise: the beats before the flip name Norman Osborn and Criminal Enterprise", () => {
   // BUG (table): a move's beats take their names from the faces up once the move has ended. Removing the last infamy
   // counter reads "Green Goblin interrupts" and "State of Madness · -1 infamy", though it was Norman Osborn's
   // interrupt and Criminal Enterprise's counter (State of Madness never holds infamy). The other way round, Green
@@ -485,7 +485,7 @@ test("02004b Hostile Takeover: When Completed places 1 infamy, then discards a c
   expect(mainScheme(p)).toMatchObject({ threat: 1, threatTarget: 10 });
 });
 
-test.fails("02004b Hostile Takeover: the When Completed deck discard is credited to Hostile Takeover", () => {
+test("02004b Hostile Takeover: the When Completed deck discard is credited to Hostile Takeover", () => {
   // BUG (table): the beat reads "Corporate Acquisition: discard the top 2 cards of your deck", naming the stage the
   // scheme has advanced to by the end of the move; the When Completed is Hostile Takeover 1B's.
   const p = scenarioOf(deal(), infamy(1), schemeThreat(6), stack("02012", "02012"));

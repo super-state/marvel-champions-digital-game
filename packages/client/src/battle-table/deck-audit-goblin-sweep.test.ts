@@ -27,7 +27,8 @@ const SETS: readonly { set: string; villain: VillainId; module?: ModuleId }[] = 
 const deckCards = (set: string) =>
   WAVE1_CARDS.filter(
     (card) =>
-      (card.encounterSetIds as readonly string[] | undefined)?.includes(set) &&
+      "encounterSetIds" in card &&
+      (card.encounterSetIds as readonly string[]).includes(set) &&
       !["villain", "main_scheme", "environment"].includes(card.type),
   );
 

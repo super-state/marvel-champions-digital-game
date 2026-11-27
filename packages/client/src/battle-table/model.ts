@@ -412,7 +412,7 @@ export interface BattleBeat {
    * The card whose ability discarded `milled` (Black Cat), when one did, and what kind of ability it was. `miss`: what
    * the table says when none of the cards is one the effect keeps for the hand ("No mental resources").
    */
-  millSource?: { card: string; label: string; miss?: string };
+  millSource?: { card: string; label: string; miss?: string; by?: string };
   /** On a facedown deal: the enemy the card goes to as its boost card. */
   boostFor?: string;
   /** The encounter card whose surge deals the player another encounter card (the deal beat follows). */
@@ -1324,17 +1324,34 @@ export class BattleModel {
     const drones = new Set<string>(
       this.#game.players.flatMap((seat) => seat.playArea.filter((id) => isFacedownMinion(this.#game, id))),
     );
+    // The main scheme is one card through all its stages: until it advances in these events, it is still called by
+    // the stage it was on (the threat that completes Underground Distribution goes on Underground Distribution, and
+    // Hostile Takeover's When Completed discard is Hostile Takeover's, not the next stage's).
+    const mainId = this.#game.mainScheme.instanceId;
+    let mainStageName = faceUpName(this.#game, mainId);
+    // A card that turns over in these events (Norman Osborn into the Green Goblin, Criminal Enterprise into State of
+    // Madness) is called by the side it showed until its flip comes round: "Norman Osborn interrupts", then the flip.
+    const turnsHere = new Set<string>(
+      events.flatMap((e) => (e.type === "villainFlipped" || e.type === "cardFlipped" ? [e.instanceId] : [])),
+    );
+    const turned = new Set<string>();
     const name = (id: InstanceId) =>
-      drones.has(id) ? DRONE_NAME : (shortIdentityNameOf(result.state, id) ?? faceUpName(result.state, id));
+      drones.has(id)
+        ? DRONE_NAME
+        : id === mainId
+          ? mainStageName
+          : turnsHere.has(id) && !turned.has(id)
+            ? (shortIdentityNameOf(this.#game, id) ?? faceUpName(this.#game, id))
+            : (shortIdentityNameOf(result.state, id) ?? faceUpName(result.state, id));
     /** The cards these events put into play facedown as minions: each is seen leaving its pile as it moves. */
     const facedownPuts = new Set<string>(
       events.flatMap((e) => (e.type === "cardPutIntoPlayFacedown" && e.as === "minion" ? [e.instanceId] : [])),
     );
-    // The main scheme is one card through all its stages: until it advances in these events, it is still called by
-    // the stage it was on (the threat that completes Underground Distribution goes on Underground Distribution).
-    const mainId = this.#game.mainScheme.instanceId;
-    let mainStageName = faceUpName(this.#game, mainId);
-    const schemeName = (id: InstanceId) => (id === mainId ? mainStageName : name(id));
+    const schemeName = name;
+    /** The cards these events bring into a play area (a minion engaging): only those attack by Quickstrike. */
+    const enteredHere = new Set<string>(
+      events.flatMap((e) => (e.type === "cardMoved" && e.to.kind === "playArea" ? [e.instanceId] : [])),
+    );
     // Cards that come in face up off the encounter deck are presented by their reveal; the rest just enter play.
     const revealedHere = new Set(
       events.flatMap((e) =>
@@ -1368,7 +1385,9 @@ export class BattleModel {
     const millSourceOf = (source: { card: InstanceId; label: string }) => {
       const card = cardOf(result.state, source.card) ?? cardOf(this.#game, source.card);
       const miss = card ? missLineOf(plainRulesTextOf(card)) : null;
-      return { ...source, ...(miss ? { miss } : {}) };
+      // Named as it was when it discarded: Hostile Takeover's When Completed is Hostile Takeover's, though the main
+      // scheme has turned to Corporate Acquisition by the end of the move.
+      return { ...source, ...(miss ? { miss } : {}), by: name(source.card) };
     };
     /** Its text discards from a deck ("Discard the top card of your deck for each ...", Black Cat's "top 2 cards"). */
     /** Its text discards the cards it looked at ("Add 1 to your hand and discard the others", Futurist). */
@@ -1521,7 +1540,7 @@ export class BattleModel {
         const card = cardOf(result.state, mainId);
         const stage = card?.type === "main_scheme" ? card.stages[e.stageIndex] : undefined;
         const from = mainStageName;
-        mainStageName = stage?.name ?? card?.name ?? name(mainId);
+        mainStageName = stage?.name ?? card?.name ?? mainStageName;
         const players = result.state.players.length;
         const amount = (value: { base: number; perPlayer: number } | undefined) =>
           value ? value.base + value.perPlayer * players : 0;
@@ -1577,7 +1596,14 @@ export class BattleModel {
             deckCount: Math.max(0, deckLeft),
           },
         });
+      } else if (e.type === "cardFlipped") {
+        // A card in play turning over to its other side (Criminal Enterprise to State of Madness and back): named by
+        // the side it leaves, then the side it shows.
+        const from = name(e.instanceId);
+        turned.add(e.instanceId);
+        this.#beats.push({ enemy, actor: e.instanceId, text: `${from} turns over: ${name(e.instanceId)}` });
       } else if (e.type === "villainFlipped") {
+        turned.add(e.instanceId);
         this.#beats.push({
           enemy,
           actor: e.instanceId,
@@ -1846,7 +1872,9 @@ export class BattleModel {
         // once, Spider-Man would sit under the reticle through all of that with no attack in sight.
         const attacker = e.event.enemyInstanceId;
         const card = drones.has(attacker) ? undefined : cardOf(result.state, attacker);
-        const quickstrike = !!card && /\bQuickstrike\b/i.test(plainRulesTextOf(card));
+        // Quickstrike only as he engages: a minion already engaged that a card makes attack (Gang-Up, Tail Sweep with
+        // Scorpion out) is not attacking by his keyword.
+        const quickstrike = !!card && /\bQuickstrike\b/i.test(plainRulesTextOf(card)) && enteredHere.has(attacker);
         this.#effectAttack = { enemy: attacker, activity: this.#villainActivity };
         heldAim = {
           attacker,
@@ -2075,7 +2103,7 @@ export class BattleModel {
     for (const beat of this.#beats) {
       if (!beat.milled) continue;
       const names = beat.milled.map((id) => cardOf(result.state, id as InstanceId)?.name ?? "a card").join(", ");
-      const by = beat.millSource ? `${name(beat.millSource.card as InstanceId)}: d` : "D";
+      const by = beat.millSource ? `${beat.millSource.by ?? name(beat.millSource.card as InstanceId)}: d` : "D";
       beat.text = `${by}iscard ${beat.milled.length === 1 ? "the top card" : `the top ${beat.milled.length} cards`} of your deck (${names})`;
     }
     for (const beat of this.#beats) {
@@ -2084,7 +2112,7 @@ export class BattleModel {
       const names = beat.encounterMilled
         .map((id) => cardOf(result.state, id as InstanceId)?.name ?? "a card")
         .join(", ");
-      const by = beat.millSource ? `${name(beat.millSource.card as InstanceId)}: d` : "D";
+      const by = beat.millSource ? `${beat.millSource.by ?? name(beat.millSource.card as InstanceId)}: d` : "D";
       beat.text = `${by}iscard ${count === 1 ? "the top card" : `the top ${count} cards`} of the encounter deck (${names})`;
     }
     // The attack waits on a question (whether to defend): it is aimed now, as the question asks.
@@ -2636,11 +2664,17 @@ export class BattleModel {
         shownType(state, id) ?? "",
       ),
     );
+    // Encounter attachments on the player's own cards (All Tied Up, Media Coverage on the hero): the villain's cards,
+    // drawn on their host, so the player sees why the form change is gone and can click them for their Actions.
+    const onYours = [player.identity.instanceId, ...player.playArea].flatMap((host) =>
+      (getInstance(state, host)?.attachments ?? []).filter((id) => ENCOUNTER_TYPES.has(cardOf(state, id)?.type ?? "")),
+    );
     const enemyIds = new Set([
       state.mainScheme.instanceId,
       ...state.villainArea,
       ...(getInstance(state, villain.instanceId)?.attachments ?? []),
       ...hostile,
+      ...onYours,
     ]);
     enemyIds.delete(villain.instanceId);
     for (const host of enemyIds) for (const id of getInstance(state, host)?.attachments ?? []) enemyIds.add(id);

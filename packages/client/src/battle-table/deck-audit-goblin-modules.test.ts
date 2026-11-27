@@ -311,7 +311,7 @@ test("02039 Gang-Up (hero): Green Goblin (with a boost card) and each engaged mi
 
 // BUG: a card makes Scorpion attack (Gang-Up), but the table labels the attack "Quickstrike: Scorpion attacks": any
 // attack by a minion whose text has Quickstrike gets that label (model.ts, the held aim). Table bug (wrong words).
-test.fails("02039 Gang-Up (hero): Scorpion's attack is not labelled as his Quickstrike", () => {
+test("02039 Gang-Up (hero): Scorpion's attack is not labelled as his Quickstrike", () => {
   const p = deal(
     stack("02039", QUIET),
     engageMinion("02038"),
@@ -359,7 +359,7 @@ test("02040 Tail Sweep (hero, Scorpion engaged): Scorpion attacks your hero, and
 });
 
 // BUG: Scorpion's attack is labelled "Quickstrike: Scorpion attacks" though Tail Sweep makes it. Table bug (words).
-test.fails("02040 Tail Sweep (hero, Scorpion engaged): Scorpion's attack is not labelled as his Quickstrike", () => {
+test("02040 Tail Sweep (hero, Scorpion engaged): Scorpion's attack is not labelled as his Quickstrike", () => {
   const p = deal(stack("02040"), engageMinion("02038"), ...quietEnemies, patchCard("02038", { statuses: STUNNED }));
   p.form();
   villainPhase(p);
@@ -562,7 +562,7 @@ test("02048 All Tied Up: revealed, it attaches to Peter Parker, who can no longe
 // out of `inPlay` (only player cards are tucked under the hero) and out of `enemyCards` (only the player's play area,
 // the villain and the villain area are looked at). The player can't see why the form change is gone, nor click the
 // card for its Action. Table bug.
-test.fails("02048 All Tied Up: the table shows it on the hero", () => {
+test("02048 All Tied Up: the table shows it on the hero", () => {
   const p = deal(stack(ONE_ICON, "02048"));
   villainPhase(p);
   const shown = [...p.snap.enemyCards, ...p.snap.inPlay].find((c) => c.name === "All Tied Up");
@@ -641,7 +641,7 @@ test.fails("02049 Media Coverage: its reveal doesn't flash for a When Revealed i
 
 // BUG: like All Tied Up, Media Coverage on the identity is in neither `inPlay` nor `enemyCards`: the table never shows
 // it, so its Alter-Ego Action can't be reached by clicking it. Table bug.
-test.fails("02049 Media Coverage: the table shows it on the hero", () => {
+test("02049 Media Coverage: the table shows it on the hero", () => {
   const p = deal(stack(QUIET, "02049"));
   villainPhase(p);
   const shown = [...p.snap.enemyCards, ...p.snap.inPlay].find((c) => c.name === "Media Coverage");

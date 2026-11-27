@@ -309,7 +309,7 @@ test("02017b Unleashing the Mutagen: completed with no Goblin minion engaged, 3 
 // BUG: the beat for 1B's When Completed discard says "Mutagen Cloud: discard the top 3 cards of the encounter deck
 // (...)". The ability is printed on Unleashing the Mutagen 1B ("When Completed: ... discard 3 cards from the encounter
 // deck"); the table names the stage the scheme turns to, before its own "Unleashing the Mutagen is completed" beat.
-test.fails("02017b Unleashing the Mutagen: the When Completed discard is credited to Unleashing the Mutagen", () => {
+test("02017b Unleashing the Mutagen: the When Completed discard is credited to Unleashing the Mutagen", () => {
   const p = deal(noThrall, mainAt(6), stack("02036", "02023", "02024", QUIET, FILLER));
   villainPhase(p);
   const milled = at(p, "3 cards discarded", (b) => (b.encounterMilled?.length ?? 0) > 0);
