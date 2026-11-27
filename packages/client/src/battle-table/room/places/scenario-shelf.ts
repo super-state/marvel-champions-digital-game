@@ -198,7 +198,7 @@ function tick(g: CanvasRenderingContext2D, x: number, y: number, size: number) {
 
 /** A print as it stands: faded unless lit, a padlock in its top right corner when the road hasn't reached it. */
 function finish(print: HTMLCanvasElement, lit: boolean, locked: boolean): HTMLCanvasElement {
-  const out = lit ? print : faded(print);
+  const out = lit ? print : faded(print, locked ? "locked" : "shown");
   if (locked) {
     const r = out.width * 0.09;
     lockBadge(out.getContext("2d")!, out.width - r * 1.5, r * 1.5, r);
@@ -346,7 +346,7 @@ function sidePrint(product: ShelfProduct, lit: boolean, locked: boolean): HTMLCa
   const kind = product.code === "core" ? "CORE SET" : product.size === "big" ? "CAMPAIGN" : "SCENARIO";
   fit(g, kind, (size) => `900 ${size}px 'Public Sans', sans-serif`, 15, w - 28);
   g.fillText(kind, w / 2, h - 30);
-  const out = lit ? cv : faded(cv);
+  const out = lit ? cv : faded(cv, locked ? "locked" : "shown");
   // Not reached on the road yet: a padlock under CHAMPIONS, where it shows on the shelf.
   if (locked) lockBadge(out.getContext("2d")!, w / 2, 124, 40);
   return out;
@@ -417,12 +417,14 @@ function badge(print: HTMLCanvasElement, look: Look): HTMLCanvasElement {
 }
 
 /**
- * A print greyed and dimmed, for a box the table doesn't deal from yet: by the canvas's own filter, which costs next to
- * nothing (greying pixel by pixel, for every box as the room opened, stalled the title's frames).
+ * A print dimmed, by the canvas's own filter, which costs next to nothing (greying pixel by pixel, for every box as the
+ * room opened, stalled the title's frames). `shown`: a box on display the table doesn't deal from yet keeps its colours,
+ * a little dimmed (Adam, 2026-11-27: the cabinet showed the box art too grey); `locked`: one the road hasn't reached,
+ * or a scenario that can't be picked, greyed.
  */
-function faded(print: HTMLCanvasElement): HTMLCanvasElement {
+function faded(print: HTMLCanvasElement, how: "shown" | "locked" = "locked"): HTMLCanvasElement {
   const [out, g] = canvas(print.width, print.height);
-  g.filter = "grayscale(0.88) brightness(0.72)";
+  g.filter = how === "shown" ? "saturate(0.8) brightness(0.86)" : "grayscale(0.7) brightness(0.74)";
   g.drawImage(print, 0, 0);
   return out;
 }
@@ -639,7 +641,7 @@ function buildBox(
   i: number,
 ) {
   const [ground] = coloursOf(product);
-  const shade = lit ? 0xffffff : 0x7a7a7a;
+  const shade = boxShade(lit, locked);
   const stock = new THREE.MeshStandardMaterial({
     color: new THREE.Color(ground).multiplyScalar(lit ? 0.8 : 0.35),
     roughness: 0.7,
@@ -705,6 +707,9 @@ function buildBox(
   return { mesh, lid, maps: [front, side], faces: { front: face, sides } };
 }
 
+/** How much light a box's prints take: full when the table deals from it, nearly so on display, less when locked. */
+const boxShade = (lit: boolean, locked: boolean) => (lit ? 0xffffff : locked ? 0x9a9a9a : 0xdedede);
+
 /** Puts a new print on a box's printed face (its lit glow follows it). */
 function reprint(material: THREE.MeshStandardMaterial, map: THREE.Texture) {
   const old = material.map;
@@ -724,6 +729,7 @@ function repaintBox(box: Box, lock: string | null) {
   const { front, side } = boxPrints(box.product, box.lit, lock !== null, box.art, box.own);
   reprint(box.faces.front, front);
   reprint(box.faces.sides, side);
+  for (const face of [box.faces.front, box.faces.sides]) face.color.set(boxShade(box.lit, lock !== null));
   const label = boxLabel(box);
   if (label !== box.product.name) box.button.setAttribute("aria-label", label);
   else box.button.removeAttribute("aria-label");
@@ -887,7 +893,11 @@ function paint(focusKey?: string) {
     button.dataset.road = row.status;
     button.dataset.at = String(scenarioAt);
     if (!row.playable) button.setAttribute("aria-disabled", "true");
+    // Named by the scenario; what the road says is read after it.
+    button.setAttribute("aria-label", row.name);
+    if (row.line) button.setAttribute("aria-description", row.line);
     const words = el("span", "scn-float-words");
+    words.setAttribute("aria-hidden", "true");
     const name = el("strong", "", row.name);
     if (row.status === "beaten") name.prepend(mark("scn-tick", "✓"));
     else if (row.status === "locked") name.prepend(mark("scn-lock", "🔒"));
@@ -1133,14 +1143,27 @@ function openedRect(box: Box) {
   return r;
 }
 
-/** A scenario's print on the screen. */
-function cardRect(each: THREE.Mesh) {
-  const size = (each.geometry as THREE.PlaneGeometry).parameters;
+/** Where a box up close stands: small and to the left, so its scenarios stand big beside it. */
+function closeFor(box: Box) {
+  closeSpot(
+    { across: box.size.across * CLOSE_FIT, tall: box.size.tall * CLOSE_FIT, deep: box.size.deep },
+    closeAt,
+    CLOSE_LEFT,
+  );
+}
+
+/** Where a scenario's print stands once it is out of its box, on the screen. */
+function landedRect(box: Box, at: number) {
+  const { spots, width } = floatLayout(box);
+  const spot = spots[at]!;
+  const height = width / printAspect(box.product.scenarios[at]!);
   const r = { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity };
-  each.updateMatrixWorld();
-  for (const x of [-size.width / 2, size.width / 2])
-    for (const y of [-size.height / 2, size.height / 2]) {
-      cardCorner.set(x, y, 0).applyMatrix4(each.matrixWorld).project(camera);
+  for (const x of [-width / 2, width / 2])
+    for (const y of [-height / 2, height / 2]) {
+      cardCorner
+        .set(spot.x + x, spot.y + y, spot.z)
+        .add(closeAt)
+        .project(camera);
       const px = ((cardCorner.x + 1) / 2) * innerWidth;
       const py = ((1 - cardCorner.y) / 2) * innerHeight;
       r.left = Math.min(r.left, px);
@@ -1151,18 +1174,18 @@ function cardRect(each: THREE.Mesh) {
   return r;
 }
 
-/** Each scenario's button over its print (before the prints are out, a sliver where it will stand). */
+/**
+ * Each scenario's button over where its print lands, from the moment the box is picked: the arrows and a pad's D-pad
+ * steer by the buttons' places, so they stand still while the prints are still coming out.
+ */
 function placeFloats() {
   if (!floats || !opened || floats.hidden) return;
+  closeFor(opened);
+  // Their words show once the prints have landed above them.
+  floats.toggleAttribute("data-out", opened.open >= 1);
   for (const button of floats.querySelectorAll<HTMLElement>(".scn-float")) {
-    const each = opened.cards?.[Number(button.dataset.at)];
     const style = button.style;
-    if (!each || !each.visible) {
-      style.left = style.top = "0px";
-      style.width = style.height = "1px";
-      continue;
-    }
-    const r = cardRect(each);
+    const r = landedRect(opened, Number(button.dataset.at));
     style.left = `${r.left}px`;
     style.top = `${r.top}px`;
     style.width = `${Math.max(1, r.right - r.left)}px`;
@@ -1201,12 +1224,7 @@ function step(dt: number) {
     // Eases out while pointed at; snaps straight back when let go.
     box.out = target > box.out ? box.out + (target - box.out) * Math.min(1, dt * 12) : target;
     if (up) {
-      // Small and to the left: its scenarios stand big beside it.
-      closeSpot(
-        { across: box.size.across * CLOSE_FIT, tall: box.size.tall * CLOSE_FIT, deep: box.size.deep },
-        closeAt,
-        CLOSE_LEFT,
-      );
+      closeFor(box);
       box.fly = Math.min(1, box.fly + dt / FLY);
       flyUp(box.mesh, box.home, closeAt, box.fly, FACING, SHELF_TURN);
       if (box.fly >= 1) {
@@ -1288,6 +1306,13 @@ function key(event: KeyboardEvent): boolean {
   event.preventDefault();
   if (!now || !buttons.includes(now)) {
     (upClose() ? floats!.querySelector<HTMLElement>("button") : buttons[0])?.focus({ preventScroll: true });
+    return true;
+  }
+  // Beside a box up close, left and right step through its scenarios in order, whether or not they have finished
+  // coming out of the box (their places on the screen are still moving until then).
+  if (upClose() && now.classList.contains("scn-float") && (direction === "left" || direction === "right")) {
+    const row = [...floats!.querySelectorAll<HTMLElement>(".scn-float")];
+    row[row.indexOf(now) + (direction === "right" ? 1 : -1)]?.focus({ preventScroll: true });
     return true;
   }
   const rect = (node: HTMLElement) => {

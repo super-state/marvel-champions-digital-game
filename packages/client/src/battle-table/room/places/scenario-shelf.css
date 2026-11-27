@@ -133,6 +133,12 @@
   color: var(--text);
   pointer-events: none;
 }
+.scn-floats:not([data-out]) .scn-float-words {
+  opacity: 0;
+}
+.scn-float-words {
+  transition: opacity 0.25s ease;
+}
 .scn-float-words strong {
   font: 800 17px var(--font-ui);
 }
@@ -151,7 +157,7 @@
 }
 .scn-float[data-road="locked"] .scn-float-words,
 .scn-float[data-road="absent"] .scn-float-words {
-  opacity: 0.78;
+  color: var(--text-2);
 }
 .scn-mark {
   display: inline-block;
