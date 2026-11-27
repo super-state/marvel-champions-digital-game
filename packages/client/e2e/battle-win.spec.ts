@@ -104,7 +104,9 @@ test.describe("battle table: a driven win for every hero", () => {
       const picks = room.locator(".shelf-picks button");
       await page.goto("/battle/?friend=1");
       await expect(room).toHaveAttribute("data-place", "title", { timeout: 60_000 });
-      await expect(picks.filter({ hasText: "Klaw (Beat Rhino to unlock)" })).toHaveCount(1);
+      // The boxes are built once the title is up, every scan and box print loaded first: with the real card art that
+      // takes longer than an assertion's usual 5 seconds (found 2026-11-27, every hero failing here on a loaded PC).
+      await expect(picks.filter({ hasText: "Klaw (Beat Rhino to unlock)" })).toHaveCount(1, { timeout: 60_000 });
 
       await page.goto(`/battle/?hero=${hero.id}&scene=finish&record=1&friend=0`);
       await hook(page);
@@ -164,7 +166,7 @@ test.describe("battle table: a driven win for every hero", () => {
       // The campaign moves on, as a friend sees it: Klaw is open, Ultron still waits for Klaw.
       await page.goto("/battle/?friend=1&room=title");
       await expect(room).toHaveAttribute("data-place", "title", { timeout: 60_000 });
-      await expect(picks.filter({ hasText: "Open Klaw" })).toHaveCount(1);
+      await expect(picks.filter({ hasText: "Open Klaw" })).toHaveCount(1, { timeout: 60_000 });
       await expect(picks.filter({ hasText: "Klaw (Beat Rhino to unlock)" })).toHaveCount(0);
       await expect(picks.filter({ hasText: "Ultron (Beat Klaw to unlock)" })).toHaveCount(1);
 

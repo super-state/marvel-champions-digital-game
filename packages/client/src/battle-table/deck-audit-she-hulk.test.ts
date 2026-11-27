@@ -338,6 +338,18 @@ test("01164 Titania's Fury: Titania in play attacks her; with no Titania it heal
   expect(q.beats.some((b) => b.text === "Titania's Fury surges")).toBe(true);
 });
 
+test("01164 Titania's Fury in alter-ego form: no hero, so Titania doesn't attack Jennifer Walters, and it surges", () => {
+  // "Titania attacks your hero": a player in alter-ego form has no hero (RRG 1.8 "Form, Change Form", p. 21; as Swarm
+  // Attack, issue #222), so no attack is made and the second sentence resolves.
+  const p = scenario(nemesisInPlay("01162"), villainPhaseDeals("01164"));
+  const titania = p.card("Titania", "enemyCards");
+  villainPhase(p);
+  const fury = p.beats.findIndex((b) => b.reveal?.name === "Titania's Fury");
+  expect(fury).toBeGreaterThanOrEqual(0);
+  expect(p.beats.slice(fury).some((b) => b.hit?.source === titania.id)).toBe(false);
+  expect(p.beats.some((b) => b.text === "Titania's Fury surges")).toBe(true);
+});
+
 test("01164 Titania's Fury as a boost card: the villain gets a second boost card", () => {
   const p = scenario(stack("01164", "01104", "01108", "01101", "01101"));
   toSheHulk(p);
