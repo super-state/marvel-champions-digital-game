@@ -184,12 +184,18 @@
   min-height: 52px;
   font-size: 17px;
 }
-/* Back to the shelf, while a box is up close: top left, under the place's name, big and plain. */
+/* Back to the shelf, while a box is up close: its own big button just above the card (decks.ts places it). */
 .room-panel .bench-back-bar {
   position: absolute;
   top: 96px;
   left: 24px;
   pointer-events: auto;
+}
+.room-panel .bench-fav {
+  min-height: 44px;
+}
+.room-panel .bench-fav[aria-pressed="true"] {
+  color: var(--gold);
 }
 .bench-back-bar[hidden] {
   display: none;

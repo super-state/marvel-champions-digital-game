@@ -65,14 +65,14 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     await page.keyboard.press("ArrowRight");
     await expect.poll(() => focused(page)).toBe("Captain Marvel");
 
-    // Picked: up close, her starter deck, a favourite's star, and Choose (nothing chosen until then).
+    // Picked: up close, her starter deck, Play as her, and Add to favourites under it (nothing chosen until Play).
     await page.keyboard.press("Enter");
     await expect(bench.locator(".bench-card")).toBeVisible();
     await expect(bench.locator(".bench-deck-line")).toHaveText("Starter deck · Leadership");
-    await expect.poll(() => focused(page)).toBe("Choose Captain Marvel");
+    await expect.poll(() => focused(page)).toBe("Play as Captain Marvel");
     await bench.getByRole("button", { name: "Favourite", exact: true }).click();
     await expect(bench.getByRole("button", { name: "Favourite", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await bench.getByRole("button", { name: "Choose Captain Marvel" }).press("Enter");
+    await bench.getByRole("button", { name: "Play as Captain Marvel" }).press("Enter");
     await expect(bench.locator(".bench-card")).toBeHidden();
     await expect(bench.getByRole("button", { name: "Captain Marvel", exact: true })).toHaveAttribute(
       "aria-pressed",
@@ -111,7 +111,7 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     await expect(shown).toHaveCount(5);
     await bench.getByRole("button", { name: "Playable only" }).click();
 
-    // A–Z puts Adam Warlock first: up close he is not on the table yet, with no Choose, but can be a favourite.
+    // A–Z puts Adam Warlock first: up close he is not on the table yet, with no Play, but can be a favourite.
     await bench.getByRole("button", { name: "A–Z" }).click();
     const warlock = bench.getByRole("button", { name: "Adam Warlock, not on the table yet" });
     await expect(shown.first()).toHaveAccessibleName("Adam Warlock, not on the table yet");
@@ -120,7 +120,7 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     await expect(bench.locator(".bench-card .bench-line")).toHaveText(
       "Not on the table yet: from The Mad Titan's Shadow.",
     );
-    await expect(bench.getByRole("button", { name: /^Choose/ })).toHaveCount(0);
+    await expect(bench.getByRole("button", { name: /^Play as/ })).toHaveCount(0);
     await bench.getByRole("button", { name: "Favourite", exact: true }).click();
     await page.keyboard.press("Escape");
     await expect(bench.locator(".bench-card")).toBeHidden();
@@ -156,7 +156,7 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     const bench = room(page).locator('[data-for="decks"]');
     await nudge(page, PAD.a);
     await expect(bench.locator(".bench-card")).toBeVisible();
-    await expect.poll(() => focused(page)).toBe("Choose Captain Marvel");
+    await expect.poll(() => focused(page)).toBe("Play as Captain Marvel");
     await nudge(page, PAD.a);
     await expect(bench.getByRole("button", { name: "Captain Marvel", exact: true })).toHaveAttribute(
       "aria-pressed",
