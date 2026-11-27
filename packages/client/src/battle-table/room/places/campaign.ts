@@ -1,14 +1,22 @@
 /**
- * Campaign: the villain boxes on the table, the room's first place. Pick one and it tips onto its back, the lid lifts
- * off and is set aside, and the villain card rises out of the tray towards you. A campaign marked `open: false` is
- * sealed ("coming soon", or the player's lock) and won't open. Play hands over to `campaign-play.ts`.
+ * Campaign, the room's first place, in steps (Adam, 2026-11-27):
+ *
+ *   shelf   the scenario shelf on the back wall (`scenario-shelf.ts`): pick a box, then a scenario inside it
+ *   table   the picked scenario's box on the games table: it tips onto its back, the lid lifts off and is set aside,
+ *           and the villain card rises out of the tray towards you; Play hands over to `campaign-play.ts`
+ *
+ * Back goes one step at a time: the table back to the box up close on the shelf, the box back on the shelf, the
+ * shelf back to the doorway. A villain box marked `open: false` is sealed ("coming soon", or the player's lock) and
+ * its scenario says so on the shelf.
  */
 import * as THREE from "three";
 import { tokens, texture, loadImage } from "../canvas.js";
-import { camera, shelfPose, type Pose } from "../camera.js";
+import { camera, newPose, shelfPose, type Pose } from "../camera.js";
 import { lerp, span } from "../motion.js";
 import { pointer, raycaster, renderer, say, scene } from "../room.js";
 import { beginPlay, play, resetPlay } from "./campaign-play.js";
+import { buildScenarioShelf, closeBox, reopen, scenarioShelf, scenarioView } from "./scenario-shelf.js";
+import type { ShelfScenario } from "./scenario-catalogue.js";
 import { makePanel, type Place } from "./place.js";
 import {
   bandPrint,
@@ -238,7 +246,7 @@ const panel = makePanel(
   "room-campaign",
   `<header class="shelf-head">
     <p class="eyebrow">Marvel Champions</p>
-    <h1>Choose your campaign</h1>
+    <h1 class="shelf-heading">Choose a scenario</h1>
   </header>
   <div class="shelf-picks" role="group" aria-label="Campaigns"></div>
   <p class="shelf-hover-tag" hidden></p>
@@ -274,6 +282,55 @@ let target = 0;
 let hovered = -1;
 /** The camera is here, standing still: the boxes answer the pointer. */
 let active = false;
+/** Which step Campaign is at, and how far the camera has gone from the shelf to the table (0 to 1). */
+let stage: "shelf" | "table" = "shelf";
+let toTable = 0;
+/** The box on the scenario shelf the scenario came out of, to go back to. */
+let fromBox: string | null = null;
+let campaigns: readonly Campaign[] = CAMPAIGNS;
+
+/** How a scenario on the shelf stands for this player: its villain box here, open, sealed, or not built yet. */
+function scenarioState(scenario: ShelfScenario) {
+  const c = campaigns.find((each) => each.id === scenario.id);
+  if (!c || !c.villain) return { playable: false, lock: null };
+  return { playable: c.open, lock: c.open ? null : (c.lock ?? null) };
+}
+
+/** A scenario picked on the shelf: to the table, its villain box opening there. */
+function scenarioPicked(scenario: ShelfScenario) {
+  const index = boxes.findIndex((box) => box.campaign.id === scenario.id);
+  if (index < 0 || play.outro) return;
+  fromBox = "core";
+  stage = "table";
+  scenarioShelf.leave();
+  closeBox(false);
+  scenarioShelf.show(false);
+  showStage();
+  chosen = -1;
+  s = target = 0;
+  choose(index);
+}
+
+/** Back from the table: the box closes as the camera goes back to the shelf, where its box is up close again. */
+function backToShelf() {
+  stage = "shelf";
+  target = 0;
+  opened.hidden = true;
+  showStage();
+  scenarioShelf.show(true);
+  if (fromBox) reopen(fromBox);
+  scenarioShelf.enter();
+}
+
+/** The panel's words and buttons for the step Campaign is at. */
+function showStage() {
+  const shelf = stage === "shelf";
+  picks.hidden = true;
+  head.hidden = !shelf;
+  hint.hidden = true;
+  leave.hidden = !shelf;
+  if (!shelf) hoverTag.hidden = true;
+}
 
 function choose(index: number) {
   const box = boxes[index]!;
@@ -330,7 +387,7 @@ function pickAt(x: number, y: number): number {
 }
 
 renderer.domElement.addEventListener("pointermove", (event) => {
-  if (!active || chosen >= 0) return;
+  if (!active || chosen >= 0 || stage !== "table") return;
   hovered = pickAt(event.clientX, event.clientY);
   renderer.domElement.style.cursor =
     hovered < 0 ? "default" : boxes[hovered]!.campaign.open ? "pointer" : "not-allowed";
@@ -339,11 +396,11 @@ renderer.domElement.addEventListener("pointerleave", () => {
   if (active) hovered = -1;
 });
 renderer.domElement.addEventListener("click", (event) => {
-  if (!active || chosen >= 0) return;
+  if (!active || chosen >= 0 || stage !== "table") return;
   const index = pickAt(event.clientX, event.clientY);
   if (index >= 0) choose(index);
 });
-el("#shelf-back").addEventListener("click", close);
+el("#shelf-back").addEventListener("click", () => (stage === "table" ? backToShelf() : close()));
 
 const scratch = {
   pos: new THREE.Vector3(),
@@ -368,10 +425,20 @@ function easeSway(dt: number) {
 }
 
 /** Where the camera stands for the shelf now: further in as a box opens, round to the game's angle as Play runs. */
+const atShelf = newPose();
 function view(out: Pose) {
   const outro = play.outro;
   const toGame = outro ? span(outro.u, 0, 1.2) : 0;
   shelfPose(out, span(s, 0.15, 1.2), toGame, sway, camera.aspect);
+  if (toTable >= 1) return;
+  scenarioView(atShelf, camera.aspect);
+  const k = toTable * toTable * (3 - 2 * toTable);
+  out.pos.lerpVectors(atShelf.pos, out.pos, k);
+  out.at.lerpVectors(atShelf.at, out.at, k);
+  out.fov = lerp(atShelf.fov, out.fov, k);
+  out.fogNear = lerp(atShelf.fogNear, out.fogNear, k);
+  out.fogFar = lerp(atShelf.fogFar, out.fogFar, k);
+  out.blur = lerp(atShelf.blur, out.blur, k);
 }
 
 /** Stands each box where it is in its opening (and the others where they have been cleared to). */
@@ -381,6 +448,9 @@ function pose(time: number, dt: number) {
   const others = span(s, 0, 0.8);
   for (const box of boxes) {
     const { group, index } = box;
+    // Only the picked scenario's box is on the table, and only at the table step.
+    const here = stage === "table" && index === chosen;
+    group.visible = box.card.visible = here;
     box.hover = lerp(box.hover, hovered === index && box.campaign.open ? 1 : 0, 1 - Math.exp(-dt * 12));
     box.shake = Math.max(0, box.shake - dt * 1.8);
     const h = box.hover;
@@ -472,23 +542,26 @@ function placeHoverTag() {
 /** Back to the room as it first stands: every box on the shelf, nothing in flight. */
 export function reset() {
   resetPlay();
+  stage = "shelf";
+  toTable = 0;
+  fromBox = null;
+  closeBox(false);
+  scenarioShelf.show(true);
   queued = -1;
   chosen = -1;
   s = target = 0;
   hovered = -1;
   head.style.opacity = "";
   hint.textContent = "Pick a box to open it";
-  hint.hidden = false;
-  leave.hidden = false;
   opened.hidden = true;
-  hoverTag.hidden = true;
+  showStage();
   renderer.domElement.style.cursor = "default";
 }
 
 async function build() {
   // The player's locks seal a box the same way coming soon does, saying what opens it. Drawn once: main.ts starts the
   // page again when a villain unlocks, so the box is drawn open.
-  const campaigns = CAMPAIGNS.map((c) => {
+  campaigns = CAMPAIGNS.map((c) => {
     const lock = c.villain ? play.host?.lock?.(c.villain) : null;
     return lock ? { ...c, open: false, lock } : c;
   });
@@ -503,6 +576,8 @@ async function build() {
     encounter: encounterBack ? texture(encounterBack) : null,
   };
   boxes = campaigns.map((c, i) => buildBox(c, i, arts[i] ?? null, backs));
+  await buildScenarioShelf(panel, { state: scenarioState, pick: scenarioPicked });
+  showStage();
   // The boxes from the keyboard (and for screen readers): a button each, which lifts its box while it has the focus.
   campaigns.forEach((c, i) => {
     const name = `${c.name[0]}${c.name.slice(1).toLowerCase()}`;
@@ -535,8 +610,7 @@ function advance(dt: number) {
   if (s === OPENED && chosen >= 0) showOpened(boxes[chosen]!.campaign);
   if (s === 0 && chosen >= 0) {
     chosen = -1;
-    hint.hidden = false;
-    leave.hidden = false;
+    showStage();
     if (queued >= 0) {
       const next = queued;
       queued = -1;
@@ -554,6 +628,11 @@ export function openFromAddress() {
   const preset = boxes.findIndex((b) => b.campaign.id === params.get("open") && b.campaign.open);
   if (preset >= 0) {
     const at = Number(params.get("at") ?? OPENED);
+    stage = "table";
+    toTable = 1;
+    fromBox = "core";
+    scenarioShelf.show(false);
+    showStage();
     chosen = preset;
     s = target = Math.min(OPENED, Math.max(0, at));
     hint.hidden = true;
@@ -600,7 +679,7 @@ let built: Promise<void> | null = null;
 export const campaignPlace: Place = {
   id: "campaign",
   label: "Campaign",
-  line: "Rhino, then Klaw, then Ultron",
+  line: "Pick a scenario from the shelf",
   panel,
   ready: () => true,
   view,
@@ -612,30 +691,40 @@ export const campaignPlace: Place = {
     })),
   enter() {
     active = true;
+    if (stage === "shelf") {
+      scenarioShelf.enter();
+      return;
+    }
     if (chosen >= 0 && s === OPENED) playButton.focus({ preventScroll: true });
-    else picks.querySelector("button")?.focus({ preventScroll: true });
   },
   leave() {
     active = false;
+    scenarioShelf.leave();
     hovered = -1;
     queued = -1;
     hoverTag.hidden = true;
     renderer.domElement.style.cursor = "default";
   },
   back() {
-    // An open box (or one opening) goes back on the shelf first.
-    if (chosen >= 0 && target > 0) {
-      close();
+    if (play.outro) return true;
+    // At the table: back to the box up close on the scenario shelf.
+    if (stage === "table") {
+      backToShelf();
       return true;
     }
-    return false;
+    return scenarioShelf.back();
+  },
+  key(event) {
+    return stage === "shelf" && active ? scenarioShelf.key(event) : false;
   },
   step(dt, time) {
     if (!built) return;
+    toTable = stage === "table" ? Math.min(1, toTable + dt / 1.1) : Math.max(0, toTable - dt / 1.1);
+    scenarioShelf.step(dt);
     advance(dt);
     easeSway(dt);
     pose(time, dt);
-    if (active) {
+    if (active && stage === "table") {
       placeHoverTag();
       placePicks();
     }
