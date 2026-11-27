@@ -4748,7 +4748,7 @@ function deal() {
   const deck = arrange ? null : chosenBuiltDeck(hero);
   model.reset(
     arrange
-      ? { hero, villain, seed, arrange }
+      ? { hero, villain, seed, arrange, ...(scene.modules ? { modules: scene.modules } : {}) }
       : { hero, villain, seed, mulligan: true, ...encounterChoice, ...(deck?.deck ? { deck: deck.deck } : {}) },
   );
   heroDealt = hero;
