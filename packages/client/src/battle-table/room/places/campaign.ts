@@ -31,13 +31,14 @@ import {
 import { askForHero, chosenIdentity } from "./decks.js";
 import { buildHeroDeckBox, type HeroDeckBox } from "./hero-shelf.js";
 import { goTo } from "../nav.js";
-import type { ShelfProduct } from "./scenario-catalogue.js";
-import { boxLock, roadFrom, type Road } from "./road.js";
+import { SHELF_PRODUCTS, type ShelfProduct } from "./scenario-catalogue.js";
+import { boxLock, roadFrom, sideStoryStep, type Road } from "./road.js";
 import { allOpen } from "../../access.js";
 import { makePanel, type Place } from "./place.js";
 import {
   bandPrint,
   CAMPAIGNS,
+  titleOf,
   CARDS,
   frontPrint,
   GUIDE_H,
@@ -68,6 +69,12 @@ const CARD_END = new THREE.Vector3(-1.9, 2.55, 1.85);
 const CARD_END_SCALE = 1.5;
 const SHELF_X = [-3.4, 0, 3.4];
 const SHELF_YAW = [-0.3, 0.26, 0.3];
+/**
+ * Where a box starts its trip to the table: the three Core Set boxes' old places, and the middle for every box after
+ * them (The Green Goblin's two). Only the picked box is ever seen, at the table step, so they never stand together.
+ */
+const shelfX = (index: number) => SHELF_X[index] ?? 0;
+const shelfYaw = (index: number) => SHELF_YAW[index] ?? 0.26;
 
 /** Seconds into the opening at which everything has landed. */
 export const OPENED = 3.4;
@@ -315,16 +322,23 @@ async function readRoad(): Promise<void> {
   road = roadFrom({ games, lock: (villain) => play.host?.lock?.(villain) ?? null, allOpen: allOpen() });
 }
 
-/** The scenarios in a box, as the shelf lists them: the Core Set's on the road, any other box's not on the table. */
+/** A scenario the table has a box for, so Play can deal it. */
+const dealt = (scenario: string) => campaigns.some((c) => c.id === scenario && c.villain);
+
+/**
+ * The scenarios in a box, as the shelf lists them: the Core Set's on the road, a side story's (The Green Goblin's) as
+ * one-off games once the road reaches its box, and any other box's not on the table.
+ */
 function rowsOf(product: ShelfProduct): readonly ShelfRow[] {
   if (product.code !== "core") {
+    const lock = boxLock(product, road);
     return product.scenarios.map((scenario) => ({
       key: scenario.id,
       scenario,
       name: scenario.name,
-      status: "absent" as const,
-      playable: false,
-      line: "Not on the table yet",
+      ...(dealt(scenario.id)
+        ? sideStoryStep(scenario.id, road, lock)
+        : { status: "absent" as const, playable: false, line: "Not on the table yet" }),
     }));
   }
   return road.steps.map(({ step, status, playable, line }) => {
@@ -338,7 +352,7 @@ function rowsOf(product: ShelfProduct): readonly ShelfRow[] {
 const shelfHooks = {
   rows: rowsOf,
   boxLock: (product: ShelfProduct) => boxLock(product, road),
-  onTable: (product: ShelfProduct) => product.code === "core",
+  onTable: (product: ShelfProduct) => product.code === "core" || product.scenarios.some((each) => dealt(each.id)),
   pick: (row: ShelfRow) => scenarioPicked(row),
 };
 
@@ -465,7 +479,7 @@ let reopenOnArrival = false;
 function scenarioPicked(row: ShelfRow) {
   const index = boxes.findIndex((box) => box.campaign.id === row.scenario.id);
   if (index < 0 || play.outro) return;
-  fromBox = "core";
+  fromBox = SHELF_PRODUCTS.find((product) => product.scenarios.includes(row.scenario))?.code ?? "core";
   picked = index;
   // The box up close goes back on the shelf as the camera leaves (it would follow the camera otherwise).
   closeBox(false);
@@ -477,7 +491,7 @@ function scenarioPicked(row: ShelfRow) {
 function askHero() {
   const name = boxes[picked]!.campaign.name;
   askForHero({
-    forName: `${name[0]}${name.slice(1).toLowerCase()}`,
+    forName: titleOf(name),
     picked: () => heroPicked(),
     back: () => {
       // Back from the heroes: the scenario shelf, its box up close again.
@@ -526,7 +540,7 @@ function choose(index: number) {
   const box = boxes[index]!;
   if (!box.campaign.open) {
     box.shake = 1;
-    const name = `${box.campaign.name[0]}${box.campaign.name.slice(1).toLowerCase()}`;
+    const name = titleOf(box.campaign.name);
     say(box.campaign.lock ? `${name} is locked. ${box.campaign.lock}.` : `${name} is coming soon.`);
     return;
   }
@@ -549,10 +563,10 @@ function close() {
 }
 
 function showOpened(c: Campaign) {
-  el(".shelf-kicker").textContent = `Campaign ${c.number}`;
+  el(".shelf-kicker").textContent = c.kicker ?? `Campaign ${c.number}`;
   el(".shelf-title").textContent = c.name;
   el(".shelf-blurb").textContent = c.blurb;
-  playButton.textContent = `Play vs ${c.name[0]}${c.name.slice(1).toLowerCase()}`;
+  playButton.textContent = `Play vs ${c.versus ?? titleOf(c.name)}`;
   playButton.onclick = () => {
     if (c.villain) beginPlay({ villain: c.villain });
     else say("This villain's table is still being built.");
@@ -644,23 +658,23 @@ function pose(time: number, dt: number) {
     box.hover = lerp(box.hover, hovered === index && box.campaign.open ? 1 : 0, 1 - Math.exp(-dt * 12));
     box.shake = Math.max(0, box.shake - dt * 1.8);
     const h = box.hover;
-    const shelf = new THREE.Vector3(SHELF_X[index]!, H / 2 + 0.2 * h, -D / 2 + 0.35 * h);
+    const shelf = new THREE.Vector3(shelfX(index), H / 2 + 0.2 * h, -D / 2 + 0.35 * h);
     group.rotation.z = Math.sin(time * 38) * 0.035 * box.shake;
     if (index === chosen) {
       group.position.lerpVectors(shelf, OPEN_AT, moved);
       group.position.y += Math.sin(Math.PI * moved) * 0.9;
       group.rotation.x = lerp(Math.PI / 2 - 0.1 * h, 0, moved);
-      group.rotation.y = lerp(SHELF_YAW[index]!, 0, moved);
+      group.rotation.y = lerp(shelfYaw(index), 0, moved);
       // Play: the emptied box and its lid are cleared off the table to the side.
       if (outro) group.position.x += 16 * span(outro.u, 0.1, 1.0);
     } else {
       const away = chosen >= 0 ? others : 0;
-      const side = Math.sign(SHELF_X[index]! - (chosen >= 0 ? SHELF_X[chosen]! : 0)) || 1;
+      const side = Math.sign(shelfX(index) - (chosen >= 0 ? shelfX(chosen) : 0)) || 1;
       group.position.copy(shelf);
       group.position.x += side * 10 * away;
       group.position.z -= 3 * away;
       group.rotation.x = Math.PI / 2 - 0.1 * h;
-      group.rotation.y = SHELF_YAW[index]!;
+      group.rotation.y = shelfYaw(index);
     }
 
     // The lid: up, then over to the side, landing top up.
@@ -774,7 +788,7 @@ async function build() {
   showStage();
   // The boxes from the keyboard (and for screen readers): a button each, which lifts its box while it has the focus.
   campaigns.forEach((c, i) => {
-    const name = `${c.name[0]}${c.name.slice(1).toLowerCase()}`;
+    const name = titleOf(c.name);
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = c.open ? `Open ${name}` : `${name} (${c.lock ?? "coming soon"})`;

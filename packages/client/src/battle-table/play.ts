@@ -13,6 +13,7 @@
  * Driven through Surf: `browser_evaluate` with `await __battlePlay.play(3)`. Only on the dev server.
  */
 import type { BattleCard, BattleSnapshot } from "./model.js";
+import { indirectClick, indirectShares } from "./indirect-split.js";
 
 type Source = NonNullable<BattleSnapshot["payment"]>["sources"][number];
 
@@ -250,6 +251,20 @@ export function createPlayer(hooks: PlayHooks): Player {
       for (const option of choice.options) {
         if (!option.cardId || listed.has(option.id) || cards.has(option.cardId)) continue;
         cards.add(option.cardId);
+        // Dividing indirect damage: a click adds 1 to the card, or takes its damage back off (`indirect-split.ts`).
+        if (choice.indirect) {
+          const click = indirectClick(choice, picked, option.cardId);
+          const on = indirectShares(choice, picked).get(option.cardId) ?? 0;
+          if (click.did === "none") continue;
+          out.push({
+            label:
+              click.did === "add"
+                ? `Put 1 damage on ${name(option.cardId)}${on ? ` (${on} on it so far)` : ""}`
+                : `Take the ${on} damage back off ${name(option.cardId)}`,
+            run: () => hooks.pick(option.cardId!),
+          });
+          continue;
+        }
         const several = choice.max > 1 || choice.discardFromHand || choice.mulligan;
         out.push({
           label: several

@@ -1,4 +1,4 @@
-import { CORE_DEPS, coreScenario, type CorePlayer } from "@mc/cards";
+import { WAVE1_DEPS, coreScenario, wave1Scenario, type CorePlayer } from "@mc/cards";
 import {
   RESOURCE_TYPES,
   applyCommand,
@@ -6,6 +6,7 @@ import {
   activeAbilityRefs,
   canAttack,
   cardOf,
+  encounterFace,
   hasKeyword,
   characterProfile,
   createGame,
@@ -59,6 +60,12 @@ import {
 import { beginPayment, paymentView, togglePayment, type PaymentState } from "../view/payment-model.js";
 
 import { paymentSheetView } from "../view/payment-sheet.js";
+
+/**
+ * The scripts the table plays by: the Core Set's and wave 1's (Green Goblin, The Wrecking Crew and their heroes),
+ * a superset of the Core Set's, so a Core game plays exactly as before.
+ */
+const TABLE_DEPS = WAVE1_DEPS;
 
 /**
  * A player's card in play facedown as a minion: an Ultron Drone ("put the top card of your deck into play facedown,
@@ -257,6 +264,12 @@ export interface BattleChoice {
    * first. The table numbers the picked cards as they are picked (`pick-order.ts`).
    */
   ordered?: boolean;
+  /**
+   * Indirect damage to divide among the player's characters (Green Goblin's "Deal 3 indirect damage to each player",
+   * Pumpkin Bombs; RRG 1.8 "Indirect Damage", p. 24): each pick is 1 damage on that card, a card offered once per hit
+   * point it has left, and exactly `amount` are picked. The table counts the damage on each card as it is assigned.
+   */
+  indirect?: { amount: number };
   /**
    * Picking whom to attack while guard stops an attack on the villain: the villains the player cannot attack, and the
    * guard minions stopping it. The pick is asked even when the guard minion is the only enemy left to attack, so the
@@ -510,12 +523,12 @@ export const EITHER_OTHERWISE = "either-or:otherwise";
 
 /** `BattleChoice.affects`, present only when the question names cards it would change. */
 function affectsOf(state: GameState, pending: PendingChoice): { affects?: string[] } {
-  const affects = choiceAffects(state, pending, CORE_DEPS);
+  const affects = choiceAffects(state, pending, TABLE_DEPS);
   return affects.length ? { affects } : {};
 }
 
 function statModifiers(state: GameState, id: InstanceId) {
-  const profile = characterProfile(state, id, CORE_DEPS);
+  const profile = characterProfile(state, id, TABLE_DEPS);
   if (!profile) return [];
   // A facedown Drone has no printed numbers of its own: what it gains (Upgraded Drones, Ultron III) is counted from
   // the 1 SCH, 1 ATK and 1 hit point Ultron Drones gives it, which is what its picture prints.
@@ -618,7 +631,7 @@ function partOfAttack(beat: BattleBeat, attacker: string): boolean {
 }
 
 function apply(state: GameState, command: Command) {
-  const result = applyCommand(state, command, CORE_DEPS);
+  const result = applyCommand(state, command, TABLE_DEPS);
   if (!result.ok) throw Error(result.error.message);
   return result;
 }
@@ -718,7 +731,7 @@ function pickQuestion(
   state: GameState,
   pending: NonNullable<GameState["pendingChoice"]>,
 ): Partial<Pick<BattleChoice, "prompt" | "sourceTitle" | "explanation">> {
-  const panel = choiceSourcePanelOf(state, pending, state.players[0]!.playerId, CORE_DEPS);
+  const panel = choiceSourcePanelOf(state, pending, state.players[0]!.playerId, TABLE_DEPS);
   const ability = panel?.abilityLine?.split(" — ")[1];
   if (!panel || !ability) return {};
   const from = panel.rulesText.indexOf(`${ability} — `);
@@ -759,11 +772,17 @@ export function isHeroId(id: unknown): id is HeroId {
   return HEROES.some((hero) => hero.id === id);
 }
 
-/** The villains the table can deal, each a Core Set scenario, with the module its scenario recommends. */
+/**
+ * The scenarios the table can deal, with the module each recommends and the box it came in: the Core Set's three
+ * (named by their villain, as they always were) and The Green Goblin pack's two (named by the scenario: the same
+ * villain fronts both). The id is `@mc/content`'s scenario id; the type keeps its old name, `VillainId`.
+ */
 export const VILLAINS = [
-  { id: "rhino", name: "Rhino", module: "bomb_scare" },
-  { id: "klaw", name: "Klaw", module: "masters_of_evil" },
-  { id: "ultron", name: "Ultron", module: "under_attack" },
+  { id: "rhino", name: "Rhino", module: "bomb_scare", box: "core" },
+  { id: "klaw", name: "Klaw", module: "masters_of_evil", box: "core" },
+  { id: "ultron", name: "Ultron", module: "under_attack", box: "core" },
+  { id: "risky-business", name: "Risky Business", module: "power_drain", box: "gob" },
+  { id: "mutagen-formula", name: "Mutagen Formula", module: "goblin_gimmicks", box: "gob" },
 ] as const;
 export type VillainId = (typeof VILLAINS)[number]["id"];
 
@@ -779,11 +798,24 @@ export const MODULES = [
   { id: "legions_of_hydra", name: "Legions of Hydra" },
   { id: "the_doomsday_chair", name: "The Doomsday Chair" },
 ] as const;
-export type ModuleId = (typeof MODULES)[number]["id"];
+/**
+ * The Green Goblin pack's four modular sets. A game can be dealt with them (its scenarios recommend two), but the
+ * Free Play tray offers `MODULES` only until the road opens these.
+ */
+export const PACK_MODULES = [
+  { id: "power_drain", name: "Power Drain" },
+  { id: "goblin_gimmicks", name: "Goblin Gimmicks" },
+  { id: "a_mess_of_things", name: "A Mess of Things" },
+  { id: "running_interference", name: "Running Interference" },
+] as const;
+export type ModuleId = (typeof MODULES)[number]["id"] | (typeof PACK_MODULES)[number]["id"];
 
 export function isModuleId(id: unknown): id is ModuleId {
-  return MODULES.some((module) => module.id === id);
+  return [...MODULES, ...PACK_MODULES].some((module) => module.id === id);
 }
+
+/** A module's name, from either list. */
+export const moduleName = (id: ModuleId): string => [...MODULES, ...PACK_MODULES].find((each) => each.id === id)!.name;
 
 /** Standard or Expert (RRG v1.8 p. 28): Expert adds the Expert set and starts the villain at stage II. */
 export type Difficulty = "standard" | "expert";
@@ -897,15 +929,19 @@ function openingTurn({
   state: GameState;
   setup: string[];
 } {
-  const created = createGame(
-    coreScenario(villain, {
-      seed,
-      players: [seatOf(hero, deck)],
-      ...(difficulty ? { difficulty } : {}),
-      ...(modules ? { modularSetIds: modules } : {}),
-    }),
-    CORE_DEPS,
-  );
+  const options = {
+    seed,
+    players: [seatOf(hero, deck)],
+    ...(difficulty ? { difficulty } : {}),
+    ...(modules ? { modularSetIds: modules } : {}),
+  };
+  // A Core scenario with Core modules is built by the Core Set's own builder, exactly as always. A scenario pack's, or a
+  // Core scenario given one of a pack's modules in Free Play (Rhino with Power Drain), by the wave's, whose card pool
+  // holds the pack's cards.
+  const core =
+    VILLAINS.find((each) => each.id === villain)!.box === "core" &&
+    (modules ?? []).every((id) => MODULES.some((each) => each.id === id));
+  const created = createGame(core ? coreScenario(villain, options) : wave1Scenario(villain, options), TABLE_DEPS);
   if (!created.ok) throw Error(created.error.message);
   const state = created.state;
   const setup = setupNotesOf(state, created.events);
@@ -1190,7 +1226,7 @@ export class BattleModel {
     this.#drawn = drawn;
     this.#game = state;
     this.#eitherOrSpending = null;
-    this.#actions = legalActions(state, state.players[0]!.playerId, CORE_DEPS);
+    this.#actions = legalActions(state, state.players[0]!.playerId, TABLE_DEPS);
     this.#plays.clear();
     if (this.#actions.kind === "turn") {
       for (const entry of this.#actions.legal) {
@@ -1209,7 +1245,7 @@ export class BattleModel {
 
   /** Sends a command to the engine, which may refuse it; one it takes is remembered for the replay once it goes in. */
   #try(command: Command): ReturnType<typeof applyCommand> {
-    const result = applyCommand(this.#game, command, CORE_DEPS);
+    const result = applyCommand(this.#game, command, TABLE_DEPS);
     this.#sent = result.ok ? command : null;
     return result;
   }
@@ -1274,7 +1310,7 @@ export class BattleModel {
           choiceId: choice.choiceId,
           selectedOptionIds: [only.optionId],
         },
-        CORE_DEPS,
+        TABLE_DEPS,
       );
       if (!next.ok) break;
       events.push(...next.events);
@@ -1767,8 +1803,8 @@ export class BattleModel {
               ? " until the end of the round"
               : "";
         if (
-          traitsOf(result.state, hero, CORE_DEPS).includes(e.effect.trait) &&
-          !traitsOf(this.#game, hero, CORE_DEPS).includes(e.effect.trait)
+          traitsOf(result.state, hero, TABLE_DEPS).includes(e.effect.trait) &&
+          !traitsOf(this.#game, hero, TABLE_DEPS).includes(e.effect.trait)
         )
           this.#beats.push({
             enemy,
@@ -1846,7 +1882,7 @@ export class BattleModel {
           text: `${name(hero)} activates ${name(e.instanceId)}`,
           activate: { card: e.instanceId, hero },
         });
-      } else if (e.type === "abilityResolved" && CORE_DEPS.abilities[e.abilityId]?.trigger.kind === "interrupt") {
+      } else if (e.type === "abilityResolved" && TABLE_DEPS.abilities[e.abilityId]?.trigger.kind === "interrupt") {
         this.#beats.push({
           enemy,
           actor: e.instanceId,
@@ -1879,7 +1915,7 @@ export class BattleModel {
         const source = sourceId && !drones.has(sourceId) ? cardOf(result.state, sourceId) : undefined;
         const attacker =
           source?.type === "event" &&
-          source.abilities.some((ref) => CORE_DEPS.abilities[ref.id]?.label?.includes("attack"))
+          source.abilities.some((ref) => TABLE_DEPS.abilities[ref.id]?.label?.includes("attack"))
             ? result.state.players[0]!.identity.instanceId
             : sourceId;
         if (tough && attacker) toughAttacks.add(attacker);
@@ -2151,7 +2187,7 @@ export class BattleModel {
       ]
         .filter((m) => m.count > 0)
         .concat(statModifiers(state, id)),
-      hp: Math.max(0, remainingHitPoints(state, id, CORE_DEPS) ?? 0),
+      hp: Math.max(0, remainingHitPoints(state, id, TABLE_DEPS) ?? 0),
       exhausted: instance?.exhausted ?? false,
     };
   }
@@ -2184,7 +2220,7 @@ export class BattleModel {
     const state = this.#game;
     const player = state.players[0]!;
     const hero = player.identity.instanceId;
-    if (threatCannotBeRemoved(state, CORE_DEPS, id, true, player.playerId, hero, [hero]))
+    if (threatCannotBeRemoved(state, TABLE_DEPS, id, true, player.playerId, hero, [hero]))
       return "Threat cannot be removed from this scheme";
     if (id !== state.mainScheme.instanceId) return null;
     const crisis = [...state.villainArea, ...player.playArea].find((other) => {
@@ -2214,7 +2250,7 @@ export class BattleModel {
       (card.keywords.some((keyword) => keyword.name === "uses") ||
         Object.keys(instance?.counters ?? {}).length > 0 ||
         card.abilities.some(({ id }) => {
-          const trigger = CORE_DEPS.abilities[id]?.trigger.kind;
+          const trigger = TABLE_DEPS.abilities[id]?.trigger.kind;
           return trigger === "action" || trigger === "resource";
         }));
     const markers = instance
@@ -2238,27 +2274,27 @@ export class BattleModel {
         : markers,
       name: shortIdentityNameOf(state, id) ?? faceUpName(state, id),
       ...(card?.type === "minion" || card?.type === "ally"
-        ? { hp: Math.max(0, remainingHitPoints(state, id, CORE_DEPS) ?? 0) }
+        ? { hp: Math.max(0, remainingHitPoints(state, id, TABLE_DEPS) ?? 0) }
         : {}),
-      ...(card?.type === "minion" && instance?.engagedWith && hasKeyword(state, id, "guard", CORE_DEPS)
+      ...(card?.type === "minion" && instance?.engagedWith && hasKeyword(state, id, "guard", TABLE_DEPS)
         ? { guard: true as const }
         : {}),
       reverseArt:
         id === state.players[0]!.identity.instanceId
           ? (artFor(card, { kind: state.players[0]!.identity.form === "hero" ? "alterEgo" : "hero" })?.url ?? null)
           : null,
-      threatTarget: card?.type === "main_scheme" ? schemePanel(state, id, CORE_DEPS, true).target : null,
+      threatTarget: card?.type === "main_scheme" ? schemePanel(state, id, TABLE_DEPS, true).target : null,
       threat:
         card && ["main_scheme", "side_scheme", "player_side_scheme"].includes(card.type)
           ? (getInstance(state, id)?.threat ?? 0)
           : null,
       exhausted: getInstance(state, id)?.exhausted ?? false,
       landscape: isLandscapeType(card?.type ?? ""),
-      art: artFor(card, faceOf(state, id, { viewer, deps: CORE_DEPS }))?.url ?? "",
+      art: artFor(card, faceOf(state, id, { viewer, deps: TABLE_DEPS }))?.url ?? "",
       type: card?.type ?? "card",
       playable: !!action,
       requiresHeroForm: !!blocked && blocked.reason === "wrong_form" && state.players[0]!.identity.form === "alterEgo",
-      cost: playCostOf(state, viewer, id, CORE_DEPS)?.current ?? null,
+      cost: playCostOf(state, viewer, id, TABLE_DEPS)?.current ?? null,
       reason:
         card?.type === "resource"
           ? "Spend this card to pay for another card."
@@ -2271,7 +2307,7 @@ export class BattleModel {
 
   #priced() {
     return this.#payment
-      ? paymentView(this.#game, this.#game.players[0]!.playerId, this.#payment, "", CORE_DEPS)
+      ? paymentView(this.#game, this.#game.players[0]!.playerId, this.#payment, "", TABLE_DEPS)
       : null;
   }
 
@@ -2279,7 +2315,7 @@ export class BattleModel {
     const card = cardOf(this.#game, id);
     return (
       (!!card && "specialCost" in card && card.specialCost === "X") ||
-      readsOverpaid(this.#game, CORE_DEPS, { kind: "playCard", instanceId: id })
+      readsOverpaid(this.#game, TABLE_DEPS, { kind: "playCard", instanceId: id })
     );
   }
 
@@ -2288,8 +2324,8 @@ export class BattleModel {
     const choice = state.pendingChoice;
     const prompt = choice?.prompt;
     if (!choice || (prompt?.kind !== "payForCard" && prompt?.kind !== "payForAbility")) return null;
-    const sheet = paymentSheetView(state, choice, this.#windowPicks, CORE_DEPS)!;
-    const cost = CORE_DEPS.abilities[prompt.abilityId]?.cost;
+    const sheet = paymentSheetView(state, choice, this.#windowPicks, TABLE_DEPS)!;
+    const cost = TABLE_DEPS.abilities[prompt.abilityId]?.cost;
     // A typed cost ("spend a [mental] resource", Black Widow): only a card with that resource, or a wild one, pays it,
     // and the screen says what is still owed, as the payment for a card from hand does.
     // A mixed cost (a [mental] and one more of any kind) is left to the engine: any card pays its generic part.
@@ -2307,7 +2343,7 @@ export class BattleModel {
     const sources: BattlePayment["sources"] = [];
     for (const option of choice.options) {
       if (option.ref.kind !== "ability" && option.ref.kind !== "card") continue;
-      const pool = paymentOptionsPool(state, CORE_DEPS, choice.playerId, [option.optionId], prompt.instanceId);
+      const pool = paymentOptionsPool(state, TABLE_DEPS, choice.playerId, [option.optionId], prompt.instanceId);
       sources.push({
         id: option.optionId,
         cardId: option.ref.instanceId,
@@ -2317,7 +2353,7 @@ export class BattleModel {
         available:
           this.#windowPicks.includes(option.optionId) ||
           ((canAdd ||
-            (option.ref.kind === "ability" && CORE_DEPS.abilities[option.ref.abilityId]?.overpayOnly === true)) &&
+            (option.ref.kind === "ability" && TABLE_DEPS.abilities[option.ref.abilityId]?.overpayOnly === true)) &&
             (!typed.length || !!pool?.wild || typed.some(([type]) => (pool?.[type as ResourceType] ?? 0) > 0))),
         kind: option.optionId.startsWith("hand:") ? "handCard" : "resourceAbility",
       });
@@ -2345,7 +2381,7 @@ export class BattleModel {
     // "Spend X [energy] resources →" (Energy Channel): X is what is paid, so more can always go in, of that type.
     const spendX =
       this.#payment?.action.kind === "useAbility"
-        ? CORE_DEPS.abilities[this.#payment.action.abilityId]?.cost?.resourcesX
+        ? TABLE_DEPS.abilities[this.#payment.action.abilityId]?.cost?.resourcesX
         : undefined;
     const canAdd =
       !priced?.command ||
@@ -2356,7 +2392,7 @@ export class BattleModel {
     const typedAbility =
       this.#payment?.action.kind === "useAbility" &&
       !this.#payment.query.chosenResources &&
-      CORE_DEPS.abilities[this.#payment.action.abilityId]?.cost?.resourcesX === undefined &&
+      TABLE_DEPS.abilities[this.#payment.action.abilityId]?.cost?.resourcesX === undefined &&
       priced?.requirement.generic === 0 &&
       priced.required > 0;
     const payment =
@@ -2369,7 +2405,8 @@ export class BattleModel {
             ...(this.#payment?.action.kind === "useAbility" && this.#subject === player.identity.instanceId
               ? {
                   used: `${faceUpName(state, this.#subject)} uses ${
-                    abilityShortLabelOf(state, this.#subject, this.#payment.action.abilityId, CORE_DEPS) ?? "an ability"
+                    abilityShortLabelOf(state, this.#subject, this.#payment.action.abilityId, TABLE_DEPS) ??
+                    "an ability"
                   }`,
                 }
               : {}),
@@ -2408,7 +2445,7 @@ export class BattleModel {
     const pending = payment ? null : state.pendingChoice;
     const panel =
       pending && state.step.phase === "villain"
-        ? choiceSourcePanelOf(state, pending, player.playerId, CORE_DEPS)
+        ? choiceSourcePanelOf(state, pending, player.playerId, TABLE_DEPS)
         : null;
     // The revealed encounter card asking: its ability named on the panel, or, where the panel can't name it (Electric
     // Whip Attack's "Choose one"), a card just revealed (not a boost card) whose text opens with When Revealed.
@@ -2431,7 +2468,7 @@ export class BattleModel {
       Object.values(state.instances).some((instance) => instance?.boostCards.includes(boostSource.instanceId))
         ? faceUpName(state, boostSource.instanceId)
         : null;
-    const trigger = pending && triggerWindowContextOf(state, pending, player.playerId, CORE_DEPS);
+    const trigger = pending && triggerWindowContextOf(state, pending, player.playerId, TABLE_DEPS);
     const costDiscard = this.#costDiscard;
     const choice = costDiscard
       ? {
@@ -2472,7 +2509,7 @@ export class BattleModel {
                 this.#setupAbilityTitle(pending) ??
                 this.#chooseCardsTitle(pending) ??
                 eitherOrTitle(state, pending) ??
-                promptTitleOf(pending.prompt, CORE_DEPS, pending, state),
+                promptTitleOf(pending.prompt, TABLE_DEPS, pending, state),
               ...(pending.prompt.kind === "declareDefender"
                 ? {
                     prompt: pending.options.some((o) => o.ref.kind === "card")
@@ -2485,11 +2522,21 @@ export class BattleModel {
                     },
                   }
                 : {}),
+              ...(pending.prompt.kind === "assignIndirectDamage"
+                ? {
+                    prompt: `Divide ${pending.prompt.amount} damage among your characters`,
+                    indirect: { amount: pending.prompt.amount },
+                    // The card dealing it (Pumpkin Bombs, Green Goblin's When Revealed), named over the question.
+                    ...(choiceSourcePanelOf(state, pending, player.playerId, TABLE_DEPS)?.name
+                      ? { sourceTitle: choiceSourcePanelOf(state, pending, player.playerId, TABLE_DEPS)!.name }
+                      : {}),
+                  }
+                : {}),
               ...(revealed
                 ? {
                     sourceTitle: `${revealed.name} · When Revealed`,
                     // "Choose a target" for "choose and discard an upgrade you control" (Electric Whip Attack): which.
-                    ...(promptTitleOf(pending.prompt, CORE_DEPS, pending, state) === "Choose a target" &&
+                    ...(promptTitleOf(pending.prompt, TABLE_DEPS, pending, state) === "Choose a target" &&
                     /\bchoose and discard an? (upgrade|support)\b/i.exec(revealed.rulesText)
                       ? {
                           prompt: `Choose ${/\bchoose and discard an? (upgrade|support)\b/i.exec(revealed.rulesText)![1] === "upgrade" ? "an upgrade" : "a support"} to discard`,
@@ -2536,7 +2583,7 @@ export class BattleModel {
                           // A name that ends in its own ? or ! ("Do You Even Lift?", "I Object!") is quoted, as
                           // the card prints it, rather than given a second mark.
                           question: /[?!]$/.test(name) ? `${verb} with “${name}”` : `${verb} with ${name}?`,
-                          effect: readableEffect(triggerEffectOf(state, option, player.playerId, CORE_DEPS)),
+                          effect: readableEffect(triggerEffectOf(state, option, player.playerId, TABLE_DEPS)),
                         },
                       ];
                     }),
@@ -2551,7 +2598,7 @@ export class BattleModel {
                       pending.prompt.kind === "orderSpecials" && option.ref.kind === "ability"
                       ? faceUpName(state, option.ref.instanceId)
                       : option.ref.kind === "ability"
-                        ? (abilityShortLabelOf(state, option.ref.instanceId, option.ref.abilityId, CORE_DEPS) ??
+                        ? (abilityShortLabelOf(state, option.ref.instanceId, option.ref.abilityId, TABLE_DEPS) ??
                           `Use ${faceUpName(state, option.ref.instanceId)}`)
                         : option.ref.kind === "card" && pending.prompt.kind === "declareDefender"
                           ? "Defend"
@@ -2640,8 +2687,8 @@ export class BattleModel {
           exhausts,
         })),
       ],
-      heroHp: Math.max(0, remainingHitPoints(state, player.identity.instanceId, CORE_DEPS) ?? 0),
-      villainHp: Math.max(0, remainingHitPoints(state, villain.instanceId, CORE_DEPS) ?? 0),
+      heroHp: Math.max(0, remainingHitPoints(state, player.identity.instanceId, TABLE_DEPS) ?? 0),
+      villainHp: Math.max(0, remainingHitPoints(state, villain.instanceId, TABLE_DEPS) ?? 0),
       hand: this.#handOrder.map((id) => this.#card(id)),
       deckCount: player.deck.length,
       encounterCount: activeEncounterDeck(state).deck.length,
@@ -2703,13 +2750,13 @@ export class BattleModel {
     if (entry.example.type === "playCard" && !entry.example.costChoices?.discard) return false;
     const cost =
       entry.action.kind === "useAbility"
-        ? CORE_DEPS.abilities[entry.action.abilityId]?.cost
+        ? TABLE_DEPS.abilities[entry.action.abilityId]?.cost
         : playedAbilityRefs(cardOf(this.#game, source))
-            .map((ref) => CORE_DEPS.abilities[ref.id])
+            .map((ref) => TABLE_DEPS.abilities[ref.id])
             .find((ability) => ability?.trigger.kind === "action" && ability.cost?.discardFromHand)?.cost;
     const discard = cost?.discardFromHand;
     if (!discard) return false;
-    const candidates = handDiscardCandidates(this.#game, CORE_DEPS, source, this.#game.players[0]!.playerId, cost);
+    const candidates = handDiscardCandidates(this.#game, TABLE_DEPS, source, this.#game.players[0]!.playerId, cost);
     const max = Math.min(discard.max ?? candidates.length, candidates.length);
     this.#costDiscard = { entry, candidates, min: discard.min, max };
     this.#subject = source;
@@ -2727,7 +2774,7 @@ export class BattleModel {
 
   #openPayment(entry: LegalAction, target: InstanceId | null): boolean {
     if (entry.action.kind !== "playCard") return false;
-    const opened = beginPayment(this.#game, this.#game.players[0]!.playerId, entry.action, target, CORE_DEPS);
+    const opened = beginPayment(this.#game, this.#game.players[0]!.playerId, entry.action, target, TABLE_DEPS);
     if (!opened) {
       // A free play has no resource picker. Keep the chosen attachment host and validate the empty payment.
       if (entry.example.type !== "playCard") return false;
@@ -2799,9 +2846,9 @@ export class BattleModel {
     return this.#actions.legal.flatMap((entry) => {
       const { action } = entry;
       if (action.kind !== "useAbility" || action.instanceId !== id) return [];
-      const ability = CORE_DEPS.abilities[action.abilityId];
+      const ability = TABLE_DEPS.abilities[action.abilityId];
       if (ability?.trigger.kind !== "action") return [];
-      const short = abilityShortLabelOf(this.#game, action.instanceId, action.abilityId, CORE_DEPS) ?? "Use ability";
+      const short = abilityShortLabelOf(this.#game, action.instanceId, action.abilityId, TABLE_DEPS) ?? "Use ability";
       // The exhaust icon on the button already says "exhaust", so the label is only what the action does.
       let does = short.replace(/^exhaust\b[^→·:]*[→·:]\s*/i, "");
       // A short label that is only the cost ("Exhaust", Aunt May's): what the card's text says it does after the
@@ -2858,19 +2905,24 @@ export class BattleModel {
   cardFacts(id: string): string {
     const state = this.#game;
     if (isFacedownMinion(state, id as InstanceId)) {
-      const profile = characterProfile(state, id as InstanceId, CORE_DEPS);
+      const profile = characterProfile(state, id as InstanceId, TABLE_DEPS);
       return `SCH ${profile?.sch ?? DRONE_BASE.sch} ATK ${profile?.atk ?? DRONE_BASE.atk} · ${DRONE_FACTS}`;
     }
     const card = cardOf(state, id as InstanceId);
     if (!card) return "";
     const identity = state.players[0]!.identity;
+    // The face showing: the hero's current form, a flipped encounter card's other side (Criminal Enterprise turned
+    // over to State of Madness reads State of Madness's text), else the card.
+    const flipped = encounterFace(state, id as InstanceId);
     const face =
       card.type === "hero_identity" && id === identity.instanceId
         ? ((card as unknown as Record<string, unknown>)[identity.form === "hero" ? "hero" : "alterEgo"] as
             | typeof card
             | undefined)
-        : card;
-    const profile = characterProfile(state, id as InstanceId, CORE_DEPS);
+        : flipped
+          ? ({ ...card, ...flipped } as typeof card)
+          : card;
+    const profile = characterProfile(state, id as InstanceId, TABLE_DEPS);
     const shown: readonly ("atk" | "thw" | "sch" | "def" | "rec")[] =
       card.type === "villain" || card.type === "minion"
         ? ["sch", "atk"]
@@ -2896,7 +2948,7 @@ export class BattleModel {
     // Traits the hero has gained for now (Rocket Boots' Aerial): what cards that ask for a trait read. The hero only: a
     // villain's traits are on its stages, not its card, so every one of them would read as gained.
     const printedTraits = ((face as { traits?: readonly unknown[] } | undefined)?.traits ?? []).map(String);
-    const gained = (id === identity.instanceId ? traitsOf(state, id as InstanceId, CORE_DEPS) : [])
+    const gained = (id === identity.instanceId ? traitsOf(state, id as InstanceId, TABLE_DEPS) : [])
       .map(String)
       .filter((trait) => !printedTraits.includes(trait))
       .map((trait) => `Now ${trait.charAt(0) + trait.slice(1).toLowerCase()}`);
@@ -3031,7 +3083,7 @@ export class BattleModel {
   /** The player's current form and hand size (with modifiers, so the hand limit at the end of the turn). */
   playerFacts(): { form: "hero" | "alterEgo"; handSize: number } {
     const player = this.#game.players[0]!;
-    return { form: player.identity.form, handSize: handSize(this.#game, player.playerId, CORE_DEPS) };
+    return { form: player.identity.form, handSize: handSize(this.#game, player.playerId, TABLE_DEPS) };
   }
 
   /** Any card's name as it shows now (an identity by its live face), wherever the card is. For the play hook. */
@@ -3046,7 +3098,7 @@ export class BattleModel {
    */
   paymentSourceName(sourceId: string, cardId: string): string | null {
     const ref = activeAbilityRefs(this.#game, cardId as InstanceId).find((ability) => sourceId.includes(ability.id));
-    return ref ? abilityLabelOf(this.#game, cardId as InstanceId, ref.id, CORE_DEPS) : null;
+    return ref ? abilityLabelOf(this.#game, cardId as InstanceId, ref.id, TABLE_DEPS) : null;
   }
 
   /** The damage an ally takes after attacking or thwarting (the small number beside its ATK and THW); 0 for others. */
@@ -3057,7 +3109,7 @@ export class BattleModel {
   }
 
   basicPower(id: string, stat: "atk" | "thw" | "rec"): number {
-    return characterProfile(this.#game, id as InstanceId, CORE_DEPS)?.[stat] ?? 0;
+    return characterProfile(this.#game, id as InstanceId, TABLE_DEPS)?.[stat] ?? 0;
   }
 
   fieldActions(id: string) {
@@ -3077,7 +3129,7 @@ export class BattleModel {
     if (!entry || entry.action.kind !== "useAbility") return false;
     if (this.#askCostDiscard(entry)) return true;
     if (entry.needsPayment) {
-      const payment = beginPayment(this.#game, this.#game.players[0]!.playerId, entry.action, null, CORE_DEPS);
+      const payment = beginPayment(this.#game, this.#game.players[0]!.playerId, entry.action, null, TABLE_DEPS);
       if (!payment) return false;
       this.#subject = entry.action.instanceId;
       this.#payment = payment;
@@ -3110,8 +3162,8 @@ export class BattleModel {
       .filter(
         (id) =>
           !offered.includes(id) &&
-          canAttack(state, attacker, id, CORE_DEPS, basic, true) &&
-          !canAttack(state, attacker, id, CORE_DEPS, basic),
+          canAttack(state, attacker, id, TABLE_DEPS, basic, true) &&
+          !canAttack(state, attacker, id, TABLE_DEPS, basic),
       );
     if (!blocked.length) return null;
     const playerId = state.players[0]!.playerId;
@@ -3119,7 +3171,7 @@ export class BattleModel {
       (id) =>
         shownType(state, id) === "minion" &&
         getInstance(state, id)?.engagedWith === playerId &&
-        hasKeyword(state, id, "guard", CORE_DEPS),
+        hasKeyword(state, id, "guard", TABLE_DEPS),
     );
     return guards.length ? { blocked, guards } : null;
   }
@@ -3141,7 +3193,7 @@ export class BattleModel {
     const frame = state.stack.find((each) => each.frameId === choice.frameId);
     const abilityId =
       choice.prompt.abilityId ?? (frame && "abilityId" in frame ? (frame.abilityId as string | undefined) : undefined);
-    const ability = abilityId ? CORE_DEPS.abilities[abilityId as keyof typeof CORE_DEPS.abilities] : undefined;
+    const ability = abilityId ? TABLE_DEPS.abilities[abilityId as keyof typeof TABLE_DEPS.abilities] : undefined;
     if (!ability || !asksAttackableEnemy(ability.effects, choice.prompt.slot)) return null;
     const offered = choice.options.flatMap((option) => (option.ref.kind === "card" ? [option.ref.instanceId] : []));
     return this.#guardFacts(state, state.players[0]!.identity.instanceId, offered, false);
@@ -3271,7 +3323,7 @@ export class BattleModel {
     if (!ids.length) return true;
     const prompt = choice.prompt;
     const pays = (picks: readonly string[]) => {
-      const pool = paymentOptionsPool(this.#game, CORE_DEPS, choice.playerId, picks, null);
+      const pool = paymentOptionsPool(this.#game, TABLE_DEPS, choice.playerId, picks, null);
       // A spend asking for several different types (none in the Core Set) is left to the engine.
       if (prompt.distinctTypes) return pool !== null;
       return pool !== null && satisfies(pool, combineRequirements(prompt.requirement, 0));
@@ -3292,7 +3344,7 @@ export class BattleModel {
     const picks = ids.filter((id) => id !== EITHER_SPEND && id !== EITHER_OTHERWISE);
     const req = combineRequirements(choice.prompt.requirement, 0);
     const poolOf = (list: readonly string[]) =>
-      list.length ? paymentOptionsPool(this.#game, CORE_DEPS, choice.playerId, list, null) : null;
+      list.length ? paymentOptionsPool(this.#game, TABLE_DEPS, choice.playerId, list, null) : null;
     const filled = (pool: ReturnType<typeof poolOf>) => fillSpend(req, pool);
     const now = filled(poolOf(picks));
     const lit = (counts: SpendFill) => counts.wild + counts.energy + counts.mental + counts.physical + counts.any;
@@ -3365,7 +3417,7 @@ export class BattleModel {
 
 /** How a card's ability is printed: "Forced Response", "Interrupt", "Action". */
 function triggerLabel(abilityId: string): string {
-  const trigger = CORE_DEPS.abilities[abilityId]?.trigger;
+  const trigger = TABLE_DEPS.abilities[abilityId]?.trigger;
   if (!trigger) return "Ability";
   if (trigger.kind === "response" || trigger.kind === "interrupt") {
     const kind = trigger.kind === "response" ? "Response" : "Interrupt";

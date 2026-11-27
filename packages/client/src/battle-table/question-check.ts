@@ -29,6 +29,7 @@ export const QUESTION_HANDLING: Record<ChoicePrompt["kind"], "designed" | "dock"
   chooseAttachmentTarget: "designed", // hosts glow on the table
   payForCard: "designed", // the payment screen
   payForAbility: "designed", // the payment screen
+  assignIndirectDamage: "designed", // each click puts 1 damage on a character, counted on its card (`indirect-split.ts`)
   takeStartingCard: "dock",
   chooseMinionToActivate: "dock",
   orderPlayers: "dock",
@@ -62,7 +63,6 @@ export const QUESTION_HANDLING: Record<ChoicePrompt["kind"], "designed" | "dock"
   orderLoopKeywords: "unhandled",
   lookAt: "unhandled",
   pairCards: "unhandled",
-  assignIndirectDamage: "unhandled",
   divide: "unhandled",
 };
 

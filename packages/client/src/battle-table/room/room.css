@@ -391,6 +391,10 @@
   flex-direction: column;
   gap: 12px;
   width: min(460px, calc(100% - 56px));
+  /* Clear of the Back button below it, scrolling when the rows don't fit (a short window, with The Green Goblin's
+     four modules in the list). */
+  max-height: calc(100% - clamp(104px, 16vh, 140px) - 92px);
+  overflow-y: auto;
   box-sizing: border-box;
   padding: 16px 18px;
   border-radius: var(--r-lg);

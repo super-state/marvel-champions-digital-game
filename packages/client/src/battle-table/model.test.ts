@@ -5,6 +5,7 @@ import {
   formWhenRevealed,
   isModuleId,
   MODULES,
+  PACK_MODULES,
   recommendedModule,
   VILLAINS,
   whenRevealedMissesHeroes,
@@ -681,5 +682,28 @@ describe("Searching a deck (Adam, 2026-11-25: Masters of Mayhem listed names, an
     battle.reset({ seed: 7, arrange: arrangeScene("guard")! });
     battle.heroAction("basicAttack");
     expect(battle.snapshot().choice?.searched).toBeUndefined();
+  });
+});
+
+describe("every game the Free Play tray can build is dealt", () => {
+  // The tray offers every scenario with any of its modules on either difficulty (the Core Set's five and The Green
+  // Goblin's four), so each pairing must deal: a Core scenario with a Goblin module as much as Goblin's own.
+  const games = VILLAINS.flatMap((villain) =>
+    [...MODULES, ...PACK_MODULES].flatMap((module) =>
+      (["standard", "expert"] as const).map((difficulty) => ({ villain: villain.id, module: module.id, difficulty })),
+    ),
+  );
+  test.each(games)("$villain with $module on $difficulty", ({ villain, module, difficulty }) => {
+    const battle = new BattleModel();
+    battle.reset({ villain, modules: [module], difficulty, seed: 75, mulligan: true });
+    const state = battle.engineState;
+    // The module's cards are in the encounter deck (or already out: setup can bring one in, a boost dealt).
+    const encounter = Object.values(state.instances).filter((instance) => {
+      const card = engine.cardOf(state, instance.instanceId);
+      return !!card && "encounterSetIds" in card && (card.encounterSetIds as readonly string[]).includes(module);
+    });
+    expect(encounter.length).toBeGreaterThan(0);
+    expect(battle.encounter).toEqual({ difficulty, modules: [module] });
+    expect(battle.matchup.villain).toBe(villain);
   });
 });

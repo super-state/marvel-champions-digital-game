@@ -99,6 +99,16 @@ const SCENES: Record<string, Scene> = {
     hand: ["01002", "01090"],
     deckTop: ["01089", "01087"],
   },
+  /**
+   * Mutagen Formula: Pumpkin Bombs on the Green Goblin, Black Cat out beside Spider-Man. End the turn: after his attack
+   * the bombs' 2 indirect damage is divided between them, a click a point (`indirect-split.ts`).
+   */
+  pumpkin: {
+    scenario: "mutagen-formula",
+    hero: { form: "hero" },
+    play: [{ code: "01002" }],
+    villainAttachments: [{ code: "02021" }],
+  },
   /** Black Cat with no printed [mental] resource on top of the deck: "No mental resources", nothing goes to the hand. */
   blackcatmiss: {
     hand: ["01002", "01090"],
@@ -699,6 +709,19 @@ const SCENES: Record<string, Scene> = {
     recorded: true,
     hero: { form: "hero" },
     villain: { damage: 13, lastStage: true },
+    mainThreat: 0,
+    clearMinions: true,
+  },
+  /**
+   * `finish` against the Green Goblin in Mutagen Formula (16 hit points): one basic attack wins, for the end of a
+   * scenario pack's game (the record, the replay) to be looked at. Recorded only with `&record=1`, as `finish`.
+   */
+  goblinfinish: {
+    scenario: "mutagen-formula",
+    anyHero: true,
+    recorded: true,
+    hero: { form: "hero" },
+    villain: { damage: 15, lastStage: true },
     mainThreat: 0,
     clearMinions: true,
   },

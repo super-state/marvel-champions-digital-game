@@ -22,6 +22,7 @@ import { packGame, type SavedGame } from "../record/replay-pack.js";
 import { newlyEarned } from "../record/achievements.js";
 import { recordRows } from "../record/board.js";
 import { announceAchievements } from "../record/popup.js";
+import { villainName } from "./players.js";
 import { versusLine } from "./versus.js";
 
 export interface Profile {
@@ -217,6 +218,8 @@ const unlockKey = () => (profile?.saving ? profile.unlocked.join(",") : "all");
 export function lockReason(villain: string): string | null {
   if (!profile?.saving || profile.unlocked.includes(villain)) return null;
   const at = CHAIN.indexOf(villain as (typeof CHAIN)[number]);
+  // Only the Core Set's three unlock one by one; a scenario pack's opens with its box on the road (`road.ts`).
+  if (at < 0) return null;
   return at > 0 ? `Beat ${NAMES[CHAIN[at - 1]!]} to unlock` : "Locked";
 }
 
@@ -303,7 +306,7 @@ export async function finishGame(
     return;
   }
   if (profile && saved.unlocked) profile.unlocked = saved.unlocked;
-  const name = NAMES[game.villain] ?? game.villain;
+  const name = villainName(game.villain);
   // Every game, read back: Standard and Expert are counted apart on the line, and achievements are worked out below.
   const games = await home.games();
   const v = saved.versus ?? { won: 0, lost: 0 };

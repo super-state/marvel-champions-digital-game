@@ -24,6 +24,8 @@ import { CORE_STARTER_DECKS } from "@mc/content";
 import {
   HEROES,
   MODULES,
+  moduleName,
+  PACK_MODULES,
   recommendedModule,
   VILLAINS,
   type Difficulty,
@@ -131,7 +133,6 @@ const ASPECTS: Record<string, { name: string; colour: string; ink: string }> = {
 };
 const heroOf = (id: HeroId) => HEROES.find((hero) => hero.id === id)!;
 const villainName = (id: VillainId) => VILLAINS.find((villain) => villain.id === id)!.name;
-const moduleName = (id: ModuleId) => MODULES.find((module) => module.id === id)!.name;
 /** The starter deck's aspect, read from its id ("core-spider-man-justice"). */
 function aspectOf(hero: HeroId) {
   const id = heroOf(hero).starterDeckId;
@@ -463,7 +464,8 @@ function optionsOf(slot: Slot): Option[] {
     case "villain":
       return openVillains().map((v) => ({ value: v.id, label: v.name }));
     case "module":
-      return MODULES.map((m) => ({
+      // The Core Set's five, then The Green Goblin's four: its box is open on the road from the start (`road.ts`).
+      return [...MODULES, ...PACK_MODULES].map((m) => ({
         value: m.id,
         label: m.name,
         ...(m.id === recommendedModule(built.villain) ? { tag: "Recommended" } : {}),

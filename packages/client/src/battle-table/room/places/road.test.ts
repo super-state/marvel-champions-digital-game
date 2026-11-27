@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { unlockedFrom } from "../../test-site/players.js";
 import type { VillainId } from "../../model.js";
-import { boxLock, roadFrom, type RoadGame } from "./road.js";
+import { boxLock, roadFrom, sideStoryStep, type RoadGame } from "./road.js";
 import { SHELF_PRODUCTS } from "./scenario-catalogue.js";
 
 const win = (villain: string, difficulty: "standard" | "expert" | null = "standard"): RoadGame => ({
@@ -90,5 +90,46 @@ describe("boxes on the road", () => {
 
   it("locks nothing on an all-open table", () => {
     for (const product of SHELF_PRODUCTS) expect(boxLock(product, { standardDone: false, allOpen: true })).toBeNull();
+  });
+});
+
+describe("a side story's scenarios (The Green Goblin)", () => {
+  const nothingWon = { beaten: new Set<string>(), allOpen: false };
+
+  it("is playable from the start, before Rhino is beaten", () => {
+    expect(sideStoryStep("risky-business", nothingWon, null)).toEqual({
+      status: "open",
+      playable: true,
+      line: "A side story: play it any time",
+    });
+  });
+
+  it("is ticked once won, and replayed in Free Play unless everything is open", () => {
+    const won = roadFrom({
+      games: [{ villain: "risky-business", result: "win" } as RoadGame],
+      lock: () => null,
+      allOpen: false,
+    });
+    expect(won.beaten.has("risky-business")).toBe(true);
+    expect(sideStoryStep("risky-business", won, null)).toMatchObject({ status: "beaten", playable: false });
+    expect(sideStoryStep("mutagen-formula", won, null)).toMatchObject({ status: "open", playable: true });
+    expect(sideStoryStep("risky-business", { ...won, allOpen: true }, null)).toMatchObject({ playable: true });
+  });
+
+  it("is locked while the road hasn't reached its box", () => {
+    expect(sideStoryStep("kang", nothingWon, "Opens when the road reaches The Rise of Red Skull")).toMatchObject({
+      status: "locked",
+      playable: false,
+    });
+  });
+
+  it("a Goblin win doesn't move the prologue on", () => {
+    const road = roadFrom({
+      games: [{ villain: "mutagen-formula", result: "win" } as RoadGame],
+      lock: () => null,
+      allOpen: false,
+    });
+    expect(road.next?.villain).toBe("rhino");
+    expect(road.standardDone).toBe(false);
   });
 });
