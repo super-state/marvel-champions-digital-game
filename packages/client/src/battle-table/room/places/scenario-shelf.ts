@@ -150,25 +150,6 @@ function artPrint(
   return lit ? cv : faded(cv);
 }
 
-/** A box's side from its own art: a strip of it, darkened, the box's name running up it. */
-function artSidePrint(product: ShelfProduct, art: HTMLImageElement, lit: boolean): HTMLCanvasElement {
-  const [cv, g] = canvas(96, 384);
-  coverFit(g, art, 0, 0, 96, 384, 0.4);
-  g.fillStyle = "rgba(0,0,0,0.45)";
-  g.fillRect(0, 0, 96, 384);
-  g.save();
-  g.translate(48, 192);
-  g.rotate(-Math.PI / 2);
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  g.fillStyle = "#f6f0e2";
-  const name = product.name.toUpperCase();
-  fit(g, name, (size) => `${size}px Bangers, 'Public Sans', sans-serif`, 44, 350);
-  g.fillText(name, 0, 2);
-  g.restore();
-  return lit ? cv : faded(cv);
-}
-
 /** A box's front: its release's colours, the first villain's art filling it, and the box's name across the foot. */
 function frontPrint(product: ShelfProduct, art: HTMLImageElement | null, lit: boolean): HTMLCanvasElement {
   const big = product.size === "big";
@@ -216,25 +197,58 @@ function frontPrint(product: ShelfProduct, art: HTMLImageElement | null, lit: bo
   return lit ? cv : faded(cv);
 }
 
-/** A box's side: its colours, its name running up it. */
+/**
+ * A box's side, which is its spine on the shelf: a spine of its own, as a real box has, never a strip of its front
+ * (Adam, 2026-11-27): its release's colour, the red MARVEL tab at the top with CHAMPIONS under it, its title running up
+ * the middle, and the kind of box (core set, campaign, scenario pack) at the foot.
+ */
 function sidePrint(product: ShelfProduct, lit: boolean): HTMLCanvasElement {
-  const [cv, g] = canvas(96, 384);
+  const [w, h] = [128, 512];
+  const [cv, g] = canvas(w, h);
   const [ground, accent] = coloursOf(product);
+  const shade = g.createLinearGradient(0, 0, w, 0);
+  shade.addColorStop(0, "rgba(0,0,0,0.35)");
+  shade.addColorStop(0.5, "rgba(255,255,255,0.06)");
+  shade.addColorStop(1, "rgba(0,0,0,0.35)");
   g.fillStyle = ground;
-  g.fillRect(0, 0, 96, 384);
+  g.fillRect(0, 0, w, h);
+  g.fillStyle = shade;
+  g.fillRect(0, 0, w, h);
+  // Edges in the accent colour.
   g.fillStyle = accent;
-  g.fillRect(0, 0, 96, 8);
-  g.fillRect(0, 376, 96, 8);
-  g.save();
-  g.translate(48, 192);
-  g.rotate(-Math.PI / 2);
+  g.fillRect(0, 0, w, 6);
+  g.fillRect(0, h - 6, w, 6);
+  g.fillRect(0, 0, 4, h);
+  g.fillRect(w - 4, 0, 4, h);
+  // The MARVEL tab and CHAMPIONS under it.
   g.textAlign = "center";
   g.textBaseline = "middle";
+  g.fillStyle = "#e23636";
+  g.fillRect(14, 18, w - 28, 34);
+  g.fillStyle = "#ffffff";
+  fit(g, "MARVEL", (size) => `900 ${size}px 'Public Sans', sans-serif`, 26, w - 36);
+  g.fillText("MARVEL", w / 2, 36);
   g.fillStyle = "#f6f0e2";
+  fit(g, "CHAMPIONS", (size) => `900 ${size}px 'Public Sans', sans-serif`, 15, w - 24);
+  g.fillText("CHAMPIONS", w / 2, 66);
+  // The title, running up the spine.
+  g.save();
+  g.translate(w / 2, 300);
+  g.rotate(-Math.PI / 2);
+  g.fillStyle = "#f6f0e2";
+  g.shadowColor = "rgba(0,0,0,0.6)";
+  g.shadowBlur = 6;
   const name = product.name.toUpperCase();
-  fit(g, name, (s) => `${s}px Bangers, 'Public Sans', sans-serif`, 44, 350);
-  g.fillText(name, 0, 2);
+  fit(g, name, (size) => `${size}px Bangers, 'Public Sans', sans-serif`, 64, 330);
+  g.fillText(name, 0, 4);
   g.restore();
+  // The kind of box, at the foot.
+  g.fillStyle = accent;
+  g.fillRect(10, h - 44, w - 20, 26);
+  g.fillStyle = "#120d08";
+  const kind = product.code === "core" ? "CORE SET" : product.size === "big" ? "CAMPAIGN" : "SCENARIO";
+  fit(g, kind, (size) => `900 ${size}px 'Public Sans', sans-serif`, 15, w - 28);
+  g.fillText(kind, w / 2, h - 30);
   return lit ? cv : faded(cv);
 }
 
@@ -359,7 +373,7 @@ function buildBox(
     roughness: 0.7,
   });
   const front = texture(own ? artPrint(product, own.image, own.titled, own.cut, lit) : frontPrint(product, art, lit));
-  const side = texture(own ? artSidePrint(product, own.image, lit) : sidePrint(product, lit));
+  const side = texture(sidePrint(product, lit));
   const printed = (map: THREE.Texture) =>
     new THREE.MeshStandardMaterial({
       map,
