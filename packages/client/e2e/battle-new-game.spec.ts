@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "./battle-test";
+import { pickCoreScenario } from "./campaign-steps.js";
 
 /**
  * A new game on the 3D battle table clears the whole table (`BattleTable.newGame`). Scene `advanceloss`: the main
@@ -137,8 +138,7 @@ test("New game from the menu while a revealed card stands aside deals a clean ta
   await page.locator("#reset").click();
   // New game goes back to the campaign shelf; Rhino's box deals the fresh game.
   await expect(page.locator("#shelf")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Open Rhino" }).focus();
-  await page.keyboard.press("Enter");
+  await pickCoreScenario(page, "Rhino");
   await page.locator("#shelf-play").click({ timeout: 30_000 });
   await expect(page.locator("#shelf")).toBeHidden({ timeout: 60_000 });
   await expectFreshTable(page, fresh);

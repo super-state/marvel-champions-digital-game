@@ -83,17 +83,24 @@ test.describe("battle table: the room", () => {
     await expect(menu.locator('[aria-disabled="true"]')).toHaveCount(0);
     await expect(menu.getByText("Coming soon")).toHaveCount(0);
 
-    // Campaign: the boxes. Escape puts an open box back, then goes back to the doorway.
+    // Campaign: the scenario shelf. The Core Set up close, Rhino, to the table; Escape goes back one step at a time:
+    // to the Core Set up close, to the shelf, to the doorway.
     for (let i = 0; i < 5 && !(await focused(page)).startsWith("Campaign"); i++) await page.keyboard.press("ArrowUp");
     await expect.poll(() => focused(page)).toMatch(/^Campaign/);
     await page.keyboard.press("Enter");
     await at(page, "campaign");
-    await expect(room(page).getByRole("heading", { name: "Choose your campaign" })).toBeVisible();
-    await expect.poll(() => focused(page)).toBe("Open Rhino");
+    await expect(room(page).getByRole("heading", { name: "Choose a scenario" })).toBeVisible();
+    await expect.poll(() => focused(page)).toBe("Core Set");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => focused(page)).toBe("Rhino");
     await page.keyboard.press("Enter");
     await expect(page.locator("#shelf-play")).toHaveText("Play vs Rhino", { timeout: 30_000 });
     await page.keyboard.press("Escape");
     await expect(room(page).locator(".shelf-opened")).toBeHidden();
+    await expect(room(page).locator(".scn-card")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(room(page).locator(".scn-card")).toBeHidden();
+    await expect.poll(() => focused(page)).toBe("Core Set");
     await page.keyboard.press("Escape");
     await at(page, "title");
     await expect.poll(() => focused(page)).toMatch(/^Campaign/);
@@ -222,12 +229,16 @@ test.describe("battle table: the room", () => {
       await padTo(page, PAD.up, /^Campaign/);
       await nudge(page, PAD.a);
       await at(page, "campaign");
-      await expect.poll(() => focused(page)).toBe("Open Rhino");
-      await padTo(page, PAD.right, /^Open Klaw$/);
+      await expect.poll(() => focused(page)).toBe("Core Set");
+      await nudge(page, PAD.a);
+      await expect.poll(() => focused(page)).toBe("Rhino");
+      await padTo(page, PAD.down, /^Klaw$/);
       await nudge(page, PAD.a);
       await expect(page.locator("#shelf-play")).toHaveText("Play vs Klaw", { timeout: 30_000 });
       await nudge(page, PAD.b);
       await expect(room(page).locator(".shelf-opened")).toBeHidden();
+      await nudge(page, PAD.b);
+      await expect(room(page).locator(".scn-card")).toBeHidden();
       await nudge(page, PAD.b);
       await at(page, "title");
     });
