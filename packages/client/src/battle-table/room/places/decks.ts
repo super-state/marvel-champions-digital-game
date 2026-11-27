@@ -191,6 +191,34 @@ const cardOpen = () => !!card && !card.hidden && !!opened;
 
 // ── The order: the sort, the search, the playable cut, favourites and last played ─────────────────────────────────
 
+/**
+ * Campaign asking for a hero (its play flow's second step): the bench says who for, Play as carries on to the table,
+ * and Back at the shelf goes back to the scenario shelf. Null when the bench was walked to from the menu.
+ */
+export interface HeroRequest {
+  /** The scenario the hero is for ("Rhino"). */
+  readonly forName: string;
+  picked(id: HeroId): void;
+  back(): void;
+}
+let request: HeroRequest | null = null;
+
+/** Campaign's ask (or null to stop asking). */
+export function askForHero(ask: HeroRequest | null) {
+  request = ask;
+  showAsk();
+}
+
+/** The line at the top saying who the hero is for, while Campaign is asking. */
+let ask: HTMLElement | null = null;
+function showAsk() {
+  if (ask) {
+    ask.hidden = !request;
+    ask.textContent = request ? `Pick your hero for ${request.forName}` : "";
+  }
+  if (hint) hint.textContent = shownCount ? (request ? "Pick a hero, then Play as" : "Pick a hero") : "No heroes match";
+}
+
 const PREFS = "mc-hero-shelf";
 let sort: ShelfSort = "release";
 let playableOnly = false;
@@ -266,7 +294,7 @@ function arrange(jump = false) {
   if (opened && opened.place < 0) closeCard(false);
   hovered = -1;
   if (!jump) scrollTo = 0;
-  if (hint) hint.textContent = shownCount ? "Pick a hero" : "No heroes match";
+  showAsk();
   for (const button of tools?.querySelectorAll<HTMLElement>("[data-sort]") ?? [])
     button.setAttribute("aria-pressed", String(button.dataset.sort === sort));
   tools?.querySelector("[data-bench='playable']")?.setAttribute("aria-pressed", String(playableOnly));
@@ -436,21 +464,27 @@ function paint(focusKey?: string) {
     const choose = el(
       "button",
       "btn btn-primary bench-choose",
-      chosen ? `Playing as ${bench.name}` : `Play as ${bench.name}`,
+      chosen && !request ? `Playing as ${bench.name}` : `Play as ${bench.name}`,
     );
     choose.type = "button";
     choose.dataset.bench = "choose";
     choose.setAttribute("aria-pressed", String(chosen));
-    choose.onclick = () => chooseHero(bench);
+    choose.onclick = () => {
+      chooseHero(bench);
+      // In Campaign's play flow, on to the table with this hero.
+      request?.picked(bench.id);
+    };
     parts.push(
       choose,
       star,
       el(
         "p",
         "bench-line",
-        chosen
-          ? `Campaign and Free Play deal ${bench.name} with the starter deck.`
-          : `Play as ${bench.name} in Campaign and Free Play.`,
+        request
+          ? `${bench.name} plays ${request.forName} with the starter deck.`
+          : chosen
+            ? `Campaign and Free Play deal ${bench.name} with the starter deck.`
+            : `Play as ${bench.name} in Campaign and Free Play.`,
       ),
     );
   } else {
@@ -696,6 +730,10 @@ export function mountBench(source?: { games(): Promise<readonly FinishedGame[] |
       tag = el("p", "bench-tag");
       tag.hidden = true;
       hint = el("p", "bench-hint", "Pick a hero");
+      ask = el("p", "bench-ask");
+      ask.setAttribute("role", "status");
+      ask.hidden = true;
+      panel.append(ask);
       backBar = el("div", "bench-back-bar");
       backBar.hidden = true;
       const back = el("button", "btn btn-secondary bench-back", "‹ Back to the shelf");
@@ -746,8 +784,12 @@ export function mountBench(source?: { games(): Promise<readonly FinishedGame[] |
       if (tag) tag.hidden = true;
     },
     back() {
-      if (!cardOpen()) return false;
-      closeCard();
+      if (cardOpen()) {
+        closeCard();
+        return true;
+      }
+      if (!request) return false;
+      request.back();
       return true;
     },
     key,

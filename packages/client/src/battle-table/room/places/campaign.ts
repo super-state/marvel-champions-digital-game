@@ -16,6 +16,8 @@ import { lerp, span } from "../motion.js";
 import { pointer, raycaster, renderer, say, scene } from "../room.js";
 import { beginPlay, play, resetPlay } from "./campaign-play.js";
 import { buildScenarioShelf, closeBox, reopen, scenarioShelf, scenarioView } from "./scenario-shelf.js";
+import { askForHero } from "./decks.js";
+import { goTo } from "../nav.js";
 import type { ShelfScenario } from "./scenario-catalogue.js";
 import { makePanel, type Place } from "./place.js";
 import {
@@ -258,7 +260,7 @@ const panel = makePanel(
     <p class="shelf-blurb"></p>
     <div class="shelf-buttons">
       <button type="button" class="btn btn-primary" id="shelf-play">Play</button>
-      <button type="button" class="btn btn-secondary" id="shelf-back">Back to the shelf</button>
+      <button type="button" class="btn btn-secondary" id="shelf-back">‹ Back to the heroes</button>
     </div>
   </section>`,
 );
@@ -296,30 +298,59 @@ function scenarioState(scenario: ShelfScenario) {
   return { playable: c.open, lock: c.open ? null : (c.lock ?? null) };
 }
 
-/** A scenario picked on the shelf: to the table, its villain box opening there. */
+/** The scenario on its way to the table: its villain box's index here. */
+let picked = -1;
+/** Coming back to the shelf from the hero step: its box goes up close again on arrival. */
+let reopenOnArrival = false;
+
+/** A scenario picked on the shelf: off to the hero shelf to pick who plays it. */
 function scenarioPicked(scenario: ShelfScenario) {
   const index = boxes.findIndex((box) => box.campaign.id === scenario.id);
   if (index < 0 || play.outro) return;
   fromBox = "core";
-  stage = "table";
-  scenarioShelf.leave();
+  picked = index;
+  // The box up close goes back on the shelf as the camera leaves (it would follow the camera otherwise).
   closeBox(false);
+  askHero();
+  goTo("decks");
+}
+
+/** The hero shelf, asked for a hero for the picked scenario. */
+function askHero() {
+  const name = boxes[picked]!.campaign.name;
+  askForHero({
+    forName: `${name[0]}${name.slice(1).toLowerCase()}`,
+    picked: () => heroPicked(),
+    back: () => {
+      // Back from the heroes: the scenario shelf, its box up close again.
+      askForHero(null);
+      stage = "shelf";
+      reopenOnArrival = true;
+      goTo("campaign");
+    },
+  });
+}
+
+/** A hero picked: to the table, the scenario's villain box opening there as the camera arrives. */
+function heroPicked() {
+  askForHero(null);
+  stage = "table";
   scenarioShelf.show(false);
   showStage();
   chosen = -1;
   s = target = 0;
-  choose(index);
+  choose(picked);
+  goTo("campaign");
 }
 
-/** Back from the table: the box closes as the camera goes back to the shelf, where its box is up close again. */
+/** Back from the table: the box closes, and the camera goes back to the heroes, still asked for this scenario. */
 function backToShelf() {
-  stage = "shelf";
   target = 0;
   opened.hidden = true;
+  stage = "shelf";
   showStage();
-  scenarioShelf.show(true);
-  if (fromBox) reopen(fromBox);
-  scenarioShelf.enter();
+  askHero();
+  goTo("decks");
 }
 
 /** The panel's words and buttons for the step Campaign is at. */
@@ -545,6 +576,9 @@ export function reset() {
   stage = "shelf";
   toTable = 0;
   fromBox = null;
+  picked = -1;
+  reopenOnArrival = false;
+  askForHero(null);
   closeBox(false);
   scenarioShelf.show(true);
   queued = -1;
@@ -692,6 +726,9 @@ export const campaignPlace: Place = {
   enter() {
     active = true;
     if (stage === "shelf") {
+      scenarioShelf.show(true);
+      if (reopenOnArrival && fromBox) reopen(fromBox);
+      reopenOnArrival = false;
       scenarioShelf.enter();
       return;
     }
