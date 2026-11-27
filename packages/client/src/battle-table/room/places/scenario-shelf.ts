@@ -27,7 +27,7 @@ import { canvas, loadImage, texture } from "../canvas.js";
 import { ROOM, pointer, raycaster, renderer, say, scene } from "../room.js";
 import { spatialPick, type FocusDirection } from "../../pad/spatial.js";
 import { closeSpot, type Facing } from "./close-up.js";
-import { CAMPAIGNS, frontPrint as campaignFront } from "./campaign-prints.js";
+import { CAMPAIGNS, bandPrint, frontPrint as campaignFront, spinePrint } from "./campaign-prints.js";
 import { SHELF_PRODUCTS, type ShelfProduct, type ShelfScenario } from "./scenario-catalogue.js";
 import { BOARD, SCENARIO_CASE, layoutScenarios, measureOf, type ProductMeasure } from "./scenario-shelf-layout.js";
 import "./scenario-shelf.css";
@@ -531,7 +531,7 @@ const standGlass = new THREE.MeshStandardMaterial({
 function buildPlinth(at: THREE.Vector3, size: ProductMeasure, lit: boolean, locked: boolean): THREE.Group {
   const plinth = new THREE.Group();
   const stand = new THREE.Mesh(new THREE.BoxGeometry(size.across + 0.12, STAND, size.deep + 0.14), standGlass);
-  stand.position.set(at.x, at.y - size.tall / 2 + STAND / 2, at.z);
+  stand.position.set(at.x, at.y - size.tall / 2 + STAND / 2 + 0.002, at.z);
   stand.receiveShadow = true;
   const glow = new THREE.Mesh(
     new THREE.PlaneGeometry(size.across * 2.1, size.tall * 1.7),
@@ -696,16 +696,17 @@ function buildBox(
   const tw = across - 0.04;
   const th = tall - 0.04;
   const td = deep - 0.02;
+  // Its walls stand on the floor and meet edge to edge, never sharing a face (see the lid's).
   const trayWall = (w: number, h: number, px: number, py: number) => {
-    const part = new THREE.Mesh(new THREE.BoxGeometry(w, h, td), stock);
-    part.position.set(px, py, -0.01);
+    const part = new THREE.Mesh(new THREE.BoxGeometry(w, h, td - 0.03), stock);
+    part.position.set(px, py, -0.01 + 0.015);
     part.castShadow = part.receiveShadow = true;
     tray.add(part);
   };
   trayWall(0.03, th, tw / 2 - 0.015, 0);
   trayWall(0.03, th, -tw / 2 + 0.015, 0);
-  trayWall(tw, 0.03, 0, th / 2 - 0.015);
-  trayWall(tw, 0.03, 0, -th / 2 + 0.015);
+  trayWall(tw - 0.06, 0.03, 0, th / 2 - 0.015);
+  trayWall(tw - 0.06, 0.03, 0, -th / 2 + 0.015);
   const floor = new THREE.Mesh(
     new THREE.BoxGeometry(tw, th, 0.03),
     new THREE.MeshStandardMaterial({ color: 0x15110c, roughness: 0.9 }),
@@ -730,11 +731,16 @@ function buildBox(
     lid.add(part);
   };
   const face = printed(front);
+  // The walls meet edge to edge and never overlap: where two shared an outside face, the screen couldn't tell which to
+  // draw and every box's edges shimmered as the view moved (Adam, 2026-11-27: "they all still flicker"). The front
+  // covers the whole face; the sides run back from behind it; the top and bottom sit between the sides.
+  const wallDeep = lidDeep - 0.03;
+  const wallZ = deep / 2 - 0.03 - wallDeep / 2;
   wall(across, tall, 0.03, [stock, stock, stock, stock, face, stock], 0, 0, deep / 2 - 0.015);
-  wall(0.03, tall, lidDeep, [sides, stock, stock, stock, stock, stock], across / 2 - 0.015, 0, deep / 2 - lidDeep / 2);
-  wall(0.03, tall, lidDeep, [stock, sides, stock, stock, stock, stock], -across / 2 + 0.015, 0, deep / 2 - lidDeep / 2);
-  wall(across, 0.03, lidDeep, stock, 0, tall / 2 - 0.015, deep / 2 - lidDeep / 2);
-  wall(across, 0.03, lidDeep, stock, 0, -tall / 2 + 0.015, deep / 2 - lidDeep / 2);
+  wall(0.03, tall, wallDeep, [sides, stock, stock, stock, stock, stock], across / 2 - 0.015, 0, wallZ);
+  wall(0.03, tall, wallDeep, [stock, sides, stock, stock, stock, stock], -across / 2 + 0.015, 0, wallZ);
+  wall(across - 0.06, 0.03, wallDeep, stock, 0, tall / 2 - 0.015, wallZ);
+  wall(across - 0.06, 0.03, wallDeep, stock, 0, -tall / 2 + 0.015, wallZ);
   mesh.add(tray, lid);
   mesh.traverse((o) => (o.userData.box = i));
   return { mesh, lid, maps: [front, side], faces: { front: face, sides } };
@@ -787,6 +793,9 @@ const CLOSE_LEFT = 0.62;
  */
 const CLOSE_NEAR = 0.45;
 
+/** A Core Set scenario's villain box: as deep as the table's campaign boxes, for its front's width. */
+const BOX_DEEP = 1.0 / 2.4;
+
 /** The shape of a scenario's print: a Core Set villain's campaign box front (4:5), else a card (0.715). */
 const printAspect = (scenario: ShelfScenario) => (CAMPAIGNS.some((c) => c.id === scenario.id) ? 0.8 : 0.715);
 
@@ -802,16 +811,21 @@ function floatLayout(box: Box): { spots: THREE.Vector3[]; width: number } {
   const rows = Math.ceil(n / perRow);
   const aspect = printAspect(box.product.scenarios[0]!);
   const gap = tall * 0.16;
-  // The room right of the box, and the screen's height less room for the words under each.
-  const room = tall * 3.9;
-  const width = Math.min(tall * 1.4, (room - gap * (perRow - 1)) / perRow, ((tall * 3.0) / rows - gap * 2) * aspect);
+  // The room right of the box on this screen (Adam, 2026-11-27: the scenarios ran off its edge): how wide the view is
+  // where the box stands up close (`closeSpot`), less the box, its gap and a margin; they stand a little nearer, so a
+  // touch bigger.
+  const tan = Math.tan(((camera.fov / 2) * Math.PI) / 180);
+  const front = Math.max((tall * CLOSE_FIT) / (1.1 * tan), (across * CLOSE_FIT) / (1.0 * tan * camera.aspect));
+  const halfWide = (front + deep / 2) * tan * camera.aspect;
+  const room = (halfWide * (1 + CLOSE_LEFT) - across / 2 - tall * 0.6 - tall * 0.3) * 0.94;
+  const width = Math.min(tall * 1.4, (room - gap * (perRow - 1)) / perRow, ((tall * 3.0) / rows - gap) * aspect);
   const height = width / aspect;
   const spots = box.product.scenarios.map((_, i) => {
     const row = Math.floor(i / perRow);
     const col = i % perRow;
     return new THREE.Vector3(
       across / 2 + tall * 0.6 + col * (width + gap) + width / 2,
-      tall * 0.2 + ((rows - 1) / 2 - row) * (height + gap * 2.2),
+      tall * 0.05 + ((rows - 1) / 2 - row) * (height + gap),
       deep / 2,
     );
   });
@@ -845,23 +859,40 @@ async function buildCards(box: Box, road: readonly ShelfRow[]): Promise<THREE.Me
     const col = i % perRow;
     const look = lookOf(road, scenario);
     const map = texture(scenarioPrint(scans[i] ?? null, scenario, look));
-    const card = new THREE.Mesh(
-      new THREE.PlaneGeometry(cardW, cardH),
+    const face = (picture: THREE.Texture, glow = look.next ? 0.32 : 0.2) =>
       new THREE.MeshStandardMaterial({
-        map,
+        map: picture,
         roughness: 0.4,
-        ...(look.lit
-          ? { emissive: 0xffffff, emissiveMap: map, emissiveIntensity: look.next ? 0.32 : 0.2 }
-          : { color: 0x9a9a9a }),
-      }),
-    );
+        ...(look.lit ? { emissive: 0xffffff, emissiveMap: picture, emissiveIntensity: glow } : { color: 0x9a9a9a }),
+      });
+    // A Core Set scenario is its villain's campaign box, whole, as the table showed them before the shelf (Adam,
+    // 2026-11-27: "like the existing boxes on the main screen on live"): its front, its printed spine down each side
+    // and its band along the top and bottom. Any other is its villain card.
+    const campaign = CAMPAIGNS.find((c) => c.id === scenario.id);
+    let card: THREE.Mesh;
+    if (campaign) {
+      const spine = texture(look.lit ? spinePrint(campaign) : faded(spinePrint(campaign)));
+      spine.center.set(0.5, 0.5);
+      spine.rotation = Math.PI / 2;
+      const band = texture(look.lit ? bandPrint(campaign) : faded(bandPrint(campaign)));
+      const sides = face(spine, 0.12);
+      const ends = face(band, 0.12);
+      card = new THREE.Mesh(new THREE.BoxGeometry(cardW, cardH, cardW * BOX_DEEP), [
+        sides,
+        sides,
+        ends,
+        ends,
+        face(map),
+        ends,
+      ]);
+    } else card = new THREE.Mesh(new THREE.PlaneGeometry(cardW, cardH), face(map));
     // In the tray at first, lying on its floor; it leaves the box (and its sway) as it comes out.
     card.userData.box = box.mesh.userData.box;
     card.userData.scenario = i;
     card.userData.rest = new THREE.Vector3(
       (col - (inRow - 1) / 2) * (cardW + gap),
       ((rows - 1) / 2 - row) * (cardH + gap),
-      -deep / 2 + 0.036,
+      -deep / 2 + 0.032 + (campaign ? (cardW * BOX_DEEP) / 2 : 0.004),
     );
     card.userData.float = spots[i]!;
     card.userData.grow = width / cardW;
@@ -1005,9 +1036,11 @@ function readyCards(box: Box) {
   for (const old of box.cards ?? []) {
     old.removeFromParent();
     old.geometry.dispose();
-    const material = old.material as THREE.MeshStandardMaterial;
-    material.map?.dispose();
-    material.dispose();
+    const materials = [old.material].flat() as THREE.MeshStandardMaterial[];
+    for (const material of new Set(materials)) {
+      material.map?.dispose();
+      material.dispose();
+    }
   }
   box.cards = null;
   box.looks = looks;
@@ -1496,7 +1529,8 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
     const { mesh, lid, maps, faces } = buildBox(slot.product, slot.size, lit, lock !== null, art, own, i);
     for (const map of maps) renderer.initTexture(map);
     // On its lit stand.
-    const home = slot.at.clone().setY(slot.at.y + STAND);
+    // Just clear of its stand (a box's foot on the stand's top, face to face, flickered too).
+    const home = slot.at.clone().setY(slot.at.y + STAND + 0.004);
     group!.add(buildPlinth(slot.at, slot.size, lit, lock !== null));
     mesh.position.copy(home);
     mesh.rotation.y = SHELF_TURN;
