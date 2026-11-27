@@ -384,7 +384,7 @@ test("02040 Tail Sweep (alter-ego, no Scorpion): the table says no hero can be a
 // contrast). The table says so on the reveal (noHeroToAttack), but the engine has Scorpion attack Peter Parker for 3
 // (the script's `enemyAttack(SCORPION, { against: you })`). Engine bug; the table then shows an attack it said can't
 // happen.
-test.fails("02040 Tail Sweep (alter-ego, Scorpion engaged): Scorpion can't attack Peter Parker; you are stunned", () => {
+test("02040 Tail Sweep (alter-ego, Scorpion engaged): Scorpion can't attack Peter Parker; you are stunned", () => {
   const p = deal(stack(QUIET, "02040"), engageMinion("02038"));
   villainPhase(p);
   const reveal = revealOf(p, "Tail Sweep");
