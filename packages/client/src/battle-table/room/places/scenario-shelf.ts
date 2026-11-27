@@ -434,16 +434,10 @@ function scenarioPrint(scan: HTMLImageElement | null, scenario: ShelfScenario, l
   return badge(look.lit ? cv : faded(cv), look);
 }
 
-/** A scenario's print's marks: a tick, or a padlock, in its top right corner; a gold frame round the road's next. */
+/** A scenario's print's marks: a tick, or a padlock, in its top right corner. */
 function badge(print: HTMLCanvasElement, look: Look): HTMLCanvasElement {
   const g = print.getContext("2d")!;
   const w = print.width;
-  const h = print.height;
-  if (look.next) {
-    g.strokeStyle = "#f2c230";
-    g.lineWidth = w * 0.035;
-    g.strokeRect(g.lineWidth / 2, g.lineWidth / 2, w - g.lineWidth, h - g.lineWidth);
-  }
   if (look.ticked) tick(g, w * 0.83, w * 0.17, w * 0.23);
   else if (look.locked) lockBadge(g, w * 0.83, w * 0.17, w * 0.115);
   return print;
@@ -832,6 +826,21 @@ function floatLayout(box: Box): { spots: THREE.Vector3[]; width: number } {
   return { spots, width };
 }
 
+const frameGold = new THREE.MeshBasicMaterial({ color: 0xf2c230, toneMapped: false });
+/** A gold frame round a `w` by `h` front, just outside its edges. */
+function selectFrame(w: number, h: number): THREE.Mesh {
+  const gap = w * 0.025;
+  const band = w * 0.045;
+  const outer = new THREE.Shape();
+  const [ox, oy] = [w / 2 + gap + band, h / 2 + gap + band];
+  outer.moveTo(-ox, -oy).lineTo(ox, -oy).lineTo(ox, oy).lineTo(-ox, oy).lineTo(-ox, -oy);
+  const hole = new THREE.Path();
+  const [ix, iy] = [w / 2 + gap, h / 2 + gap];
+  hole.moveTo(-ix, -iy).lineTo(-ix, iy).lineTo(ix, iy).lineTo(ix, -iy).lineTo(-ix, -iy);
+  outer.holes.push(hole);
+  return new THREE.Mesh(new THREE.ShapeGeometry(outer), frameGold);
+}
+
 async function buildCards(box: Box, road: readonly ShelfRow[]): Promise<THREE.Mesh[]> {
   const { across, tall, deep } = box.size;
   const n = box.product.scenarios.length;
@@ -896,6 +905,15 @@ async function buildCards(box: Box, road: readonly ShelfRow[]): Promise<THREE.Me
     );
     card.userData.float = spots[i]!;
     card.userData.grow = width / cardW;
+    // The gold frame round the one picked out (pointed at, or the arrows' and a pad's), outside the box's front, never
+    // over it (Adam, 2026-11-27: "the yellow border ... should be outside the box not inside").
+    const frame = selectFrame(cardW, cardH);
+    frame.position.z = campaign ? (cardW * BOX_DEEP) / 2 + 0.002 : 0.002;
+    frame.userData.box = card.userData.box;
+    frame.userData.scenario = i;
+    frame.visible = false;
+    card.add(frame);
+    card.userData.frame = frame;
     card.visible = false;
     group?.add(card);
     return card;
@@ -1035,6 +1053,7 @@ function readyCards(box: Box) {
   if (box.cards && box.looks === looks) return;
   for (const old of box.cards ?? []) {
     old.removeFromParent();
+    (old.userData.frame as THREE.Mesh | undefined)?.geometry.dispose();
     old.geometry.dispose();
     const materials = [old.material].flat() as THREE.MeshStandardMaterial[];
     for (const material of new Set(materials)) {
@@ -1132,8 +1151,14 @@ function slotAt(x: number, y: number): number {
   return best;
 }
 
+/** Where the pointer last was: the browser repeats a move when what lies under a still pointer changes (the buttons
+ * here follow the boxes), and those mustn't undo what the arrows or a pad picked out. */
+let pointerAt = "";
 renderer.domElement.addEventListener("pointermove", (event) => {
   if (!active) return;
+  const at = `${event.clientX},${event.clientY}`;
+  if (at === pointerAt) return;
+  pointerAt = at;
   const hit = hitAt(event.clientX, event.clientY);
   if (upClose()) {
     hovered = -1;
@@ -1383,6 +1408,8 @@ function step(dt: number) {
       if (!shown) return;
       const tall = box.size.tall * CLOSE_NEAR;
       const pointed = box === opened && k === hoveredCard ? 1 : 0;
+      const frame = each.userData.frame as THREE.Mesh | undefined;
+      if (frame) frame.visible = pointed > 0 && out > 0.95;
       restAt.copy(each.userData.rest as THREE.Vector3).applyMatrix4(box.mesh.matrixWorld);
       floatAt
         .copy(each.userData.float as THREE.Vector3)
