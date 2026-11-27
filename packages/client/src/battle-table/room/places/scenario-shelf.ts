@@ -82,12 +82,16 @@ const ART_FOLDER: Record<string, string> = { cw: "civil_war" };
  * cover, which is the box's front with its title (`rulebook/page_001`); else its key art (`cover.*`), with the title
  * printed on; else nothing, and the box prints its first villain's art.
  */
-function boxArtUrl(product: ShelfProduct): { url: string; titled: boolean } | null {
+function boxArtUrl(product: ShelfProduct): { url: string; titled: boolean; cut: number } | null {
   const folder = ART_FOLDER[product.code] ?? product.code;
+  // The box's own front as sold, where there is one (`box.*`, the Core Set's and the scenario packs').
+  const box = CAMPAIGN_ART.boxes.get(folder);
+  if (box) return { url: box.url, titled: true, cut: 0 };
   const rulebook = CAMPAIGN_ART.rulebookPages.get(`${folder}/page_001`);
-  if (rulebook) return { url: rulebook.url, titled: true };
+  // A rulebook's cover is the box's front with a small "Rulebook" tab at its foot: cut just above it.
+  if (rulebook) return { url: rulebook.url, titled: true, cut: 0.075 };
   const cover = CAMPAIGN_ART.covers.get(folder);
-  return cover ? { url: cover.url, titled: false } : null;
+  return cover ? { url: cover.url, titled: false, cut: 0 } : null;
 }
 
 /** Cover-fits a picture into a rectangle, cropping what overflows (around its middle, or `focusY` down). */
@@ -110,12 +114,17 @@ function coverFit(
 }
 
 /** A box's front from its own art: the rulebook's cover as it is, or the key art with the title across the foot. */
-function artPrint(product: ShelfProduct, art: HTMLImageElement, titled: boolean, lit: boolean): HTMLCanvasElement {
+function artPrint(
+  product: ShelfProduct,
+  art: HTMLImageElement,
+  titled: boolean,
+  cut: number,
+  lit: boolean,
+): HTMLCanvasElement {
   const big = product.size === "big";
   const [w, h] = printSize(product, 512);
   const [cv, g] = canvas(w, h);
-  // A rulebook's cover is the box's front with a small "Rulebook" tab at its foot: cut just above it.
-  coverFit(g, art, 0, 0, w, h, 0.5, titled ? 0.075 : 0);
+  coverFit(g, art, 0, 0, w, h, 0.5, cut);
   if (!titled) {
     const [ground, accent] = coloursOf(product);
     const fade = g.createLinearGradient(0, h * 0.62, 0, h);
@@ -321,7 +330,7 @@ function buildBox(
   size: ProductMeasure,
   lit: boolean,
   art: HTMLImageElement | null,
-  own: { image: HTMLImageElement; titled: boolean } | null,
+  own: { image: HTMLImageElement; titled: boolean; cut: number } | null,
   i: number,
 ) {
   const [ground] = coloursOf(product);
@@ -330,7 +339,7 @@ function buildBox(
     color: new THREE.Color(ground).multiplyScalar(lit ? 0.8 : 0.35),
     roughness: 0.7,
   });
-  const front = texture(own ? artPrint(product, own.image, own.titled, lit) : frontPrint(product, art, lit));
+  const front = texture(own ? artPrint(product, own.image, own.titled, own.cut, lit) : frontPrint(product, art, lit));
   const side = texture(own ? artSidePrint(product, own.image, lit) : sidePrint(product, lit));
   const printed = (map: THREE.Texture) =>
     new THREE.MeshStandardMaterial({
@@ -816,7 +825,7 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
     layout.slots.map(async (slot) => {
       const own = boxArtUrl(slot.product);
       const image = own ? await loadImage(own.url) : null;
-      return own && image ? { image, titled: own.titled } : null;
+      return own && image ? { image, titled: own.titled, cut: own.cut } : null;
     }),
   );
   // One box at a time, the page free to draw between: greying a print and sending it to the graphics card all at once stalled the title's frames
