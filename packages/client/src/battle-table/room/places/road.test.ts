@@ -20,46 +20,30 @@ const statuses = (road: ReturnType<typeof roadFrom>) => road.steps.map((s) => `$
 const box = (code: string) => SHELF_PRODUCTS.find((p) => p.code === code)!;
 
 describe("the road's prologue", () => {
-  it("starts at Rhino on Standard, everything after it locked", () => {
+  it("starts at Rhino, the others locked; Campaign never shows Expert", () => {
     const road = friend([]);
     expect(road.next?.key).toBe("rhino");
-    expect(statuses(road)).toEqual([
-      "rhino=next",
-      "klaw=locked",
-      "ultron=locked",
-      "rhino:expert=locked",
-      "klaw:expert=locked",
-      "ultron:expert=locked",
-    ]);
+    expect(statuses(road)).toEqual(["rhino=next", "klaw=locked", "ultron=locked"]);
     expect(road.steps.filter((s) => s.playable).map((s) => s.step.key)).toEqual(["rhino"]);
-    expect(road.steps[3]!.line).toBe("Beat all three on Standard first");
+    expect(road.steps.some((s) => /expert/i.test(s.step.key + s.step.name))).toBe(false);
   });
 
   it("ticks a beaten villain and lights the next; a loss changes nothing", () => {
     const road = friend([loss("rhino"), win("rhino")]);
-    expect(statuses(road).slice(0, 3)).toEqual(["rhino=beaten", "klaw=next", "ultron=locked"]);
+    expect(statuses(road)).toEqual(["rhino=beaten", "klaw=next", "ultron=locked"]);
     expect(road.steps[0]!.playable).toBe(false);
     expect(road.steps[0]!.line).toMatch(/Free Play/);
+    expect(road.steps[2]!.line).toBe("Locked");
   });
 
-  it("goes on to Expert once all three are beaten on Standard, an old game without facts counting as Standard", () => {
-    const road = friend([win("rhino", null), win("klaw"), win("ultron")]);
+  it("counts a win in any difficulty (call 5), an old game without facts too", () => {
+    expect(statuses(friend([win("rhino", "expert")])).slice(0, 2)).toEqual(["rhino=beaten", "klaw=next"]);
+    expect(statuses(friend([win("rhino", null)])).slice(0, 2)).toEqual(["rhino=beaten", "klaw=next"]);
+  });
+
+  it("is done when all three are beaten: nothing next, nothing to play from Campaign", () => {
+    const road = friend([win("rhino"), win("klaw"), win("ultron")]);
     expect(road.standardDone).toBe(true);
-    expect(road.next?.key).toBe("rhino:expert");
-    expect(road.next?.difficulty).toBe("expert");
-    expect(statuses(road).slice(3)).toEqual(["rhino:expert=next", "klaw:expert=locked", "ultron:expert=locked"]);
-    expect(road.steps[4]!.line).toBe("Beat Rhino on Expert first");
-  });
-
-  it("an Expert win counts on both halves (call 5); a Standard win never ticks Expert", () => {
-    const expert = friend([win("rhino", "expert")]);
-    expect(statuses(expert).slice(0, 2)).toEqual(["rhino=beaten", "klaw=next"]);
-    expect(expert.steps[3]!.status).toBe("beaten");
-    expect(friend([win("rhino")]).steps[3]!.status).toBe("locked");
-  });
-
-  it("is done when all six are beaten: nothing next, nothing to play from Campaign", () => {
-    const road = friend(["rhino", "klaw", "ultron"].flatMap((v) => [win(v), win(v, "expert")]));
     expect(road.next).toBeNull();
     expect(road.steps.every((s) => s.status === "beaten" && !s.playable)).toBe(true);
   });
@@ -67,12 +51,12 @@ describe("the road's prologue", () => {
   it("on Adam's own table (or with no record) every step plays, still ticked and marked", () => {
     const open = roadFrom({ games: [win("rhino")], lock: () => null, allOpen: true });
     expect(open.steps.every((s) => s.playable)).toBe(true);
-    expect(statuses(open).slice(0, 3)).toEqual(["rhino=beaten", "klaw=next", "ultron=open"]);
+    expect(statuses(open)).toEqual(["rhino=beaten", "klaw=next", "ultron=open"]);
     const unsaved = roadFrom({ games: null, lock: () => null, allOpen: false });
     expect(unsaved.steps.every((s) => s.playable)).toBe(true);
   });
 
-  it("keeps the room's lock as the gate for Standard", () => {
+  it("keeps the room's lock as the gate", () => {
     const road = roadFrom({
       games: [win("rhino")],
       lock: (v) => (v === "rhino" ? null : "Beat Rhino to unlock"),

@@ -243,7 +243,7 @@ test.describe("battle table: the room", () => {
       await expect.poll(() => focused(page)).toBe("Core Set");
       await nudge(page, PAD.a);
       await expect.poll(() => focused(page)).toBe("Rhino");
-      await padTo(page, PAD.down, /^Klaw$/);
+      await padTo(page, PAD.right, /^Klaw$/);
       await nudge(page, PAD.a);
       await at(page, "decks");
       await expect.poll(() => focused(page)).toBe("Spider-Man");

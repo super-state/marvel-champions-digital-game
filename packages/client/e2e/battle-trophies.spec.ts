@@ -78,14 +78,15 @@ async function choose(page: Page, name: RegExp): Promise<void> {
 
 /** Campaign, Rhino's box, Play: the game dealt on the table. */
 /**
- * Campaign, Rhino's box, Play: the game dealt on the table. The room's table is bare until then (no mat lying there to
- * be rolled out onto), and the mat that rolls out is the chosen one.
+ * Campaign, the road's next scenario (Klaw: the seeded record has beaten Rhino, who is replayed in Free Play, not
+ * Campaign), Play: the game dealt on the table. The room's table is bare until then (no mat lying there to be rolled
+ * out onto), and the mat that rolls out is the chosen one.
  */
-async function dealRhino(page: Page, mat: string): Promise<void> {
+async function dealNext(page: Page, mat: string): Promise<void> {
   await choose(page, /^Campaign/);
   await at(page, "campaign");
   await expect(room(page)).not.toHaveAttribute("data-rolled-mat");
-  await pickCoreScenario(page, "Rhino");
+  await pickCoreScenario(page, "Klaw");
   await page.locator("#shelf-play").click({ timeout: 30_000 });
   await expect(room(page)).toHaveAttribute("data-rolled-mat", mat, { timeout: 30_000 });
   await expect(room(page)).toBeHidden({ timeout: 60_000 });
@@ -150,7 +151,7 @@ test.describe("battle table: trophies and mats", () => {
     await page.keyboard.press("Escape");
     await at(page, "title");
     await expect(room(page).locator(".shelf-picks button", { hasText: "Ultron (Beat Klaw to unlock)" })).toHaveCount(1);
-    await dealRhino(page, "rhino");
+    await dealNext(page, "rhino");
     await expect(page.locator("#board-viewport")).toHaveAttribute("data-mat", "rhino", { timeout: 30_000 });
 
     // New game, the default mat chosen at the cabinet, dealt again: the same table draws the new mat.
@@ -165,7 +166,7 @@ test.describe("battle table: trophies and mats", () => {
     await room(page).locator('.trophies-mat[data-mat="night"]').click();
     await page.keyboard.press("Escape");
     await at(page, "title");
-    await dealRhino(page, "night");
+    await dealNext(page, "night");
     await expect(page.locator("#board-viewport")).toHaveAttribute("data-mat", "night", { timeout: 30_000 });
   });
 
