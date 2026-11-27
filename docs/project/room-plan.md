@@ -12,15 +12,15 @@ wooden table under a lamp, a shelf of game boxes on the back wall), grown to hol
 
 ![The room from above](room-map.svg)
 
-| Stop | Menu choice      | What is there                                                                         | What you do there                                                                               |
-| ---- | ---------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| 1    | Title            | The doorway: the whole room in view, the game's name, your name and rank              | Press any button, then pick from the menu. Pointing at a choice leans the camera towards it.    |
-| 2    | Campaign         | The scenario shelf on the back wall: every box with scenarios in it, then the table   | Pick a box, a scenario in it, then (next) a hero; the box opens on the table and Play deals it. |
-| 3    | Free Play        | A setup tray on the table: a slot each for villain, module, difficulty, hero and deck | Build any game from what you have unlocked, then Play: the pieces fly onto the mat as now.      |
-| 4    | Heroes & Decks   | A bench on the left wall: a deck box per hero and a card binder                       | Pick a hero, pick or build a deck for them.                                                     |
-| 5    | Trophies & Stats | A glass cabinet and a record board on the right wall                                  | See every achievement (earned ones lit, the rest in outline, each saying how) and your record.  |
-| 6    | Settings         | The radio on the shelf                                                                | Sound, music, controller, which side the card panel sits.                                       |
-| -    | (Play)           | The mat                                                                               | The camera drops to the table and the game is dealt, as today.                                  |
+| Stop | Menu choice      | What is there                                                                          | What you do there                                                                                 |
+| ---- | ---------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 1    | Title            | The doorway: the whole room in view, the game's name, your name and rank               | Press any button, then pick from the menu. Pointing at a choice leans the camera towards it.      |
+| 2    | Campaign         | The scenario shelf on the back wall: every box with scenarios in it, then the table    | Pick a box on the road, then a hero; the box opens on the table and Play deals its next scenario. |
+| 3    | Free Play        | A setup tray on the table: a slot each for scenario, module, difficulty, hero and deck | Build any game from what the road has unlocked, then Play: the pieces fly onto the mat as now.    |
+| 4    | Heroes & Decks   | A bench on the left wall: a deck box per hero and a card binder                        | Pick a hero, pick or build a deck for them.                                                       |
+| 5    | Trophies & Stats | A glass cabinet and a record board on the right wall                                   | See every achievement (earned ones lit, the rest in outline, each saying how) and your record.    |
+| 6    | Settings         | The radio on the shelf                                                                 | Sound, music, controller, which side the card panel sits.                                         |
+| -    | (Play)           | The mat                                                                                | The camera drops to the table and the game is dealt, as today.                                    |
 
 How it behaves:
 
@@ -35,13 +35,42 @@ How it behaves:
 
 ## Campaign and Free Play
 
-The Core Set has no printed campaign: it has three villains, five modules and two difficulties.
+### The road (Adam, 27 Nov 2026)
 
-- **Campaign** is the path we already have: Rhino, then Klaw, then Ultron, each with its recommended module (Bomb
-  Scare, Masters of Evil, Under Attack), on Standard. Beating all three opens the same path on Expert.
-- **Free Play** is "build your own game": any villain you have beaten in the campaign, any of the five modules
-  (adding Legions of Hydra and The Doomsday Chair), Standard or Expert, any hero and deck you have.
+The real game has no start-to-finish path through its boxes: the Core Set has no campaign, each big box since has its
+own, and the small packs are one-off games. We make the thread that ties them together, and only that: inside a box,
+its printed campaign is played as FFG wrote it.
+
+- **Campaign is the road**, one long progression through the boxes in release order:
+  1. **Prologue: the Core Set.** It has no printed campaign (three villains, five modules, two difficulties), so ours
+     stands in: Rhino, then Klaw, then Ultron, each with its recommended module (Bomb Scare, Masters of Evil, Under
+     Attack), on Standard. Beating all three opens the same path on Expert and the first chapter.
+  2. **Chapters: each big box** (The Rise of Red Skull, The Galaxy's Most Wanted, The Mad Titan's Shadow and on), its
+     printed campaign in its printed order, with its campaign log carrying things between games as its rulebook says
+     ([docs/campaign-modes/](../campaign-modes/markdown/index.md) has every one). Finishing a chapter opens the next.
+  3. **Side stories: the small packs** (The Green Goblin, The Wrecking Crew, The Once and Future Kang and the others).
+     Each opens once the road reaches the box it came out after, as an optional one-off game; the road never waits
+     on one.
+  4. **Rewards:** finishing a chapter adds its two heroes to the bench; every scenario beaten on the road opens in Free
+     Play; achievements and the record board track the long run.
+- **On the shelf**, Campaign shows the road: boxes already reached are lit, later ones locked. Opening a box lists its
+  scenarios in order: beaten ones ticked, the next one lit (that is what Play deals), later ones locked.
+- **Free Play is earned through the road**: "build your own game" from what the road has opened, never more. Any
+  scenario beaten on the road, any module and difficulty it has opened (all five Core Set modules, adding Legions of
+  Hydra and The Doomsday Chair, and Expert, once the prologue is done), any hero and deck you have. A side story is in
+  Free Play once it is open on the road. Replaying a beaten scenario is Free Play's job, not Campaign's.
+- Free Play's slot is the **scenario**, shown with its villain's face, not the villain: the same villain can be in two
+  scenarios (The Collector in Infiltrate and Escape the Museum), one scenario can have two villains (Tower Defense)
+  or several (The Wrecking Crew, The Sinister Six), and Fear No Evil pairs a main scheme with a villain you choose.
+- **Civil War is the odd box:** Leaders in place of a villain and a scenario you build yourself
+  ([mc56](../campaign-modes/markdown/mc56_civil_war.md)). Where it sits on the road is decided when it comes in; the
+  engine's scenario data assumes a villain today.
 - Stringing your own villains into a campaign of your own is parked until the above is in.
+
+Only the prologue is on the table today. The chapters need their boxes' cards, the campaign log and its carried-over
+rules, which nothing on the table does yet: each chapter is a step of its own after 1.0.0, not part of this plan's
+versions. The scenario shelf today lets you pick any scenario in any box; turning it into the road (locks, the lit
+next scenario) is a step of its own.
 
 The rules side can already do all of this (`coreScenario` takes `difficulty` and `modularSetIds`; the engine tests
 play Expert Rhino). The 3D table can't yet: it always deals Standard with the recommended module, and has never shown the
@@ -208,7 +237,8 @@ Campaign is three steps, each its own place to stand: **pick a scenario** from a
 it (the Core Set and campaign boxes big, scenario packs small, each with its real front where we have one), **pick a
 hero** at the hero shelf, then **unbox** at the table: the scenario's box and the hero's deck box open, and Play rolls
 the mat on. Built in three slices: the scenario shelf first (`room/places/scenario-shelf.ts`), then the hero step,
-then the hero's deck box at the table. Back goes one step at a time.
+then the hero's deck box at the table. Back goes one step at a time. With the road (see "The road", same day), the
+first step becomes picking a box: the box offers only its next scenario, and boxes not yet reached stay locked.
 
 ## Who is building what (round three, from 25 Nov 2026)
 
@@ -238,11 +268,12 @@ are in and the release check passes).
 
 ## Adam's calls
 
-| #   | Question                                              | This plan assumes                                                                                                                                                                                                                                 |
-| --- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | What is "Campaign" for the Core Set?                  | The three villains in order, then again on Expert. Free Play is where you build your own game. Building your own campaign comes later. (Today the shelf's code calls each villain's box a "campaign"; here the campaign is the run of all three.) |
-| 2   | What does the room look like?                         | The dim, warm games room the shelf already has, our own design, filling up as you earn things.                                                                                                                                                    |
-| 3   | Room first or heroes first?                           | The room first (0.3.0), heroes alongside from 0.6.0, the deck builder once Black Panther is in.                                                                                                                                                   |
-| 4   | Do locks apply to Adam too?                           | Friends unlock by playing. Adam's own table has everything open, with a switch to see it as a friend does.                                                                                                                                        |
-| 5   | Does a Free Play or Expert win open the next villain? | Yes, as on the friend site today: any win against a villain, in any mode or difficulty, opens the next one and earns its mat. The record shows Standard and Expert apart.                                                                         |
-| 6   | How many modules can Free Play add?                   | Several at once, as the rules allow.                                                                                                                                                                                                              |
+| #   | Question                                              | This plan assumes                                                                                                                                                                                                                                                                            |
+| --- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | What is "Campaign" for the Core Set?                  | The three villains in order, then again on Expert. Free Play is where you build your own game. Building your own campaign comes later. (Today the shelf's code calls each villain's box a "campaign"; here the campaign is the run of all three.)                                            |
+| 2   | What does the room look like?                         | The dim, warm games room the shelf already has, our own design, filling up as you earn things.                                                                                                                                                                                               |
+| 3   | Room first or heroes first?                           | The room first (0.3.0), heroes alongside from 0.6.0, the deck builder once Black Panther is in.                                                                                                                                                                                              |
+| 4   | Do locks apply to Adam too?                           | Friends unlock by playing. Adam's own table has everything open, with a switch to see it as a friend does.                                                                                                                                                                                   |
+| 5   | Does a Free Play or Expert win open the next villain? | Yes, as on the friend site today: any win against a villain, in any mode or difficulty, opens the next one and earns its mat. The record shows Standard and Expert apart.                                                                                                                    |
+| 6   | How many modules can Free Play add?                   | Several at once, as the rules allow.                                                                                                                                                                                                                                                         |
+| 7   | Is Free Play open from the start or earned?           | Decided by Adam, 27 Nov 2026: earned through the road. Campaign is one progression through the boxes in release order (the Core Set as prologue, each big box's printed campaign as a chapter, small packs as side stories); Free Play offers only what the road has opened. See "The road". |
