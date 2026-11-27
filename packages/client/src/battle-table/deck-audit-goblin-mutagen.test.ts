@@ -931,7 +931,7 @@ test("02029 Death from Above (alter-ego, stage I): Green Goblin schemes with +1 
   const p = deal(noThrall, stack(QUIET, "02029", QUIET2));
   villainPhase(p);
   const reveal = at(p, "Death from Above revealed", revealOf("Death from Above"));
-  expect(p.beats[reveal]!.reveal!.applies?.form).toBe("Alter-Ego");
+  expect(p.beats[reveal]!.reveal!.applies).toMatchObject({ form: "Alter-Ego" });
   // SCH 1 + X (stage 1), the boost card Advance adds nothing.
   at(p, "his scheme places 2", (b) => threatOn(p, 2)(b) && b.actor === p.snap.villain.id, reveal);
   expect(mainThreat(p)).toBe(6);
@@ -942,7 +942,7 @@ test("02029 Death from Above (hero, stage I): Green Goblin attacks with +1 ATK",
   p.form();
   villainPhase(p);
   const reveal = at(p, "Death from Above revealed", revealOf("Death from Above"));
-  expect(p.beats[reveal]!.reveal!.applies?.form).toBe("Hero");
+  expect(p.beats[reveal]!.reveal!.applies).toMatchObject({ form: "Hero" });
   at(p, "his attack hits for 3", hitOn(p, 3), reveal);
   expect(p.snap.heroHp).toBe(5);
 });
@@ -1024,7 +1024,7 @@ test("02031 Overconfidence (alter-ego): Green Goblin schemes; 3 threat placed, s
   const p = deal(noThrall, mainAt(0), stack(QUIET, "02031", "02021", FILLER));
   villainPhase(p);
   const reveal = at(p, "Overconfidence revealed", revealOf("Overconfidence"));
-  expect(p.beats[reveal]!.reveal!.applies?.form).toBe("Alter-Ego");
+  expect(p.beats[reveal]!.reveal!.applies).toMatchObject({ form: "Alter-Ego" });
   const scheme = at(p, "3 threat", (b) => threatOn(p, 3)(b) && b.actor === p.snap.villain.id, reveal);
   const surge = at(p, "surge", (b) => !!b.surge, scheme);
   at(p, "the surge card revealed", revealOf("Goblin Thrall"), surge);
@@ -1046,7 +1046,7 @@ test("02031 Overconfidence (hero): Green Goblin attacks you; 3 damage, so it gai
   p.form();
   villainPhase(p);
   const reveal = at(p, "Overconfidence revealed", revealOf("Overconfidence"));
-  expect(p.beats[reveal]!.reveal!.applies?.form).toBe("Hero");
+  expect(p.beats[reveal]!.reveal!.applies).toMatchObject({ form: "Hero" });
   const hit = at(p, "3 damage", hitOn(p, 3), reveal);
   const surge = at(p, "surge", (b) => !!b.surge, hit);
   at(p, "the surge card revealed", revealOf("Goblin Thrall"), surge);

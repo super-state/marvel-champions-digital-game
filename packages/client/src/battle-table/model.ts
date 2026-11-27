@@ -431,7 +431,7 @@ export interface BattleBeat {
      * A card with a When Revealed for each form (Assault): the one that applies to the hero's form right now, so the
      * player is told which half of the card is about to happen.
      */
-    applies?: { form: "Hero" | "Alter-Ego"; text: string };
+    applies?: { form: "Hero" | "Alter-Ego"; text: string } | { villain: string; text: string };
     /**
      * Its When Revealed hits "each hero" while the player is in alter-ego form, so it fires on no one (Shocker). An
      * alter-ego is not a hero (Rules Reference v1.8, "Hero"), and the table says so rather than flashing for nothing.
@@ -571,6 +571,24 @@ export function formWhenRevealed(
     "is",
   ).exec(text);
   return line ? { applies: { form: label, text: line[1]!.trim() } } : {};
+}
+
+/**
+ * Of a card's When Revealed lines for each side of the villain (Mad Genius: "When Revealed (Green Goblin): ... /
+ * When Revealed (Norman Osborn): ..."), the one for the side showing. Nothing for a card without them.
+ */
+export function villainWhenRevealed(
+  text: string,
+  villain: string,
+): { applies: { villain: string; text: string } } | Record<string, never> {
+  // A face name is plain words ("Green Goblin", "Norman Osborn"): nothing in it needs escaping for the pattern.
+  const at = text.search(new RegExp(String.raw`When Revealed \(${villain}\)\s*:`, "i"));
+  if (at < 0) return {};
+  const line =
+    /:\s*(.+?)\s*(?=\n|When Revealed\b|(?:Hero |Alter-Ego )?(?:Forced )?(?:Interrupt|Response)\b|Boost\b|$)/is.exec(
+      text.slice(at),
+    );
+  return line ? { applies: { villain, text: line[1]!.trim() } } : {};
 }
 
 /**
@@ -1719,6 +1737,12 @@ export class BattleModel {
             ...(card && e.type === "encounterCardRevealed"
               ? formWhenRevealed(plainRulesTextOf(card), result.state.players[0]!.identity.form)
               : {}),
+            ...(card && e.type === "encounterCardRevealed"
+              ? villainWhenRevealed(
+                  plainRulesTextOf(card),
+                  faceUpName(result.state, result.state.villains[0]!.instanceId),
+                )
+              : {}),
             ...(card &&
             e.type === "encounterCardRevealed" &&
             whenRevealedMissesHeroes(plainRulesTextOf(card), result.state.players[0]!.identity.form)
@@ -2168,8 +2192,9 @@ export class BattleModel {
       const by = beat.millSource ? `${beat.millSource.by ?? name(beat.millSource.card as InstanceId)}: d` : "D";
       beat.text = `${by}iscard ${count === 1 ? "the top card" : `the top ${count} cards`} of the encounter deck (${names})`;
     }
-    // The attack waits on a question (whether to defend): it is aimed now, as the question asks.
-    if (heldAim) {
+    // The attack waits on a question (whether to defend): it is aimed now, as the question asks. With no question
+    // waiting, the attack never came (Norman Osborn's was replaced by his infamy interrupt): nothing to aim.
+    if (heldAim && result.state.pendingChoice) {
       this.#villainActivity = heldAim.activity;
       this.#beats.push({ ...heldAim.beat, activity: heldAim.activity });
     }

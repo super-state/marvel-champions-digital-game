@@ -2307,7 +2307,9 @@ async function whenRevealedFires(
   }
   narrate(beat, card.applies ? { text: `${card.name}: ${card.applies.text}`, icon: "forced", tone: "villain" } : null, {
     eyebrow: {
-      text: card.applies ? `${eyebrow} (${card.applies.form})` : eyebrow,
+      text: card.applies
+        ? `${eyebrow} (${"form" in card.applies ? card.applies.form : card.applies.villain})`
+        : eyebrow,
       icon: "forced",
       tone: "villain",
     },
@@ -2325,6 +2327,8 @@ function appliesHelp(reveal: Beat["reveal"]): string | null {
     return `You're in alter-ego form: no hero${noHero.instead ? ", so the second half of the card happens instead" : ", so nothing attacks you"}.`;
   const applies = reveal?.applies;
   if (!applies) return null;
+  // A half per side of the villain (Mad Genius): the side showing says which.
+  if (!("form" in applies)) return `${applies.villain} is up: ${applies.text}`;
   return `You're in ${applies.form === "Hero" ? "hero" : "alter-ego"} form: ${applies.text}`;
 }
 

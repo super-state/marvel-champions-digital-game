@@ -231,7 +231,7 @@ test("02001a Norman Osborn I: in hero form 'would attack' places 1 infamy counte
   expect(marker(env(p), "infamy")).toBe(5);
 });
 
-test.fails("02001a Norman Osborn: once his attack is replaced, the table doesn't aim him at Spider-Man again in the hero phase", () => {
+test("02001a Norman Osborn: once his attack is replaced, the table doesn't aim him at Spider-Man again in the hero phase", () => {
   // BUG (table): after a villain phase in which Norman Osborn's attack was replaced by his infamy interrupt, the last
   // beat of the move, after the "Hero Phase" banner, is a second "Target: Spider-Man" (attackAim + enemyActivation for
   // Norman): the table lifts Norman and aims him at Spider-Man at the start of the player's turn, with no attack.
@@ -789,7 +789,7 @@ test("02013 Mad Genius (Green Goblin), player in alter-ego form: no attack is ma
   expect(marker(env(p), "madness")).toBe(1);
 });
 
-test.fails("02013 Mad Genius: the reveal tells the player which half applies (Green Goblin, alter-ego: nobody to attack)", () => {
+test("02013 Mad Genius: the reveal tells the player which half applies (Green Goblin, alter-ego: nobody to attack)", () => {
   // BUG (table): Mad Genius has a When Revealed per villain face ("(Green Goblin)" / "(Norman Osborn)"). The reveal beat
   // says neither which half applies (`applies` covers only the hero's form halves) nor, with Green Goblin up and the
   // player in alter-ego form, that there is no hero to attack (`noHeroToAttack`, as Swarm Attack gets): the player
