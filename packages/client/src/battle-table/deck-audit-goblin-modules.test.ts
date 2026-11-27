@@ -517,7 +517,7 @@ test("02047 Tombstone: his attack damages you and asks for a [mental] or [physic
 
 // BUG: Tombstone's question reads only "Choose cards", with no source line: nothing says it is Tombstone's Forced
 // Response or that the picked card will be discarded. Table bug (a confusing prompt).
-test.fails("02047 Tombstone: the question says it is Tombstone's and that the card is discarded", () => {
+test("02047 Tombstone: the question says it is Tombstone's and that the card is discarded", () => {
   const p = deal(stack("02049"), engageMinion("02047"), handOf(...MENTAL_PHYSICAL_HAND), ...quietEnemies);
   p.form();
   const asked = phase(p, undefined, ["Swinging Web Kick", "Backflip"]);

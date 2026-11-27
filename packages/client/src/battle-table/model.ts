@@ -724,6 +724,33 @@ const SCHEME_ICON_TEXT: Record<string, string> = {
  * Biomechanical Upgrades' "highest printed hit points"): it names the card and gives its "Attach to" rule.
  */
 /**
+ * A pick from the player's hand that a card's text discards (Tombstone's "discard a [mental] or a [physical] resource
+ * from your hand", Power Drain's "choose and discard 1 resource ... for each boost icon"): asked as a discard, named by
+ * the card, with the words that say why ("Choose a target" said neither). Null for any other pick.
+ */
+function handDiscardQuestion(
+  state: GameState,
+  pending: NonNullable<GameState["pendingChoice"]>,
+): Pick<BattleChoice, "prompt" | "sourceTitle" | "explanation"> | null {
+  if (pending.prompt.kind !== "chooseCards" && pending.prompt.kind !== "chooseTarget") return null;
+  const hand = new Set<string>(state.players.flatMap((seat) => seat.hand));
+  const cards = pending.options.filter((o) => o.ref.kind === "card");
+  if (!cards.length || cards.length !== pending.options.length) return null;
+  if (!cards.every((o) => o.ref.kind === "card" && hand.has(o.ref.instanceId))) return null;
+  const panel = choiceSourcePanelOf(state, pending, pending.playerId, TABLE_DEPS);
+  const said = panel?.rulesText
+    .split(/(?<=\.)\s+|\n+/)
+    .find((sentence) => /\bdiscard\b/i.test(sentence) && /\bhand\b/i.test(sentence));
+  if (!panel || !said) return null;
+  const n = pending.minSelections === pending.maxSelections ? pending.minSelections : 0;
+  return {
+    prompt: n ? `Choose ${n === 1 ? "a card" : `${n} cards`} to discard` : "Choose cards to discard",
+    sourceTitle: panel.name,
+    explanation: said.trim(),
+  };
+}
+
+/**
  * The question for a pick among cards one of the player's abilities turned up (Futurist: "Choose cards" said nothing):
  * "Choose a card to add to your hand", titled "Tony Stark · Futurist", with the ability's words.
  */
@@ -1348,6 +1375,10 @@ export class BattleModel {
       events.flatMap((e) => (e.type === "cardPutIntoPlayFacedown" && e.as === "minion" ? [e.instanceId] : [])),
     );
     const schemeName = name;
+    /** The boost cards of these events: one shuffled back into the encounter deck after its activation is shown going. */
+    const boostedHere = new Set<string>(
+      events.flatMap((e) => (e.type === "cardMoved" && e.from.kind === "boost" ? [e.instanceId] : [])),
+    );
     /** The cards these events bring into a play area (a minion engaging): only those attack by Quickstrike. */
     const enteredHere = new Set<string>(
       events.flatMap((e) => (e.type === "cardMoved" && e.to.kind === "playArea" ? [e.instanceId] : [])),
@@ -1561,8 +1592,12 @@ export class BattleModel {
       } else if (
         e.type === "cardMoved" &&
         e.to.kind === "playArea" &&
-        (e.from.kind === "encounterDeck" || e.from.kind === "encounterDiscard" || e.from.kind === "setAside") &&
-        !revealedHere.has(e.instanceId) &&
+        (e.from.kind === "encounterDeck" ||
+          e.from.kind === "encounterDiscard" ||
+          e.from.kind === "setAside" ||
+          // A boost card whose Boost puts it into play (Goblin Soldier, Goblin Thrall): turned up, then in play.
+          e.from.kind === "boost") &&
+        (!revealedHere.has(e.instanceId) || e.from.kind === "boost") &&
         cardOf(result.state, e.instanceId)?.type === "minion"
       ) {
         this.#beats.push({
@@ -1772,7 +1807,13 @@ export class BattleModel {
           text: "Your deck ran out: shuffle your discard pile into a new deck",
           deckReset: shuffledDeck ?? this.#game.players[0]!.discard.length,
         });
-      } else if (e.type === "cardMoved" && e.from.kind === "setAside" && e.to.kind === "encounterDeck") {
+      } else if (
+        e.type === "cardMoved" &&
+        // A boost card shuffled back after its activation (Goblin Knight, Monster: discarded, then shuffled in) goes
+        // the same way; a whole discard pile reshuffled when the deck runs out does not (it has a beat of its own).
+        (e.from.kind === "setAside" || (e.from.kind === "encounterDiscard" && boostedHere.has(e.instanceId))) &&
+        e.to.kind === "encounterDeck"
+      ) {
         const last = this.#beats.at(-1);
         // Cards of a nemesis set (Shadow of the Past bringing in the rest of Vulture's) are named as such.
         const card = cardOf(result.state, e.instanceId);
@@ -2584,6 +2625,7 @@ export class BattleModel {
               ...(!revealed && pending.prompt.kind === "chooseCards" && state.step.phase !== "villain"
                 ? pickQuestion(state, pending)
                 : {}),
+              ...handDiscardQuestion(state, pending),
               // An attack card's enemy pick that guard narrows (Swinging Web Kick with Hydra Mercenary out): why the
               // villain isn't among the answers.
               ...this.#guardFields(this.#attackPickGuard(state, pending)),

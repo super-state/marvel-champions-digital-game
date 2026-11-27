@@ -658,7 +658,7 @@ test("02022 Goblin Knight: as a boost card it adds 2 icons, then is shuffled bac
 // BUG: Goblin Knight's Boost ("After this activation ends, shuffle this card into the encounter deck") happens in the
 // engine, but no beat shows the card going back into the encounter deck: the table retires the turned-up boost card
 // with nowhere to fly to (`retireEncounter` with no discard copy), so it just disappears from beside the villain.
-test.fails("02022 Goblin Knight: the table shows the boost card going back into the encounter deck", () => {
+test("02022 Goblin Knight: the table shows the boost card going back into the encounter deck", () => {
   const p = deal(noThrall, stack("02022", FILLER));
   p.form();
   villainPhase(p);
@@ -701,7 +701,7 @@ test("02023 Goblin Soldier: as a boost card it is put into play engaged with you
 // BUG: Goblin Soldier's Boost ("Put Goblin Soldier into play engaged with you") happens in the engine, but no beat
 // shows it entering play: the turned-up boost card is retired with nowhere to fly to and the Soldier appears among the
 // enemies only when the table next redraws (no `entersPlay` beat, as a minion put into play from the deck gets).
-test.fails("02023 Goblin Soldier: the table shows the boost card entering play", () => {
+test("02023 Goblin Soldier: the table shows the boost card entering play", () => {
   const p = deal(noThrall, stack("02023", FILLER));
   p.form();
   villainPhase(p);
@@ -748,7 +748,7 @@ test("02024 Goblin Thrall: as a boost card it is put into play engaged with you 
 
 // BUG: as Goblin Soldier's: the Boost "Put Goblin Thrall into play engaged with you" has no beat; the card vanishes
 // from beside the villain and turns up among the enemies at the next redraw.
-test.fails("02024 Goblin Thrall: the table shows the boost card entering play", () => {
+test("02024 Goblin Thrall: the table shows the boost card entering play", () => {
   const p = deal(noThrall, stack("02024", "02023"));
   p.form();
   villainPhase(p);
@@ -802,7 +802,7 @@ test("02025 Monster: as a boost card it adds 2 icons, then is shuffled back into
 });
 
 // BUG: as Goblin Knight's: Monster's Boost shuffles it back into the encounter deck with no beat; it just disappears.
-test.fails("02025 Monster: the table shows the boost card going back into the encounter deck", () => {
+test("02025 Monster: the table shows the boost card going back into the encounter deck", () => {
   const p = deal(noThrall, stack("02025", FILLER));
   p.form();
   villainPhase(p);

@@ -844,7 +844,7 @@ test("02041 Power Drain: When Defeated discards 2 encounter cards; the player di
   expect(p.snap.encounterDiscard.map((c) => c.name)).toContain("Power Drain");
 });
 
-test.fails("02041 Power Drain: the resource discard is asked as a discard from the hand, in words that say so", () => {
+test("02041 Power Drain: the resource discard is asked as a discard from the hand, in words that say so", () => {
   // BUG (table): Power Drain's "Each player must choose and discard 1 resource of any type from their hand for each
   // boost icon discarded this way" is asked as "Choose a target" over the hand's cards, not as a discard from the hand
   // (`discardFromHand` false): nothing says the 2 picked cards will be discarded, or why 2.
