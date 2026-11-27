@@ -1,3 +1,17 @@
+/* The table is a game, not a page: a drag or double-click never paints its words blue as selected text (Adam,
+   2026-11-27: "everything has like a blue highlight on"). A field you type in still selects. */
+html,
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+input,
+textarea,
+[contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /*
  * Where things sit on the battle screen. The palette, type, buttons, dock, nameplates and floating numbers are
  * defined once in design.css; this file places them and animates the table's own overlays.
