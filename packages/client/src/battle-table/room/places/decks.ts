@@ -138,6 +138,11 @@ function chosenHero(heroes: readonly BenchHero[]): BenchHero {
   return heroes.find((hero) => hero.id === saved) ?? heroes[0]!;
 }
 
+/** The identity card of the hero Campaign and Free Play deal now (`battle-hero`), for Campaign's table. */
+export function chosenIdentity(): string {
+  return chosenHero(benchHeroes()).card.identityCardId;
+}
+
 function rememberHero(hero: HeroId) {
   try {
     localStorage.setItem("battle-hero", hero);
