@@ -1,6 +1,8 @@
 /**
- * Free Play: the setup tray on the table, to the right of where the mat lies, with a slot each for the villain, the
- * module, the difficulty, the hero and the deck (room plan step 0.4.0). The tray stands as furniture from the start;
+ * Free Play: the setup tray on the table, to the right of where the mat lies, with a slot each for the scenario, the
+ * module, the difficulty, the hero and the deck (room plan step 0.4.0). The first slot is the scenario, shown with its
+ * villain's face, not the villain (the room plan's "The road", Adam 2026-11-27): later boxes have one villain in two
+ * scenarios and two villains in one. In the Core Set each scenario is its villain, so it is still kept by villain here. The tray stands as furniture from the start;
  * `mountFreePlay` fills it once the room has loaded (`main.ts`).
  *
  * Each slot is a row of real buttons laid over the picture, so the mouse, touch, the keyboard (arrows move between
@@ -9,8 +11,8 @@
  * villain's box (its campaign box's print), the module's cards, the difficulty's token, the hero's card (its scan) and
  * the deck's box. Play deals that game onto the mat the way a campaign box does (`campaign-play.ts`).
  *
- * Only villains this player has opened are offered: on the test site the ones the room's locks leave open, on Adam's
- * own table all of them. The modules start as the villain's recommended one (and follow the villain until the player
+ * Free Play is earned through the road: only scenarios this player has opened are offered, on the test site the ones the
+ * room's locks leave open, on Adam's own table all of them. The modules start as the villain's recommended one (and follow the villain until the player
  * changes them); several can be in at once, as the rules allow (each a toggle; the last one can't be taken out). The
  * hero's piece is their identity card's scan, found from their starter deck in `HEROES`, so a hero added there gets
  * their picture here with no other change. The deck slot offers the hero's starter deck and every deck saved for them at the bench, the one chosen being
@@ -48,7 +50,7 @@ const TRAY_YAW = -0.06;
 export const freePlay = furniturePlace({
   id: "free-play",
   label: "Free Play",
-  promise: "a setup tray to build any game you have opened: villain, module, difficulty, hero and deck.",
+  promise: "a setup tray to build any game the road has opened: scenario, module, difficulty, hero and deck.",
   view(out, aspect) {
     if (aspect >= 1.2) {
       // On a wide screen the tray stands right of the middle, clear of the buttons on the left.
@@ -176,7 +178,7 @@ function save() {
   }
 }
 
-/** The villains this player has opened (the room's locks; all of them on Adam's own table). */
+/** The scenarios this player has opened, by their villain (the room's locks; all of them on Adam's own table). */
 const openVillains = () => VILLAINS.filter((villain) => !play.host?.lock?.(villain.id));
 
 // ---------- the pieces in the tray ----------
@@ -374,7 +376,7 @@ function paintPiece(slot: Slot) {
 function buildPieces(group: THREE.Group) {
   const tray = new THREE.Group();
   placeOnTray(tray);
-  // The villain's box, on end, its lid's print to the front (portrait, as on the shelf).
+  // The scenario's piece: its villain's box, on end, its lid's print to the front (portrait, as on the shelf).
   const villainFace = printMaterial();
   pieces.set("villain", stand("villain", box(0.64, 0.8, 0.22, 0x1a1512, villainFace), villainFace));
   // The module's cards: a short stack of encounter cards, its top one printed with the set's name.
@@ -600,7 +602,7 @@ function key(event: KeyboardEvent): boolean {
 }
 
 const LABELS: Record<Slot, string> = {
-  villain: "Villain",
+  villain: "Scenario",
   module: "Modules",
   difficulty: "Difficulty",
   hero: "Hero",
@@ -669,7 +671,7 @@ export function mountFreePlay() {
         paintPiece("module");
       }
       paint();
-      // The keyboard and a pad start on the villain row's chosen one.
+      // The keyboard and a pad start on the scenario row's chosen one.
       rows?.villain.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus({ preventScroll: true });
     },
     leave() {

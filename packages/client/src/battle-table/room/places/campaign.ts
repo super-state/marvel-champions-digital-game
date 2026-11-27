@@ -8,6 +8,10 @@
  * Back goes one step at a time: the table back to the box up close on the shelf, the box back on the shelf, the
  * shelf back to the doorway. A villain box marked `open: false` is sealed ("coming soon", or the player's lock) and
  * its scenario says so on the shelf.
+ *
+ * The shelf shows the road (`road.ts`): the Core Set's three on Standard, then on Expert, beaten ones ticked and the
+ * next one lit; only the next is dealt from here (everything on Adam's own table). It is read from the player's games
+ * each time the camera comes to Campaign, so a game won since shows at once.
  */
 import * as THREE from "three";
 import { tokens, texture, loadImage } from "../canvas.js";
@@ -15,11 +19,22 @@ import { camera, newPose, shelfPose, type Pose } from "../camera.js";
 import { lerp, span } from "../motion.js";
 import { pointer, raycaster, renderer, say, scene } from "../room.js";
 import { beginPlay, play, resetPlay } from "./campaign-play.js";
-import { buildScenarioShelf, closeBox, reopen, scenarioShelf, scenarioView } from "./scenario-shelf.js";
+import {
+  buildScenarioShelf,
+  closeBox,
+  refreshScenarioShelf,
+  reopen,
+  scenarioShelf,
+  scenarioView,
+  type ShelfRow,
+} from "./scenario-shelf.js";
 import { askForHero, chosenIdentity } from "./decks.js";
 import { buildHeroDeckBox, type HeroDeckBox } from "./hero-shelf.js";
 import { goTo } from "../nav.js";
-import type { ShelfScenario } from "./scenario-catalogue.js";
+import type { ShelfProduct } from "./scenario-catalogue.js";
+import { boxLock, roadFrom, type Road } from "./road.js";
+import { allOpen } from "../../access.js";
+import type { Difficulty } from "../../model.js";
 import { makePanel, type Place } from "./place.js";
 import {
   bandPrint,
@@ -292,12 +307,41 @@ let toTable = 0;
 let fromBox: string | null = null;
 let campaigns: readonly Campaign[] = CAMPAIGNS;
 
-/** How a scenario on the shelf stands for this player: its villain box here, open, sealed, or not built yet. */
-function scenarioState(scenario: ShelfScenario) {
-  const c = campaigns.find((each) => each.id === scenario.id);
-  if (!c || !c.villain) return { playable: false, lock: null };
-  return { playable: c.open, lock: c.open ? null : (c.lock ?? null) };
+/** Where the player stands on the road, read from their games (`readRoad`). */
+let road: Road = roadFrom({ games: null, lock: () => null, allOpen: true });
+
+/** Reads the road again from the player's games and the room's locks. */
+async function readRoad(): Promise<void> {
+  const games = (await play.host?.games?.().catch(() => null)) ?? null;
+  road = roadFrom({ games, lock: (villain) => play.host?.lock?.(villain) ?? null, allOpen: allOpen() });
 }
+
+/** The scenarios in a box, as the shelf lists them: the Core Set's on the road, any other box's not on the table. */
+function rowsOf(product: ShelfProduct): readonly ShelfRow[] {
+  if (product.code !== "core") {
+    return product.scenarios.map((scenario) => ({
+      key: scenario.id,
+      scenario,
+      name: scenario.name,
+      status: "absent" as const,
+      playable: false,
+      line: "Not on the table yet",
+    }));
+  }
+  return road.steps.map(({ step, status, playable, line }) => {
+    const scenario = product.scenarios.find((each) => each.id === step.scenario)!;
+    // A villain box not built here can't be dealt, whatever the road says.
+    const built = campaigns.some((c) => c.id === step.scenario && c.villain);
+    return { key: step.key, scenario, name: step.name, status, playable: playable && built, line };
+  });
+}
+
+const shelfHooks = {
+  rows: rowsOf,
+  boxLock: (product: ShelfProduct) => boxLock(product, road),
+  onTable: (product: ShelfProduct) => product.code === "core",
+  pick: (row: ShelfRow) => scenarioPicked(row),
+};
 
 // ---------- the hero's deck box at the table ----------
 
@@ -413,17 +457,19 @@ function poseHero(time: number) {
   if (outro) heroCard.position.y += 9 * span(outro.u, 0.05, 0.75);
 }
 
-/** The scenario on its way to the table: its villain box's index here. */
+/** The scenario on its way to the table: its villain box's index here, and the difficulty the road deals it on. */
 let picked = -1;
+let pickedDifficulty: Difficulty = "standard";
 /** Coming back to the shelf from the hero step: its box goes up close again on arrival. */
 let reopenOnArrival = false;
 
 /** A scenario picked on the shelf: off to the hero shelf to pick who plays it. */
-function scenarioPicked(scenario: ShelfScenario) {
-  const index = boxes.findIndex((box) => box.campaign.id === scenario.id);
+function scenarioPicked(row: ShelfRow) {
+  const index = boxes.findIndex((box) => box.campaign.id === row.scenario.id);
   if (index < 0 || play.outro) return;
   fromBox = "core";
   picked = index;
+  pickedDifficulty = row.key.endsWith(":expert") ? "expert" : "standard";
   // The box up close goes back on the shelf as the camera leaves (it would follow the camera otherwise).
   closeBox(false);
   askHero();
@@ -434,7 +480,7 @@ function scenarioPicked(scenario: ShelfScenario) {
 function askHero() {
   const name = boxes[picked]!.campaign.name;
   askForHero({
-    forName: `${name[0]}${name.slice(1).toLowerCase()}`,
+    forName: `${name[0]}${name.slice(1).toLowerCase()}${pickedDifficulty === "expert" ? " · Expert" : ""}`,
     picked: () => heroPicked(),
     back: () => {
       // Back from the heroes: the scenario shelf, its box up close again.
@@ -506,12 +552,16 @@ function close() {
 }
 
 function showOpened(c: Campaign) {
-  el(".shelf-kicker").textContent = `Campaign ${c.number}`;
+  const expert = pickedDifficulty === "expert";
+  el(".shelf-kicker").textContent = `Campaign ${c.number}${expert ? " · Expert" : ""}`;
   el(".shelf-title").textContent = c.name;
   el(".shelf-blurb").textContent = c.blurb;
-  playButton.textContent = `Play vs ${c.name[0]}${c.name.slice(1).toLowerCase()}`;
+  playButton.textContent = `Play vs ${c.name[0]}${c.name.slice(1).toLowerCase()}${expert ? " on Expert" : ""}`;
+  // The road's Expert half deals Expert, with the villain's recommended module as Standard does.
+  const game = (villain: NonNullable<Campaign["villain"]>) =>
+    expert ? { villain, difficulty: "expert" as const } : { villain };
   playButton.onclick = () => {
-    if (c.villain) beginPlay({ villain: c.villain });
+    if (c.villain) beginPlay(game(c.villain));
     else say("This villain's table is still being built.");
   };
   opened.hidden = false;
@@ -519,7 +569,7 @@ function showOpened(c: Campaign) {
   // `&play` presses Play at once (for checks).
   if (c.villain && play.pressPlay) {
     play.pressPlay = false;
-    beginPlay({ villain: c.villain });
+    beginPlay(game(c.villain));
   }
 }
 
@@ -693,6 +743,7 @@ export function reset() {
   toTable = 0;
   fromBox = null;
   picked = -1;
+  pickedDifficulty = "standard";
   reopenOnArrival = false;
   askForHero(null);
   closeBox(false);
@@ -726,7 +777,8 @@ async function build() {
     encounter: encounterBack ? texture(encounterBack) : null,
   };
   boxes = campaigns.map((c, i) => buildBox(c, i, arts[i] ?? null, backs));
-  await buildScenarioShelf(panel, { state: scenarioState, pick: scenarioPicked });
+  await readRoad();
+  await buildScenarioShelf(panel, shelfHooks);
   showStage();
   // The boxes from the keyboard (and for screen readers): a button each, which lifts its box while it has the focus.
   campaigns.forEach((c, i) => {
@@ -847,6 +899,8 @@ export const campaignPlace: Place = {
       if (reopenOnArrival && fromBox) reopen(fromBox);
       reopenOnArrival = false;
       scenarioShelf.enter();
+      // A game won since the shelf was last read moves the road on: its ticks, its next scenario, its padlocks.
+      void readRoad().then(refreshScenarioShelf);
       return;
     }
     if (chosen >= 0 && s === OPENED) playButton.focus({ preventScroll: true });

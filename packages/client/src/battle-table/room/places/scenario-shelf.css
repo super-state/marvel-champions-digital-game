@@ -110,6 +110,22 @@
   opacity: 0.66;
   cursor: var(--cursor-arrow, default);
 }
+/* The road: a beaten scenario keeps its tick readable; the next one's line reads as the call to play it. */
+.room-panel .scn-pick[data-road="beaten"][aria-disabled="true"] {
+  opacity: 0.86;
+}
+.scn-mark {
+  display: inline-block;
+  margin-right: 7px;
+  font-size: 0.9em;
+}
+.scn-tick {
+  color: #6fd27a;
+}
+.scn-pick[data-road="next"] small {
+  color: inherit;
+  opacity: 0.85;
+}
 .scn-line {
   margin: 0;
   color: var(--text-2);

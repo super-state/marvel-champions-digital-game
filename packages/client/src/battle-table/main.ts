@@ -4552,7 +4552,8 @@ let deckDealt: string | null = null;
 // ── Which difficulty and modules ──────────────────────────────────────────────────────────────────────────────────
 // Standard with the villain's recommended module, unless the address asks otherwise for that page (`?difficulty=expert`,
 // `?modules=legions_of_hydra`, comma-separated for more than one) or Free Play's tray chose them. A campaign box
-// always deals Standard with its recommended module; Try again deals what the last game had.
+// deals its recommended module, on Standard unless the road's Expert half asks for Expert; Try again deals what the
+// last game had.
 function addressEncounter(): Pick<DealOptions, "difficulty" | "modules"> {
   const params = new URLSearchParams(location.search);
   const difficulty = params.get("difficulty");
@@ -4606,8 +4607,10 @@ function chooseFreePlay(game: RoomGame | null) {
   if (["hero", "difficulty", "modules"].some((key) => params.has(key))) return;
   try {
     const saved = JSON.parse(sessionStorage.getItem(FREE_PLAY) ?? "null") as RoomGame | null;
-    if (!saved || !isVillainId(saved.villain) || !isHeroId(saved.hero)) return;
-    freePlayHero = saved.hero;
+    // Free Play's game names its hero; a campaign game on Expert names none (the hero chosen at the bench plays it).
+    if (!saved || !isVillainId(saved.villain)) return;
+    if (saved.hero !== undefined && !isHeroId(saved.hero)) return;
+    freePlayHero = saved.hero ?? null;
     encounterChoice = {
       ...(isDifficulty(saved.difficulty) ? { difficulty: saved.difficulty } : {}),
       ...(saved.modules?.every(isModuleId) && saved.modules.length ? { modules: saved.modules } : {}),
@@ -5475,13 +5478,16 @@ async function showShelf(at?: PlaceId) {
     await room.openShelf(
       {
         lock: (villain) => (asFriend ? asFriend(villain) : lockReason(villain)),
+        // The road (Campaign's shelf) is read from the player's games each time the camera comes to it.
+        games: async () => (await recordHome()?.games()) ?? null,
         settings: roomSettings,
         player: () => playerReady.then((profile) => profile?.name ?? null),
         deal: (game) => {
           const villain = game.villain;
           setVillainChoice(villain);
-          // Free Play's tray names the hero and the encounter; a campaign box deals Standard with its module.
-          chooseFreePlay(game.hero ? game : null);
+          // Free Play's tray names the hero and the encounter; a campaign box deals its module, on Standard unless the
+          // road's Expert half asked for Expert.
+          chooseFreePlay(game.hero || game.difficulty ? game : null);
           rememberAtTable(villain);
           start();
         },
