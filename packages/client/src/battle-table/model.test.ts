@@ -380,7 +380,12 @@ describe("Black Cat's Forced Response", () => {
     const milledAt = beats.findIndex((beat) => beat.milled);
     const milled = beats[milledAt]!;
     expect(milled.milled).toHaveLength(2);
-    expect(milled.millSource).toEqual({ card: cat.id, label: "Forced Response", miss: "No mental resources" });
+    expect(milled.millSource).toEqual({
+      card: cat.id,
+      label: "Forced Response",
+      miss: "No mental resources",
+      by: "Black Cat",
+    });
     const kept = beats[milledAt + 1]!.returned!;
     expect(kept.every((id) => milled.milled!.includes(id))).toBe(true);
     expect(hand.find((card) => kept.includes(card.id))?.name).toBe("Genius");
