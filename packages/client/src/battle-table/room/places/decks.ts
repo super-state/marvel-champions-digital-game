@@ -155,14 +155,6 @@ let card: HTMLElement | null = null;
 let tag: HTMLElement | null = null;
 let hint: HTMLElement | null = null;
 let tools: HTMLElement | null = null;
-/**
- * The bench's panel. Its `data-input` says what was used last ("keys" or "mouse"): the focus ring round a box shows
- * only for the keyboard (or a pad, `pad.css`), never just because the bench put the focus on the chosen hero.
- */
-let benchPanel: HTMLElement | null = null;
-const usedInput = (kind: "keys" | "mouse") => {
-  if (benchPanel && benchPanel.dataset.input !== kind) benchPanel.dataset.input = kind;
-};
 /** Back to the shelf, top left while a box is up close: apart from its card, so it is plain to find. */
 let backBar: HTMLElement | null = null;
 let searchBox: HTMLInputElement | null = null;
@@ -570,7 +562,6 @@ function boxAt(x: number, y: number): number {
 const busy = () => !active;
 
 renderer.domElement.addEventListener("pointermove", (event) => {
-  usedInput("mouse");
   if (busy()) return;
   if (cardOpen()) {
     hovered = -1;
@@ -699,7 +690,6 @@ const ARROWS: Record<string, FocusDirection> = {
 
 /** The arrows move between the deck card's buttons while it is open, and between the heroes' boxes while it isn't. */
 function key(event: KeyboardEvent): boolean {
-  if (ARROWS[event.key] || event.key === "Tab") usedInput("keys");
   // In the search box: typing is its own; Escape empties it first; Down or Enter goes to the first hero found.
   if (searchBox && event.target === searchBox) {
     if (event.key === "Escape" && searchBox.value) {
@@ -751,7 +741,6 @@ export function mountBench(source?: { games(): Promise<readonly FinishedGame[] |
       lit = new Set(heroes.map((hero) => hero.card.identityCardId));
       loadPrefs();
       panel.classList.add("bench");
-      benchPanel = panel;
       tools = makeTools();
       picks = el("div", "bench-picks");
       picks.setAttribute("role", "group");

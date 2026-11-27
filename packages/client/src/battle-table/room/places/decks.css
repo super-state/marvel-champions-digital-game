@@ -18,11 +18,14 @@
   overflow: hidden;
   pointer-events: none;
 }
-/* The ring round a box only once the keyboard (or a pad) is in use, not for the focus the bench gives on arrival. */
-.bench[data-input="keys"] .bench-picks button:focus,
-:root[data-input="pad"] .bench-picks button:focus {
-  outline: 3px solid var(--gold);
-  outline-offset: 6px;
+/* No ring round a box, ever (Adam, 2026-11-27: "this stupid yellow rectangle"): the box the arrows or a pad are on
+   slides out of the shelf instead (decks.ts). This beats the page's own focus rings and pad.css's. */
+.room-panel .bench-picks button,
+.room-panel .bench-picks button:focus,
+.room-panel .bench-picks button:focus-visible,
+:root[data-input="pad"] .room-panel .bench-picks button:focus {
+  outline: none !important;
+  box-shadow: none !important;
 }
 .bench-tag {
   position: absolute;
