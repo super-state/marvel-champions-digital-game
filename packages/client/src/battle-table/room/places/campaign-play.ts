@@ -30,9 +30,8 @@ const ENTER_AT = FADE_AT + FADE_LENGTH * 0.7;
 type Quad = [THREE.Vector2, THREE.Vector2, THREE.Vector2, THREE.Vector2];
 
 /**
- * The game Play deals: a campaign box names its villain, and Expert on the road's Expert half (otherwise Standard; its
- * recommended module and the player's hero either way); Free Play's tray names the hero, the difficulty and the modules
- * too.
+ * The game Play deals: a campaign box names only its villain (Standard, its recommended module, the player's hero);
+ * Free Play's tray names the hero, the difficulty and the modules too.
  */
 export interface RoomGame {
   villain: VillainId;

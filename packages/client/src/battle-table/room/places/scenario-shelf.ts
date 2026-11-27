@@ -6,14 +6,19 @@
  * scenario packs smaller. The boxes the table can deal from are lit; the rest stand among them, faded, and a box the
  * road hasn't reached yet (`road.ts`) wears a padlock and says what reaches it.
  *
- * Pointing at a box eases it out; let go, it snaps back. Picking one brings it up close as the hero shelf's boxes come
- * (`close-up.ts`), the shelf dimmed behind: its lid lifts away and the scenarios inside rise, a villain card each, with
- * a card beside listing them in the road's order (the Core Set: its three on Standard, then on Expert): beaten ones
- * ticked, the next one lit, later ones locked. Picking one Campaign deals hands it to Campaign (`campaign.ts`), which
- * takes it to the table; any other says why not. A click off the box, Back (above the card), Escape or B puts it back.
+ * The boxes stand face-out in a lit display cabinet (Adam, 2026-11-27: "fronts of the boxes are better"; "a really
+ * nerdy display cabinet with the boxes under lighting"). Pointing at a box eases it out; let go, it snaps back. The
+ * keyboard and a pad start on the box the road is at and move by the arrows across and between shelves, so no box is
+ * more than a few presses away. Picking one brings it up close as the hero shelf's boxes come (`close-up.ts`), the
+ * cabinet dimmed behind: its lid lifts away and its scenarios come out and stand in a row beside it, big, each a picture
+ * to click rather than a line in a menu (Adam, 2026-11-27: "more visual and clickable, like the boxes on the table"):
+ * the Core Set's are its villains' campaign boxes, as the table showed them; any other box's, its villain cards. Each
+ * says under it how it stands on the road: beaten ones ticked, the next one lit and framed in gold, later ones
+ * padlocked. Picking the next hands it to Campaign (`campaign.ts`), which takes it to the table; any other says why
+ * not. A click off the box and its scenarios, Back, Escape or B puts it back.
  *
- * Every choice is a real button (mouse, touch, the arrows, a pad): a see-through button over each box, and the card's
- * buttons while one is up close.
+ * Every choice is a real button (mouse, touch, the arrows, a pad): a see-through button over each box, and one over
+ * each scenario while a box is up close.
  */
 import * as THREE from "three";
 import { camera, setPose, type Pose } from "../camera.js";
@@ -22,6 +27,7 @@ import { canvas, loadImage, texture } from "../canvas.js";
 import { ROOM, pointer, raycaster, renderer, say, scene } from "../room.js";
 import { spatialPick, type FocusDirection } from "../../pad/spatial.js";
 import { FLY, closeSpot, flyUp, sway, type Facing } from "./close-up.js";
+import { CAMPAIGNS, frontPrint as campaignFront } from "./campaign-prints.js";
 import { SHELF_PRODUCTS, type ShelfProduct, type ShelfScenario } from "./scenario-catalogue.js";
 import { BOARD, SCENARIO_CASE, layoutScenarios, measureOf, type ProductMeasure } from "./scenario-shelf-layout.js";
 import "./scenario-shelf.css";
@@ -33,15 +39,15 @@ const FOOT = 0.6;
 const layout = layoutScenarios(SHELF_PRODUCTS, { back: BACK, bottom: FOOT });
 /** The shelf faces the room (+z); the reader's left is -x. */
 const FACING: Facing = { out: new THREE.Vector3(0, 0, 1), left: new THREE.Vector3(-1, 0, 0) };
-/** On the shelf a box is turned a quarter round, its right-hand side (the spine, printed) to the room. */
-const SPINE_TURN = -Math.PI / 2;
+/** On the shelf a box stands face-out, its front to the room: not turned. */
+const SHELF_TURN = 0;
 
 /**
  * A line on a box's card: one of its scenarios as the road has it (the Core Set's are each there twice, on Standard and
  * on Expert). `absent` is a scenario the table doesn't deal yet.
  */
 export interface ShelfRow {
-  /** Unique in the box: the scenario's id, with `:expert` on the Expert half. */
+  /** Unique in the box: the scenario's id. */
   readonly key: string;
   readonly scenario: ShelfScenario;
   readonly name: string;
@@ -363,10 +369,25 @@ function cardLook(rows: readonly ShelfRow[], scenario: ShelfScenario): CardLook 
     locked: !lit && own.some((row) => row.status === "locked"),
   };
 }
-const lookKey = (look: CardLook) => `${look.lit}/${look.ticked}/${look.locked}`;
+/** A card's look, and whether it is the road's next. */
+type Look = CardLook & { readonly next: boolean };
+const lookOf = (rows: readonly ShelfRow[], scenario: ShelfScenario): Look => ({
+  ...cardLook(rows, scenario),
+  next: rows.some((row) => row.scenario.id === scenario.id && row.status === "next"),
+});
+const lookKey = (look: Look) => `${look.lit}/${look.ticked}/${look.locked}/${look.next}`;
 
-/** A scenario's card in the box: its villain's card, greyed when Campaign doesn't deal it, ticked once beaten. */
-function scenarioPrint(scan: HTMLImageElement | null, scenario: ShelfScenario, look: CardLook): HTMLCanvasElement {
+/**
+ * A scenario as it comes out of its box: the Core Set's villain's campaign box front (`campaign-prints.ts`, the box the
+ * table showed before the shelf), else its villain card; greyed when Campaign doesn't deal it, ticked once beaten,
+ * padlocked while locked, and the road's next one framed in gold.
+ */
+function scenarioPrint(scan: HTMLImageElement | null, scenario: ShelfScenario, look: Look): HTMLCanvasElement {
+  const campaign = CAMPAIGNS.find((c) => c.id === scenario.id);
+  if (campaign) {
+    const front = campaignFront({ ...campaign, open: true }, scan);
+    return badge(look.lit ? front : faded(front), look);
+  }
   const [cv, g] = canvas(300, 420);
   if (scan) g.drawImage(scan, 0, 0, 300, 420);
   else {
@@ -377,10 +398,22 @@ function scenarioPrint(scan: HTMLImageElement | null, scenario: ShelfScenario, l
     g.font = "900 30px 'Public Sans', sans-serif";
     g.fillText(scenario.name.toUpperCase(), 150, 210, 270);
   }
-  const out = look.lit ? cv : faded(cv);
-  if (look.ticked) tick(out.getContext("2d")!, 250, 50, 68);
-  else if (look.locked) lockBadge(out.getContext("2d")!, 250, 50, 34);
-  return out;
+  return badge(look.lit ? cv : faded(cv), look);
+}
+
+/** A scenario's print's marks: a tick, or a padlock, in its top right corner; a gold frame round the road's next. */
+function badge(print: HTMLCanvasElement, look: Look): HTMLCanvasElement {
+  const g = print.getContext("2d")!;
+  const w = print.width;
+  const h = print.height;
+  if (look.next) {
+    g.strokeStyle = "#f2c230";
+    g.lineWidth = w * 0.035;
+    g.strokeRect(g.lineWidth / 2, g.lineWidth / 2, w - g.lineWidth, h - g.lineWidth);
+  }
+  if (look.ticked) tick(g, w * 0.83, w * 0.17, w * 0.23);
+  else if (look.locked) lockBadge(g, w * 0.83, w * 0.17, w * 0.115);
+  return print;
 }
 
 /**
@@ -406,10 +439,96 @@ async function loadDecoded(url: string): Promise<HTMLImageElement | null> {
 
 // ── The bookcase ──────────────────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The cabinet's back: a deep blue glowing from within, brightest behind each shelf's middle, with a faint grid, like a
+ * collector's lit display case (Adam, 2026-11-27: "a really nerdy display cabinet with the boxes under lighting").
+ */
+function backdropPrint(): HTMLCanvasElement {
+  const [cv, g] = canvas(512, 512);
+  const wash = g.createRadialGradient(256, 230, 30, 256, 256, 380);
+  wash.addColorStop(0, "#28407a");
+  wash.addColorStop(0.55, "#141d3c");
+  wash.addColorStop(1, "#080a16");
+  g.fillStyle = wash;
+  g.fillRect(0, 0, 512, 512);
+  g.strokeStyle = "rgba(120, 170, 255, 0.10)";
+  g.lineWidth = 1;
+  for (let i = 0; i <= 512; i += 32) {
+    g.beginPath();
+    g.moveTo(i, 0);
+    g.lineTo(i, 512);
+    g.moveTo(0, i);
+    g.lineTo(512, i);
+    g.stroke();
+  }
+  return cv;
+}
+
+/** A soft round glow, white at its middle, for the light pooled behind each box. */
+let haloMap: THREE.Texture | null = null;
+function halo(): THREE.Texture {
+  if (haloMap) return haloMap;
+  const [cv, g] = canvas(256, 256);
+  const glow = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  glow.addColorStop(0, "rgba(255,255,255,0.9)");
+  glow.addColorStop(0.35, "rgba(255,255,255,0.35)");
+  glow.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = glow;
+  g.fillRect(0, 0, 256, 256);
+  return (haloMap = texture(cv));
+}
+
+/** How high each box stands on its lit stand. */
+const STAND = 0.07;
+const standGlass = new THREE.MeshStandardMaterial({
+  color: 0xbfe3ff,
+  emissive: 0x4fa8ff,
+  emissiveIntensity: 0.9,
+  transparent: true,
+  opacity: 0.55,
+  roughness: 0.15,
+});
+
+/**
+ * A box's place in the cabinet: a glowing acrylic stand under it and a pool of light on the back behind it, gold for
+ * the box the table deals from, cool for one the road has reached, faint for one it hasn't.
+ */
+function buildPlinth(at: THREE.Vector3, size: ProductMeasure, lit: boolean, locked: boolean): THREE.Group {
+  const plinth = new THREE.Group();
+  const stand = new THREE.Mesh(new THREE.BoxGeometry(size.across + 0.12, STAND, size.deep + 0.14), standGlass);
+  stand.position.set(at.x, at.y - size.tall / 2 + STAND / 2, at.z);
+  stand.receiveShadow = true;
+  const glow = new THREE.Mesh(
+    new THREE.PlaneGeometry(size.across * 2.1, size.tall * 1.7),
+    new THREE.MeshBasicMaterial({
+      map: halo(),
+      color: lit ? 0xffc46a : locked ? 0x2a3c66 : 0x5f8fe0,
+      transparent: true,
+      opacity: lit ? 0.75 : locked ? 0.35 : 0.5,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  glow.position.set(at.x, at.y + STAND, BACK + 0.09);
+  plinth.add(stand, glow);
+  return plinth;
+}
+
 function buildCase(group: THREE.Group) {
-  const wood = new THREE.MeshStandardMaterial({ color: 0x3a2818, roughness: 0.55 });
-  const backing = new THREE.MeshStandardMaterial({ color: 0x2a1b11, roughness: 0.85 });
-  const strip = new THREE.MeshStandardMaterial({ color: 0xffd9a0, emissive: 0xffc27a, emissiveIntensity: 2.2 });
+  const wood = new THREE.MeshStandardMaterial({ color: 0x241812, roughness: 0.45, metalness: 0.1 });
+  const backdrop = texture(backdropPrint());
+  backdrop.wrapS = backdrop.wrapT = THREE.RepeatWrapping;
+  backdrop.repeat.set(3, 2);
+  const backing = new THREE.MeshStandardMaterial({
+    map: backdrop,
+    emissive: 0xffffff,
+    emissiveMap: backdrop,
+    emissiveIntensity: 0.9,
+    roughness: 0.9,
+  });
+  const strip = new THREE.MeshStandardMaterial({ color: 0xffe2b8, emissive: 0xffd39a, emissiveIntensity: 2.4 });
+  // The neon edge along each shelf's front: the cabinet's accent.
+  const edge = new THREE.MeshStandardMaterial({ color: 0x8fe6ff, emissive: 0x53c6e8, emissiveIntensity: 2.6 });
   const { x, width, depth } = SCENARIO_CASE;
   const { top, bottom, floors } = layout;
   const height = top - bottom;
@@ -441,7 +560,19 @@ function buildCase(group: THREE.Group) {
     const light = new THREE.Mesh(new THREE.BoxGeometry(width - 0.3, 0.035, 0.06), strip);
     light.position.set(x, ceilings[i]! - 0.02, BACK + depth - 0.22);
     add(light, false);
+    const neon = new THREE.Mesh(new THREE.BoxGeometry(width, 0.035, 0.035), edge);
+    neon.position.set(x, floor - BOARD / 2, BACK + depth + 0.02);
+    add(neon, false);
   });
+  // The neon round the cabinet's mouth, up both sides and along the top.
+  for (const side of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.035, height, 0.035), edge);
+    post.position.set(x + side * (width / 2 + 0.02), bottom + height / 2, BACK + depth + 0.07);
+    add(post, false);
+  }
+  const crown = new THREE.Mesh(new THREE.BoxGeometry(width + 0.08, 0.035, 0.035), edge);
+  crown.position.set(x, top - 0.02, BACK + depth + 0.07);
+  add(crown, false);
   const glow = new THREE.PointLight(0xffd6a0, 16, 12, 1.6);
   glow.position.set(x, top - 1.2, BACK + depth + 1.4);
   const wash = new THREE.SpotLight(0xffcf96, 260, 0, 0.6, 0.7, 1.6);
@@ -605,66 +736,92 @@ function boxLabel(box: Pick<Box, "product" | "lit" | "lock">): string {
 }
 
 /**
- * Where a scenario's card floats once it has come out of its box up close: to the box's right, in columns of three, a
- * little in front of it, big enough to read (Adam, 2026-11-27: "the villain decks come out to the side ... click them
- * as they float").
+ * How a box up close stands to its scenarios: a size `CLOSE_FIT` times its own fits the screen, so it stands small and
+ * to the left (`CLOSE_LEFT` of the way from the middle), and its scenarios have the rest.
  */
-function floatSpot(box: Box, i: number): THREE.Vector3 {
-  const { across, deep } = box.size;
+const CLOSE_FIT = 2.4;
+const CLOSE_LEFT = 0.62;
+
+/** The shape of a scenario's print: a Core Set villain's campaign box front (4:5), else a card (0.715). */
+const printAspect = (scenario: ShelfScenario) => (CAMPAIGNS.some((c) => c.id === scenario.id) ? 0.8 : 0.715);
+
+/**
+ * Where each scenario stands once it has come out of its box up close, from the box's middle (as it stands up close,
+ * not turned): in a row to its right (two rows past three), big enough to read and click (Adam, 2026-11-27). In units
+ * of the box's height, which `CLOSE_FIT` makes a set share of the screen.
+ */
+function floatLayout(box: Box): { spots: THREE.Vector3[]; width: number } {
+  const { across, tall, deep } = box.size;
   const n = box.product.scenarios.length;
-  const perColumn = n <= 3 ? n : Math.ceil(n / 2);
-  const column = Math.floor(i / perColumn);
-  const inColumn = Math.min(perColumn, n - column * perColumn);
-  const row = i % perColumn;
-  const w = FLOAT_W;
-  const h = w / 0.715;
-  return new THREE.Vector3(
-    across / 2 + 0.4 + column * (w + 0.14) + w / 2,
-    ((inColumn - 1) / 2 - row) * (h + 0.12),
-    deep / 2 + 0.25,
-  );
+  const perRow = n <= 3 ? n : Math.ceil(n / 2);
+  const rows = Math.ceil(n / perRow);
+  const aspect = printAspect(box.product.scenarios[0]!);
+  const gap = tall * 0.16;
+  // The room right of the box, and the screen's height less room for the words under each.
+  const room = tall * 3.9;
+  const width = Math.min(tall * 1.4, (room - gap * (perRow - 1)) / perRow, ((tall * 3.0) / rows - gap * 2) * aspect);
+  const height = width / aspect;
+  const spots = box.product.scenarios.map((_, i) => {
+    const row = Math.floor(i / perRow);
+    const col = i % perRow;
+    return new THREE.Vector3(
+      across / 2 + tall * 0.6 + col * (width + gap) + width / 2,
+      tall * 0.2 + ((rows - 1) / 2 - row) * (height + gap * 2.2),
+      deep / 2,
+    );
+  });
+  return { spots, width };
 }
-/** A floating scenario card's width (a card is 0.715 as wide as it is tall). */
-const FLOAT_W = 0.88;
 
 async function buildCards(box: Box, road: readonly ShelfRow[]): Promise<THREE.Mesh[]> {
   const { across, tall, deep } = box.size;
   const n = box.product.scenarios.length;
   const perRow = n <= 3 ? n : Math.ceil(n / 2);
   const rows = Math.ceil(n / perRow);
-  const gap = 0.07;
+  const gap = 0.04;
+  const aspect = printAspect(box.product.scenarios[0]!);
   const cardW = Math.min(
-    (across - 0.2 - gap * (perRow - 1)) / perRow,
-    ((tall - 0.2 - gap * (rows - 1)) / rows) * 0.715,
+    (across - 0.12 - gap * (perRow - 1)) / perRow,
+    ((tall - 0.12 - gap * (rows - 1)) / rows) * aspect,
   );
-  const cardH = cardW / 0.715;
-  const scans = await Promise.all(box.product.scenarios.map((s) => (s.scan ? loadImage(`${CARDS}${s.scan}`) : null)));
+  const cardH = cardW / aspect;
+  const { spots, width } = floatLayout(box);
+  // A Core Set scenario's box front shows its villain card's art, as on the table: the campaign's own scan.
+  const scans = await Promise.all(
+    box.product.scenarios.map((s) => {
+      const campaign = CAMPAIGNS.find((c) => c.id === s.id);
+      if (campaign) return loadImage(campaign.scan);
+      return s.scan ? loadImage(`${CARDS}${s.scan}`) : null;
+    }),
+  );
   return box.product.scenarios.map((scenario, i) => {
     const row = Math.floor(i / perRow);
     const inRow = Math.min(perRow, n - row * perRow);
     const col = i % perRow;
-    const look = cardLook(road, scenario);
-    const lit = look.lit;
+    const look = lookOf(road, scenario);
     const map = texture(scenarioPrint(scans[i] ?? null, scenario, look));
     const card = new THREE.Mesh(
       new THREE.PlaneGeometry(cardW, cardH),
       new THREE.MeshStandardMaterial({
         map,
         roughness: 0.4,
-        ...(lit ? { emissive: 0xffffff, emissiveMap: map, emissiveIntensity: 0.18 } : { color: 0x9a9a9a }),
+        ...(look.lit
+          ? { emissive: 0xffffff, emissiveMap: map, emissiveIntensity: look.next ? 0.32 : 0.2 }
+          : { color: 0x9a9a9a }),
       }),
     );
-    card.position.set(
+    // In the tray at first, lying on its floor; it leaves the box (and its sway) as it comes out.
+    card.userData.box = box.mesh.userData.box;
+    card.userData.scenario = i;
+    card.userData.rest = new THREE.Vector3(
       (col - (inRow - 1) / 2) * (cardW + gap),
       ((rows - 1) / 2 - row) * (cardH + gap),
       -deep / 2 + 0.036,
     );
-    card.userData.box = box.mesh.userData.box;
-    card.userData.scenario = i;
-    card.userData.rest = card.position.clone();
-    card.userData.float = floatSpot(box, i);
-    card.userData.grow = FLOAT_W / cardW;
-    box.mesh.add(card);
+    card.userData.float = spots[i]!;
+    card.userData.grow = width / cardW;
+    card.visible = false;
+    group?.add(card);
     return card;
   });
 }
@@ -685,6 +842,8 @@ const closeAt = new THREE.Vector3();
 
 let picks: HTMLElement | null = null;
 let card: HTMLElement | null = null;
+/** A see-through button over each scenario standing beside the box up close, its words under it. */
+let floats: HTMLElement | null = null;
 let backBar: HTMLElement | null = null;
 let tag: HTMLElement | null = null;
 let hint: HTMLElement | null = null;
@@ -698,67 +857,73 @@ function el<K extends keyof HTMLElementTagNameMap>(name: K, className = "", text
   return node;
 }
 
-/** A tick or a padlock before a row's name: the row's line says it in words, so a screen reader skips it. */
-function mark(kind: string, glyph: string): HTMLElement {
-  const node = el("span", `scn-mark ${kind}`, glyph);
-  node.setAttribute("aria-hidden", "true");
-  return node;
-}
-
-/** The words over a box's list: what the road says about it. */
+/** The words over a box up close: what the road says about it. */
 function whoLine(box: Box, rows: readonly ShelfRow[]): string {
   const count = box.product.scenarios.length;
   const inside = `${count} ${count === 1 ? "scenario" : "scenarios"} inside`;
   if (box.lock) return `Locked · ${box.lock}`;
-  if (!box.lit) return inside;
+  if (!box.lit) return `${inside} · not on the table yet`;
   const next = rows.find((row) => row.status === "next");
   if (next) return `Next on the road: ${next.name}`;
-  if (rows.length && rows.every((row) => row.status === "beaten")) return "All beaten · the prologue is done";
+  if (rows.length && rows.every((row) => row.status === "beaten")) return "All three beaten · the prologue is done";
   return `Pick a scenario · ${count} inside`;
 }
 
-/** The card beside a box up close: its name, and a button for each scenario inside, in the road's order. */
+/** The words for a box up close (its name, what the road says) and a button over each scenario beside it. */
 function paint(focusKey?: string) {
-  if (!card || !opened || !hooks) return;
+  if (!card || !floats || !opened || !hooks) return;
   const box = opened;
   const rows = hooks.rows(box.product);
   const head = el("div", "scn-card-head");
   head.append(el("h3", "scn-title", box.product.name));
   head.append(el("p", "scn-who", whoLine(box, rows)));
-  const list = el("div", "scn-list");
-  list.setAttribute("role", "group");
-  list.setAttribute("aria-label", `${box.product.name}'s scenarios`);
-  for (const row of rows) {
+  card.replaceChildren(head);
+  card.hidden = false;
+  const buttons = rows.map((row) => {
     const scenarioAt = box.product.scenarios.indexOf(row.scenario);
-    const button = el("button", `btn ${row.status === "next" ? "btn-primary" : "btn-secondary"} scn-pick`);
+    const button = el("button", "scn-float");
     button.type = "button";
     button.dataset.scn = `scenario:${row.key}`;
     button.dataset.road = row.status;
+    button.dataset.at = String(scenarioAt);
     if (!row.playable) button.setAttribute("aria-disabled", "true");
+    const words = el("span", "scn-float-words");
     const name = el("strong", "", row.name);
     if (row.status === "beaten") name.prepend(mark("scn-tick", "✓"));
     else if (row.status === "locked") name.prepend(mark("scn-lock", "🔒"));
-    button.append(name);
-    if (row.line) button.append(el("small", "", row.line));
+    words.append(name);
+    if (row.line) words.append(el("small", "", row.line));
+    button.append(words);
     button.onclick = () => choose(row);
     button.onfocus = () => (hoveredCard = scenarioAt);
     button.onblur = () => {
       if (hoveredCard === scenarioAt) hoveredCard = -1;
     };
-    list.append(button);
-  }
-  const parts: HTMLElement[] = [head, list];
-  if (!box.lit) parts.push(el("p", "scn-line", "Not on the table yet: these come later."));
-  card.replaceChildren(...parts);
-  card.hidden = false;
-  // The boxes behind are out of reach while one is up close: a pad's D-pad stays on the card.
+    button.onpointerenter = () => (hoveredCard = scenarioAt);
+    button.onpointerleave = () => {
+      if (hoveredCard === scenarioAt) hoveredCard = -1;
+    };
+    return button;
+  });
+  floats.setAttribute("aria-label", `${box.product.name}'s scenarios`);
+  floats.replaceChildren(...buttons);
+  floats.hidden = false;
+  placeFloats();
+  // The boxes behind are out of reach while one is up close: a pad's D-pad stays on its scenarios.
   if (picks) picks.inert = true;
   if (backBar) backBar.hidden = false;
   if (hint) hint.hidden = true;
   // The focus starts on the road's next scenario (else the first that plays, else the first).
   const start = rows.find((row) => row.status === "next") ?? rows.find((row) => row.playable) ?? rows[0];
   const key = focusKey ?? (start ? `scenario:${start.key}` : "");
-  card.querySelector<HTMLElement>(`[data-scn="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+  floats.querySelector<HTMLElement>(`[data-scn="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+}
+
+/** A tick or a padlock before a scenario's name: its line says it in words, so a screen reader skips it. */
+function mark(kind: string, glyph: string): HTMLElement {
+  const node = el("span", `scn-mark ${kind}`, glyph);
+  node.setAttribute("aria-hidden", "true");
+  return node;
 }
 
 /** A row picked in the box up close: Campaign deals it, or it says why not. */
@@ -786,10 +951,10 @@ function chooseCard(i: number) {
 function readyCards(box: Box) {
   if (!hooks) return;
   const rows = hooks.rows(box.product);
-  const looks = box.product.scenarios.map((scenario) => lookKey(cardLook(rows, scenario))).join();
+  const looks = box.product.scenarios.map((scenario) => lookKey(lookOf(rows, scenario))).join();
   if (box.cards && box.looks === looks) return;
   for (const old of box.cards ?? []) {
-    box.mesh.remove(old);
+    old.removeFromParent();
     old.geometry.dispose();
     const material = old.material as THREE.MeshStandardMaterial;
     material.map?.dispose();
@@ -800,7 +965,7 @@ function readyCards(box: Box) {
   void buildCards(box, rows).then((cards) => {
     // Drawn again meanwhile: these are the old ones.
     if (box.looks !== looks || box.cards) {
-      for (const each of cards) box.mesh.remove(each);
+      for (const each of cards) each.removeFromParent();
       return;
     }
     box.cards = cards;
@@ -832,6 +997,7 @@ export function refreshScenarioShelf() {
 export function closeBox(refocus = true) {
   if (!card) return;
   card.hidden = true;
+  if (floats) floats.hidden = true;
   if (picks) picks.inert = false;
   if (backBar) backBar.hidden = true;
   if (hint) hint.hidden = false;
@@ -850,10 +1016,9 @@ export function reopen(code: string) {
 function hitAt(x: number, y: number): THREE.Intersection | undefined {
   pointer.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
   raycaster.setFromCamera(pointer, camera);
-  return raycaster.intersectObjects(
-    boxes.map((box) => box.mesh),
-    true,
-  )[0];
+  const out: THREE.Object3D[] = boxes.map((box) => box.mesh);
+  if (opened?.cards) out.push(...opened.cards.filter((each) => each.visible));
+  return raycaster.intersectObjects(out, true)[0];
 }
 
 renderer.domElement.addEventListener("pointermove", (event) => {
@@ -882,7 +1047,7 @@ renderer.domElement.addEventListener("click", (event) => {
   if (!active) return;
   const hit = hitAt(event.clientX, event.clientY);
   if (upClose()) {
-    // A scenario's card in the box up close picks it; a click anywhere off the box is a step back, never another box.
+    // A scenario beside the box up close picks it; a click anywhere off them is a step back, never another box.
     const inBox = hit && opened && hit.object.userData.box === opened.mesh.userData.box;
     if (inBox && hit.object.userData.scenario !== undefined) chooseCard(hit.object.userData.scenario as number);
     else if (!inBox) closeBox();
@@ -968,28 +1133,66 @@ function openedRect(box: Box) {
   return r;
 }
 
+/** A scenario's print on the screen. */
+function cardRect(each: THREE.Mesh) {
+  const size = (each.geometry as THREE.PlaneGeometry).parameters;
+  const r = { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity };
+  each.updateMatrixWorld();
+  for (const x of [-size.width / 2, size.width / 2])
+    for (const y of [-size.height / 2, size.height / 2]) {
+      cardCorner.set(x, y, 0).applyMatrix4(each.matrixWorld).project(camera);
+      const px = ((cardCorner.x + 1) / 2) * innerWidth;
+      const py = ((1 - cardCorner.y) / 2) * innerHeight;
+      r.left = Math.min(r.left, px);
+      r.right = Math.max(r.right, px);
+      r.top = Math.min(r.top, py);
+      r.bottom = Math.max(r.bottom, py);
+    }
+  return r;
+}
+
+/** Each scenario's button over its print (before the prints are out, a sliver where it will stand). */
+function placeFloats() {
+  if (!floats || !opened || floats.hidden) return;
+  for (const button of floats.querySelectorAll<HTMLElement>(".scn-float")) {
+    const each = opened.cards?.[Number(button.dataset.at)];
+    const style = button.style;
+    if (!each || !each.visible) {
+      style.left = style.top = "0px";
+      style.width = style.height = "1px";
+      continue;
+    }
+    const r = cardRect(each);
+    style.left = `${r.left}px`;
+    style.top = `${r.top}px`;
+    style.width = `${Math.max(1, r.right - r.left)}px`;
+    style.height = `${Math.max(1, r.bottom - r.top)}px`;
+  }
+}
+
+/** The box's name and what the road says, over the box and its scenarios; Back under them, in the middle. */
 function placeCard() {
-  if (!card || !upClose() || !opened || innerWidth <= 600) return;
+  if (!card || !upClose() || !opened) return;
+  placeFloats();
+  if (innerWidth <= 600) return;
   const r = openedRect(opened);
   const width = card.offsetWidth;
   const height = card.offsetHeight;
-  const right = r.right + 32 + width <= innerWidth - 16;
-  const left = right
-    ? r.right + 32
-    : Math.min(innerWidth - width - 16, Math.max(16, (r.left + r.right) / 2 - width / 2));
-  const top = Math.min(
-    innerHeight - height - 16,
-    Math.max(72, right ? (r.top + r.bottom) / 2 - height / 2 : r.bottom + 14),
-  );
+  const left = Math.min(innerWidth - width - 16, Math.max(16, (r.left + r.right) / 2 - width / 2));
+  const top = Math.max(72, r.top - height - 18);
   card.style.left = `${left}px`;
   card.style.top = `${top}px`;
   if (backBar) {
-    backBar.style.left = `${left}px`;
-    backBar.style.top = `${top - 58}px`;
+    backBar.style.left = `${Math.max(16, innerWidth / 2 - backBar.offsetWidth / 2)}px`;
+    backBar.style.top = `${innerHeight - backBar.offsetHeight - 22}px`;
   }
 }
 
 const easeOut = (x: number) => 1 - (1 - x) ** 3;
+const restAt = new THREE.Vector3();
+const floatAt = new THREE.Vector3();
+/** Square to the room: how the scenarios stand once out. */
+const SQUARE = new THREE.Quaternion();
 
 function step(dt: number) {
   for (const [i, box] of boxes.entries()) {
@@ -998,10 +1201,14 @@ function step(dt: number) {
     // Eases out while pointed at; snaps straight back when let go.
     box.out = target > box.out ? box.out + (target - box.out) * Math.min(1, dt * 12) : target;
     if (up) {
-      // Further back than the hero shelf's boxes come, and nearer the middle: its scenarios float beside it.
-      closeSpot({ across: box.size.across * 1.45, tall: box.size.tall * 1.45, deep: box.size.deep }, closeAt, 0.48);
+      // Small and to the left: its scenarios stand big beside it.
+      closeSpot(
+        { across: box.size.across * CLOSE_FIT, tall: box.size.tall * CLOSE_FIT, deep: box.size.deep },
+        closeAt,
+        CLOSE_LEFT,
+      );
       box.fly = Math.min(1, box.fly + dt / FLY);
-      flyUp(box.mesh, box.home, closeAt, box.fly, FACING, SPINE_TURN);
+      flyUp(box.mesh, box.home, closeAt, box.fly, FACING, SHELF_TURN);
       if (box.fly >= 1) {
         box.swayed += dt;
         sway(box.mesh, box.swayed);
@@ -1010,32 +1217,42 @@ function step(dt: number) {
       box.wasUp = true;
     } else if (box.wasUp) {
       box.mesh.position.copy(box.home);
-      box.mesh.rotation.set(0, SPINE_TURN, 0);
+      box.mesh.rotation.set(0, SHELF_TURN, 0);
       box.mesh.scale.setScalar(1);
       box.fly = box.swayed = box.open = 0;
       box.wasUp = false;
     } else {
-      // Pointed at: slid partway out and turned a little, so part of its front shows.
-      box.mesh.position.set(box.home.x, box.home.y, box.home.z + box.out * box.size.across * 1.1);
-      box.mesh.rotation.set(0, SPINE_TURN + box.out * 1.1, 0);
+      // Pointed at: lifted a little off its stand and towards the room, tipped back as if taken by its top.
+      box.mesh.position.set(
+        box.home.x,
+        box.home.y + box.out * box.size.tall * 0.12,
+        box.home.z + box.out * box.size.deep * 2.2,
+      );
+      box.mesh.rotation.set(-box.out * 0.18, SHELF_TURN, 0);
     }
     // The lid opens a little: lifted off the tray and tipped back, still over the box.
     const lift = easeOut(Math.min(1, box.open / 0.5));
     box.lid.position.set(0, box.size.tall * 0.22 * lift, box.size.deep * 0.35 * lift);
     box.lid.rotation.x = -0.42 * lift;
     box.lid.visible = true;
-    // The scenarios' cards come out from under the lid and float to the box's side, bobbing gently.
+    // The scenarios come out from under the lid and stand in a row beside the box, square to the room (out of its
+    // sway), bobbing gently; the one pointed at comes forward.
     const out = easeOut(Math.max(0, (box.open - 0.3) / 0.7));
+    if (box.cards) box.mesh.updateMatrixWorld();
     box.cards?.forEach((each, k) => {
-      const rest = each.userData.rest as THREE.Vector3;
-      const float = each.userData.float as THREE.Vector3;
+      const shown = up && box.open > 0;
+      each.visible = shown;
+      if (!shown) return;
+      const tall = box.size.tall;
       const pointed = box === opened && k === hoveredCard ? 1 : 0;
-      each.position.lerpVectors(rest, float, out);
-      each.position.z += Math.sin(Math.PI * out) * 0.6 + pointed * 0.15;
-      each.position.y += out * Math.sin(box.swayed * 1.4 + k * 1.3) * 0.04;
+      restAt.copy(each.userData.rest as THREE.Vector3).applyMatrix4(box.mesh.matrixWorld);
+      floatAt.copy(each.userData.float as THREE.Vector3).add(closeAt);
+      each.position.lerpVectors(restAt, floatAt, out);
+      each.position.z += Math.sin(Math.PI * out) * tall * 0.35 + pointed * tall * 0.12;
+      each.position.y += out * Math.sin(box.swayed * 1.4 + k * 1.3) * tall * 0.02;
+      each.quaternion.slerpQuaternions(box.mesh.quaternion, SQUARE, out);
       const grow = 1 + ((each.userData.grow as number) - 1) * out;
-      each.scale.setScalar(grow * (1 + pointed * 0.08));
-      each.visible = box.open > 0;
+      each.scale.setScalar(grow * (1 + pointed * 0.06));
     });
   }
   if (veil) {
@@ -1061,7 +1278,7 @@ const ARROWS: Record<string, FocusDirection> = {
 
 function key(event: KeyboardEvent): boolean {
   const direction = ARROWS[event.key];
-  const areas = upClose() ? [backBar, card] : [picks];
+  const areas = upClose() ? [backBar, floats] : [picks];
   if (!direction || !areas.every(Boolean)) return false;
   placePicks();
   const buttons = areas
@@ -1070,7 +1287,7 @@ function key(event: KeyboardEvent): boolean {
   const now = document.activeElement as HTMLElement | null;
   event.preventDefault();
   if (!now || !buttons.includes(now)) {
-    (upClose() ? card!.querySelector<HTMLElement>("button") : buttons[0])?.focus({ preventScroll: true });
+    (upClose() ? floats!.querySelector<HTMLElement>("button") : buttons[0])?.focus({ preventScroll: true });
     return true;
   }
   const rect = (node: HTMLElement) => {
@@ -1116,6 +1333,9 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
   card = el("section", "scn-card");
   card.setAttribute("aria-label", "Scenarios");
   card.hidden = true;
+  floats = el("div", "scn-floats");
+  floats.setAttribute("role", "group");
+  floats.hidden = true;
   backBar = el("div", "scn-back-bar");
   backBar.hidden = true;
   const back = el("button", "btn btn-secondary scn-back", "‹ Back to the shelf");
@@ -1126,7 +1346,7 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
   tag.hidden = true;
   hint = el("p", "scn-hint", "Pick a box");
   const holder = el("div", "scn-shelf");
-  holder.append(picks, card, backBar, tag, hint);
+  holder.append(picks, floats, card, backBar, tag, hint);
   panel.append(holder);
 
   buildCase(group);
@@ -1158,8 +1378,11 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
     const own = owns[i] ?? null;
     const { mesh, lid, maps, faces } = buildBox(slot.product, slot.size, lit, lock !== null, art, own, i);
     for (const map of maps) renderer.initTexture(map);
-    mesh.position.copy(slot.at);
-    mesh.rotation.y = SPINE_TURN;
+    // On its lit stand.
+    const home = slot.at.clone().setY(slot.at.y + STAND);
+    group!.add(buildPlinth(slot.at, slot.size, lit, lock !== null));
+    mesh.position.copy(home);
+    mesh.rotation.y = SHELF_TURN;
     group!.add(mesh);
     const button = el("button", "scn-box", slot.product.name);
     button.type = "button";
@@ -1185,7 +1408,7 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
       looks: "",
       mesh,
       lid,
-      home: slot.at.clone(),
+      home,
       button,
       cards: null,
       out: 0,
@@ -1210,7 +1433,11 @@ export const scenarioShelf = {
     active = true;
     placePicks();
     if (upClose()) paint();
-    else (boxes[0]?.button ?? null)?.focus({ preventScroll: true });
+    else {
+      // The keyboard and a pad start on the box the road is at, so no one steps through every box to reach it.
+      const at = boxes.find((box) => hooks?.rows(box.product).some((row) => row.status === "next"));
+      (at ?? boxes.find((box) => box.lit) ?? boxes[0])?.button.focus({ preventScroll: true });
+    }
   },
   leave() {
     active = false;

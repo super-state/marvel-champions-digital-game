@@ -41,3 +41,8 @@ test("keeps every box inside the bookcase, standing on a shelf, none overlapping
     }
   }
 });
+
+test("fills three shelves, face-out", () => {
+  expect(layout.floors).toHaveLength(3);
+  for (const slot of layout.slots) expect(slot.foot).toEqual(slot.size);
+});

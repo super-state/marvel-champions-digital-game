@@ -9,8 +9,8 @@
  * shelf back to the doorway. A villain box marked `open: false` is sealed ("coming soon", or the player's lock) and
  * its scenario says so on the shelf.
  *
- * The shelf shows the road (`road.ts`): the Core Set's three on Standard, then on Expert, beaten ones ticked and the
- * next one lit; only the next is dealt from here (everything on Adam's own table). It is read from the player's games
+ * The shelf shows the road (`road.ts`): the Core Set's three on Standard (never Expert: that is Free Play's), beaten
+ * ones ticked and the next one lit; only the next is dealt from here (everything on Adam's own table). It is read from the player's games
  * each time the camera comes to Campaign, so a game won since shows at once.
  */
 import * as THREE from "three";
@@ -34,7 +34,6 @@ import { goTo } from "../nav.js";
 import type { ShelfProduct } from "./scenario-catalogue.js";
 import { boxLock, roadFrom, type Road } from "./road.js";
 import { allOpen } from "../../access.js";
-import type { Difficulty } from "../../model.js";
 import { makePanel, type Place } from "./place.js";
 import {
   bandPrint,
@@ -457,9 +456,8 @@ function poseHero(time: number) {
   if (outro) heroCard.position.y += 9 * span(outro.u, 0.05, 0.75);
 }
 
-/** The scenario on its way to the table: its villain box's index here, and the difficulty the road deals it on. */
+/** The scenario on its way to the table: its villain box's index here. */
 let picked = -1;
-let pickedDifficulty: Difficulty = "standard";
 /** Coming back to the shelf from the hero step: its box goes up close again on arrival. */
 let reopenOnArrival = false;
 
@@ -469,7 +467,6 @@ function scenarioPicked(row: ShelfRow) {
   if (index < 0 || play.outro) return;
   fromBox = "core";
   picked = index;
-  pickedDifficulty = row.key.endsWith(":expert") ? "expert" : "standard";
   // The box up close goes back on the shelf as the camera leaves (it would follow the camera otherwise).
   closeBox(false);
   askHero();
@@ -480,7 +477,7 @@ function scenarioPicked(row: ShelfRow) {
 function askHero() {
   const name = boxes[picked]!.campaign.name;
   askForHero({
-    forName: `${name[0]}${name.slice(1).toLowerCase()}${pickedDifficulty === "expert" ? " · Expert" : ""}`,
+    forName: `${name[0]}${name.slice(1).toLowerCase()}`,
     picked: () => heroPicked(),
     back: () => {
       // Back from the heroes: the scenario shelf, its box up close again.
@@ -552,16 +549,12 @@ function close() {
 }
 
 function showOpened(c: Campaign) {
-  const expert = pickedDifficulty === "expert";
-  el(".shelf-kicker").textContent = `Campaign ${c.number}${expert ? " · Expert" : ""}`;
+  el(".shelf-kicker").textContent = `Campaign ${c.number}`;
   el(".shelf-title").textContent = c.name;
   el(".shelf-blurb").textContent = c.blurb;
-  playButton.textContent = `Play vs ${c.name[0]}${c.name.slice(1).toLowerCase()}${expert ? " on Expert" : ""}`;
-  // The road's Expert half deals Expert, with the villain's recommended module as Standard does.
-  const game = (villain: NonNullable<Campaign["villain"]>) =>
-    expert ? { villain, difficulty: "expert" as const } : { villain };
+  playButton.textContent = `Play vs ${c.name[0]}${c.name.slice(1).toLowerCase()}`;
   playButton.onclick = () => {
-    if (c.villain) beginPlay(game(c.villain));
+    if (c.villain) beginPlay({ villain: c.villain });
     else say("This villain's table is still being built.");
   };
   opened.hidden = false;
@@ -569,7 +562,7 @@ function showOpened(c: Campaign) {
   // `&play` presses Play at once (for checks).
   if (c.villain && play.pressPlay) {
     play.pressPlay = false;
-    beginPlay(game(c.villain));
+    beginPlay({ villain: c.villain });
   }
 }
 
@@ -743,7 +736,6 @@ export function reset() {
   toTable = 0;
   fromBox = null;
   picked = -1;
-  pickedDifficulty = "standard";
   reopenOnArrival = false;
   askForHero(null);
   closeBox(false);
