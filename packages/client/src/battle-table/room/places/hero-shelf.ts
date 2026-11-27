@@ -334,3 +334,34 @@ export async function buildBoxes(group: THREE.Group, look: ShelfLook, lit: Reado
     return { hero, lit: isLit, size, mesh, star };
   });
 }
+
+/** One hero's deck box, on its own: for Campaign's table (`campaign.ts`), where it opens beside the scenario's box. */
+export interface HeroDeckBox {
+  /** The box at its middle, the lid a part of it (`lid`), the size as built (the shelf's face-out size). */
+  readonly group: THREE.Group;
+  readonly lid: THREE.Mesh;
+  readonly size: BoxSize;
+  /** The hero's card, to rise out of it: its scan, or null where it isn't here. */
+  readonly card: THREE.Texture | null;
+  /** Where the lid sits on the box, in the box's own frame. */
+  readonly lidAt: THREE.Vector3;
+}
+
+/** Builds the deck box of the hero with this identity card (null when the shelf doesn't know them). */
+export async function buildHeroDeckBox(code: string): Promise<HeroDeckBox | null> {
+  const hero = SHELF_HEROES.find((each) => each.code === code);
+  if (!hero) return null;
+  const size = boxSize("faces");
+  const scan = await loadImage(scanOf(hero));
+  const [body, lid] = deckBox(
+    size,
+    texture(frontPrint(hero, scan, true)),
+    texture(sidePrint(hero, true)),
+    true,
+    aspectColour(hero),
+    -1,
+  );
+  const group = new THREE.Group();
+  group.add(body!, lid!);
+  return { group, lid: lid!, size, card: scan ? texture(scan) : null, lidAt: lid!.position.clone() };
+}

@@ -16,7 +16,8 @@ import { lerp, span } from "../motion.js";
 import { pointer, raycaster, renderer, say, scene } from "../room.js";
 import { beginPlay, play, resetPlay } from "./campaign-play.js";
 import { buildScenarioShelf, closeBox, reopen, scenarioShelf, scenarioView } from "./scenario-shelf.js";
-import { askForHero } from "./decks.js";
+import { askForHero, chosenIdentity } from "./decks.js";
+import { buildHeroDeckBox, type HeroDeckBox } from "./hero-shelf.js";
 import { goTo } from "../nav.js";
 import type { ShelfScenario } from "./scenario-catalogue.js";
 import { makePanel, type Place } from "./place.js";
@@ -298,6 +299,120 @@ function scenarioState(scenario: ShelfScenario) {
   return { playable: c.open, lock: c.open ? null : (c.lock ?? null) };
 }
 
+// ---------- the hero's deck box at the table ----------
+
+/**
+ * The picked hero's deck box (`hero-shelf.ts`), at the table beside the scenario's box (Adam, 2026-11-27: "it will open
+ * up scenario and hero deck from deck box"): it slides in, its lid comes off and is set down beside it, and the hero's
+ * card rises out of it and comes to face you, on the other side from the villain's. On Play both cards rise out of
+ * view and the boxes are cleared, as the villain's always were.
+ */
+let heroBox: HeroDeckBox | null = null;
+let heroCard: THREE.Group | null = null;
+let heroBoxFor: string | null = null;
+/** The deck box at the table's scale: big enough to hold a card. */
+const HERO_SCALE = 0.56;
+const HERO_HOME = new THREE.Vector3(3.9, 0, 3.0);
+/** Turned a little towards the middle of the table. The box's printed front is its +x side (as on the hero shelf). */
+const HERO_TURN = -0.5;
+const FRONT_TO_CARD = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+const HERO_CARD_END = new THREE.Vector3(3.2, 2.9, 1.2);
+
+/** Builds the deck box of the hero Campaign deals now, unless it is already this hero's. */
+async function readyHeroBox() {
+  const code = chosenIdentity();
+  if (heroBoxFor === code) return;
+  heroBoxFor = code;
+  if (heroBox) scene.remove(heroBox.group);
+  if (heroCard) scene.remove(heroCard);
+  heroBox = null;
+  heroCard = null;
+  const built = await buildHeroDeckBox(code);
+  if (!built || heroBoxFor !== code) return;
+  built.group.scale.setScalar(HERO_SCALE);
+  built.group.visible = false;
+  scene.add(built.group);
+  const card = new THREE.Group();
+  const face = new THREE.Mesh(
+    new THREE.PlaneGeometry(CARD_W, CARD_H),
+    new THREE.MeshPhysicalMaterial({
+      map: built.card,
+      color: built.card ? 0xffffff : 0x3a3530,
+      roughness: 0.35,
+      clearcoat: 0.4,
+    }),
+  );
+  const back = new THREE.Mesh(
+    new THREE.PlaneGeometry(CARD_W, CARD_H),
+    new THREE.MeshStandardMaterial({ color: 0x1b1612, roughness: 0.6 }),
+  );
+  back.rotation.y = Math.PI;
+  face.castShadow = back.castShadow = true;
+  card.add(face, back);
+  card.visible = false;
+  scene.add(card);
+  heroBox = built;
+  heroCard = card;
+}
+
+const heroScratch = {
+  from: new THREE.Vector3(),
+  fromQuat: new THREE.Quaternion(),
+  end: new THREE.Vector3(),
+  endQuat: new THREE.Quaternion(),
+  look: new THREE.Object3D(),
+};
+
+/** Stands the hero's deck box, its lid and its card where they are in the opening (`s`), and in Play's outro. */
+function poseHero(time: number) {
+  if (!heroBox || !heroCard) return;
+  const here = stage === "table" && chosen >= 0;
+  heroBox.group.visible = here;
+  if (!here) {
+    heroCard.visible = false;
+    return;
+  }
+  const outro = play.outro;
+  const { group, lid, lidAt, size } = heroBox;
+  const tall = size.tall * HERO_SCALE;
+  // In from the right, with a hop, as the scenario's box tips onto its back.
+  const arrive = span(s, 0.2, 0.8);
+  group.position.set(HERO_HOME.x + (1 - arrive) * 9, tall / 2 + Math.sin(Math.PI * arrive) * 0.6, HERO_HOME.z);
+  group.rotation.set(0, -Math.PI / 2 + HERO_TURN, 0);
+  if (outro) group.position.x += 16 * span(outro.u, 0.1, 1.0);
+  // The lid: straight up, then over to the right (the box's -z), set down on the table.
+  const up = span(s, 1.2, 0.5);
+  const aside = span(s, 1.7, 0.6);
+  const restY = -size.tall / 2 + 0.22;
+  lid.position.set(
+    lidAt.x,
+    aside > 0 ? lerp(lidAt.y + 1.4, restY, aside) + Math.sin(Math.PI * aside) * 0.8 : lidAt.y + 1.4 * up,
+    lidAt.z - (size.across * 1.05 + 0.2) * aside,
+  );
+  lid.rotation.set(0, 0, 0);
+  lid.rotation.x = -Math.sin(Math.PI * aside) * 0.4;
+  group.updateMatrixWorld(true);
+  // The hero's card: up out of the open box, then out to face you beside the villain's card.
+  const rise = span(s, 2.0, 0.5);
+  const travel = span(s, 2.45, 0.95);
+  heroCard.visible = rise > 0;
+  heroScratch.from.set(0, size.tall / 2 - CARD_H / HERO_SCALE / 2 + rise * (CARD_H / HERO_SCALE + 0.5), 0);
+  heroScratch.from.applyMatrix4(group.matrixWorld);
+  heroScratch.fromQuat.copy(group.quaternion).multiply(FRONT_TO_CARD);
+  heroScratch.end.copy(HERO_CARD_END);
+  if (s >= OPENED - 0.001) heroScratch.end.y += Math.sin(time * 1.6 + 1.3) * 0.06;
+  heroScratch.look.position.copy(heroScratch.end);
+  heroScratch.look.lookAt(camera.position);
+  heroScratch.endQuat.copy(heroScratch.look.quaternion);
+  heroCard.position.lerpVectors(heroScratch.from, heroScratch.end, travel);
+  heroCard.position.y += Math.sin(Math.PI * travel) * 0.35;
+  heroCard.quaternion.slerpQuaternions(heroScratch.fromQuat, heroScratch.endQuat, travel);
+  heroCard.scale.setScalar(lerp(1, CARD_END_SCALE, travel));
+  if (travel >= 1) heroCard.rotation.z += Math.sin(time * 1.1 + 0.7) * 0.02;
+  // Play: up out of view, as the villain's card goes; the table brings in its own.
+  if (outro) heroCard.position.y += 9 * span(outro.u, 0.05, 0.75);
+}
+
 /** The scenario on its way to the table: its villain box's index here. */
 let picked = -1;
 /** Coming back to the shelf from the hero step: its box goes up close again on arrival. */
@@ -334,6 +449,7 @@ function askHero() {
 /** A hero picked: to the table, the scenario's villain box opening there as the camera arrives. */
 function heroPicked() {
   askForHero(null);
+  void readyHeroBox();
   stage = "table";
   scenarioShelf.show(false);
   showStage();
@@ -665,6 +781,7 @@ export function openFromAddress() {
     stage = "table";
     toTable = 1;
     fromBox = "core";
+    void readyHeroBox();
     scenarioShelf.show(false);
     showStage();
     chosen = preset;
@@ -759,6 +876,7 @@ export const campaignPlace: Place = {
     toTable = stage === "table" ? Math.min(1, toTable + dt / 1.1) : Math.max(0, toTable - dt / 1.1);
     scenarioShelf.step(dt);
     advance(dt);
+    poseHero(time);
     easeSway(dt);
     pose(time, dt);
     if (active && stage === "table") {
