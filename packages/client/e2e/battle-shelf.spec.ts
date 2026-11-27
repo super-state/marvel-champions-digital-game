@@ -1,5 +1,5 @@
 import { expect, test } from "./battle-test";
-import { pickCoreScenario } from "./campaign-steps.js";
+import { arrivedAt, pickCoreScenario } from "./campaign-steps.js";
 
 /**
  * The campaign shelf (the room's Campaign place) is the way into a game: from the room's doorway to the boxes, where
@@ -27,11 +27,16 @@ test("the table page opens in the room, Campaign goes to the shelf, and Rhino's 
 
   // The Core Set's box on the scenario shelf, up close, then a scenario in it: its villain box opens on the table. (Picked
   // from the keyboard here: the boxes' buttons are for keyboards and screen readers, and lie under the room the mouse
-  // clicks.) Escape goes back a step: from the table to the Core Set up close.
+  // clicks.) Then the hero shelf asks for a hero; Play as goes on to the table. Escape goes back a step at a time:
+  // from the table to the heroes, from the heroes to the Core Set up close.
   await pickCoreScenario(page, "Ultron");
   await expect(page.locator("#shelf-play")).toHaveText("Play vs Ultron", { timeout: 30_000 });
   await page.keyboard.press("Escape");
   await expect(shelf.locator(".shelf-opened")).toBeHidden();
+  await arrivedAt(page, "decks");
+  await page.keyboard.press("Escape");
+  await arrivedAt(page, "campaign");
+  await expect(shelf.locator(".scn-card")).toBeVisible();
 
   // Rhino's box opens; Escape puts it back.
   await pickCoreScenario(page, "Rhino");
@@ -40,6 +45,9 @@ test("the table page opens in the room, Campaign goes to the shelf, and Rhino's 
   await page.keyboard.press("Escape");
   await expect(shelf.locator(".shelf-opened")).toBeHidden();
   await expect(page.locator("#menu")).not.toHaveJSProperty("open", true);
+  await arrivedAt(page, "decks");
+  await page.keyboard.press("Escape");
+  await arrivedAt(page, "campaign");
 
   await pickCoreScenario(page, "Rhino");
   await page.locator("#shelf-play").click({ timeout: 30_000 });
