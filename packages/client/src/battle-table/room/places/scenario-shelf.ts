@@ -31,6 +31,8 @@ const FOOT = 0.6;
 const layout = layoutScenarios(SHELF_PRODUCTS, { back: BACK, bottom: FOOT });
 /** The shelf faces the room (+z); the reader's left is -x. */
 const FACING: Facing = { out: new THREE.Vector3(0, 0, 1), left: new THREE.Vector3(-1, 0, 0) };
+/** On the shelf a box is turned a quarter round, its right-hand side (the spine, printed) to the room. */
+const SPINE_TURN = -Math.PI / 2;
 
 /** How a scenario stands for this player: one the table deals, sealed with a reason, or not on the table yet. */
 export interface ScenarioState {
@@ -339,7 +341,8 @@ interface Box {
   wasUp: boolean;
 }
 
-const LID_SHARE = 0.72;
+/** The lid runs nearly the box's whole depth, so a box spine-out shows its printed side, not its tray. */
+const LID_SHARE = 0.94;
 
 function buildBox(
   product: ShelfProduct,
@@ -417,6 +420,29 @@ function buildBox(
 }
 
 /** The scenarios in a box, laid on its tray's floor in rows, a villain card each. */
+/**
+ * Where a scenario's card floats once it has come out of its box up close: to the box's right, in columns of three, a
+ * little in front of it, big enough to read (Adam, 2026-11-27: "the villain decks come out to the side ... click them
+ * as they float").
+ */
+function floatSpot(box: Box, i: number): THREE.Vector3 {
+  const { across, deep } = box.size;
+  const n = box.product.scenarios.length;
+  const perColumn = n <= 3 ? n : Math.ceil(n / 2);
+  const column = Math.floor(i / perColumn);
+  const inColumn = Math.min(perColumn, n - column * perColumn);
+  const row = i % perColumn;
+  const w = FLOAT_W;
+  const h = w / 0.715;
+  return new THREE.Vector3(
+    across / 2 + 0.4 + column * (w + 0.14) + w / 2,
+    ((inColumn - 1) / 2 - row) * (h + 0.12),
+    deep / 2 + 0.25,
+  );
+}
+/** A floating scenario card's width (a card is 0.715 as wide as it is tall). */
+const FLOAT_W = 0.88;
+
 async function buildCards(box: Box, state: (s: ShelfScenario) => ScenarioState): Promise<THREE.Mesh[]> {
   const { across, tall, deep } = box.size;
   const n = box.product.scenarios.length;
@@ -451,6 +477,8 @@ async function buildCards(box: Box, state: (s: ShelfScenario) => ScenarioState):
     card.userData.box = box.mesh.userData.box;
     card.userData.scenario = i;
     card.userData.rest = card.position.clone();
+    card.userData.float = floatSpot(box, i);
+    card.userData.grow = FLOAT_W / cardW;
     box.mesh.add(card);
     return card;
   });
@@ -678,9 +706,30 @@ function placeTag() {
   tag.style.top = `${Math.max(tag.offsetHeight + 8, r.top - 8)}px`;
 }
 
+/** The box up close and its floating scenarios together, on the screen. */
+const cardCorner = new THREE.Vector3();
+function openedRect(box: Box) {
+  const r = screenRect(box);
+  for (const each of box.cards ?? []) {
+    if (!each.visible) continue;
+    const size = (each.geometry as THREE.PlaneGeometry).parameters;
+    for (const x of [-size.width / 2, size.width / 2])
+      for (const y of [-size.height / 2, size.height / 2]) {
+        cardCorner.set(x, y, 0).applyMatrix4(each.matrixWorld).project(camera);
+        const px = ((cardCorner.x + 1) / 2) * innerWidth;
+        const py = ((1 - cardCorner.y) / 2) * innerHeight;
+        r.left = Math.min(r.left, px);
+        r.right = Math.max(r.right, px);
+        r.top = Math.min(r.top, py);
+        r.bottom = Math.max(r.bottom, py);
+      }
+  }
+  return r;
+}
+
 function placeCard() {
   if (!card || !upClose() || !opened || innerWidth <= 600) return;
-  const r = screenRect(opened);
+  const r = openedRect(opened);
   const width = card.offsetWidth;
   const height = card.offsetHeight;
   const right = r.right + 32 + width <= innerWidth - 16;
@@ -708,9 +757,10 @@ function step(dt: number) {
     // Eases out while pointed at; snaps straight back when let go.
     box.out = target > box.out ? box.out + (target - box.out) * Math.min(1, dt * 12) : target;
     if (up) {
-      closeSpot(box.size, closeAt);
+      // Further back than the hero shelf's boxes come, and nearer the middle: its scenarios float beside it.
+      closeSpot({ across: box.size.across * 1.45, tall: box.size.tall * 1.45, deep: box.size.deep }, closeAt, 0.48);
       box.fly = Math.min(1, box.fly + dt / FLY);
-      flyUp(box.mesh, box.home, closeAt, box.fly, FACING);
+      flyUp(box.mesh, box.home, closeAt, box.fly, FACING, SPINE_TURN);
       if (box.fly >= 1) {
         box.swayed += dt;
         sway(box.mesh, box.swayed);
@@ -719,25 +769,31 @@ function step(dt: number) {
       box.wasUp = true;
     } else if (box.wasUp) {
       box.mesh.position.copy(box.home);
-      box.mesh.quaternion.identity();
+      box.mesh.rotation.set(0, SPINE_TURN, 0);
       box.mesh.scale.setScalar(1);
       box.fly = box.swayed = box.open = 0;
       box.wasUp = false;
     } else {
-      box.mesh.position.set(box.home.x, box.home.y, box.home.z + box.out * 0.8);
+      // Pointed at: slid partway out and turned a little, so part of its front shows.
+      box.mesh.position.set(box.home.x, box.home.y, box.home.z + box.out * box.size.across * 1.1);
+      box.mesh.rotation.set(0, SPINE_TURN + box.out * 1.1, 0);
     }
-    // The lid: off forward a touch, then up and away over the top, tipping back; the scenarios rise as it goes.
-    const lift = easeOut(Math.min(1, box.open / 0.6));
-    box.lid.position.set(0, box.size.tall * 1.35 * lift, Math.sin(Math.PI * Math.min(1, lift)) * 0.5);
-    box.lid.rotation.x = -0.6 * lift;
-    box.lid.visible = lift < 0.999;
-    const rise = easeOut(Math.max(0, (box.open - 0.35) / 0.65));
+    // The lid opens a little: lifted off the tray and tipped back, still over the box.
+    const lift = easeOut(Math.min(1, box.open / 0.5));
+    box.lid.position.set(0, box.size.tall * 0.22 * lift, box.size.deep * 0.35 * lift);
+    box.lid.rotation.x = -0.42 * lift;
+    box.lid.visible = true;
+    // The scenarios' cards come out from under the lid and float to the box's side, bobbing gently.
+    const out = easeOut(Math.max(0, (box.open - 0.3) / 0.7));
     box.cards?.forEach((each, k) => {
       const rest = each.userData.rest as THREE.Vector3;
+      const float = each.userData.float as THREE.Vector3;
       const pointed = box === opened && k === hoveredCard ? 1 : 0;
-      // Up out of the tray, clear of its rim.
-      each.position.set(rest.x, rest.y, rest.z + rise * (box.size.deep + 0.12) + pointed * 0.12);
-      each.scale.setScalar(1 + pointed * 0.08);
+      each.position.lerpVectors(rest, float, out);
+      each.position.z += Math.sin(Math.PI * out) * 0.6 + pointed * 0.15;
+      each.position.y += out * Math.sin(box.swayed * 1.4 + k * 1.3) * 0.04;
+      const grow = 1 + ((each.userData.grow as number) - 1) * out;
+      each.scale.setScalar(grow * (1 + pointed * 0.08));
       each.visible = box.open > 0;
     });
   }
@@ -859,6 +915,7 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
     const { mesh, lid, maps } = buildBox(slot.product, slot.size, lit, arts[i] ?? null, owns[i] ?? null, i);
     for (const map of maps) renderer.initTexture(map);
     mesh.position.copy(slot.at);
+    mesh.rotation.y = SPINE_TURN;
     group!.add(mesh);
     const button = el("button", "scn-box", slot.product.name);
     button.type = "button";
