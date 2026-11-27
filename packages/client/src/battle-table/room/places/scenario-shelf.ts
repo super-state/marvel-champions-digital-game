@@ -747,6 +747,12 @@ function boxLabel(box: Pick<Box, "product" | "lit" | "lock">): string {
  */
 const CLOSE_FIT = 2.4;
 const CLOSE_LEFT = 0.62;
+/**
+ * How far towards the camera the box up close is brought, shrunk to match so it looks the same size: at its full size
+ * that far back it stood in the cabinet's mouth, and as it swayed it cut through the cabinet's lit edges and the veil
+ * in front of it, and flickered (Adam, 2026-11-27: "the box flickers when rotating").
+ */
+const CLOSE_NEAR = 0.45;
 
 /** The shape of a scenario's print: a Core Set villain's campaign box front (4:5), else a card (0.715). */
 const printAspect = (scenario: ShelfScenario) => (CAMPAIGNS.some((c) => c.id === scenario.id) ? 0.8 : 0.715);
@@ -1150,6 +1156,7 @@ function closeFor(box: Box) {
     closeAt,
     CLOSE_LEFT,
   );
+  closeAt.sub(camera.position).multiplyScalar(CLOSE_NEAR).add(camera.position);
 }
 
 /** Where a scenario's print stands once it is out of its box, on the screen. */
@@ -1162,6 +1169,7 @@ function landedRect(box: Box, at: number) {
     for (const y of [-height / 2, height / 2]) {
       cardCorner
         .set(spot.x + x, spot.y + y, spot.z)
+        .multiplyScalar(CLOSE_NEAR)
         .add(closeAt)
         .project(camera);
       const px = ((cardCorner.x + 1) / 2) * innerWidth;
@@ -1227,6 +1235,8 @@ function step(dt: number) {
       closeFor(box);
       box.fly = Math.min(1, box.fly + dt / FLY);
       flyUp(box.mesh, box.home, closeAt, box.fly, FACING, SHELF_TURN);
+      // Shrinks as it comes, to its size nearer the camera.
+      box.mesh.scale.multiplyScalar(1 + (CLOSE_NEAR - 1) * easeOut(box.fly));
       if (box.fly >= 1) {
         box.swayed += dt;
         sway(box.mesh, box.swayed);
@@ -1261,15 +1271,20 @@ function step(dt: number) {
       const shown = up && box.open > 0;
       each.visible = shown;
       if (!shown) return;
-      const tall = box.size.tall;
+      const tall = box.size.tall * CLOSE_NEAR;
       const pointed = box === opened && k === hoveredCard ? 1 : 0;
       restAt.copy(each.userData.rest as THREE.Vector3).applyMatrix4(box.mesh.matrixWorld);
-      floatAt.copy(each.userData.float as THREE.Vector3).add(closeAt);
+      floatAt
+        .copy(each.userData.float as THREE.Vector3)
+        .multiplyScalar(CLOSE_NEAR)
+        .add(closeAt);
       each.position.lerpVectors(restAt, floatAt, out);
       each.position.z += Math.sin(Math.PI * out) * tall * 0.35 + pointed * tall * 0.12;
       each.position.y += out * Math.sin(box.swayed * 1.4 + k * 1.3) * tall * 0.02;
       each.quaternion.slerpQuaternions(box.mesh.quaternion, SQUARE, out);
-      const grow = 1 + ((each.userData.grow as number) - 1) * out;
+      // From the box's own scale in its tray to its full size beside it.
+      const from = box.mesh.scale.x;
+      const grow = from + ((each.userData.grow as number) * CLOSE_NEAR - from) * out;
       each.scale.setScalar(grow * (1 + pointed * 0.06));
     });
   }
