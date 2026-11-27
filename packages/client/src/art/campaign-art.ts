@@ -30,6 +30,11 @@ export interface CampaignArtCatalog {
   /** By `<campaignId>`, at most one file (`cover.<ext>` has no variant convention — it's the box's one key art). */
   readonly covers: ReadonlyMap<string, Picture>;
   /**
+   * By `<campaignId>` (a pack code for a box with no campaign, `core`, `gob`), at most one file: the box's own front
+   * as sold, title and all (`box.<ext>`), for the room's scenario shelf (`battle-table/room/places/scenario-shelf.ts`).
+   */
+  readonly boxes: ReadonlyMap<string, Picture>;
+  /**
    * A full comic page, by `<campaignId>/<file>` (`file` matches the story's `ComicPage.file`, e.g. `01-badoon`).
    * No variant convention, same as `covers` — a page is one specific piece of art, not an interchangeable one.
    */
@@ -49,6 +54,7 @@ const baseName = (stem: string): string => stem.replace(/-\d+$/, "");
 export function parseCampaignArt(files: Readonly<Record<string, string>>): CampaignArtCatalog {
   const artboards = new Map<string, Picture[]>();
   const covers = new Map<string, Picture>();
+  const boxes = new Map<string, Picture>();
   const pages = new Map<string, Picture>();
   const rulebookPages = new Map<string, Picture>();
   const unrecognized: string[] = [];
@@ -57,6 +63,11 @@ export function parseCampaignArt(files: Readonly<Record<string, string>>): Campa
     const parts = underArt.split("/");
     const file = parts[parts.length - 1] ?? "";
     const stem = file.slice(0, file.lastIndexOf("."));
+    if (parts.length === 3 && stem === "box") {
+      const campaignId = parts[1]!;
+      if (!boxes.has(campaignId)) boxes.set(campaignId, { key: `scene-art:${underArt}`, url: files[fullPath]! });
+      continue;
+    }
     if (parts.length === 3 && stem === "cover") {
       const campaignId = parts[1]!;
       if (!covers.has(campaignId)) covers.set(campaignId, { key: `scene-art:${underArt}`, url: files[fullPath]! });
@@ -85,7 +96,7 @@ export function parseCampaignArt(files: Readonly<Record<string, string>>): Campa
     entry.push({ key: `scene-art:${underArt}`, url: files[fullPath]! });
     artboards.set(slot, entry);
   }
-  return { artboards, covers, pages, rulebookPages, unrecognized };
+  return { artboards, covers, boxes, pages, rulebookPages, unrecognized };
 }
 
 /** A campaign's artboard by name, or null when there is none yet — the panel then shows its placeholder note. */
@@ -126,6 +137,7 @@ export function campaignRulebookPageFor(catalog: CampaignArtCatalog, campaignId:
 const files = import.meta.glob(
   [
     "../../../../art/campaigns/*/cover.{png,jpg,jpeg,webp,avif}",
+    "../../../../art/campaigns/*/box.{png,jpg,jpeg,webp,avif}",
     "../../../../art/campaigns/*/artboards/*.{png,jpg,jpeg,webp,avif}",
     "../../../../art/campaigns/*/pages/*.{png,jpg,jpeg,webp,avif}",
     "../../../../art/campaigns/*/rulebook/*.{png,jpg,jpeg,webp,avif}",

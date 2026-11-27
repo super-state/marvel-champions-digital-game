@@ -22,11 +22,11 @@ export interface ProductMeasure {
  * scenario pack is smaller and upright. */
 export const PRODUCT_BOX: Record<BoxSize, ProductMeasure> = {
   big: { across: 2.2, tall: 2.2, deep: 0.62 },
-  small: { across: 1.3, tall: 1.8, deep: 0.5 },
+  small: { across: 1.22, tall: 1.8, deep: 0.5 },
 };
 
 /** The Core Set's box stands upright and deeper than the campaign boxes, as the real one does. */
-const CORE_BOX: ProductMeasure = { across: 2.0, tall: 2.65, deep: 0.85 };
+const CORE_BOX: ProductMeasure = { across: 2.15, tall: 2.5, deep: 0.85 };
 
 /** A box's size on the shelf. */
 export const measureOf = (product: ShelfProduct): ProductMeasure =>

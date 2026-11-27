@@ -31,6 +31,18 @@ describe("parseCampaignArt", () => {
     expect(catalog.unrecognized).toEqual([]);
   });
 
+  test("a box's own front as sold (box.*) is its own picture, apart from its cover", () => {
+    const catalog = parseCampaignArt({
+      "../art/campaigns/gob/box.jpg": "/gob-box",
+      "../art/campaigns/trors/cover.jpg": "/cover",
+      "../art/campaigns/trors/box.png": "/trors-box",
+    });
+    expect(catalog.boxes.get("gob")?.url).toBe("/gob-box");
+    expect(catalog.boxes.get("trors")?.url).toBe("/trors-box");
+    expect(campaignCoverFor(catalog, "trors")?.url).toBe("/cover");
+    expect(catalog.unrecognized).toEqual([]);
+  });
+
   test("a comic page is looked up by campaign and file name, with no variant convention", () => {
     const catalog = parseCampaignArt({
       "../art/campaigns/gmw/pages/01-badoon.jpg": "/p1",
