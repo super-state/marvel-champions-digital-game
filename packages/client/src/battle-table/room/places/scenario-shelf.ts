@@ -1037,6 +1037,32 @@ function hitAt(x: number, y: number): THREE.Intersection | undefined {
   return raycaster.intersectObjects(out, true)[0];
 }
 
+/**
+ * The box whose place on the shelf is under the pointer, or -1: by its slot, which stays still, never the box itself,
+ * which slides out while pointed at (picked by the box, it slid out from under the pointer, let go, snapped back under
+ * it again, and flickered; Adam, 2026-11-27: "boxes are flickering when being hovered over").
+ */
+const slotBounds = new THREE.Box3();
+const slotSize = new THREE.Vector3();
+const slotHit = new THREE.Vector3();
+function slotAt(x: number, y: number): number {
+  pointer.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+  let best = -1;
+  let nearest = Infinity;
+  for (const [i, box] of boxes.entries()) {
+    slotSize.set(box.size.across, box.size.tall, box.size.deep);
+    slotBounds.setFromCenterAndSize(box.home, slotSize);
+    if (!raycaster.ray.intersectBox(slotBounds, slotHit)) continue;
+    const distance = slotHit.distanceTo(raycaster.ray.origin);
+    if (distance < nearest) {
+      nearest = distance;
+      best = i;
+    }
+  }
+  return best;
+}
+
 renderer.domElement.addEventListener("pointermove", (event) => {
   if (!active) return;
   const hit = hitAt(event.clientX, event.clientY);
@@ -1051,7 +1077,7 @@ renderer.domElement.addEventListener("pointermove", (event) => {
     renderer.domElement.style.cursor = hoveredCard >= 0 ? "pointer" : "default";
     return;
   }
-  hovered = hit ? (hit.object.userData.box as number) : -1;
+  hovered = slotAt(event.clientX, event.clientY);
   renderer.domElement.style.cursor = hovered >= 0 ? "pointer" : "default";
 });
 renderer.domElement.addEventListener("pointerleave", () => {
@@ -1069,7 +1095,7 @@ renderer.domElement.addEventListener("click", (event) => {
     else if (!inBox) closeBox();
     return;
   }
-  const box = hit ? boxes[hit.object.userData.box as number] : undefined;
+  const box = boxes[slotAt(event.clientX, event.clientY)];
   if (box) pickBox(box);
 });
 
@@ -1193,7 +1219,8 @@ function placeCard() {
   const width = card.offsetWidth;
   const height = card.offsetHeight;
   const left = Math.min(innerWidth - width - 16, Math.max(16, (r.left + r.right) / 2 - width / 2));
-  const top = Math.max(84, r.top - height - 16);
+  // Clear of the lid too, which lifts above the box as it opens.
+  const top = Math.max(84, r.top - (r.bottom - r.top) * 0.32 - height - 12);
   card.style.left = `${left}px`;
   card.style.top = `${top}px`;
   if (backBar) {
@@ -1212,6 +1239,12 @@ const easeInOut = (x: number) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 /
  */
 const COME_OUT = 0.5;
 const OPEN_UP = 0.5;
+/**
+ * How far below its scenarios' middle the box lands, as a share of its height: room above it for its name plate,
+ * which overlapped the box's top (Adam, 2026-11-27: "core set text shouldn't overlap the image").
+ */
+const BOX_DROP = 0.4;
+const landAt = new THREE.Vector3();
 const outOfSlot = new THREE.Vector3();
 const glide = new THREE.Vector3();
 function comeOut(box: Box, t: number) {
@@ -1223,7 +1256,7 @@ function comeOut(box: Box, t: number) {
     .copy(box.home)
     .multiplyScalar(u * u)
     .addScaledVector(outOfSlot, 2 * u * k)
-    .addScaledVector(closeAt, k * k);
+    .addScaledVector(landAt.copy(closeAt).setY(closeAt.y - box.size.tall * CLOSE_NEAR * BOX_DROP), k * k);
   box.mesh.position.copy(glide);
   box.mesh.rotation.set(0, SHELF_TURN, 0);
   // Shrinks as it comes, to its size nearer the camera (it looks the same size, only nearer).
