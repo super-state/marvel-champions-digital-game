@@ -36,13 +36,21 @@ const spin = new THREE.Quaternion();
 const lean = new THREE.Quaternion();
 
 /** Stands a box `t` (0 to 1) of the way through coming up close from `home` to `to`. */
-export function flyUp(mesh: THREE.Object3D, home: THREE.Vector3, to: THREE.Vector3, t: number, facing: Facing) {
+export function flyUp(
+  mesh: THREE.Object3D,
+  home: THREE.Vector3,
+  to: THREE.Vector3,
+  t: number,
+  facing: Facing,
+  turn = 0,
+) {
   const slide = 0.24;
   pulled.copy(home).addScaledVector(facing.out, 1.3);
   if (t < slide) {
     const a = easeOut(t / slide);
     mesh.position.lerpVectors(home, pulled, a);
-    mesh.quaternion.setFromAxisAngle(facing.left, 0.22 * a);
+    // `turn`: how it stands on its shelf (a box spine-out is turned a quarter round).
+    mesh.quaternion.setFromAxisAngle(UP, turn).multiply(lean.setFromAxisAngle(facing.left, 0.22 * a));
     mesh.scale.setScalar(1);
     return;
   }
@@ -57,7 +65,7 @@ export function flyUp(mesh: THREE.Object3D, home: THREE.Vector3, to: THREE.Vecto
     u * u * pulled.y + 2 * u * k * over.y + k * k * to.y,
     u * u * pulled.z + 2 * u * k * over.z + k * k * to.z,
   );
-  spin.setFromAxisAngle(UP, Math.PI * 2 * easeOut(b));
+  spin.setFromAxisAngle(UP, turn + (Math.PI * 2 - turn) * easeOut(b));
   lean.setFromAxisAngle(facing.left, 0.22 * (1 - b) - Math.sin(Math.PI * b) * 0.18);
   mesh.quaternion.copy(spin).multiply(lean);
   mesh.scale.setScalar(1 + Math.sin(Math.PI * Math.min(1, b * 1.25)) * 0.08);
@@ -76,7 +84,7 @@ const screenLeft = new THREE.Vector3();
  * to its right). Its front fills a little over half the screen's height (or half its width, for a wide box), measured
  * to the front, which stands half the box's depth nearer than its middle.
  */
-export function closeSpot(size: Measure, out: THREE.Vector3): THREE.Vector3 {
+export function closeSpot(size: Measure, out: THREE.Vector3, left = 0.42): THREE.Vector3 {
   const tan = Math.tan(((camera.fov / 2) * Math.PI) / 180);
   const front = Math.max(size.tall / (1.1 * tan), size.across / (1.0 * tan * camera.aspect));
   const distance = front + size.deep / 2;
@@ -84,5 +92,5 @@ export function closeSpot(size: Measure, out: THREE.Vector3): THREE.Vector3 {
   out.copy(camera.position).addScaledVector(looking, distance);
   out.y += front * tan * 0.06;
   screenLeft.setFromMatrixColumn(camera.matrixWorld, 0).negate();
-  return out.addScaledVector(screenLeft, distance * tan * camera.aspect * 0.42);
+  return out.addScaledVector(screenLeft, distance * tan * camera.aspect * left);
 }
