@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "./battle-test";
+import { pickCoreScenario } from "./campaign-steps.js";
 import { frames, installPad, PAD, setButton } from "./pad-e2e-helpers.js";
 
 /**
@@ -84,8 +85,7 @@ async function dealRhino(page: Page, mat: string): Promise<void> {
   await choose(page, /^Campaign/);
   await at(page, "campaign");
   await expect(room(page)).not.toHaveAttribute("data-rolled-mat");
-  await page.getByRole("button", { name: "Open Rhino" }).focus();
-  await page.keyboard.press("Enter");
+  await pickCoreScenario(page, "Rhino");
   await page.locator("#shelf-play").click({ timeout: 30_000 });
   await expect(room(page)).toHaveAttribute("data-rolled-mat", mat, { timeout: 30_000 });
   await expect(room(page)).toBeHidden({ timeout: 60_000 });
@@ -189,9 +189,14 @@ test.describe("battle table: trophies and mats", () => {
     await at(page, "title");
     await choose(page, /^Campaign/);
     await at(page, "campaign");
-    await expect(room(page).getByRole("button", { name: "Open Ultron" })).toBeVisible();
+    await room(page).locator('[data-scn="box:core"]').focus();
+    await page.keyboard.press("Enter");
+    const ultron = room(page).locator('[data-scn="scenario:ultron"]');
+    await expect(ultron).toBeVisible({ timeout: 30_000 });
+    await expect(ultron).not.toHaveAttribute("aria-disabled", "true");
 
     // The radio's switch: seen as a friend, the Klaw mat is locked again and gives way to the default.
+    await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await at(page, "title");
     await choose(page, /^Settings/);

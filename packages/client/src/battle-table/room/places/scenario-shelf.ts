@@ -15,6 +15,7 @@
  */
 import * as THREE from "three";
 import { camera, setPose, type Pose } from "../camera.js";
+import { CAMPAIGN_ART } from "../../../art/campaign-art.js";
 import { canvas, greyOut, loadImage, texture } from "../canvas.js";
 import { ROOM, pointer, raycaster, renderer, say, scene } from "../room.js";
 import { spatialPick, type FocusDirection } from "../../pad/spatial.js";
@@ -67,10 +68,96 @@ function fit(g: CanvasRenderingContext2D, text: string, font: (size: number) => 
   while (size > 12 && g.measureText(text).width > width) g.font = font(--size);
 }
 
+/** A box's own art, kept with its campaign's pictures (`art/campaigns/<folder>/`), where the folder isn't its code. */
+const ART_FOLDER: Record<string, string> = { cw: "civil_war" };
+
+/**
+ * The box's real front, where there is one (Adam, 2026-11-27: "they should be the actual products"): its rulebook's
+ * cover, which is the box's front with its title (`rulebook/page_001`); else its key art (`cover.*`), with the title
+ * printed on; else nothing, and the box prints its first villain's art.
+ */
+function boxArtUrl(product: ShelfProduct): { url: string; titled: boolean } | null {
+  const folder = ART_FOLDER[product.code] ?? product.code;
+  const rulebook = CAMPAIGN_ART.rulebookPages.get(`${folder}/page_001`);
+  if (rulebook) return { url: rulebook.url, titled: true };
+  const cover = CAMPAIGN_ART.covers.get(folder);
+  return cover ? { url: cover.url, titled: false } : null;
+}
+
+/** Cover-fits a picture into a rectangle, cropping what overflows (around its middle, or `focusY` down). */
+function coverFit(
+  g: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  focusY = 0.5,
+  bottomCut = 0,
+) {
+  const iw = image.naturalWidth || image.width;
+  const ih = (image.naturalHeight || image.height) * (1 - bottomCut);
+  const scale = Math.max(w / iw, h / ih);
+  const sw = w / scale;
+  const sh = h / scale;
+  g.drawImage(image, (iw - sw) / 2, (ih - sh) * focusY, sw, sh, x, y, w, h);
+}
+
+/** A box's front from its own art: the rulebook's cover as it is, or the key art with the title across the foot. */
+function artPrint(product: ShelfProduct, art: HTMLImageElement, titled: boolean, lit: boolean): HTMLCanvasElement {
+  const big = product.size === "big";
+  const [w, h] = big ? [512, 512] : [370, 512];
+  const [cv, g] = canvas(w, h);
+  // A rulebook's cover is the box's front with a small "Rulebook" tab at its foot: cut just above it.
+  coverFit(g, art, 0, 0, w, h, 0.5, titled ? 0.075 : 0);
+  if (!titled) {
+    const [ground, accent] = coloursOf(product);
+    const fade = g.createLinearGradient(0, h * 0.62, 0, h);
+    fade.addColorStop(0, "rgba(0,0,0,0)");
+    fade.addColorStop(1, ground);
+    g.fillStyle = fade;
+    g.fillRect(0, h * 0.62, w, h * 0.38);
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillStyle = "#f6f0e2";
+    g.shadowColor = "rgba(0,0,0,0.8)";
+    g.shadowBlur = 8;
+    g.font = "900 24px 'Public Sans', sans-serif";
+    g.fillText("MARVEL CHAMPIONS", w / 2, 34);
+    const name = product.name.toUpperCase();
+    fit(g, name, (size) => `${size}px Bangers, 'Public Sans', sans-serif`, big ? 70 : 56, w - 40);
+    g.fillStyle = accent;
+    g.fillText(name, w / 2, h - 64);
+    g.shadowBlur = 0;
+  }
+  if (!lit) greyOut(cv);
+  return cv;
+}
+
+/** A box's side from its own art: a strip of it, darkened, the box's name running up it. */
+function artSidePrint(product: ShelfProduct, art: HTMLImageElement, lit: boolean): HTMLCanvasElement {
+  const [cv, g] = canvas(96, 384);
+  coverFit(g, art, 0, 0, 96, 384, 0.4);
+  g.fillStyle = "rgba(0,0,0,0.45)";
+  g.fillRect(0, 0, 96, 384);
+  g.save();
+  g.translate(48, 192);
+  g.rotate(-Math.PI / 2);
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillStyle = "#f6f0e2";
+  const name = product.name.toUpperCase();
+  fit(g, name, (size) => `${size}px Bangers, 'Public Sans', sans-serif`, 44, 350);
+  g.fillText(name, 0, 2);
+  g.restore();
+  if (!lit) greyOut(cv);
+  return cv;
+}
+
 /** A box's front: its release's colours, the first villain's art filling it, and the box's name across the foot. */
 function frontPrint(product: ShelfProduct, art: HTMLImageElement | null, lit: boolean): HTMLCanvasElement {
   const big = product.size === "big";
-  const [w, h] = big ? [512, 512] : [370, 512];
+  const [w, h] = big ? [384, 384] : [280, 384];
   const [cv, g] = canvas(w, h);
   const [ground, accent] = coloursOf(product);
   g.fillStyle = ground;
@@ -80,27 +167,27 @@ function frontPrint(product: ShelfProduct, art: HTMLImageElement | null, lit: bo
     const aw = art.naturalWidth || art.width;
     const ah = art.naturalHeight || art.height;
     const sw = aw * 0.8;
-    const sh = Math.min(ah * 0.5, (sw * (h - 150)) / w);
-    g.drawImage(art, aw * 0.1, ah * 0.1, sw, sh, 0, 0, w, h - 150);
+    const sh = Math.min(ah * 0.5, (sw * (h - 112)) / w);
+    g.drawImage(art, aw * 0.1, ah * 0.1, sw, sh, 0, 0, w, h - 112);
   }
-  const fade = g.createLinearGradient(0, h - 260, 0, h - 150);
+  const fade = g.createLinearGradient(0, h - 195, 0, h - 112);
   fade.addColorStop(0, "rgba(0,0,0,0)");
   fade.addColorStop(1, ground);
   g.fillStyle = fade;
-  g.fillRect(0, h - 260, w, 110);
+  g.fillRect(0, h - 195, w, 83);
   g.fillStyle = ground;
-  g.fillRect(0, h - 150, w, 150);
+  g.fillRect(0, h - 112, w, 112);
   g.fillStyle = accent;
-  g.fillRect(0, h - 150, w, 8);
+  g.fillRect(0, h - 112, w, 6);
   g.textAlign = "center";
   g.textBaseline = "middle";
   g.fillStyle = "#f6f0e2";
   const name = product.name.toUpperCase();
-  fit(g, name, (s) => `${s}px Bangers, 'Public Sans', sans-serif`, big ? 64 : 54, w - 40);
-  g.fillText(name, w / 2, h - 92);
+  fit(g, name, (s) => `${s}px Bangers, 'Public Sans', sans-serif`, big ? 48 : 40, w - 30);
+  g.fillText(name, w / 2, h - 69);
   g.fillStyle = accent;
   const count = product.scenarios.length;
-  g.font = "800 22px 'Public Sans', sans-serif";
+  g.font = "800 17px 'Public Sans', sans-serif";
   g.fillText(
     `${big ? (product.code === "core" ? "CORE SET" : "CAMPAIGN") : "SCENARIO PACK"} · ${count} ${count === 1 ? "SCENARIO" : "SCENARIOS"}`,
     w / 2,
@@ -109,29 +196,29 @@ function frontPrint(product: ShelfProduct, art: HTMLImageElement | null, lit: bo
   );
   // A frame.
   g.strokeStyle = accent;
-  g.lineWidth = 10;
-  g.strokeRect(5, 5, w - 10, h - 10);
+  g.lineWidth = 8;
+  g.strokeRect(4, 4, w - 8, h - 8);
   if (!lit) greyOut(cv);
   return cv;
 }
 
 /** A box's side: its colours, its name running up it. */
 function sidePrint(product: ShelfProduct, lit: boolean): HTMLCanvasElement {
-  const [cv, g] = canvas(128, 512);
+  const [cv, g] = canvas(96, 384);
   const [ground, accent] = coloursOf(product);
   g.fillStyle = ground;
-  g.fillRect(0, 0, 128, 512);
+  g.fillRect(0, 0, 96, 384);
   g.fillStyle = accent;
-  g.fillRect(0, 0, 128, 10);
-  g.fillRect(0, 502, 128, 10);
+  g.fillRect(0, 0, 96, 8);
+  g.fillRect(0, 376, 96, 8);
   g.save();
-  g.translate(64, 256);
+  g.translate(48, 192);
   g.rotate(-Math.PI / 2);
   g.textAlign = "center";
   g.textBaseline = "middle";
   g.fillStyle = "#f6f0e2";
   const name = product.name.toUpperCase();
-  fit(g, name, (s) => `${s}px Bangers, 'Public Sans', sans-serif`, 58, 470);
+  fit(g, name, (s) => `${s}px Bangers, 'Public Sans', sans-serif`, 44, 350);
   g.fillText(name, 0, 2);
   g.restore();
   if (!lit) greyOut(cv);
@@ -223,15 +310,22 @@ interface Box {
 
 const LID_SHARE = 0.72;
 
-function buildBox(product: ShelfProduct, size: ProductMeasure, lit: boolean, art: HTMLImageElement | null, i: number) {
+function buildBox(
+  product: ShelfProduct,
+  size: ProductMeasure,
+  lit: boolean,
+  art: HTMLImageElement | null,
+  own: { image: HTMLImageElement; titled: boolean } | null,
+  i: number,
+) {
   const [ground] = coloursOf(product);
   const shade = lit ? 0xffffff : 0x7a7a7a;
   const stock = new THREE.MeshStandardMaterial({
     color: new THREE.Color(ground).multiplyScalar(lit ? 0.8 : 0.35),
     roughness: 0.7,
   });
-  const front = texture(frontPrint(product, art, lit));
-  const side = texture(sidePrint(product, lit));
+  const front = texture(own ? artPrint(product, own.image, own.titled, lit) : frontPrint(product, art, lit));
+  const side = texture(own ? artSidePrint(product, own.image, lit) : sidePrint(product, lit));
   const printed = (map: THREE.Texture) =>
     new THREE.MeshStandardMaterial({
       map,
@@ -288,7 +382,7 @@ function buildBox(product: ShelfProduct, size: ProductMeasure, lit: boolean, art
   wall(across, 0.03, lidDeep, stock, 0, -tall / 2 + 0.015, deep / 2 - lidDeep / 2);
   mesh.add(tray, lid);
   mesh.traverse((o) => (o.userData.box = i));
-  return { mesh, lid };
+  return { mesh, lid, maps: [front, side] };
 }
 
 /** The scenarios in a box, laid on its tray's floor in rows, a villain card each. */
@@ -712,9 +806,20 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
       return scan ? loadImage(`${CARDS}${scan}`) : null;
     }),
   );
-  layout.slots.forEach((slot, i) => {
+  const owns = await Promise.all(
+    layout.slots.map(async (slot) => {
+      const own = boxArtUrl(slot.product);
+      const image = own ? await loadImage(own.url) : null;
+      return own && image ? { image, titled: own.titled } : null;
+    }),
+  );
+  // One box at a time, the page free to draw between: greying a print and sending it to the graphics card all at once stalled the title's frames
+  // (a pad's press then read as held, and repeated).
+  for (const [i, slot] of layout.slots.entries()) {
+    await new Promise((done) => setTimeout(done, 0));
     const lit = slot.product.scenarios.some((s) => given.state(s).playable || given.state(s).lock !== null);
-    const { mesh, lid } = buildBox(slot.product, slot.size, lit, arts[i] ?? null, i);
+    const { mesh, lid, maps } = buildBox(slot.product, slot.size, lit, arts[i] ?? null, owns[i] ?? null, i);
+    for (const map of maps) renderer.initTexture(map);
     mesh.position.copy(slot.at);
     group!.add(mesh);
     const button = el("button", "scn-box", slot.product.name);
@@ -744,7 +849,7 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
       open: 0,
       wasUp: false,
     });
-  });
+  }
   veil = new THREE.Mesh(
     new THREE.PlaneGeometry(60, 40),
     new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false }),

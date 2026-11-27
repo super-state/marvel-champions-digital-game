@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "./battle-test";
+import { pickCoreScenario } from "./campaign-steps.js";
 import { frames, installPad, PAD, setButton } from "./pad-e2e-helpers.js";
 
 /**
@@ -87,7 +88,7 @@ test.describe("battle table: Heroes & Decks at the bench", () => {
     await keyTo(page, "ArrowUp", /^Campaign/);
     await page.keyboard.press("Enter");
     await at(page, "campaign");
-    await page.keyboard.press("Enter");
+    await pickCoreScenario(page, "Rhino");
     await expect(page.locator("#shelf-play")).toHaveText("Play vs Rhino", { timeout: 30_000 });
     await page.keyboard.press("Enter");
     await expect(page.locator("#matchup")).toHaveText(/^Captain Marvel vs\. Rhino/, { timeout: 60_000 });

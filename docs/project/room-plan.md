@@ -12,15 +12,15 @@ wooden table under a lamp, a shelf of game boxes on the back wall), grown to hol
 
 ![The room from above](room-map.svg)
 
-| Stop | Menu choice      | What is there                                                                         | What you do there                                                                              |
-| ---- | ---------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| 1    | Title            | The doorway: the whole room in view, the game's name, your name and rank              | Press any button, then pick from the menu. Pointing at a choice leans the camera towards it.   |
-| 2    | Campaign         | The villain boxes on the table (built already)                                        | Play the villains in order. A beaten box gets a stamp; a locked one says how to open it.       |
-| 3    | Free Play        | A setup tray on the table: a slot each for villain, module, difficulty, hero and deck | Build any game from what you have unlocked, then Play: the pieces fly onto the mat as now.     |
-| 4    | Heroes & Decks   | A bench on the left wall: a deck box per hero and a card binder                       | Pick a hero, pick or build a deck for them.                                                    |
-| 5    | Trophies & Stats | A glass cabinet and a record board on the right wall                                  | See every achievement (earned ones lit, the rest in outline, each saying how) and your record. |
-| 6    | Settings         | The radio on the shelf                                                                | Sound, music, controller, which side the card panel sits.                                      |
-| -    | (Play)           | The mat                                                                               | The camera drops to the table and the game is dealt, as today.                                 |
+| Stop | Menu choice      | What is there                                                                         | What you do there                                                                               |
+| ---- | ---------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 1    | Title            | The doorway: the whole room in view, the game's name, your name and rank              | Press any button, then pick from the menu. Pointing at a choice leans the camera towards it.    |
+| 2    | Campaign         | The scenario shelf on the back wall: every box with scenarios in it, then the table   | Pick a box, a scenario in it, then (next) a hero; the box opens on the table and Play deals it. |
+| 3    | Free Play        | A setup tray on the table: a slot each for villain, module, difficulty, hero and deck | Build any game from what you have unlocked, then Play: the pieces fly onto the mat as now.      |
+| 4    | Heroes & Decks   | A bench on the left wall: a deck box per hero and a card binder                       | Pick a hero, pick or build a deck for them.                                                     |
+| 5    | Trophies & Stats | A glass cabinet and a record board on the right wall                                  | See every achievement (earned ones lit, the rest in outline, each saying how) and your record.  |
+| 6    | Settings         | The radio on the shelf                                                                | Sound, music, controller, which side the card panel sits.                                       |
+| -    | (Play)           | The mat                                                                               | The camera drops to the table and the game is dealt, as today.                                  |
 
 How it behaves:
 
@@ -201,6 +201,14 @@ Still to check, by a person or a later task:
 Sizing: Captain Marvel took about 3 hours and She-Hulk about 2¼, because the shared audit driver, the fuzz list and the
 cost-pick screen were already there. Every problem in both was in how the table shows things (abilities a deck uses
 that earlier decks never did, and wording), none in the rules engine.
+
+### Campaign's play flow (Adam, 27 Nov 2026)
+
+Campaign is three steps, each its own place to stand: **pick a scenario** from a shelf of every box with scenarios in
+it (the Core Set and campaign boxes big, scenario packs small, each with its real front where we have one), **pick a
+hero** at the hero shelf, then **unbox** at the table: the scenario's box and the hero's deck box open, and Play rolls
+the mat on. Built in three slices: the scenario shelf first (`room/places/scenario-shelf.ts`), then the hero step,
+then the hero's deck box at the table. Back goes one step at a time.
 
 ## Who is building what (round three, from 25 Nov 2026)
 

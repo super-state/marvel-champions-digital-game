@@ -18,9 +18,10 @@ export interface ProductMeasure {
   readonly deep: number;
 }
 
-/** A big box (the Core Set, a campaign box) is square; a scenario pack is smaller and upright. */
+/** A big box (the Core Set, a campaign box) is square, about a quarter as deep as it is wide, as the real ones are; a
+ * scenario pack is smaller and upright. */
 export const PRODUCT_BOX: Record<BoxSize, ProductMeasure> = {
-  big: { across: 2.2, tall: 2.2, deep: 0.8 },
+  big: { across: 2.2, tall: 2.2, deep: 0.62 },
   small: { across: 1.3, tall: 1.8, deep: 0.5 },
 };
 
