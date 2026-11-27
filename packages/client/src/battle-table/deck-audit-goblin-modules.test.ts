@@ -476,16 +476,17 @@ test("02046 Running Interference: thwarted to 0 it leaves play, and the main sch
   expect(mainScheme(p).threatLock).toBeUndefined();
 });
 
-// BUG: with no [physical] anywhere (six [energy] cards; Peter Parker's Scientist makes only a [mental]) the table
-// still offers "Spend 1 mental, 1 physical" as if it could be paid. The outcome is right (2 threat go on it), but the
-// question offers a half that can't be done. Table bug (a confusing prompt): an unpayable half should not be offered
-// (or the threat placed without asking).
-test.fails("02046 Running Interference: with no [physical] to spend, the spend half isn't offered", () => {
+// Settled (rules expert, 2026-11-27): an encounter card bars only an option that needs a target and has none (RRG v1.8
+// "Choose (Option)" p. 12); a spend the player can't pay may still be chosen, and then does nothing (wave 7 §4.2 Q8,
+// 2026-10-20). So with no [physical] anywhere the spend half is still offered, as the table does; taking the threat
+// instead puts the 2 threat on it.
+test("02046 Running Interference: with no [physical] to spend, both halves are still offered (RRG v1.8 p. 12)", () => {
   const p = deal(stack(QUIET, "02046"), handOf(...ENERGY_HAND));
   const asked = phase(p, (c) => (c.eitherOr === "choose" ? optionsNamed(c, "Place 2 threat here") : undefined));
   expect(threatOn(p, "Running Interference")).toBe(3);
   const offered = asked.find((c) => c.eitherOr === "choose")?.options.map((o) => o.label) ?? [];
-  expect(offered).not.toContain("Spend 1 mental, 1 physical");
+  expect(offered).toContain("Spend 1 mental, 1 physical");
+  expect(offered).toContain("Place 2 threat here");
 });
 
 // =====================================================================================================================

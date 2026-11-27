@@ -4,6 +4,7 @@ import {
   bindTargets,
   boost,
   chooseOne,
+  exists,
   chooseTarget,
   chosen,
   countersOn,
@@ -184,7 +185,13 @@ export const RISKY_BUSINESS = defineAbilities({
   "02007.when-revealed": whenRevealed(
     chooseOne(
       option("Give the villain 1 facedown boost card", giveBoostCard()),
-      option("Place 2 infamy counters on Criminal Enterprise", addCounters("infamy", 2, named(CRIMINAL_ENTERPRISE))),
+      // Not while Criminal Enterprise is turned over to State of Madness: an encounter card's option with no valid
+      // target can't be chosen (RRG v1.8 "Choose (Option)" p. 12, "Target" p. 42).
+      option(
+        "Place 2 infamy counters on Criminal Enterprise",
+        { when: exists(query("environment", { name: CRIMINAL_ENTERPRISE })) },
+        addCounters("infamy", 2, named(CRIMINAL_ENTERPRISE)),
+      ),
     ),
   ),
   // [star] Boost: Place 1 infamy counter on Criminal Enterprise. If you cannot, remove 1 madness counter from State

@@ -580,7 +580,7 @@ test("02007 Hired Gun: while State of Madness is up, 'facedown boost card' gives
   expect(p.snap.facedownBoosts).toHaveLength(1);
 });
 
-test.fails("02007 Hired Gun: while State of Madness is up, the infamy option is not offered", () => {
+test("02007 Hired Gun: while State of Madness is up, the infamy option is not offered", () => {
   // BUG (engine, a rules reading): with State of Madness up, Criminal Enterprise is not in play, yet Hired Gun still
   // offers "Place 2 infamy counters on Criminal Enterprise", which then does nothing. RRG 1.8 "Choose (Option)": for an
   // encounter card, a player "cannot choose an option that requires one or more targets if there are no valid targets
