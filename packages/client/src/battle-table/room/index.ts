@@ -38,6 +38,7 @@ import {
   waitingForPress,
 } from "./places/title.js";
 import { trophies } from "./places/trophies.js";
+import { setGo } from "./nav.js";
 import { buildRoom, renderFrame, resize, root, say, scene } from "./room.js";
 
 export type { RoomGame, ShelfHost } from "./places/campaign-play.js";
@@ -73,6 +74,7 @@ let here: PlaceId = "title";
 let heading: PlaceId | null = null;
 
 configureTitle({ choices: () => MENU.map((id) => places[id]), go: (id) => void go(id) });
+setGo((id) => void go(id));
 
 function showPanel(id: PlaceId | null) {
   for (const place of allPlaces) place.panel.hidden = place.id !== id;
