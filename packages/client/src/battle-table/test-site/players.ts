@@ -37,7 +37,14 @@ export interface D1Statement {
 
 /** The order the villains open in. */
 export const VILLAIN_CHAIN = ["rhino", "klaw", "ultron"] as const;
-const VILLAIN_NAMES: Record<string, string> = { rhino: "Rhino", klaw: "Klaw", ultron: "Ultron" };
+const VILLAIN_NAMES: Record<string, string> = {
+  rhino: "Rhino",
+  klaw: "Klaw",
+  ultron: "Ultron",
+  // The Green Goblin pack's scenarios, named by the scenario (one villain fronts both).
+  "risky-business": "Risky Business",
+  "mutagen-formula": "Mutagen Formula",
+};
 export const villainName = (id: string) => VILLAIN_NAMES[id] ?? id;
 
 export const PLAYER_COOKIE = "mc_table_player";

@@ -22,6 +22,7 @@ import { packGame, type SavedGame } from "../record/replay-pack.js";
 import { newlyEarned } from "../record/achievements.js";
 import { recordRows } from "../record/board.js";
 import { announceAchievements } from "../record/popup.js";
+import { villainName } from "./players.js";
 import { versusLine } from "./versus.js";
 
 export interface Profile {
@@ -305,7 +306,7 @@ export async function finishGame(
     return;
   }
   if (profile && saved.unlocked) profile.unlocked = saved.unlocked;
-  const name = NAMES[game.villain] ?? game.villain;
+  const name = villainName(game.villain);
   // Every game, read back: Standard and Expert are counted apart on the line, and achievements are worked out below.
   const games = await home.games();
   const v = saved.versus ?? { won: 0, lost: 0 };

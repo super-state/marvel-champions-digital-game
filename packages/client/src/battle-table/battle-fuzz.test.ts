@@ -99,6 +99,9 @@ const FREE_PLAY_ROTA: readonly Pick<DealOptions, "difficulty" | "modules">[] = [
   { modules: ["the_doomsday_chair"] },
   { difficulty: "expert", modules: ["legions_of_hydra"] },
   { difficulty: "expert", modules: ["the_doomsday_chair"] },
+  // The Green Goblin's modules, open in the tray from the start, with a Core villain.
+  { modules: ["power_drain"] },
+  { difficulty: "expert", modules: ["running_interference"] },
 ];
 
 /**
@@ -1147,11 +1150,16 @@ test.each(
     policy: POLICIES[i % POLICIES.length]!,
     villain: GOBLIN_ROTA[i % GOBLIN_ROTA.length]!,
     hero: HEROES[Math.floor(i / GOBLIN_ROTA.length) % HEROES.length]!.id,
+    // Every third on Expert, and every fourth with a Core module in place of the recommended one.
+    encounter: {
+      ...(i % 3 === 2 ? { difficulty: "expert" as const } : {}),
+      ...(i % 4 === 3 ? { modules: ["bomb_scare" as const] } : {}),
+    },
   })).filter((g) => !process.env.FUZZ_ONLY || String(g.seed) === process.env.FUZZ_ONLY),
 )(
   "fuzz game as $hero against $villain, seed $seed ($policy)",
-  ({ seed, policy, villain, hero }) => {
-    const game = playGame(seed, policy, villain, hero);
+  ({ seed, policy, villain, hero, encounter }) => {
+    const game = playGame(seed, policy, villain, hero, encounter);
     results.push(game);
   },
   60_000,

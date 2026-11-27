@@ -713,6 +713,19 @@ const SCENES: Record<string, Scene> = {
     clearMinions: true,
   },
   /**
+   * `finish` against the Green Goblin in Mutagen Formula (16 hit points): one basic attack wins, for the end of a
+   * scenario pack's game (the record, the replay) to be looked at. Recorded only with `&record=1`, as `finish`.
+   */
+  goblinfinish: {
+    scenario: "mutagen-formula",
+    anyHero: true,
+    recorded: true,
+    hero: { form: "hero" },
+    villain: { damage: 15, lastStage: true },
+    mainThreat: 0,
+    clearMinions: true,
+  },
+  /**
    * Black Panther (`?scene=wakanda&hero=black-panther`) with Energy Daggers, Panther Claws and Tactical Genius out and
    * Wakanda Forever! in hand, a Hydra Bomber engaged: play it (pay with Energy) and the order of the Specials is asked
    * (on the question map as waiting for a design: the upgrades are shown as buttons of their names).

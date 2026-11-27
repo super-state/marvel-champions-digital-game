@@ -935,8 +935,12 @@ function openingTurn({
     ...(difficulty ? { difficulty } : {}),
     ...(modules ? { modularSetIds: modules } : {}),
   };
-  // A Core scenario is built by the Core Set's own builder, as always; a scenario pack's by its wave's.
-  const core = VILLAINS.find((each) => each.id === villain)!.box === "core";
+  // A Core scenario with Core modules is built by the Core Set's own builder, exactly as always. A scenario pack's, or a
+  // Core scenario given one of a pack's modules in Free Play (Rhino with Power Drain), by the wave's, whose card pool
+  // holds the pack's cards.
+  const core =
+    VILLAINS.find((each) => each.id === villain)!.box === "core" &&
+    (modules ?? []).every((id) => MODULES.some((each) => each.id === id));
   const created = createGame(core ? coreScenario(villain, options) : wave1Scenario(villain, options), TABLE_DEPS);
   if (!created.ok) throw Error(created.error.message);
   const state = created.state;
