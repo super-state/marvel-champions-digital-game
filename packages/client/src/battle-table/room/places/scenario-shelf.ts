@@ -206,6 +206,37 @@ function finish(print: HTMLCanvasElement, lit: boolean, locked: boolean): HTMLCa
   return out;
 }
 
+/**
+ * The game's logo at the top of a front drawn from key art: the red MARVEL block with CHAMPIONS under it, as on the real
+ * boxes (Adam, 2026-11-27: "why doesn't NeXt Evolution have the Marvel symbol?"; its art, MojoMania's and Shadowland's
+ * are the key art alone).
+ */
+function logo(g: CanvasRenderingContext2D, w: number) {
+  const blockW = Math.round(w * 0.36);
+  const blockH = Math.round(blockW * 0.36);
+  const x = (w - blockW) / 2;
+  const y = Math.round(w * 0.05);
+  g.save();
+  g.shadowColor = "rgba(0,0,0,0.55)";
+  g.shadowBlur = 10;
+  g.fillStyle = "#e23636";
+  g.fillRect(x, y, blockW, blockH);
+  g.shadowBlur = 0;
+  g.strokeStyle = "#ffffff";
+  g.lineWidth = Math.max(2, blockH * 0.06);
+  g.strokeRect(x + g.lineWidth, y + g.lineWidth, blockW - g.lineWidth * 2, blockH - g.lineWidth * 2);
+  g.fillStyle = "#ffffff";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  fit(g, "MARVEL", (size) => `900 ${size}px 'Public Sans', sans-serif`, Math.round(blockH * 0.72), blockW * 0.84);
+  g.fillText("MARVEL", w / 2, y + blockH / 2 + blockH * 0.03);
+  g.shadowColor = "rgba(0,0,0,0.85)";
+  g.shadowBlur = 8;
+  fit(g, "CHAMPIONS", (size) => `${size}px Bangers, 'Public Sans', sans-serif`, Math.round(blockH * 0.85), w * 0.7);
+  g.fillText("CHAMPIONS", w / 2, y + blockH * 1.62);
+  g.restore();
+}
+
 /** A box's front from its own art: the rulebook's cover as it is, or the key art with the title across the foot. */
 function artPrint(
   product: ShelfProduct,
@@ -231,8 +262,10 @@ function artPrint(
     g.fillStyle = "#f6f0e2";
     g.shadowColor = "rgba(0,0,0,0.8)";
     g.shadowBlur = 8;
-    g.font = "900 24px 'Public Sans', sans-serif";
-    g.fillText("MARVEL CHAMPIONS", w / 2, 34);
+    g.shadowBlur = 0;
+    logo(g, w);
+    g.shadowColor = "rgba(0,0,0,0.8)";
+    g.shadowBlur = 8;
     const name = product.name.toUpperCase();
     fit(g, name, (size) => `${size}px Bangers, 'Public Sans', sans-serif`, big ? 70 : 56, w - 40);
     g.fillStyle = accent;
@@ -1043,6 +1076,8 @@ function hitAt(x: number, y: number): THREE.Intersection | undefined {
  * it again, and flickered; Adam, 2026-11-27: "boxes are flickering when being hovered over").
  */
 const slotBounds = new THREE.Box3();
+/** How far a slot reaches past its box: the gap between boxes on a shelf. */
+const SLOT_REACH = 0.22;
 const slotSize = new THREE.Vector3();
 const slotHit = new THREE.Vector3();
 function slotAt(x: number, y: number): number {
@@ -1051,7 +1086,8 @@ function slotAt(x: number, y: number): number {
   let best = -1;
   let nearest = Infinity;
   for (const [i, box] of boxes.entries()) {
-    slotSize.set(box.size.across, box.size.tall, box.size.deep);
+    // Widened to meet its neighbours, so the pointer crossing from one box to the next never falls between them.
+    slotSize.set(box.size.across + SLOT_REACH, box.size.tall + SLOT_REACH, box.size.deep);
     slotBounds.setFromCenterAndSize(box.home, slotSize);
     if (!raycaster.ray.intersectBox(slotBounds, slotHit)) continue;
     const distance = slotHit.distanceTo(raycaster.ray.origin);
@@ -1271,8 +1307,10 @@ function step(dt: number) {
   for (const [i, box] of boxes.entries()) {
     const up = box === opened && upClose();
     const target = up ? 0 : i === hovered ? 0.4 : 0;
-    // Eases out while pointed at; snaps straight back when let go.
-    box.out = target > box.out ? box.out + (target - box.out) * Math.min(1, dt * 12) : target;
+    // Eases out while pointed at, and eases back when let go (snapping back read as a flicker as the pointer crossed
+    // the shelf).
+    box.out += (target - box.out) * Math.min(1, dt * (target > box.out ? 12 : 16));
+    if (Math.abs(box.out - target) < 1e-3) box.out = target;
     if (up) {
       closeFor(box);
       box.fly = Math.min(1, box.fly + dt / COME_OUT);
