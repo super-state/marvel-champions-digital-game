@@ -25,6 +25,13 @@ export const PRODUCT_BOX: Record<BoxSize, ProductMeasure> = {
   small: { across: 1.3, tall: 1.8, deep: 0.5 },
 };
 
+/** The Core Set's box stands upright and deeper than the campaign boxes, as the real one does. */
+const CORE_BOX: ProductMeasure = { across: 2.0, tall: 2.65, deep: 0.85 };
+
+/** A box's size on the shelf. */
+export const measureOf = (product: ShelfProduct): ProductMeasure =>
+  product.code === "core" ? CORE_BOX : PRODUCT_BOX[product.size];
+
 export const BOARD = 0.16;
 const HEADROOM = 0.45;
 const GAP = 0.26;
@@ -54,7 +61,7 @@ export function layoutScenarios(
   const rows: ShelfProduct[][] = [];
   let width = Infinity;
   for (const product of products) {
-    const across = PRODUCT_BOX[product.size].across;
+    const across = measureOf(product).across;
     if (width + GAP + across > INNER) {
       rows.push([]);
       width = -GAP;
@@ -62,7 +69,7 @@ export function layoutScenarios(
     rows[rows.length - 1]!.push(product);
     width += GAP + across;
   }
-  const heights = rows.map((row) => Math.max(...row.map((p) => PRODUCT_BOX[p.size].tall)) + HEADROOM);
+  const heights = rows.map((row) => Math.max(...row.map((p) => measureOf(p).tall)) + HEADROOM);
   const floors: number[] = [];
   let y = bottom + BOARD;
   for (let i = rows.length - 1; i >= 0; i--) {
@@ -73,10 +80,10 @@ export function layoutScenarios(
 
   const slots: ProductSlot[] = [];
   rows.forEach((row, i) => {
-    const run = row.reduce((sum, p) => sum + PRODUCT_BOX[p.size].across, 0) + GAP * (row.length - 1);
+    const run = row.reduce((sum, p) => sum + measureOf(p).across, 0) + GAP * (row.length - 1);
     let x = SCENARIO_CASE.x - run / 2;
     for (const product of row) {
-      const size = PRODUCT_BOX[product.size];
+      const size = measureOf(product);
       const at = new THREE.Vector3(x + size.across / 2, floors[i]! + size.tall / 2, back + 0.15 + size.deep / 2);
       slots.push({ product, size, at });
       x += size.across + GAP;

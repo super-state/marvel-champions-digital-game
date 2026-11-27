@@ -21,7 +21,7 @@ import { ROOM, pointer, raycaster, renderer, say, scene } from "../room.js";
 import { spatialPick, type FocusDirection } from "../../pad/spatial.js";
 import { FLY, closeSpot, flyUp, sway, type Facing } from "./close-up.js";
 import { SHELF_PRODUCTS, type ShelfProduct, type ShelfScenario } from "./scenario-catalogue.js";
-import { BOARD, SCENARIO_CASE, layoutScenarios, type ProductMeasure } from "./scenario-shelf-layout.js";
+import { BOARD, SCENARIO_CASE, layoutScenarios, measureOf, type ProductMeasure } from "./scenario-shelf-layout.js";
 import "./scenario-shelf.css";
 
 const CARDS = "/card-art/bundles/cards/";
@@ -62,6 +62,12 @@ const CYCLE_COLOURS: Record<string, readonly [string, string]> = {
   cycle11: ["#180c1e", "#d23a3a"],
 };
 const coloursOf = (product: ShelfProduct) => CYCLE_COLOURS[product.cycle] ?? ["#222", "#ccc"];
+
+/** A front print's size in pixels: `long` along the box's longer side, the other in proportion. */
+function printSize(product: ShelfProduct, long: number): [number, number] {
+  const { across, tall } = measureOf(product);
+  return across >= tall ? [long, Math.round((long * tall) / across)] : [Math.round((long * across) / tall), long];
+}
 
 function fit(g: CanvasRenderingContext2D, text: string, font: (size: number) => string, size: number, width: number) {
   g.font = font(size);
@@ -106,7 +112,7 @@ function coverFit(
 /** A box's front from its own art: the rulebook's cover as it is, or the key art with the title across the foot. */
 function artPrint(product: ShelfProduct, art: HTMLImageElement, titled: boolean, lit: boolean): HTMLCanvasElement {
   const big = product.size === "big";
-  const [w, h] = big ? [512, 512] : [370, 512];
+  const [w, h] = printSize(product, 512);
   const [cv, g] = canvas(w, h);
   // A rulebook's cover is the box's front with a small "Rulebook" tab at its foot: cut just above it.
   coverFit(g, art, 0, 0, w, h, 0.5, titled ? 0.075 : 0);
@@ -157,7 +163,7 @@ function artSidePrint(product: ShelfProduct, art: HTMLImageElement, lit: boolean
 /** A box's front: its release's colours, the first villain's art filling it, and the box's name across the foot. */
 function frontPrint(product: ShelfProduct, art: HTMLImageElement | null, lit: boolean): HTMLCanvasElement {
   const big = product.size === "big";
-  const [w, h] = big ? [384, 384] : [280, 384];
+  const [w, h] = printSize(product, 384);
   const [cv, g] = canvas(w, h);
   const [ground, accent] = coloursOf(product);
   g.fillStyle = ground;
