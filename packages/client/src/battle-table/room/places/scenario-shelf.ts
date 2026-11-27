@@ -26,7 +26,7 @@ import { CAMPAIGN_ART } from "../../../art/campaign-art.js";
 import { canvas, loadImage, texture } from "../canvas.js";
 import { ROOM, pointer, raycaster, renderer, say, scene } from "../room.js";
 import { spatialPick, type FocusDirection } from "../../pad/spatial.js";
-import { FLY, closeSpot, flyUp, sway, type Facing } from "./close-up.js";
+import { closeSpot, type Facing } from "./close-up.js";
 import { CAMPAIGNS, frontPrint as campaignFront } from "./campaign-prints.js";
 import { SHELF_PRODUCTS, type ShelfProduct, type ShelfScenario } from "./scenario-catalogue.js";
 import { BOARD, SCENARIO_CASE, layoutScenarios, measureOf, type ProductMeasure } from "./scenario-shelf-layout.js";
@@ -747,6 +747,12 @@ function boxLabel(box: Pick<Box, "product" | "lit" | "lock">): string {
  */
 const CLOSE_FIT = 2.4;
 const CLOSE_LEFT = 0.62;
+/**
+ * How far towards the camera the box up close is brought, shrunk to match so it looks the same size: at its full size
+ * that far back it stood in the cabinet's mouth, and as it swayed it cut through the cabinet's lit edges and the veil
+ * in front of it, and flickered (Adam, 2026-11-27: "the box flickers when rotating").
+ */
+const CLOSE_NEAR = 0.45;
 
 /** The shape of a scenario's print: a Core Set villain's campaign box front (4:5), else a card (0.715). */
 const printAspect = (scenario: ShelfScenario) => (CAMPAIGNS.some((c) => c.id === scenario.id) ? 0.8 : 0.715);
@@ -1122,26 +1128,7 @@ function placeTag() {
   tag.style.top = `${Math.max(tag.offsetHeight + 8, r.top - 8)}px`;
 }
 
-/** The box up close and its floating scenarios together, on the screen. */
 const cardCorner = new THREE.Vector3();
-function openedRect(box: Box) {
-  const r = screenRect(box);
-  for (const each of box.cards ?? []) {
-    if (!each.visible) continue;
-    const size = (each.geometry as THREE.PlaneGeometry).parameters;
-    for (const x of [-size.width / 2, size.width / 2])
-      for (const y of [-size.height / 2, size.height / 2]) {
-        cardCorner.set(x, y, 0).applyMatrix4(each.matrixWorld).project(camera);
-        const px = ((cardCorner.x + 1) / 2) * innerWidth;
-        const py = ((1 - cardCorner.y) / 2) * innerHeight;
-        r.left = Math.min(r.left, px);
-        r.right = Math.max(r.right, px);
-        r.top = Math.min(r.top, py);
-        r.bottom = Math.max(r.bottom, py);
-      }
-  }
-  return r;
-}
 
 /** Where a box up close stands: small and to the left, so its scenarios stand big beside it. */
 function closeFor(box: Box) {
@@ -1150,6 +1137,7 @@ function closeFor(box: Box) {
     closeAt,
     CLOSE_LEFT,
   );
+  closeAt.sub(camera.position).multiplyScalar(CLOSE_NEAR).add(camera.position);
 }
 
 /** Where a scenario's print stands once it is out of its box, on the screen. */
@@ -1162,6 +1150,7 @@ function landedRect(box: Box, at: number) {
     for (const y of [-height / 2, height / 2]) {
       cardCorner
         .set(spot.x + x, spot.y + y, spot.z)
+        .multiplyScalar(CLOSE_NEAR)
         .add(closeAt)
         .project(camera);
       const px = ((cardCorner.x + 1) / 2) * innerWidth;
@@ -1198,11 +1187,13 @@ function placeCard() {
   if (!card || !upClose() || !opened) return;
   placeFloats();
   if (innerWidth <= 600) return;
-  const r = openedRect(opened);
+  // Over the box itself, on the left (Adam, 2026-11-27: "the core set box text should be above the box over on the
+  // left").
+  const r = screenRect(opened);
   const width = card.offsetWidth;
   const height = card.offsetHeight;
   const left = Math.min(innerWidth - width - 16, Math.max(16, (r.left + r.right) / 2 - width / 2));
-  const top = Math.max(72, r.top - height - 18);
+  const top = Math.max(84, r.top - height - 16);
   card.style.left = `${left}px`;
   card.style.top = `${top}px`;
   if (backBar) {
@@ -1212,6 +1203,32 @@ function placeCard() {
 }
 
 const easeOut = (x: number) => 1 - (1 - x) ** 3;
+const easeInOut = (x: number) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2);
+
+/**
+ * A box picked comes straight out of its slot and glides to the left of the screen, square to the room the whole way:
+ * no spin, no swoop, no sway (Adam, 2026-11-27: "simpler and faster, and smoother, just come out the shelf and on the
+ * left hand side"). Seconds to come out, and for its lid to lift and its scenarios to step out once it is there.
+ */
+const COME_OUT = 0.5;
+const OPEN_UP = 0.5;
+const outOfSlot = new THREE.Vector3();
+const glide = new THREE.Vector3();
+function comeOut(box: Box, t: number) {
+  const k = easeInOut(t);
+  // A curve that leaves the slot straight towards the room before it turns for the left of the screen.
+  outOfSlot.copy(box.home).addScaledVector(FACING.out, box.size.deep * 2.5);
+  const u = 1 - k;
+  glide
+    .copy(box.home)
+    .multiplyScalar(u * u)
+    .addScaledVector(outOfSlot, 2 * u * k)
+    .addScaledVector(closeAt, k * k);
+  box.mesh.position.copy(glide);
+  box.mesh.rotation.set(0, SHELF_TURN, 0);
+  // Shrinks as it comes, to its size nearer the camera (it looks the same size, only nearer).
+  box.mesh.scale.setScalar(1 + (CLOSE_NEAR - 1) * k);
+}
 const restAt = new THREE.Vector3();
 const floatAt = new THREE.Vector3();
 /** Square to the room: how the scenarios stand once out. */
@@ -1225,12 +1242,11 @@ function step(dt: number) {
     box.out = target > box.out ? box.out + (target - box.out) * Math.min(1, dt * 12) : target;
     if (up) {
       closeFor(box);
-      box.fly = Math.min(1, box.fly + dt / FLY);
-      flyUp(box.mesh, box.home, closeAt, box.fly, FACING, SHELF_TURN);
+      box.fly = Math.min(1, box.fly + dt / COME_OUT);
+      comeOut(box, box.fly);
       if (box.fly >= 1) {
         box.swayed += dt;
-        sway(box.mesh, box.swayed);
-        box.open = Math.min(1, box.open + dt / 0.7);
+        box.open = Math.min(1, box.open + dt / OPEN_UP);
       }
       box.wasUp = true;
     } else if (box.wasUp) {
@@ -1261,15 +1277,20 @@ function step(dt: number) {
       const shown = up && box.open > 0;
       each.visible = shown;
       if (!shown) return;
-      const tall = box.size.tall;
+      const tall = box.size.tall * CLOSE_NEAR;
       const pointed = box === opened && k === hoveredCard ? 1 : 0;
       restAt.copy(each.userData.rest as THREE.Vector3).applyMatrix4(box.mesh.matrixWorld);
-      floatAt.copy(each.userData.float as THREE.Vector3).add(closeAt);
+      floatAt
+        .copy(each.userData.float as THREE.Vector3)
+        .multiplyScalar(CLOSE_NEAR)
+        .add(closeAt);
       each.position.lerpVectors(restAt, floatAt, out);
       each.position.z += Math.sin(Math.PI * out) * tall * 0.35 + pointed * tall * 0.12;
       each.position.y += out * Math.sin(box.swayed * 1.4 + k * 1.3) * tall * 0.02;
       each.quaternion.slerpQuaternions(box.mesh.quaternion, SQUARE, out);
-      const grow = 1 + ((each.userData.grow as number) - 1) * out;
+      // From the box's own scale in its tray to its full size beside it.
+      const from = box.mesh.scale.x;
+      const grow = from + ((each.userData.grow as number) * CLOSE_NEAR - from) * out;
       each.scale.setScalar(grow * (1 + pointed * 0.06));
     });
   }
