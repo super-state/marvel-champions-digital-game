@@ -1299,14 +1299,13 @@ function placeCard() {
 }
 
 const easeOut = (x: number) => 1 - (1 - x) ** 3;
-const easeInOut = (x: number) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2);
 
 /**
  * A box picked comes straight out of its slot and glides to the left of the screen, square to the room the whole way:
  * no spin, no swoop, no sway (Adam, 2026-11-27: "simpler and faster, and smoother, just come out the shelf and on the
  * left hand side"). Seconds to come out, and for its lid to lift and its scenarios to step out once it is there.
  */
-const COME_OUT = 0.5;
+const COME_OUT = 0.7;
 const OPEN_UP = 0.5;
 /**
  * How far below its scenarios' middle the box lands, as a share of its height: room above it for its name plate,
@@ -1314,19 +1313,15 @@ const OPEN_UP = 0.5;
  */
 const BOX_DROP = 0.4;
 const landAt = new THREE.Vector3();
-const outOfSlot = new THREE.Vector3();
-const glide = new THREE.Vector3();
+/**
+ * A picked box coming out to you, smooth and simple, the way its scenarios come out of it (Adam, 2026-11-27: "it needs
+ * to be smooth and simple like the scenarios"): one straight glide that slows as it lands, lifted a little off the
+ * shelf on the way so it clears its neighbours, no turn out of the slot first.
+ */
 function comeOut(box: Box, t: number) {
-  const k = easeInOut(t);
-  // A curve that leaves the slot straight towards the room before it turns for the left of the screen.
-  outOfSlot.copy(box.home).addScaledVector(FACING.out, box.size.deep * 2.5);
-  const u = 1 - k;
-  glide
-    .copy(box.home)
-    .multiplyScalar(u * u)
-    .addScaledVector(outOfSlot, 2 * u * k)
-    .addScaledVector(landAt.copy(closeAt).setY(closeAt.y - box.size.tall * CLOSE_NEAR * BOX_DROP), k * k);
-  box.mesh.position.copy(glide);
+  const k = easeOut(t);
+  landAt.copy(closeAt).setY(closeAt.y - box.size.tall * CLOSE_NEAR * BOX_DROP);
+  box.mesh.position.lerpVectors(box.home, landAt, k).addScaledVector(FACING.out, Math.sin(Math.PI * k) * box.size.deep);
   box.mesh.rotation.set(0, SHELF_TURN, 0);
   // Shrinks as it comes, to its size nearer the camera (it looks the same size, only nearer).
   box.mesh.scale.setScalar(1 + (CLOSE_NEAR - 1) * k);
