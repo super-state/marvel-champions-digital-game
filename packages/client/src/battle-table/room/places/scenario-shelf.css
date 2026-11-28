@@ -1,5 +1,4 @@
-/* The scenario shelf, Campaign's first step (scenario-shelf.ts): see-through buttons over its boxes, the name tag of
-   the box pointed at, and while a box is up close, its name over it, a button over each of its
+/* The scenario shelf, Campaign's first step (scenario-shelf.ts): see-through buttons over its boxes, and while a box is up close, its name over it, a button over each of its
    scenarios with its words under it, and Back. */
 .room-panel .scn-shelf {
   position: absolute;
@@ -27,20 +26,6 @@
 :root[data-input="pad"] .room-panel .scn-picks button:focus {
   outline: none !important;
   box-shadow: none !important;
-}
-.room-panel .scn-tag {
-  position: absolute;
-  margin: 0;
-  transform: translate(-50%, -100%);
-  padding: 6px 12px;
-  border-radius: var(--r-sm);
-  background: var(--glass);
-  border: 1px solid var(--line-strong);
-  box-shadow: var(--shadow-1);
-  color: var(--text);
-  font: 700 13px var(--font-ui);
-  white-space: nowrap;
-  pointer-events: none;
 }
 /* A box up close: its name and what the road says, a small plate over it and its scenarios. */
 .room-panel .scn-card {

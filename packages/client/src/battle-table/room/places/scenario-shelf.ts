@@ -963,7 +963,6 @@ let card: HTMLElement | null = null;
 /** A see-through button over each scenario standing beside the box up close, its words under it. */
 let floats: HTMLElement | null = null;
 let backBar: HTMLElement | null = null;
-let tag: HTMLElement | null = null;
 
 const upClose = () => !!opened && !!card && !card.hidden;
 
@@ -1249,26 +1248,6 @@ function placePicks() {
   }
 }
 
-let tagText = "";
-function placeTag() {
-  if (!tag) return;
-  const box = boxes[hovered];
-  if (!active || !box || upClose()) {
-    tag.hidden = true;
-    return;
-  }
-  const count = box.product.scenarios.length;
-  const text = `${box.product.name} · ${count} ${count === 1 ? "scenario" : "scenarios"}${box.lock ? ` · locked: ${box.lock}` : box.lit ? "" : " · not on the table yet"}`;
-  if (text !== tagText || tag.hidden) {
-    tag.textContent = tagText = text;
-    tag.hidden = false;
-  }
-  const r = screenRect(box);
-  const half = tag.offsetWidth / 2 + 8;
-  tag.style.left = `${Math.min(innerWidth - half, Math.max(half, (r.left + r.right) / 2))}px`;
-  tag.style.top = `${Math.max(tag.offsetHeight + 8, r.top - 8)}px`;
-}
-
 const cardCorner = new THREE.Vector3();
 
 /** Where a box up close stands: small and to the left, so its scenarios stand big beside it. */
@@ -1481,7 +1460,6 @@ function step(dt: number) {
   softenCabinet(focusBlur > 0.04);
   if (!active) return;
   placePicks();
-  placeTag();
   placeCard();
 }
 
@@ -1570,10 +1548,8 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
   back.type = "button";
   back.onclick = () => closeBox();
   backBar.append(back);
-  tag = el("p", "scn-tag");
-  tag.hidden = true;
   const holder = el("div", "scn-shelf");
-  holder.append(picks, floats, card, backBar, tag);
+  holder.append(picks, floats, card, backBar);
   panel.append(holder);
 
   buildCase(group);
@@ -1673,7 +1649,6 @@ export const scenarioShelf = {
     active = false;
     hovered = -1;
     renderer.domElement.style.cursor = "default";
-    if (tag) tag.hidden = true;
   },
   /** Escape or B: a box up close goes back on the shelf. */
   back(): boolean {
