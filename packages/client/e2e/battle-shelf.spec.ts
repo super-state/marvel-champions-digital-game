@@ -29,8 +29,8 @@ test("the table page opens in the room, Campaign goes to the shelf, and Rhino's 
   // from the keyboard here: the boxes' buttons are for keyboards and screen readers, and lie under the room the mouse
   // clicks.) Then the hero shelf asks for a hero; Play as goes on to the table. Escape goes back a step at a time:
   // from the table to the heroes, from the heroes to the Core Set up close.
-  await pickCoreScenario(page, "Ultron");
-  await expect(page.locator("#shelf-play")).toHaveText("Play vs Ultron", { timeout: 30_000 });
+  await pickCoreScenario(page, "Rhino");
+  await expect(page.locator("#shelf-play")).toHaveText("Play vs Rhino", { timeout: 30_000 });
   await page.keyboard.press("Escape");
   await expect(shelf.locator(".shelf-opened")).toBeHidden();
   await arrivedAt(page, "decks");

@@ -166,7 +166,7 @@ test.describe("battle table: trophies and mats", () => {
     await expect(page.locator("#board-viewport")).toHaveAttribute("data-mat", "night", { timeout: 30_000 });
   });
 
-  test("Adam's own table: every mat and villain open, the achievements still his real ones; the radio's friend switch", async ({
+  test("Adam's own table: every mat open, Campaign on the road, the achievements still his real ones; the radio's friend switch", async ({
     page,
   }) => {
     test.setTimeout(150_000);
@@ -181,7 +181,7 @@ test.describe("battle table: trophies and mats", () => {
     await expect(klawMat).toContainText("Open on your table");
     await klawMat.click();
     await expect(klawMat).toHaveAttribute("aria-pressed", "true");
-    // Every villain's box is open.
+    // Campaign follows the road here too: Rhino beaten, so Klaw is next and Ultron waits on Klaw.
     await page.keyboard.press("Escape");
     await at(page, "title");
     await choose(page, /^Campaign/);
@@ -190,7 +190,9 @@ test.describe("battle table: trophies and mats", () => {
     await page.keyboard.press("Enter");
     const ultron = room(page).locator('[data-scn="scenario:ultron"]');
     await expect(ultron).toBeVisible({ timeout: 30_000 });
-    await expect(ultron).not.toHaveAttribute("aria-disabled", "true");
+    await expect(ultron).toHaveAttribute("aria-disabled", "true");
+    await expect(ultron).toContainText("Complete Klaw");
+    await expect(room(page).locator('[data-scn="scenario:klaw"]')).not.toHaveAttribute("aria-disabled", "true");
 
     // The radio's switch: seen as a friend, the Klaw mat is locked again and gives way to the default.
     await page.keyboard.press("Escape");

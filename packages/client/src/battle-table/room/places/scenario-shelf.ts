@@ -24,7 +24,7 @@ import * as THREE from "three";
 import { camera, setPose, type Pose } from "../camera.js";
 import { CAMPAIGN_ART } from "../../../art/campaign-art.js";
 import { canvas, loadImage, texture } from "../canvas.js";
-import { ROOM, pointer, raycaster, renderer, say, scene } from "../room.js";
+import { BACKDROP, ROOM, pointer, raycaster, renderer, say, scene } from "../room.js";
 import { spatialPick, type FocusDirection } from "../../pad/spatial.js";
 import { closeSpot, type Facing } from "./close-up.js";
 import { CAMPAIGNS, bandPrint, frontPrint as campaignFront, spinePrint } from "./campaign-prints.js";
@@ -390,6 +390,8 @@ interface CardLook {
   readonly lit: boolean;
   readonly ticked: boolean;
   readonly locked: boolean;
+  /** What opens it, while locked ("Complete Rhino"). */
+  readonly lockLine: string;
 }
 
 /** A scenario's card's look from its rows: lit if one plays, ticked if one is beaten, locked if none plays yet. */
@@ -400,6 +402,7 @@ function cardLook(rows: readonly ShelfRow[], scenario: ShelfScenario): CardLook 
     lit,
     ticked: own.some((row) => row.status === "beaten"),
     locked: !lit && own.some((row) => row.status === "locked"),
+    lockLine: own.find((row) => row.status === "locked")?.line ?? "",
   };
 }
 /** A card's look, and whether it is the road's next. */
@@ -408,7 +411,7 @@ const lookOf = (rows: readonly ShelfRow[], scenario: ShelfScenario): Look => ({
   ...cardLook(rows, scenario),
   next: rows.some((row) => row.scenario.id === scenario.id && row.status === "next"),
 });
-const lookKey = (look: Look) => `${look.lit}/${look.ticked}/${look.locked}/${look.next}`;
+const lookKey = (look: Look) => `${look.lit}/${look.ticked}/${look.locked}/${look.next}/${look.lockLine}`;
 
 /**
  * A scenario as it comes out of its box: the Core Set's villain's campaign box front (`campaign-prints.ts`, the box the
@@ -438,8 +441,27 @@ function scenarioPrint(scan: HTMLImageElement | null, scenario: ShelfScenario, l
 function badge(print: HTMLCanvasElement, look: Look): HTMLCanvasElement {
   const g = print.getContext("2d")!;
   const w = print.width;
+  const h = print.height;
   if (look.ticked) tick(g, w * 0.83, w * 0.17, w * 0.23);
-  else if (look.locked) lockBadge(g, w * 0.83, w * 0.17, w * 0.115);
+  else if (look.locked && look.lockLine) {
+    // A band across it, a padlock and what opens it (Adam, 2026-11-28: "grey with a padlock ... say Complete Rhino").
+    const band = h * 0.15;
+    const y = h * 0.42;
+    g.fillStyle = "rgba(10, 8, 6, 0.86)";
+    g.fillRect(0, y, w, band);
+    g.fillStyle = "#e9dcc4";
+    g.fillRect(0, y, w, Math.max(2, band * 0.04));
+    g.fillRect(0, y + band - Math.max(2, band * 0.04), w, Math.max(2, band * 0.04));
+    padlock(g, w * 0.13, y + band * 0.55, band * 0.62);
+    g.save();
+    g.fillStyle = "#f6f0e2";
+    g.textAlign = "left";
+    g.textBaseline = "middle";
+    const text = look.lockLine.toUpperCase();
+    fit(g, text, (size) => `900 ${size}px 'Public Sans', sans-serif`, Math.round(band * 0.42), w * 0.72);
+    g.fillText(text, w * 0.24, y + band / 2);
+    g.restore();
+  } else if (look.locked) lockBadge(g, w * 0.83, w * 0.17, w * 0.115);
   return print;
 }
 
@@ -959,10 +981,9 @@ function whoLine(box: Box, rows: readonly ShelfRow[]): string {
   const inside = `${count} ${count === 1 ? "scenario" : "scenarios"} inside`;
   if (box.lock) return `Locked · ${box.lock}`;
   if (!box.lit) return `${inside} · not on the table yet`;
-  const next = rows.find((row) => row.status === "next");
-  if (next) return `Next on the road: ${next.name}`;
-  if (rows.length && rows.every((row) => row.status === "beaten")) return "All three beaten · the prologue is done";
-  return `Pick a scenario · ${count} inside`;
+  // The boxes say which plays next and what opens the rest (Adam, 2026-11-28): the plate is just the box's name.
+  if (rows.length && rows.every((row) => row.status === "beaten")) return "Prologue complete";
+  return "";
 }
 
 /** The words for a box up close (its name, what the road says) and a button over each scenario beside it. */
@@ -972,7 +993,8 @@ function paint(focusKey?: string) {
   const rows = hooks.rows(box.product);
   const head = el("div", "scn-card-head");
   head.append(el("h3", "scn-title", box.product.name));
-  head.append(el("p", "scn-who", whoLine(box, rows)));
+  const who = whoLine(box, rows);
+  if (who) head.append(el("p", "scn-who", who));
   card.replaceChildren(head);
   card.hidden = false;
   const buttons = rows.map((row) => {
@@ -1332,6 +1354,27 @@ function placeCard() {
 const easeOut = (x: number) => 1 - (1 - x) ** 3;
 
 /**
+ * While a box is up close the cabinet behind goes soft, so the box and its scenarios stand out (Adam, 2026-11-28:
+ * "blur the backdrop a bit to give focus to them"): the cabinet moves to the room's blurred layer (`room.ts`), the
+ * box up close and its scenarios stay sharp. Its lights stay on both, so it is lit the same either way.
+ */
+const FOCUS_BLUR = 0.7;
+let focusBlur = 0;
+let softened = false;
+function softenCabinet(on: boolean) {
+  if (on === softened || !group) return;
+  softened = on;
+  group.traverse((o) => {
+    // Lights shine on both layers, as the room's do.
+    if ((o as THREE.Light).isLight) o.layers.enableAll();
+    else o.layers.set(on ? BACKDROP : 0);
+  });
+  if (!on || !opened) return;
+  opened.mesh.traverse((o) => o.layers.set(0));
+  for (const each of opened.cards ?? []) each.traverse((o) => o.layers.set(0));
+}
+
+/**
  * A box picked comes straight out of its slot and glides to the left of the screen, square to the room the whole way:
  * no spin, no swoop, no sway (Adam, 2026-11-27: "simpler and faster, and smoother, just come out the shelf and on the
  * left hand side"). Seconds to come out, and for its lid to lift and its scenarios to step out once it is there.
@@ -1419,8 +1462,11 @@ function step(dt: number) {
       restAt.copy(each.userData.rest as THREE.Vector3).applyMatrix4(box.mesh.matrixWorld);
       floatAt.copy(stand!.spots[k]!).multiplyScalar(CLOSE_NEAR).add(closeAt);
       each.position.lerpVectors(restAt, floatAt, out);
-      // A small lift as it leaves the tray, then still.
+      // A small lift as it leaves the tray, then still; the one picked out rises a little, like a card pointed at.
       each.position.z += Math.sin(Math.PI * out) * tall * 0.35;
+      const lift = (each.userData.lift as number | undefined) ?? 0;
+      each.userData.lift = lift + (pointed - lift) * Math.min(1, dt * 10);
+      each.position.y += (each.userData.lift as number) * tall * 0.1;
       each.quaternion.slerpQuaternions(box.mesh.quaternion, STANDING, out);
       // From the box's own scale in its tray to its full size beside it.
       const from = box.mesh.scale.x;
@@ -1433,7 +1479,9 @@ function step(dt: number) {
     const material = veil.material as THREE.MeshBasicMaterial;
     material.opacity = goal > material.opacity ? material.opacity + (goal - material.opacity) * Math.min(1, dt * 8) : 0;
     veil.visible = material.opacity > 0.01;
+    focusBlur = (material.opacity / 0.62) * FOCUS_BLUR;
   }
+  softenCabinet(focusBlur > 0.04);
   if (!active) return;
   placePicks();
   placeTag();
@@ -1609,6 +1657,8 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
 }
 
 export const scenarioShelf = {
+  /** How soft the cabinet behind a box up close is drawn. */
+  blur: () => focusBlur,
   /** The camera is here: the boxes answer the pointer. */
   enter() {
     active = true;
