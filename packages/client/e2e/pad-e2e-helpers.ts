@@ -144,3 +144,32 @@ export async function glyphCount(page: Page, sceneKey: string, text: string, rec
 
 export const glyphIn = async (page: Page, sceneKey: string, text: string, rect: Rect): Promise<boolean> =>
   (await glyphCount(page, sceneKey, text, rect)) > 0;
+
+/**
+ * One press of a pad button, as a person taps it: held until the game has acted on it (the focus moved) or for two
+ * frames at most, then let go, all inside the page so no round trip stretches the hold. The pad reads a direction held
+ * over three reads and 400 ms as held and repeats it; a hold of a fixed few frames could pass 400 ms on a busy PC,
+ * where lighting a menu choice builds its place and the frames slow right down, and the repeat swept the room's menu
+ * from Campaign straight to Settings (found 2026-11-28, the trophies, bench and Free Play pad tests).
+ */
+export async function tap(page: Page, index: number): Promise<void> {
+  await page.evaluate(
+    (i) =>
+      new Promise<void>((resolve) => {
+        const pad = (window as unknown as { __fakePad: { buttons: unknown[] } }).__fakePad;
+        const from = document.activeElement;
+        pad.buttons[i] = { pressed: true, touched: true, value: 1 };
+        let seen = 0;
+        const tick = (): void => {
+          seen += 1;
+          if (seen >= 2 || (seen >= 1 && document.activeElement !== from)) {
+            pad.buttons[i] = { pressed: false, touched: false, value: 0 };
+            resolve();
+          } else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    index,
+  );
+  await frames(page, 3);
+}
