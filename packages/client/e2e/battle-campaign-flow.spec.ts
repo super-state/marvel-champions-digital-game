@@ -37,5 +37,5 @@ test("Campaign: a scenario from the shelf, a hero from the heroes, then the game
   await expect(page.locator("#shelf-play")).toHaveText("Play vs Rhino", { timeout: 30_000 });
   await page.locator("#shelf-play").click();
   await expect(room).toBeHidden({ timeout: 60_000 });
-  await expect(page).toHaveTitle(/She-Hulk vs\. Klaw/);
+  await expect(page).toHaveTitle(/She-Hulk vs\. Rhino/);
 });
