@@ -30,6 +30,7 @@ import {
   type Setup,
 } from "./deck-audit-driver.js";
 import type { BattleCard, Difficulty, ModuleId } from "./model.js";
+import { cardName } from "../view/names.js";
 
 // ---------------------------------------------------------------------------------------------------------------
 // The deal and the set-up steps.
@@ -303,6 +304,8 @@ test("02006a Criminal Enterprise: the last infamy counter off flips Norman to Gr
   expect(turned).toBeGreaterThan(counterBeat(p, "infamy", -1));
   expect(turned).toBeLessThan(counterBeat(p, "madness", 2));
   expect(p.beats[turned]!.text).toBe("Criminal Enterprise turns over: State of Madness");
+  // Questions name the side now up: "Green Goblin is about to attack you", not Norman Osborn (Adam's game, 2026-11-28).
+  expect(cardName(game, villainId(p))).toBe("Green Goblin");
 });
 
 test("02006a Criminal Enterprise: the beats before the flip name Norman Osborn and Criminal Enterprise", () => {
