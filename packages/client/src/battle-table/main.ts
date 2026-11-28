@@ -2818,7 +2818,7 @@ function placeLabels() {
   }
   // A boost label rides along with its card while the card is held up; it goes when the card leaves.
   for (const [id, burst] of boostBursts) {
-    const card = projected.find((p) => p.id === id);
+    const card = projected.find((p) => p.id === id.replace(/#ability$/, ""));
     if (card) placeBoostBurst(burst.node, card);
     else dropBoostBurst(id);
   }
@@ -3229,9 +3229,53 @@ async function showBoost(reveal: NonNullable<Beat["reveal"]>) {
 function placeBoostBurst(node: HTMLElement, card: { x: number; width: number; bottom: number }) {
   node.style.left = card.x + card.width * 0.33 + "px";
   node.style.top = card.bottom - card.width * 0.25 + "px";
+  // The "[star] Boost" label sits just under the "+N" one, the two read as one card's boost.
+  if (node.classList.contains("boost-ability")) node.style.top = card.bottom - card.width * 0.25 + 64 + "px";
+}
+
+/**
+ * A turned-up boost card's own "[star] Boost:" ability firing: the card flashes as a When Revealed does, a "[star]
+ * Boost" label joins its "+N", and the bar says what the ability does in the card's words.
+ */
+async function showBoostAbility(beat: Beat, reveal: NonNullable<Beat["reveal"]>) {
+  const projected = table?.anchors();
+  const card = projected?.find((p) => p.id === reveal.id);
+  table?.activateWhenRevealed(reveal.id);
+  sfx.play("ability");
+  if (card) {
+    const burst = make("div", "boost-burst boost-ability");
+    burst.setAttribute("role", "status");
+    burst.append(icon("star"), make("span", "", "Boost effect"));
+    stage.append(burst);
+    // Carried with the card like the "+N" (dropped with it as the card is retired).
+    boostBursts.set(reveal.id + "#ability", { node: burst });
+    placeBoostBurst(burst, card);
+    if (!reducedMotion())
+      burst.animate(
+        [
+          { transform: "scale(.55)", opacity: 0 },
+          { transform: "scale(1.18)", opacity: 1, offset: 0.5 },
+          { transform: "scale(1)", opacity: 1 },
+        ],
+        { duration: 300, easing: "ease-out" },
+      );
+  }
+  const text = reveal.boostAbility!.text;
+  narrate(
+    beat,
+    { text: `${reveal.name}: Boost${text ? " · " + text : ""}`, icon: "boost", tone: "villain" },
+    {
+      eyebrow: { text: "Boost ability", icon: "boost", tone: "villain" },
+      title: reveal.name,
+      help: text || null,
+    },
+  );
+  await sleep(reducedMotion() ? 500 : Math.max(ACTIVATION_MS, 1500));
 }
 
 function dropBoostBurst(id: string) {
+  // The card's "[star] Boost" label goes with its "+N".
+  if (!id.endsWith("#ability")) dropBoostBurst(id + "#ability");
   const burst = boostBursts.get(id);
   if (!burst) return;
   boostBursts.delete(id);
@@ -4058,7 +4102,11 @@ async function present(beats: Snapshot["beats"]) {
         paintStatusNotes(previewNotes, null);
       }
       if (beat.reveal.boost) {
-        await showBoost(beat.reveal);
+        // "+N Boost" first; a card with a "[star] Boost:" ability then flashes and says so, so what it does next (Shock
+        // Therapy discarding 3 encounter cards) has a cause (Adam, 2026-11-28). No icons but a Boost ability: the
+        // ability straight away, with no "+0" before it.
+        if (!(beat.reveal.boostAbility && beat.reveal.boost.icons === 0)) await showBoost(beat.reveal);
+        if (beat.reveal.boostAbility) await showBoostAbility(beat, beat.reveal);
         dropBoostBurst(beat.reveal.id);
         // A boost that asks a question (Android Efficiency: "spend a [energy] resource or … a Drone minion") stays up,
         // full size with the table dimmed, like a revealed card asking: the player sees why they are asked (Adam,

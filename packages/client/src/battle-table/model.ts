@@ -17,6 +17,7 @@ import {
   legalActions,
   locateCard,
   paymentOptionsPool,
+  printsBoostAbility,
   traitsOf,
   satisfies,
   combineRequirements,
@@ -513,6 +514,12 @@ export interface BattleBeat {
     art: string;
     landscape: boolean;
     boost: { icons: number; enemy: string } | null;
+    /**
+     * A boost card with a "[star] Boost:" ability of its own (Shock Therapy: "discard 3 cards from the encounter
+     * deck"): its words, so the table can flash the card and say what is about to happen after its "+N" (Adam,
+     * 2026-11-28: three cards went to the discard pile and nothing said why). Absent when it has none or it is ignored.
+     */
+    boostAbility?: { text: string };
     /** A minion: it takes its place without waiting for Continue (its When Revealed then plays out on the table). */
     quick: boolean;
     /** The card has a When Revealed, which fires with a flash before its effect lands. */
@@ -735,6 +742,11 @@ const ENCOUNTER_TYPES = new Set(["minion", "treachery", "attachment", "side_sche
 function isNemesisCard(card: object | undefined): boolean {
   const sets = card && "encounterSetIds" in card ? (card.encounterSetIds as readonly string[] | undefined) : undefined;
   return !!sets?.some((set) => set.endsWith("_nemesis"));
+}
+
+/** The words of a boost card's "[star] Boost:" ability, as printed after the divider ("" when they can't be found). */
+export function boostAbilityText(text: string): string {
+  return /\bBoost\s*:\s*(.+?)\s*$/is.exec(text)?.[1]?.replace(/\s+/g, " ") ?? "";
 }
 
 /** A step of `attacker`'s attack itself: its boost card, the defense, the damage. */
@@ -1823,6 +1835,12 @@ export class BattleModel {
             ...(broughtBy ? { broughtBy } : {}),
             ...(nemesis ? { nemesis: true as const } : {}),
             boost: e.type === "boostCardFlipped" ? { icons: e.boostIcons, enemy: e.enemyInstanceId } : null,
+            ...(card &&
+            e.type === "boostCardFlipped" &&
+            printsBoostAbility(result.state, e.instanceId) &&
+            !events.some((x) => x.type === "boostIgnored" && x.instanceId === e.instanceId)
+              ? { boostAbility: { text: boostAbilityText(plainRulesTextOf(card)) } }
+              : {}),
             art: artFor(card, { kind: "front" })?.url ?? "",
             landscape: isLandscapeType(card?.type ?? ""),
             quick: card?.type === "minion",
