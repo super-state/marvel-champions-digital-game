@@ -33,7 +33,7 @@ describe("the road's prologue", () => {
     expect(statuses(road)).toEqual(["rhino=beaten", "klaw=next", "ultron=locked"]);
     expect(road.steps[0]!.playable).toBe(false);
     expect(road.steps[0]!.line).toMatch(/Free Play/);
-    expect(road.steps[2]!.line).toBe("Locked");
+    expect(road.steps[2]!.line).toBe("Complete Klaw");
   });
 
   it("counts a win in any difficulty (call 5), an old game without facts too", () => {

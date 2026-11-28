@@ -10,9 +10,10 @@
  *     site and on Adam's table seen as a friend), and beaten by any win against its villain, in any mode or difficulty
  *     (Adam's call 5: any win opens the next villain).
  *
- * Only the next step is played from Campaign; a beaten one is replayed in Free Play. Adam's own table has everything
- * open (`allOpen`, call 4), as does a player whose games aren't saved: every step can be played, still ticked where
- * beaten and marked where next.
+ * Only the next step is played from Campaign; a beaten one is replayed in Free Play. The road holds on Adam's own
+ * table too, by his own record (Adam, 2026-11-28: the ones not available should be locked, grey with a padlock,
+ * saying "Complete Rhino"); his table keeps Free Play and the mats open. `allOpen` is for a player whose games aren't
+ * saved: every step can be played, still ticked where beaten and marked where next.
  */
 import type { VillainId } from "../../model.js";
 import type { FinishedGame } from "../../record/game.js";
@@ -84,10 +85,9 @@ export function roadFrom({ games, lock, allOpen }: RoadInput): Road {
 
   /** Why a step isn't reached yet, or null when it is. */
   const reachedOrWhy = (step: RoadStep, index: number): string | null => {
-    const why = lock(step.villain);
-    if (why) return why;
     const before = index ? CORE[index - 1]! : null;
-    return before && !beaten.has(before.villain) ? `Beat ${before.name} first` : null;
+    if (before && !beaten.has(before.villain)) return `Complete ${before.name}`;
+    return lock(step.villain);
   };
 
   let next: RoadStep | null = null;

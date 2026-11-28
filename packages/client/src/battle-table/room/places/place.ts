@@ -57,6 +57,8 @@ export interface Place {
   key?(event: KeyboardEvent): boolean;
   /** Each frame, wherever the camera is. */
   step(dt: number, time: number): void;
+  /** How soft the room behind is drawn while here, beyond the camera's own (a box up close softens its shelf). */
+  blur?(): number;
 }
 
 /** What a later task gives a furniture place to fill it. */

@@ -205,7 +205,7 @@ function frame(now: number) {
   const { blur, arrived } = stepCamera(dt, scene.fog as Fog);
   if (arrived) arrive();
   fade.style.opacity = String(fadeAmount());
-  renderFrame(blur);
+  renderFrame(Math.max(blur, heading ? 0 : (places[here].blur?.() ?? 0)));
   requestAnimationFrame(frame);
 }
 const fade = root.querySelector<HTMLElement>(".room-fade")!;
