@@ -372,7 +372,7 @@ test("01078 Get Behind Me!: costs 1 (paid from the hand); Advance is cancelled a
   expect(p.snap.hand.some((c) => c.name === "Get Behind Me!")).toBe(false);
   // The villain attacks again (a second defender question); Advance did not scheme.
   expect(p.snap.choice?.defense?.attacker).toBe("Rhino");
-  expect(p.beats.some((b) => b.text === "Get Behind Me! interrupts" && !!b.interrupt)).toBe(true);
+  expect(p.beats.some((b) => b.text === "Get Behind Me! interrupts the reveal of Advance" && !!b.interrupt)).toBe(true);
   const rest = p.drive({ keep: [] });
   expect(rest.turn).toBe("player");
   expect(threatBeats(p)).toBe(0);

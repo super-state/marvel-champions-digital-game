@@ -71,6 +71,10 @@ export const BEAT_FIELDS: Record<string, { cls: "table" | "meta"; where: string 
   scheming: { cls: "table", where: "the enemy is stamped Schemes" },
   discardEvent: { cls: "table", where: "the event card flies to the discard pile" },
   interrupt: { cls: "table", where: "the card pulses (an interrupt), cancelling what it is held over" },
+  interruptBy: {
+    cls: "table",
+    where: "the interrupting card is stamped Interrupt / Forced Interrupt, and what it interrupts Interrupted",
+  },
   deflection: { cls: "table", where: "the attack is knocked away by the card, Blocked floats up" },
   modifier: { cls: "table", where: "a stat token on the card, with a ring" },
   attackAim: { cls: "table", where: "the attacker aims at its target" },

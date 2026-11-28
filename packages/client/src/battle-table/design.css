@@ -989,6 +989,17 @@
   color: var(--boost);
   rotate: 6deg;
 }
+/* "Interrupt" / "Forced Interrupt" on the card that interrupts: the energy yellow of the interrupt pulse. */
+.card-stamp[data-tone="interrupt"] {
+  color: var(--energy);
+  rotate: -4deg;
+}
+/* What it interrupts: a smaller word on that card. */
+.card-stamp[data-tone="interrupted"] {
+  color: #fff;
+  rotate: 6deg;
+  font-size: clamp(13px, 1.3vw, 18px);
+}
 /* "Guard": a shield and the word, level, in the guard gold the minion's plate shield wears. */
 .card-stamp[data-tone="guard"] {
   display: inline-flex;

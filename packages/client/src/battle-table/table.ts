@@ -216,6 +216,8 @@ export interface HandLayout {
   readonly sunk: boolean;
 }
 export const INTERRUPT_MS = 440;
+/** An interrupt with its stamp and line up: long enough to read which card interrupted what. */
+export const INTERRUPT_READ_MS = 1150;
 /** A stunned attacker straining against the stun before it is discarded. */
 export const WINDUP_STRAIN_MS = 900;
 /** How long a card under an enemy stays drawn out to its side when it activates, its damage landing on it. */
