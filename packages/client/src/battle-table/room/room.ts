@@ -139,6 +139,11 @@ export const ROOM = {
   TABLE_Z: 2.4,
   /** The top of the cube shelf on the back wall. */
   SHELF_TOP: 3.88,
+  /**
+   * The cube shelf's middle along the back wall: in the right-hand corner, beside the hero shelf, which stands behind
+   * the table in the middle (`places/seats.ts`).
+   */
+  SHELF_X: 14.5,
 };
 
 let tableWood: THREE.Texture | null = null;
@@ -276,7 +281,8 @@ function spineStripes(colour: string, light: string): HTMLCanvasElement {
 function buildShelf() {
   const frame = new THREE.MeshStandardMaterial({ color: 0x3b2a1e, roughness: 0.6 });
   const shelf = new THREE.Group();
-  const cols = 6;
+  // Five across, to fit the corner beside the hero shelf.
+  const cols = 5;
   const rows = 3;
   const cube = 1.5;
   const board = 0.12;
@@ -349,7 +355,7 @@ function buildShelf() {
         }
       }
     }
-  shelf.position.set(0, -1.1, -8.7);
+  shelf.position.set(ROOM.SHELF_X, -1.1, -8.7);
   shelf.traverse((o) => o.layers.set(BACKDROP));
   scene.add(shelf);
 }
@@ -419,7 +425,10 @@ function buildWalls() {
     wainscot.position.set(side * (half - 0.1), floor + 2.3, (front + back) / 2);
     const dado = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.3, front - back), rail);
     dado.position.set(side * (half - 0.17), floor + 4.7, (front + back) / 2);
-    scene.add(wall, wainscot, dado);
+    // The left wall, behind the scenario cabinet, is on the soft layer with the back wall: drawn sharp, it would
+    // cover the cabinet when a box up close softens it (`places/seats.ts`).
+    if (side < 0) for (const each of [wall, wainscot, dado]) soft(each);
+    else scene.add(wall, wainscot, dado);
   }
   const backPanel = new THREE.Mesh(new THREE.BoxGeometry(half * 2, 4.6, 0.2), panel);
   backPanel.position.set(0, floor + 2.3, back + 0.1);
@@ -432,17 +441,17 @@ function buildWalls() {
   const wood = new THREE.MeshStandardMaterial({ color: 0x2e2016, roughness: 0.65 });
   const sideboard = new THREE.Group();
   const height = -1.1 - floor;
-  const body = new THREE.Mesh(new THREE.BoxGeometry(10.6, height, 1.9), wood);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(8.6, height, 1.9), wood);
   body.position.y = height / 2;
   sideboard.add(body);
-  for (let i = 0; i < 4; i++) {
-    const door = new THREE.Mesh(new THREE.BoxGeometry(2.4, height - 0.9, 0.06), rail);
-    door.position.set(-3.75 + i * 2.5, height / 2, 0.96);
+  for (let i = 0; i < 3; i++) {
+    const door = new THREE.Mesh(new THREE.BoxGeometry(2.6, height - 0.9, 0.06), rail);
+    door.position.set(-2.75 + i * 2.75, height / 2, 0.96);
     const knob = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), rail);
-    knob.position.set(-3.75 + i * 2.5 + (i % 2 ? -0.95 : 0.95), height / 2 + 0.6, 1.02);
+    knob.position.set(-2.75 + i * 2.75 + (i % 2 ? -1.05 : 1.05), height / 2 + 0.6, 1.02);
     sideboard.add(door, knob);
   }
-  sideboard.position.set(0, floor, -8.7);
+  sideboard.position.set(ROOM.SHELF_X, floor, -8.7);
   soft(sideboard);
 
   // The lamp over the table: a shade on a long cord, glowing underneath.
@@ -458,6 +467,7 @@ function buildWalls() {
   lamp.add(shade, bulb, cord);
   lamp.position.set(0, 13.5, ROOM.TABLE_Z - 1);
   scene.add(lamp);
+  hangingLamp = lamp;
 
   // Dim warm light on the two side walls, where the bench and the cabinet stand.
   for (const side of [-1, 1]) {
@@ -466,6 +476,16 @@ function buildWalls() {
     glow.target.position.set(side * (half - 1), -2, -1);
     scene.add(glow, glow.target);
   }
+}
+
+let hangingLamp: THREE.Object3D | null = null;
+/**
+ * Shows or hides the lamp over the table. At the hero shelf behind the table the camera stands up level with the lamp,
+ * on the doorway's side of it, so its shade and cord would hang across the shelf; there it is put out of the way
+ * (`index.ts`). From everywhere else it is out of the picture, or in it where it belongs.
+ */
+export function showLamp(on: boolean) {
+  if (hangingLamp) hangingLamp.visible = on;
 }
 
 /** Builds the room round the places: the table, the walls and the shelf, lit. */

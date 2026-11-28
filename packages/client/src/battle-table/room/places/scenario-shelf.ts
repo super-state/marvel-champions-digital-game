@@ -27,6 +27,7 @@ import { canvas, loadImage, texture } from "../canvas.js";
 import { BACKDROP, ROOM, pointer, raycaster, renderer, say, scene } from "../room.js";
 import { spatialPick, type FocusDirection } from "../../pad/spatial.js";
 import { closeSpot, type Facing } from "./close-up.js";
+import { VILLAIN_SEAT, seatGroup, seatPoint, seatPose, unseatPoint } from "./seats.js";
 import { CAMPAIGNS, bandPrint, frontPrint as campaignFront, spinePrint } from "./campaign-prints.js";
 import { SHELF_PRODUCTS, type ShelfProduct, type ShelfScenario } from "./scenario-catalogue.js";
 import { BOARD, SCENARIO_CASE, layoutScenarios, measureOf, type ProductMeasure } from "./scenario-shelf-layout.js";
@@ -1087,7 +1088,9 @@ function choose(row: ShelfRow) {
     card.hidden = true;
     if (floats) floats.hidden = true;
     if (backBar) backBar.hidden = true;
-    setTimeout(() => pick(row), DEPART_POP * 1000);
+    const leaving = departing;
+    // Only if it is still the pick: Back or a click off it within the pop puts the box away and stays.
+    setTimeout(() => departing === leaving && pick(row), DEPART_POP * 1000);
     return;
   }
   if (row.status === "beaten") say(`${row.name} is beaten. Play it again in Free Play.`);
@@ -1192,17 +1195,21 @@ const slotBounds = new THREE.Box3();
 const SLOT_REACH = 0.22;
 const slotSize = new THREE.Vector3();
 const slotHit = new THREE.Vector3();
+const localRay = new THREE.Ray();
+const unseat = new THREE.Matrix4();
 function slotAt(x: number, y: number): number {
   pointer.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
   raycaster.setFromCamera(pointer, camera);
+  // The slots stand in the cabinet's own coordinates.
+  localRay.copy(raycaster.ray).applyMatrix4(unseat.copy(group!.matrixWorld).invert());
   let best = -1;
   let nearest = Infinity;
   for (const [i, box] of boxes.entries()) {
     // Widened to meet its neighbours, so the pointer crossing from one box to the next never falls between them.
     slotSize.set(box.size.across + SLOT_REACH, box.size.tall + SLOT_REACH, box.size.deep);
     slotBounds.setFromCenterAndSize(box.home, slotSize);
-    if (!raycaster.ray.intersectBox(slotBounds, slotHit)) continue;
-    const distance = slotHit.distanceTo(raycaster.ray.origin);
+    if (!localRay.intersectBox(slotBounds, slotHit)) continue;
+    const distance = slotHit.distanceTo(localRay.origin);
     if (distance < nearest) {
       nearest = distance;
       best = i;
@@ -1298,6 +1305,8 @@ function closeFor(box: Box) {
     CLOSE_LEFT,
   );
   closeAt.sub(camera.position).multiplyScalar(CLOSE_NEAR).add(camera.position);
+  // In the cabinet's own coordinates, as everything standing in it is.
+  unseatPoint(closeAt, VILLAIN_SEAT);
 }
 
 /** Where a scenario's print stands once it is out of its box, on the screen. */
@@ -1315,8 +1324,8 @@ function landedRect(box: Box, at: number) {
       cardCorner
         .set(spot.x + x * cos + front * sin, spot.y + y, spot.z - x * sin + front * cos)
         .multiplyScalar(CLOSE_NEAR)
-        .add(closeAt)
-        .project(camera);
+        .add(closeAt);
+      seatPoint(cardCorner, VILLAIN_SEAT).project(camera);
       const px = ((cardCorner.x + 1) / 2) * innerWidth;
       const py = ((1 - cardCorner.y) / 2) * innerHeight;
       r.left = Math.min(r.left, px);
@@ -1494,7 +1503,7 @@ function step(dt: number) {
       const pointed = box === opened && k === (chosen >= 0 ? chosen : hoveredCard) ? 1 : 0;
       const frame = each.userData.frame as THREE.Mesh | undefined;
       if (frame) frame.visible = pointed > 0 && out > 0.95;
-      restAt.copy(each.userData.rest as THREE.Vector3).applyMatrix4(box.mesh.matrixWorld);
+      restAt.copy(each.userData.rest as THREE.Vector3).applyMatrix4(box.mesh.matrix);
       floatAt.copy(stand!.spots[k]!).multiplyScalar(CLOSE_NEAR).add(closeAt);
       each.position.lerpVectors(restAt, floatAt, out);
       // A small lift as it leaves the tray, then still; the one picked out rises a little, like a card pointed at.
@@ -1577,7 +1586,7 @@ export function scenarioView(out: Pose, aspect: number): Pose {
   const halfH = (layout.top - layout.bottom + 1.6) / 2 + HEADROOM;
   const distance = Math.max(halfW / (tan * aspect), halfH / tan);
   const middle = (layout.top + layout.bottom) / 2 + HEADROOM;
-  return setPose(
+  setPose(
     out,
     [SCENARIO_CASE.x, middle + 0.8, at + distance],
     [SCENARIO_CASE.x, middle, at],
@@ -1585,6 +1594,7 @@ export function scenarioView(out: Pose, aspect: number): Pose {
     [distance + 4, distance + 40],
     0,
   );
+  return seatPose(out, VILLAIN_SEAT);
 }
 
 /** Fills the panel with the shelf's buttons and builds the bookcase and its boxes (once). */
@@ -1592,6 +1602,8 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
   hooks = given;
   if (group) return;
   group = new THREE.Group();
+  // Drawn against the back wall, stood on the left wall (`seats.ts`).
+  seatGroup(group, VILLAIN_SEAT);
   scene.add(group);
   picks = el("div", "scn-picks");
   picks.setAttribute("role", "group");

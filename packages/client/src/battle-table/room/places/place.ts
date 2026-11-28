@@ -27,7 +27,8 @@
  */
 import * as THREE from "three";
 import { camera, newPose, type Pose } from "../camera.js";
-import { root, scene } from "../room.js";
+import { BACKDROP, root, scene } from "../room.js";
+import { seatGroup, type Seat } from "./seats.js";
 
 export type PlaceId = "title" | "campaign" | "free-play" | "decks" | "trophies" | "settings";
 
@@ -59,6 +60,11 @@ export interface Place {
   step(dt: number, time: number): void;
   /** How soft the room behind is drawn while here, beyond the camera's own (a box up close softens its shelf). */
   blur?(): number;
+  /**
+   * Whether the camera is elsewhere (`index.ts`, each frame): a place standing on the back wall goes soft with the rest
+   * of the wall then, as the room's backdrop, and sharp once the camera is here.
+   */
+  away?(away: boolean): void;
 }
 
 /** What a later task gives a furniture place to fill it. */
@@ -119,6 +125,10 @@ export function furniturePlace(spec: {
   view(out: Pose, aspect: number): void;
   /** The furniture, built into `group` (already in the scene). */
   furniture(group: THREE.Group): void;
+  /** Built in its own coordinates and stood elsewhere in the room, furniture and contents both (`seats.ts`). */
+  seat?: Seat;
+  /** Standing on the back wall: soft with it, as the backdrop, while the camera is elsewhere. */
+  backdrop?: boolean;
 }): FurniturePlace {
   const panel = makePanel(
     spec.id,
@@ -137,9 +147,24 @@ export function furniturePlace(spec: {
   const contentsPanel = panel.querySelector<HTMLElement>(".room-contents")!;
   const group = new THREE.Group();
   const contentsGroup = new THREE.Group();
+  if (spec.seat) for (const each of [group, contentsGroup]) seatGroup(each, spec.seat);
   let contents: PlaceContents | null = null;
   let built: Promise<void> | null = null;
   let furnished = false;
+  /** On the backdrop layer now; and how many things were in it, so things built since are moved too. */
+  let soft = false;
+  let softCount = -1;
+  const layerAll = (on: boolean) => {
+    let count = 0;
+    for (const each of [group, contentsGroup])
+      each.traverse((o) => {
+        count++;
+        // Lights shine on both layers, as the room's do.
+        if (o instanceof THREE.Light) o.layers.enableAll();
+        else o.layers.set(on ? BACKDROP : 0);
+      });
+    softCount = count;
+  };
   const place: FurniturePlace = {
     id: spec.id,
     label: spec.label,
@@ -167,6 +192,13 @@ export function furniturePlace(spec: {
     step(dt, time) {
       if (contents && built) contents.step?.(dt, time);
     },
+    away(away) {
+      if (!spec.backdrop) return;
+      // Re-laid when it changes, and when something has been built into it since (its boxes).
+      if (away === soft && softCount >= 0 && (!away || countAll() === softCount)) return;
+      soft = away;
+      layerAll(away);
+    },
     mount(next) {
       contents = next;
       soon.hidden = true;
@@ -178,6 +210,11 @@ export function furniturePlace(spec: {
       scene.add(group);
     },
   };
+  function countAll() {
+    let count = 0;
+    for (const each of [group, contentsGroup]) each.traverse(() => count++);
+    return count;
+  }
   return place;
 }
 

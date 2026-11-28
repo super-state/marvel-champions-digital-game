@@ -29,6 +29,7 @@ import { SHELF_RELEASES } from "./hero-catalogue.js";
 import { CASE, SHELF_LOOK, buildBoxes, buildCase, type ShelfBox } from "./hero-shelf.js";
 import { BOARD, SHELF_SORTS, orderHeroes, shelfFrame, shelfOf, spotOf, type ShelfSort } from "./hero-shelf-layout.js";
 import { furniturePlace } from "./place.js";
+import { HERO_SEAT, seatPoint, seatPose, unseatPoint } from "./seats.js";
 import "./decks.css";
 
 /** The bookcase, built tall enough for every hero, standing on the bench top. */
@@ -50,6 +51,9 @@ let shownCount = 0;
 
 export const decks = furniturePlace({
   id: "decks",
+  // Drawn backed onto the left wall, stood on the back wall behind the games table (`seats.ts`).
+  seat: HERO_SEAT,
+  backdrop: true,
   label: "Heroes & Decks",
   promise: "a deck box for each hero, and the card binder to build decks with.",
   view(out, aspect) {
@@ -58,10 +62,11 @@ export const decks = furniturePlace({
     // Scrolling reaches down to the lowest shelf with a box on it.
     const { top } = frame;
     const bottom = shownCount ? frame.floors[shelfOf(frame, shownCount - 1)]! - BOARD : top - 3;
-    // The camera never stands back past the lamp over the games table (room.ts: hanging at x = 0, its shade 2.3
-    // wide at the rim): on a screen too narrow to fit the shelf from in front of it, it looks wider instead.
+    // In the shelf's own coordinates (`seats.ts`): x runs out from the wall, so the room's z, less HERO_SEAT.z. The
+    // camera never stands back past the far side of the games table: on a screen too narrow to fit the shelf from in
+    // front of it, it looks wider instead.
     const at = CASE.back + CASE.depth;
-    const nearestLamp = -2.8;
+    const nearestLamp = ROOM.TABLE_Z + ROOM.TABLE_DEPTH / 2 - HERO_SEAT.z;
     const across = 0.9;
     const upDown: [number, number] = [-0.92, 0.8];
     const half = (CASE.width + 0.8) / (2 * across);
@@ -76,11 +81,14 @@ export const decks = furniturePlace({
     halfSeen = distance * tanV;
     aimTop = top + 0.4 - upDown[1] * halfSeen;
     const y = aimTop - scroll;
-    // High enough to see the shelf over the games table's near edge (x = -TABLE_WIDTH / 2, its top at 0).
+    // High enough to see the shelf over the games table's near edge (its back edge, the room's z = TABLE_Z -
+    // TABLE_DEPTH / 2, its top at 0).
+    const tableEdge = ROOM.TABLE_Z - ROOM.TABLE_DEPTH / 2 - HERO_SEAT.z;
     const lowest = Math.max(bottom + 0.2, y - distance * tanV);
-    const overTable = (0.4 - lowest) / (at + ROOM.TABLE_WIDTH / 2);
+    const overTable = (0.4 - lowest) / (at - tableEdge);
     const height = Math.max(y + 0.8, lowest + overTable * -distance);
     setPose(out, [at + distance, height, CASE.z], [at, y, CASE.z], fov, [distance + 4, distance + 40], 0);
+    seatPose(out, HERO_SEAT);
   },
   furniture(group) {
     const wood = new THREE.MeshStandardMaterial({ color: 0x3a2818, roughness: 0.6 });
@@ -595,7 +603,7 @@ function screenRect(box: Box) {
   for (const x of [-deep / 2, deep / 2])
     for (const y of [-tall / 2, tall / 2])
       for (const z of [-across / 2, across / 2]) {
-        corner.set(x, y, z).add(box.mesh.position).project(camera);
+        seatPoint(corner.set(x, y, z).add(box.mesh.position), HERO_SEAT).project(camera);
         const px = ((corner.x + 1) / 2) * innerWidth;
         const py = ((1 - corner.y) / 2) * innerHeight;
         left = Math.min(left, px);
@@ -818,7 +826,7 @@ export function mountBench(source?: { games(): Promise<readonly FinishedGame[] |
         box.mesh.visible = box.size01 > 0.02;
         box.mesh.scale.setScalar(Math.max(0.001, box.size01));
         if (up) {
-          closeSpot(box.size, closeAt);
+          unseatPoint(closeSpot(box.size, closeAt), HERO_SEAT);
           box.fly = Math.min(1, box.fly + dt / FLY);
           flyUp(box.mesh, box.home, closeAt, box.fly, FACING);
           // Once there, it turns slowly from side to side, so it reads as a box in the hand.
