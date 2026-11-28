@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "./battle-test";
 import { pickCoreScenario } from "./campaign-steps.js";
-import { frames, installPad, PAD, setButton } from "./pad-e2e-helpers.js";
+import { installPad, PAD, tap } from "./pad-e2e-helpers.js";
 
 /**
  * Trophies & Stats in the room (`src/battle-table/room/places/trophy-cabinet.ts`): the cabinet's achievements read
@@ -93,12 +93,8 @@ async function dealNext(page: Page, mat: string): Promise<void> {
 }
 
 async function nudge(page: Page, index: number): Promise<void> {
-  await setButton(page, index, true);
-  // Held for two frames: the pad reads a direction held over three reads and 400 ms as held, and repeats it, so on a
-  // busy PC (slow frames) a three-frame tap could step twice.
-  await frames(page, 2);
-  await setButton(page, index, false);
-  await frames(page, 3);
+  // A tap, let go as soon as the game acts on it (`tap`): a fixed hold could read as held on a busy PC and sweep.
+  await tap(page, index);
 }
 
 async function padTo(page: Page, direction: number, name: RegExp, max = 8): Promise<void> {
