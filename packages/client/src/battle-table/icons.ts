@@ -77,6 +77,8 @@ const ICONS = {
       d: "M1.8 3.2C5.4 3.2 8.8 6.8 12 6.8C15.2 6.8 18.6 3.2 22.2 3.2C21.4 6 17.8 9 15.4 10.4C14.6 11 14.4 12.2 14.3 14C14.1 16.4 13.4 18.8 12 21.4C10.6 18.8 9.9 16.4 9.7 14C9.6 12.2 9.4 11 8.6 10.4C6.2 9 2.6 6 1.8 3.2Z",
     },
   ],
+  /** The star a card prints beside its "Boost:" ability. */
+  star: [{ d: star(12, 12, 5, 11, 4.6) }],
   /** Wild resource. */
   wild: [{ d: star(12, 12, 4, 11.2, 3.6) + star(19, 5, 4, 3.4, 1.1) }],
   /** Energy resource; also a hero interrupt's lightning. */
