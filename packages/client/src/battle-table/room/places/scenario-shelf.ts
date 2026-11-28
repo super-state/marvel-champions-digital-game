@@ -1536,9 +1536,12 @@ export function scenarioView(out: Pose, aspect: number): Pose {
   const at = BACK + SCENARIO_CASE.depth;
   const tan = Math.tan((38 / 2) * (Math.PI / 180));
   const halfW = (SCENARIO_CASE.width + 1.4) / 2;
-  const halfH = (layout.top - layout.bottom + 1.6) / 2;
+  // HEADROOM: the camera aims this far above the bookcase's middle, so the case sits lower and the heading over its
+  // top-left has room (Adam, 28 Nov 2026); the view's height grows by as much so the bottom shelf stays in.
+  const HEADROOM = 0.45;
+  const halfH = (layout.top - layout.bottom + 1.6) / 2 + HEADROOM;
   const distance = Math.max(halfW / (tan * aspect), halfH / tan);
-  const middle = (layout.top + layout.bottom) / 2;
+  const middle = (layout.top + layout.bottom) / 2 + HEADROOM;
   return setPose(
     out,
     [SCENARIO_CASE.x, middle + 0.8, at + distance],
@@ -1566,7 +1569,7 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
   floats.hidden = true;
   backBar = el("div", "scn-back-bar");
   backBar.hidden = true;
-  const back = el("button", "btn btn-secondary scn-back", "‹ Back to the shelf");
+  const back = el("button", "btn btn-secondary scn-back", "Back to the shelf");
   back.type = "button";
   back.onclick = () => closeBox();
   backBar.append(back);
