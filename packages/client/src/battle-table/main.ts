@@ -2582,7 +2582,10 @@ async function millEncounter(
     eyebrow: { text: "Found", icon: "flip", tone: "villain" },
     title: found.map((card) => nameOf(card.id)).join(", "),
   });
-  await sleep(reducedMotion() ? 600 : 1700);
+  // Stamped on the card once it stands up: the villain phase shows no dock line, so the card itself says why it stopped.
+  await sleep(reducedMotion() ? 100 : 560);
+  for (const card of found) stampCard(card.id, "Found", "boost");
+  await sleep(reducedMotion() ? 600 : 1500);
   delete focusBlur.dataset.ready;
   await sleep(reducedMotion() ? 0 : 320);
   rowFocus = [];
