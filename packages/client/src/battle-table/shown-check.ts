@@ -19,7 +19,7 @@
  * Classes: "table" (a card moves, a token or marker changes, a stamp or banner: the table plays it out), "log" (only
  * the dock's words say it: Adam said "visually", so this is NOT a pass until he has seen that list), "silent".
  */
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect } from "vitest";
 import {
@@ -129,6 +129,67 @@ export const STANDING: Record<string, string> = {
   stats: "the stat tokens on the card (its markers)",
   villainStage: "the villain card's picture and name",
   acceleration: "the acceleration marker on the main scheme",
+};
+
+/**
+ * How a change to a card reaches the table, which `cls: "table"` alone does not say (Adam, 2026-11-28: Criminal
+ * Enterprise became State of Madness "with no animation, it just teleported", and this watcher had called it shown):
+ *
+ * - "played": a beat of the kind that plays out that change names the card (`CHANGE_FIELDS`).
+ * - "borrowed": some other beat names the card in the same move (a counter coming off credited for a flip).
+ * - "repainted": no beat at all: the table's picture of the card simply differs afterwards. The table animates a few
+ *   of these itself (a card turning as it exhausts, a card flying to a new place); the rest change where they lie.
+ *
+ * "borrowed" and "repainted" are listed per card in the shard (`unplayed`) and gated wherever a file has a
+ * `shown-baseline/<file>.played.json`. They are what `.claude/skills/new-content` reads for a new pack.
+ */
+export type Seen = "played" | "borrowed" | "repainted";
+
+/** The beat fields that play out each kind of change to a card. */
+export const CHANGE_FIELDS: Record<string, readonly string[]> = {
+  zone: [
+    "entersPlay",
+    "leftPlay",
+    "defeatedCard",
+    "discardEvent",
+    "draw",
+    "handDiscard",
+    "returned",
+    "milled",
+    "encounterMilled",
+    "tucked",
+    "intoEncounterDeck",
+    "encounterDeal",
+    "reveal",
+    "encounterResolved",
+    "droneIn",
+    "boostFor",
+    "deckReset",
+    "encounterReset",
+  ],
+  faceup: [
+    "reveal",
+    "boostFor",
+    "droneIn",
+    "cardFlip",
+    "encounterDeal",
+    "milled",
+    "encounterMilled",
+    "tucked",
+    "handDiscard",
+  ],
+  // Healing is a statusChange named "damage" with a minus: the heal number floats off the card.
+  damage: ["hit", "defeat", "defeatedCard", "statusChange"],
+  threat: ["threat", "schemeAdvance", "defeatedCard"],
+  // Tough used up is its own hit beat ("Tough prevents 3 damage"): the tough card lifts off.
+  statuses: ["statusChange", "stunnedAttempt", "hit"],
+  counters: ["statusChange"],
+  exhausted: ["turned"],
+  // A revealed attachment is dealt, turned up, then flies onto its host (the table's "equip" flight, measured frame by
+  // frame on All Tied Up, 2026-11-28).
+  attachedTo: ["entersPlay", "leftPlay", "defeatedCard", "tucked", "reveal"],
+  controller: ["entersPlay"],
+  tucked: ["tucked", "leftPlay", "defeatedCard"],
 };
 
 type Rule =
@@ -400,6 +461,8 @@ export interface Result {
   readonly kind: string;
   readonly cls: ShownClass;
   readonly how: string;
+  /** A change to a card only: how it reached the table (`Seen`). */
+  readonly seen?: Seen;
 }
 
 // ── Collected over this test file ─────────────────────────────────────────────────────────────────────────────────
@@ -411,6 +474,8 @@ const rows = new Map<
 >();
 /** Findings (log and silent), keyed for the baseline: row, kind, how. */
 const findings = new Map<string, number>();
+/** Changes that reached the table without a beat of their own kind ("borrowed", "repainted"): row, kind, seen. */
+const unplayed = new Map<string, { times: number; how: string }>();
 const unclassified = new Map<string, number>();
 const eventCounts = new Map<string, number>();
 
@@ -423,6 +488,10 @@ function rowOf(key: string) {
 function record(result: Result): void {
   const row = rowOf(result.row);
   row[result.cls]++;
+  if (result.cls === "table" && result.seen && result.seen !== "played") {
+    const key = `${result.row} | ${result.kind} | ${result.seen}`;
+    unplayed.set(key, { times: (unplayed.get(key)?.times ?? 0) + 1, how: result.how });
+  }
   if (result.cls !== "table") {
     row.missed.add(`${result.cls}: ${result.kind}`);
     const key = `${result.row} | ${result.kind} | ${result.cls}`;
@@ -708,8 +777,18 @@ export function judge(
           : change === "faceup"
             ? `turned ${is?.faceup ? "faceup" : "facedown"} in ${zoneAfter}`
             : change;
+      const fitting = CHANGE_FIELDS[change] ?? [];
+      const played = classed.some(
+        (c) =>
+          c.cls === "table" &&
+          c.ids.has(id) &&
+          fitting.some((f) => {
+            const value = (c.beat as unknown as Record<string, unknown>)[f];
+            return value !== undefined && value !== null && value !== false;
+          }),
+      );
       if (shownByBeat?.cls === "table") {
-        results.push({ row, kind: what, cls: "table", how: shownByBeat.how });
+        results.push({ row, kind: what, cls: "table", how: shownByBeat.how, seen: played ? "played" : "borrowed" });
         continue;
       }
       const standing =
@@ -738,7 +817,7 @@ export function judge(
                       ? STANDING.attachedTo!
                       : null
                     : null;
-      if (standing) results.push({ row, kind: what, cls: "table", how: `standing: ${standing}` });
+      if (standing) results.push({ row, kind: what, cls: "table", how: `standing: ${standing}`, seen: "repainted" });
       else if (shownByBeat) results.push({ row, kind: what, cls: shownByBeat.cls, how: shownByBeat.how });
       else results.push({ row, kind: what, cls: "silent", how: "" });
     }
@@ -895,6 +974,21 @@ export function watchThisFile(options: { name?: string; gate?: boolean } = {}): 
       writeFileSync(join(out, `${file}.json`), JSON.stringify(shard(), null, 1) + "\n");
     }
     if (!options.gate) return;
+    // Changes that were not played out, where this file keeps a list of the ones known (`<file>.played.json`).
+    const playedPath = new URL(`${file}.played.json`, BASELINE_DIR);
+    const notPlayed = [...unplayed.keys()].sort();
+    if (process.env.SHOWN_PLAYED === "update") {
+      mkdirSync(BASELINE_DIR, { recursive: true });
+      writeFileSync(playedPath, JSON.stringify(notPlayed, null, 1) + "\n");
+    } else if (existsSync(playedPath)) {
+      const accepted = new Set(JSON.parse(readFileSync(playedPath, "utf8")) as string[]);
+      expect(
+        notPlayed.filter((key) => !accepted.has(key)),
+        `A card now changes without the table playing that change out (shown-check.ts, "Seen"): it would swap or ` +
+          `teleport. Give it a beat of its own kind, or if the table animates it itself, record it: ` +
+          `SHOWN_PLAYED=update pnpm exec vitest run src/battle-table/${file}.test.ts`,
+      ).toEqual([]);
+    }
     const keys = [...findings.keys()].sort();
     const path = new URL(`${file}.json`, BASELINE_DIR);
     if (process.env.SHOWN_BASELINE === "update") {
@@ -926,6 +1020,7 @@ function shard() {
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([key, row]) => [key, { ...row, missed: [...row.missed].sort() }]),
     ),
+    unplayed: sorted(unplayed),
     unclassified: sorted(unclassified),
     events: sorted(eventCounts),
   };

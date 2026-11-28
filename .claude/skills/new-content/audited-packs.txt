@@ -1,0 +1,4 @@
+# Card-script folders whose passes have been run (new-mechanics.sh compares a new pack against these).
+# What is still open for a pack is on its ledger.
+packages/cards/src/core
+packages/cards/src/wave1/gob
