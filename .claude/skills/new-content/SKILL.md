@@ -13,14 +13,14 @@ with no turn, the villain was still called Norman Osborn in questions, and three
 can do without a word on the table. [`ledgers/green-goblin.md`](ledgers/green-goblin.md) is that pack's ledger and the
 worked example of this skill.
 
-| File                                         | What it is                                                                                                               |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `SKILL.md` (this)                            | The two passes and what "done" means.                                                                                    |
-| [`failure-patterns.md`](failure-patterns.md) | The twelve ways the table has gone wrong so far, from players' reports and every fix: run each portion past all of them. |
-| [`visual-language.md`](visual-language.md)   | How the table already shows each kind of thing: reuse before inventing.                                                  |
-| `new-mechanics.sh`                           | Lists what a pack's card scripts use that no pack on the table uses yet.                                                 |
-| `audited-packs.txt`                          | The packs whose passes are finished (what the script compares against).                                                  |
-| `ledgers/<pack>.md`                          | One per pack: what it brought that was new, how each is shown, what is open.                                             |
+| File                                         | What it is                                                                                                                 |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `SKILL.md` (this)                            | The two passes and what "done" means.                                                                                      |
+| [`failure-patterns.md`](failure-patterns.md) | The thirteen ways the table has gone wrong so far, from players' reports and every fix: run each portion past all of them. |
+| [`visual-language.md`](visual-language.md)   | How the table already shows each kind of thing: reuse before inventing.                                                    |
+| `new-mechanics.sh`                           | Lists what a pack's card scripts use that no pack on the table uses yet.                                                   |
+| `audited-packs.txt`                          | The packs whose passes are finished (what the script compares against).                                                    |
+| `ledgers/<pack>.md`                          | One per pack: what it brought that was new, how each is shown, what is open.                                               |
 
 ## Before either pass: what is in it, and what is new
 
@@ -131,6 +131,7 @@ The watcher reads the model; only the browser shows what the player sees.
 - [ ] Every standing rule (b) has its three moments looked at.
 - [ ] Each of the failure patterns has been asked of the portion, and the answer is on the ledger.
 - [ ] A debug scene and a browser test for each new mechanic; one whole game played.
+- [ ] Each new mechanic's check has been seen to fail: its beat dropped on purpose once, and a test went red.
 - [ ] The pack's folder is added to `audited-packs.txt`.
 - [ ] Anything _open_ is on the ledger with what it needs, and Adam has been told in plain words.
 

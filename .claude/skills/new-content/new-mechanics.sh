@@ -36,6 +36,24 @@ comm -13 "$known" "$new" | while read -r line; do
   files="$(grep -rlE "\"$word\"|\b$word\(" "$root/$pack" --include=*.ts --exclude=*.test.ts | xargs -r -n1 basename | tr "\n" " ")"
   echo "  $line   ($files)"
 done
+# The helpers its scripts call that no audited pack calls: most scripts only call shared helpers, so a new effect
+# often shows here and not above (Wrecking Crew: setActiveVillain, moveThreat, encounterSetAside).
+calls() {
+  grep -rhoE "\b[a-z][A-Za-z0-9]+\(" "$@" --include=*.ts --exclude=*.test.ts --exclude=testing.ts 2>/dev/null |
+    sort -u || true
+}
+: > "$known"
+for dir in "${against[@]}"; do
+  dir="${dir%$'\r'}"
+  [ "$root/$dir" -ef "$root/$pack" ] && continue
+  calls "$root/$dir" >> "$known"
+done
+sort -u "$known" -o "$known"
+calls "$root/$pack" > "$new"
+echo
+echo "Helpers it calls that none of them call:"
+comm -13 "$known" "$new" | tr "\n" " " | fold -s -w 110 | sed "s/^/  /"
+echo
 echo
 echo "Also read the data of the pack (packages/content/src/data/<pack>/cards.ts) for a card type, a keyword, a"
 echo "counter name or a flipSide that the audited packs do not have: those never show up in the scripts."

@@ -128,6 +128,7 @@ export const STANDING: Record<string, string> = {
   tucked: "the tucked count on the card",
   stats: "the stat tokens on the card (its markers)",
   villainStage: "the villain card's picture and name",
+  side: "the card's picture and name are its other side's (swapped where it lies, unless a beat turns it over)",
   acceleration: "the acceleration marker on the main scheme",
 };
 
@@ -185,6 +186,8 @@ export const CHANGE_FIELDS: Record<string, readonly string[]> = {
   statuses: ["statusChange", "stunnedAttempt", "hit"],
   counters: ["statusChange"],
   exhausted: ["turned"],
+  // Only a beat that turns the card over: with none, the picture swaps where it lies (Adam, 2026-11-28).
+  side: ["cardFlip", "villainFlip"],
   // A revealed attachment is dealt, turned up, then flies onto its host (the table's "equip" flight, measured frame by
   // frame on All Tied Up, 2026-11-28).
   attachedTo: ["entersPlay", "leftPlay", "defeatedCard", "tucked", "reveal"],
@@ -341,6 +344,7 @@ export const EVENT_RULES: Record<string, Rule> = {
 /** The events that make each kind of change to a card: the change is the doing of whoever was resolving then. */
 const CAUSES: Record<string, readonly string[]> = {
   zone: ["cardMoved", "cardDrawn", "cardDiscardedFromHand", "cardDiscardedFromPlay", "cardDiscardedFromDeck"],
+  side: ["cardFlipped", "villainFlipped"],
   faceup: ["cardTurnedFaceup", "cardTurnedFacedown", "encounterCardRevealed", "boostCardFlipped", "cardMoved"],
   damage: ["damageDealt", "damagePlaced", "damageHealed"],
   threat: ["threatPlaced", "threatRemoved"],
@@ -754,6 +758,8 @@ export function judge(
     if (zoneBefore !== zoneAfter) changes.push("zone");
     if (was && is) {
       if (was.faceup !== is.faceup) changes.push("faceup");
+      // Which side of a two-sided card is up (Criminal Enterprise / State of Madness).
+      if (was.flipped !== is.flipped) changes.push("side");
       if (was.damage !== is.damage) changes.push("damage");
       if (was.threat !== is.threat) changes.push("threat");
       if (JSON.stringify(was.statuses) !== JSON.stringify(is.statuses)) changes.push("statuses");
@@ -784,7 +790,13 @@ export function judge(
           c.ids.has(id) &&
           fitting.some((f) => {
             const value = (c.beat as unknown as Record<string, unknown>)[f];
-            return value !== undefined && value !== null && value !== false;
+            if (value === undefined || value === null || value === false) return false;
+            // A status beat shows damage only when it is a heal, and a hit shows a status only when Tough took it.
+            if (change === "damage" && f === "statusChange") return c.beat.statusChange?.name === "damage";
+            if (change === "statuses" && f === "hit") return !!c.beat.hit?.tough;
+            if ((change === "statuses" || change === "counters") && f === "statusChange")
+              return c.beat.statusChange?.name !== "damage";
+            return true;
           }),
       );
       if (shownByBeat?.cls === "table") {
@@ -792,31 +804,35 @@ export function judge(
         continue;
       }
       const standing =
-        change === "zone" || change === "faceup"
-          ? placeBefore !== placeAfter
-            ? `${STANDING[change]} (${placeBefore}→${placeAfter})`
+        change === "side"
+          ? cardBefore?.art !== cardAfter?.art || cardBefore?.name !== cardAfter?.name
+            ? STANDING.side!
             : null
-          : change === "damage"
-            ? cardBefore?.hp !== cardAfter?.hp || markersOf(cardBefore) !== markersOf(cardAfter)
-              ? STANDING.damage!
+          : change === "zone" || change === "faceup"
+            ? placeBefore !== placeAfter
+              ? `${STANDING[change]} (${placeBefore}→${placeAfter})`
               : null
-            : change === "threat"
-              ? cardBefore?.threat !== cardAfter?.threat || markersOf(cardBefore) !== markersOf(cardAfter)
-                ? STANDING.threat!
+            : change === "damage"
+              ? cardBefore?.hp !== cardAfter?.hp || markersOf(cardBefore) !== markersOf(cardAfter)
+                ? STANDING.damage!
                 : null
-              : change === "statuses" || change === "counters" || change === "tucked"
-                ? markersOf(cardBefore) !== markersOf(cardAfter)
-                  ? STANDING[change]!
+              : change === "threat"
+                ? cardBefore?.threat !== cardAfter?.threat || markersOf(cardBefore) !== markersOf(cardAfter)
+                  ? STANDING.threat!
                   : null
-                : change === "exhausted"
-                  ? cardBefore?.exhausted !== cardAfter?.exhausted
-                    ? STANDING.exhausted!
+                : change === "statuses" || change === "counters" || change === "tucked"
+                  ? markersOf(cardBefore) !== markersOf(cardAfter)
+                    ? STANDING[change]!
                     : null
-                  : change === "attachedTo"
-                    ? cardBefore?.attachedTo !== cardAfter?.attachedTo || placeBefore !== placeAfter
-                      ? STANDING.attachedTo!
+                  : change === "exhausted"
+                    ? cardBefore?.exhausted !== cardAfter?.exhausted
+                      ? STANDING.exhausted!
                       : null
-                    : null;
+                    : change === "attachedTo"
+                      ? cardBefore?.attachedTo !== cardAfter?.attachedTo || placeBefore !== placeAfter
+                        ? STANDING.attachedTo!
+                        : null
+                      : null;
       if (standing) results.push({ row, kind: what, cls: "table", how: `standing: ${standing}`, seen: "repainted" });
       else if (shownByBeat) results.push({ row, kind: what, cls: shownByBeat.cls, how: shownByBeat.how });
       else results.push({ row, kind: what, cls: "silent", how: "" });

@@ -1,8 +1,9 @@
 # The ways the table has gone wrong so far
 
-Drawn from the players' reports (issues 210, 215, 217, 222: three of the four from Ultron games) and the 270-odd fixes
+Drawn from the players' reports on GitHub (issues 210, 215, 217, 222: all four from Ultron games) and the 270-odd fixes
 merged up to 2026-11-28. Almost none were the rules being wrong. They were the table not telling the player
-something, in a dozen repeating ways. **Run every new portion past each pattern**: for each, the question to ask and
+something, in a dozen repeating ways. (Reports the test site could not file wait in its own database and were not
+read for this.) **Run every new portion past each pattern**: for each, the question to ask and
 how to check it.
 
 Keep this alive: when a player report or one of Adam's spots is fixed, find its pattern here and add the case; if it
@@ -133,3 +134,16 @@ fits none, it is a new pattern, so write it in. A fix that only fixes its one ca
   on a busy PC. Safari on a MacBook (PR 117).
 - **Ask:** has it been seen on the test site's build, at phone width, with a controller?
 - **Check:** `pnpm table:check` before a version ships; the portion looked at once on the shipped site.
+
+## Checks
+
+### 13. A check that could not have failed
+
+- **Seen:** the "nothing happens unseen" watcher called Green Goblin fully shown while Criminal Enterprise swapped in
+  place: it counted "the picture is different afterwards" as shown, and did not look at which side of a card was up
+  at all. The flip's first fix was checked by its words. On 2026-11-28 the fix was undone on purpose and the watcher
+  still passed, until the card's side was added to what it compares.
+- **Root cause:** a check was written, went green, and was trusted without ever being seen to go red.
+- **Ask:** if this broke tomorrow, which check fails? Have I seen it fail?
+- **Check:** for each new mechanic, break its presentation on purpose once (drop the beat) and see an audit or a
+  browser test fail. If nothing fails, the check is missing: write it before the fix counts as done.

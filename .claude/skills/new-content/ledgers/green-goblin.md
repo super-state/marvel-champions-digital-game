@@ -58,7 +58,10 @@ see any of them: the engine reports nothing when a standing rule bites.
 - Changes not played out by a beat of their own kind: one, known and recorded (`shown-baseline/*.played.json`). A
   player card played from the hand (01059) has no beat; the table flies it from the hand to its place itself.
 - Before the watcher was tightened (2026-11-28) it reported this pack fully shown while the flip swapped in place.
-  It now gates all four Goblin audit files on anything new that is borrowed or repainted.
+  It now compares which side of a card is up and gates all four Goblin audit files on anything new that is borrowed
+  or repainted. Proved by undoing the flip fix: the risky audit fails with "02006a | side | borrowed".
+- The sweep never reveals All Tied Up itself (it is used as the quiet boost card, and is taken as one in its own
+  game); the modules audit covers it. To fix in the sweep.
 
 ## Done?
 
