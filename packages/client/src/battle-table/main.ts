@@ -1775,6 +1775,17 @@ function guardPill(): HTMLElement {
   return pill;
 }
 
+/** Retaliate on a character's plate (`BattleCard.retaliate`): the amount, and the card giving it. */
+function retaliatePill(amount: number, by: string | undefined): HTMLElement {
+  const pill = make("span", "stat-pill");
+  pill.dataset.kind = "retaliate";
+  const giver = nameOf(by);
+  pill.title = `Retaliate ${amount}: when attacked, it deals ${amount} damage to the attacker${giver ? ` (${giver})` : ""}`;
+  pill.setAttribute("aria-label", pill.title);
+  pill.append(icon("attack"), make("b", "", String(amount)));
+  return pill;
+}
+
 /** A lock on the plate of a card a rule holds down (`BattleCard.held`): pointing at it says what and which card. */
 function heldPill(held: string): HTMLElement {
   const pill = make("span", "stat-pill");
@@ -1789,6 +1800,8 @@ function heldPill(held: string): HTMLElement {
 function guardReason(): string {
   const names = (state.choice?.guard?.guards ?? []).map(nameOf);
   const villain = nameOf(state.choice?.guard?.blocked[0] ?? null) || "The villain";
+  // A rule, not guard, keeps the villain out of reach (Ultron (III)): the rule's own words.
+  if (state.choice?.guard?.why) return state.choice.guard.why;
   if (!names.length) return "";
   const who = names.length === 1 ? `${names[0]} has` : `${names.slice(0, -1).join(", ")} and ${names.at(-1)} have`;
   return `Can't attack ${villain}: ${who} Guard`;
@@ -1805,6 +1818,14 @@ let guardHintAt = 0;
 function showGuardHint(villain: string, held = false) {
   const guard = state.choice?.guard;
   if (!guard?.blocked.includes(villain)) return;
+  if (guard.why) {
+    // No minion to point at: the villain itself is stamped, the rule's words on its plate and under the question.
+    const now = performance.now();
+    if (now - guardHintAt < 1500) return;
+    guardHintAt = now;
+    stampCard(villain, "Can't be hurt", "status");
+    return;
+  }
   if (!held) {
     // Already held over the minions: they stay as they are.
     if (guardHeld.some((node) => node.isConnected)) return;
@@ -2141,6 +2162,8 @@ function synchronizeLabels() {
       if (!discardOpen && hp !== undefined) label.append(hpPill(hp));
       if (!discardOpen && card.guard) label.append(guardPill());
       if (!discardOpen && !inHand && card.held) label.append(heldPill(card.held));
+      if (!discardOpen && !inHand && card.retaliate)
+        label.append(retaliatePill(card.retaliate.amount, card.retaliate.by));
     }
     // Picking whom to attack while guard keeps the villain out of reach: the guard minion's shield pulses.
     label.toggleAttribute("data-guarding", !!state.choice?.guard?.guards.includes(card.id));
@@ -3829,6 +3852,19 @@ async function present(beats: Snapshot["beats"]) {
       await sleep(reducedMotion() ? 500 : 1800);
       continue;
     }
+    if (beat.idle) {
+      // A forced ability with nothing to do: its card is marked and stamped, briefly.
+      table?.markActor(beat.idle);
+      narrate(beat, feedLineOf(beat), {
+        eyebrow: { text: nameOf(beat.idle), icon: "forced", tone: "villain" },
+        title: beat.text,
+      });
+      activationRing(beat.idle);
+      // Named under the stamp: an attachment is tucked under its host, so the stamp alone would read as the host's.
+      stampCard(beat.idle, "Nothing to do", "status", nameOf(beat.idle) || undefined);
+      await sleep(reducedMotion() ? 300 : 900);
+      continue;
+    }
     if (beat.again) {
       // A When Revealed about to resolve a second time: the card making it happen says so first.
       const { card, by } = beat.again;
@@ -4155,7 +4191,10 @@ async function present(beats: Snapshot["beats"]) {
         await sleep(reducedMotion() ? 200 : 520);
       } else if (delta > 0 && STATUS_STAMP[name]) {
         const [tone, text] = STATUS_STAMP[name]!;
-        stampCard(id, text, tone);
+        // The card that gave it, when it is another card's doing (Vibranium Armor, Mockingbird), which rings.
+        const giver = beat.statusBy && beat.statusBy !== id ? beat.statusBy : null;
+        stampCard(id, text, tone, (giver && nameOf(giver)) || undefined);
+        if (giver) activationRing(giver);
         sfx.play("status");
       }
     }
@@ -4366,6 +4405,13 @@ async function present(beats: Snapshot["beats"]) {
         `${beat.threat.delta > 0 ? "+" : "−"}${Math.abs(beat.threat.delta)}`,
         "threat",
       );
+    }
+    if (beat.hit?.retaliate && beat.hit.source) {
+      // Retaliate hitting back: named on the card that has it (with the card giving it), before the hit lands.
+      const giver = typeof beat.hit.retaliate === "string" ? beat.hit.retaliate : null;
+      stampCard(beat.hit.source, "Retaliate", "guard", (giver && nameOf(giver)) || undefined);
+      if (giver) activationRing(giver);
+      await sleep(reducedMotion() ? 200 : 650);
     }
     if (beat.hit) {
       // The attack has landed: its target goes.

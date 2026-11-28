@@ -24,7 +24,8 @@ interface Scene {
   modules?: ModuleId[];
   hero?: { form?: "hero" | "alterEgo"; damage?: number; statuses?: Record<string, number>; exhausted?: boolean };
   /** `lastStage`: the stage the villain is on is his last, so defeating it wins the game (a scene's shortcut). */
-  villain?: { damage?: number; statuses?: Record<string, number>; lastStage?: boolean };
+  /** `stage`: the villain's stage, counted from 1 (Ultron (III) is 3, whatever the difficulty dealt). */
+  villain?: { damage?: number; statuses?: Record<string, number>; lastStage?: boolean; stage?: number };
   /** Dealt for whichever hero the address or the bench chose, not Spider-Man: it uses none of his cards. */
   anyHero?: true;
   /** Goes on the record like a real game when the address also says `&record=1` (the driven win's browser test). */
@@ -700,6 +701,17 @@ const SCENES: Record<string, Scene> = {
     ],
     hand: ["01005", "01005", "01088", "01090", "01089"],
   },
+  /**
+   * Ultron (III), the expert game's last stage, with a Drone out: "Each Drone minion gets +1 ATK and +1 hit point.
+   * Ultron cannot take damage while a Drone minion is in play." Attack: Ultron can't be hurt until the Drone is gone.
+   */
+  ultronthree: {
+    scenario: "ultron",
+    hero: { form: "hero" },
+    villain: { stage: 3 },
+    drones: [{ code: "01088" }],
+    hand: ["01005", "01090", "01089"],
+  },
   /** Ultron's crowded table: five Drones and an Advanced Ultron Drone, two side schemes, two attachments on Ultron. */
   ultroncrowd: {
     scenario: "ultron",
@@ -994,6 +1006,13 @@ function arrange(state: GameState, scene: Scene): GameState {
     ...(scene.mainStage !== undefined ? { mainScheme: { ...state.mainScheme, stageIndex: scene.mainStage - 1 } } : {}),
     ...(scene.villain?.lastStage
       ? { villains: state.villains.map((v, i) => (i === 0 ? { ...v, lastStageIndex: v.stageIndex } : v)) }
+      : {}),
+    ...(scene.villain?.stage !== undefined
+      ? {
+          villains: state.villains.map((v, i) =>
+            i === 0 ? { ...v, stageIndex: scene.villain!.stage! - 1, lastStageIndex: scene.villain!.stage! - 1 } : v,
+          ),
+        }
       : {}),
     players: [
       {

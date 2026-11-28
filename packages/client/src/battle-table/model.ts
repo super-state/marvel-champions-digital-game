@@ -28,6 +28,9 @@ import {
   activeRules,
   cannotChangeForm,
   cannotReady,
+  cannotTakeDamage,
+  keywordTotal,
+  villainStageOf,
   type Command,
   type GameEvent,
   type GameState,
@@ -168,6 +171,12 @@ export interface BattleCard {
    * wears a lock on its plate and the hero's menu says it (Adam, 2026-11-28: the form change just vanished).
    */
   held?: string;
+  /**
+   * A character in play with Retaliate now, printed or gained (Concussion Blasters gives the villain retaliate 1):
+   * how much, and the card giving it when it is not printed on this one. The table wears it on the plate, and names
+   * it when it hits back (Adam's Ultron run, 2026-11-28: the hit read as an attack of the villain's).
+   */
+  retaliate?: { amount: number; by?: string };
 }
 
 export interface BattlePayment {
@@ -372,8 +381,10 @@ export interface BattleChoice {
    * guard minions stopping it. The pick is asked even when the guard minion is the only enemy left to attack, so the
    * player sees why the villain is out of reach rather than the attack going to the minion by itself (Adam,
    * 2026-11-25: a playtester was confused when the attack "went straight to the guard one").
+   * `why`: a rule, not guard, keeps the villain out of reach (Ultron (III) "cannot take damage while a Drone minion
+   * is in play"): the rule in its card's words, with no guard minions. The pick is asked the same way.
    */
-  guard?: { blocked: string[]; guards: string[] };
+  guard?: { blocked: string[]; guards: string[]; why?: string };
   /**
    * The cards a "Choose one" question's options would change (Ultron's "Place 1 threat on the main scheme": the main
    * scheme), kept in focus while it is asked so their numbers can be read (`choice-affects.ts`; issue 210).
@@ -463,6 +474,16 @@ export interface BattleBeat {
    * and the card making it happen again.
    */
   again?: { card: string; by: string };
+  /**
+   * With `statusChange`: the card whose ability gave the status, when it is not the card that gets it (Vibranium
+   * Armor giving Ultron a tough card, Mockingbird stunning an enemy). The stamp names it.
+   */
+  statusBy?: string;
+  /**
+   * An encounter card's forced ability came up and had nothing to do (Program Transmitter with no side scheme in
+   * play): the card, stamped so the player sees it was not forgotten.
+   */
+  idle?: string;
   /**
    * The main scheme's stage was completed and it turned over to its next one (Klaw's Underground Distribution to
    * Secret Rendezvous): `from` and `to` are the stage names, `threat` and `target` the new stage's threat and goal.
@@ -585,7 +606,7 @@ export interface BattleBeat {
    * never count the same threat twice.
    */
   threat?: { scheme: string; delta: number; to: number };
-  hit?: { source: string | null; target: string; amount: number; tough?: boolean };
+  hit?: { source: string | null; target: string; amount: number; tough?: boolean; retaliate?: true | string };
 }
 
 export interface BattleSnapshot {
@@ -1719,6 +1740,30 @@ export class BattleModel {
       else if (e.type === "cardMoved" && e.from.kind === "deck" && !facedownPuts.has(e.instanceId)) deckLeft--;
       if (e.type === "encounterCardDealt") dealt.add(e.instanceId);
       if (e.type === "abilityResolved") resolving = { card: e.instanceId, label: triggerLabel(e.abilityId) };
+      // An encounter card's forced ability that comes up with nothing to do (Program Transmitter, no side scheme):
+      // its effects frame opens and closes with nothing in it. Said, so the card is seen not to have been forgotten.
+      if (e.type === "abilityResolved") {
+        const ability = TABLE_DEPS.abilities[e.abilityId];
+        const forced =
+          (ability?.trigger.kind === "response" || ability?.trigger.kind === "interrupt") && ability.trigger.forced;
+        const type = cardOf(this.#game, e.instanceId)?.type ?? "";
+        if (forced && ENCOUNTER_TYPES.has(type) && !drones.has(e.instanceId)) {
+          const rest = events.slice(events.indexOf(e) + 1);
+          const QUIET = new Set(["triggerEvent", "abilityUseRecorded", "windowOpened", "targetChosen", "optionChosen"]);
+          const open = rest.findIndex((next) => !QUIET.has(next.type));
+          const pushed = rest[open];
+          if (pushed?.type === "framePushed" && pushed.frame === "effects") {
+            const close = rest.findIndex((next) => next.type === "framePopped" && next.frameId === pushed.frameId);
+            if (close > open && rest.slice(open + 1, close).every((next) => QUIET.has(next.type)))
+              this.#beats.push({
+                enemy,
+                actor: e.instanceId,
+                text: `${name(e.instanceId)}: nothing to do`,
+                idle: e.instanceId,
+              });
+          }
+        }
+      }
       // A When Revealed resolving again for a standing rule (Media Coverage): the card whose rule it is says so
       // first, or the second resolution reads as the revealed card misfiring (Adam, 2026-11-28).
       if (e.type === "encounterCardRevealed") this.#whenRevealedRuns.delete(e.instanceId);
@@ -2262,14 +2307,20 @@ export class BattleModel {
               ? `${e.amount} damage lands on ${name(e.targetInstanceId)}`
               : // An ally's own damage for attacking or thwarting (consequential damage) is taken, not dealt to itself:
                 // "Daredevil takes 1 damage", where "Daredevil deals 1 damage to Daredevil" read as a mistake.
-                sourceId && sourceId !== e.targetInstanceId
-                ? `${name(sourceId)} deals ${e.amount} damage to ${name(e.targetInstanceId)}`
-                : `${name(e.targetInstanceId)} takes ${e.amount} damage`,
+                e.type === "damageDealt" && e.retaliate && sourceId
+                ? // Retaliate hitting back is not an attack of that character's: it is said as what it is.
+                  `${name(sourceId)} retaliates: ${e.amount} damage to ${name(e.targetInstanceId)}`
+                : sourceId && sourceId !== e.targetInstanceId
+                  ? `${name(sourceId)} deals ${e.amount} damage to ${name(e.targetInstanceId)}`
+                  : `${name(e.targetInstanceId)} takes ${e.amount} damage`,
           hit: {
             source: attacker,
             target: e.targetInstanceId,
             amount: tough ? 0 : e.amount,
             ...(tough ? { tough: true } : {}),
+            ...(e.type === "damageDealt" && e.retaliate && sourceId
+              ? { retaliate: this.#retaliateOf(sourceId)?.by ?? true }
+              : {}),
           },
         });
       } else if (e.type === "counterAdded" || e.type === "counterRemoved" || e.type === "damageHealed") {
@@ -2294,10 +2345,13 @@ export class BattleModel {
           });
           continue;
         }
+        // Given by another card's ability (Vibranium Armor's tough card, Mockingbird's stun): that card is named.
+        const giver = e.type === "statusGiven" && resolving && resolving.card !== e.instanceId ? resolving.card : null;
         this.#beats.push({
           enemy,
           actor: e.instanceId,
           statusChange: { id: e.instanceId, name: e.status, delta: e.type === "statusGiven" ? 1 : -1 },
+          ...(giver && getInstance(result.state, giver) ? { statusBy: giver } : {}),
           text: `${name(e.instanceId)} ${e.type === "statusGiven" ? "gains" : "loses"} ${e.status}`,
         });
       } else if (e.type === "cardExhausted" || e.type === "cardReadied") {
@@ -2601,6 +2655,7 @@ export class BattleModel {
         ].filter((m) => m.count > 0)
       : [];
     const held = this.#heldText(id);
+    const retaliate = this.#retaliateOf(id);
     return {
       id,
       attachedTo: instance?.attachedTo ?? null,
@@ -2616,6 +2671,7 @@ export class BattleModel {
         ? { guard: true as const }
         : {}),
       ...(held ? { held } : {}),
+      ...(retaliate ? { retaliate } : {}),
       reverseArt:
         id === state.players[0]!.identity.instanceId
           ? (artFor(card, { kind: state.players[0]!.identity.form === "hero" ? "alterEgo" : "hero" })?.url ?? null)
@@ -3278,7 +3334,11 @@ export class BattleModel {
             | undefined)
         : flipped
           ? ({ ...card, ...flipped } as typeof card)
-          : card;
+          : card.type === "villain" && state.villains.some((villain) => villain.instanceId === id)
+            ? // A villain's words are its stage's (Ultron (III): "Ultron cannot take damage while a Drone ..."), not
+              // the card's, which has none of its own.
+              ({ ...card, text: villainStageOf(state, id as InstanceId).text } as typeof card)
+            : card;
     const profile = characterProfile(state, id as InstanceId, TABLE_DEPS);
     const shown: readonly ("atk" | "thw" | "sch" | "def" | "rec")[] =
       card.type === "villain" || card.type === "minion"
@@ -3345,10 +3405,54 @@ export class BattleModel {
     return attached.length ? attached : sources;
   }
 
-  /** `BattleCard.held` for the player's identity and the cards in their play area; null for any other card. */
+  /**
+   * Why a villain can't take damage now, in its rule's own words ("Ultron cannot take damage while a Drone minion is
+   * in play."): the sentence of that rule's card, else a plain line.
+   */
+  #immuneText(id: InstanceId): string {
+    const state = this.#game;
+    const sources = activeRules(state, TABLE_DEPS, "cannotTakeDamage").flatMap(({ context }) =>
+      context.selfInstanceId ? [context.selfInstanceId] : [],
+    );
+    for (const source of [id, ...sources]) {
+      const sentence = this.cardFacts(source)
+        .split(/(?<=[.!?])\s+|\s+·\s+|\n/)
+        .find((part) => /cannot (take|be dealt) damage/i.test(part));
+      if (sentence) return sentence.trim().replace(/[.]?$/, ".");
+    }
+    return `${faceUpName(state, id)} cannot take damage now.`;
+  }
+
+  /** `BattleCard.retaliate`: the character's retaliate now, and the attached card giving it if it prints none. */
+  #retaliateOf(id: InstanceId): BattleCard["retaliate"] | null {
+    const state = this.#game;
+    const card = cardOf(state, id);
+    if (!card || !["villain", "minion", "ally", "hero_identity"].includes(card.type)) return null;
+    const zone = locateCard(state, id)?.kind;
+    if (zone === "hand" || zone === "deck" || zone === "discard" || isFacedownMinion(state, id)) return null;
+    const amount = keywordTotal(state, id, "retaliate", TABLE_DEPS);
+    if (amount <= 0) return null;
+    const printed = /\bretaliate\b/i.test(this.cardFacts(id));
+    const by = printed
+      ? undefined
+      : Object.values(state.instances).find(
+          (other) => other.attachedTo === id && /\bretaliate\b/i.test(this.cardFacts(other.instanceId)),
+        )?.instanceId;
+    return { amount, ...(by ? { by } : {}) };
+  }
+
+  /**
+   * `BattleCard.held` for the player's identity and the cards in their play area, and for a villain that cannot take
+   * damage now; null for any other card.
+   */
   #heldText(id: InstanceId): string | null {
     const state = this.#game;
     const seat = state.players[0]!;
+    if (
+      state.villains.some((villain) => villain.instanceId === id && !villain.defeated) &&
+      cannotTakeDamage(state, TABLE_DEPS, id, [seat.identity.instanceId])
+    )
+      return this.#immuneText(id);
     const identity = id === seat.identity.instanceId;
     if (!identity && !seat.playArea.includes(id)) return null;
     const ready = cannotReady(state, TABLE_DEPS, id);
@@ -3546,16 +3650,20 @@ export class BattleModel {
     attacker: InstanceId,
     offered: readonly string[],
     basic: boolean,
-  ): { blocked: InstanceId[]; guards: InstanceId[] } | null {
-    const blocked = state.villains
-      .filter((villain) => !villain.defeated)
-      .map((villain) => villain.instanceId)
-      .filter(
-        (id) =>
-          !offered.includes(id) &&
-          canAttack(state, attacker, id, TABLE_DEPS, basic, true) &&
-          !canAttack(state, attacker, id, TABLE_DEPS, basic),
-      );
+  ): { blocked: InstanceId[]; guards: InstanceId[]; why?: string } | null {
+    const villains = state.villains.filter((villain) => !villain.defeated).map((villain) => villain.instanceId);
+    // A villain a rule keeps from taking damage (Ultron (III) while a Drone is in play) is out of reach as a guarded
+    // one is, and the pick says so the same way.
+    const immune = villains.filter(
+      (id) => !offered.includes(id) && cannotTakeDamage(state, TABLE_DEPS, id, [attacker]),
+    );
+    if (immune.length) return { blocked: immune, guards: [], why: this.#immuneText(immune[0]!) };
+    const blocked = villains.filter(
+      (id) =>
+        !offered.includes(id) &&
+        canAttack(state, attacker, id, TABLE_DEPS, basic, true) &&
+        !canAttack(state, attacker, id, TABLE_DEPS, basic),
+    );
     if (!blocked.length) return null;
     const playerId = state.players[0]!.playerId;
     const guards = state.players[0]!.playArea.filter(
@@ -3568,7 +3676,7 @@ export class BattleModel {
   }
 
   /** A basic attack that guard narrows (`#guardFacts`). Null for any other power. */
-  #guardBlocked(entry: LegalAction): { blocked: InstanceId[]; guards: InstanceId[] } | null {
+  #guardBlocked(entry: LegalAction): { blocked: InstanceId[]; guards: InstanceId[]; why?: string } | null {
     if (entry.action.kind !== "basicAttack") return null;
     return this.#guardFacts(this.#game, entry.action.instanceId, entry.targets, true);
   }
@@ -3592,9 +3700,10 @@ export class BattleModel {
 
   /** The guard fields of a question (`BattleChoice.guard`), with the reason said in words. */
   #guardFields(
-    guard: { blocked: InstanceId[]; guards: InstanceId[] } | null,
+    guard: { blocked: InstanceId[]; guards: InstanceId[]; why?: string } | null,
   ): Pick<BattleChoice, "guard" | "explanation" | "prompt"> | Record<string, never> {
     if (!guard) return {};
+    if (guard.why) return { prompt: "Choose an enemy to attack", guard, explanation: guard.why };
     const state = this.#game;
     const guards = guard.guards.map((id) => faceUpName(state, id));
     const villain = faceUpName(state, guard.blocked[0]!);

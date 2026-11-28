@@ -350,6 +350,57 @@ describe("Ultron on the table (seed 7 unless a test says otherwise)", () => {
     expect(after.villain.markers).toContainEqual({ name: "tough", count: 1 });
   });
 
+  // The new-content run on Ultron, 2026-11-28: rules that stop or add something, which the table never said.
+  test("ultronthree: Ultron (III) can't take damage while a Drone is out; his plate says so and the attack pick says why", () => {
+    // 01136: "Each Drone minion gets +1 ATK and +1 hit point. Ultron cannot take damage while a Drone minion is in play."
+    const battle = deal("ultronthree");
+    const view = battle.snapshot();
+    const why = "Ultron cannot take damage while a Drone minion is in play.";
+    expect(view.villain.held).toBe(why);
+    for (const drone of drones(view)) expect(drone.hp).toBe(2);
+    // The pick is asked even though a Drone is the only enemy that can be hurt, with Ultron shown as out of reach.
+    expect(battle.heroAction("basicAttack")).toBe(true);
+    const pick = battle.snapshot().choice!;
+    expect(pick.prompt).toBe("Choose an enemy to attack");
+    expect(pick.guard).toEqual({ blocked: [view.villain.id], guards: [], why });
+    expect(pick.explanation).toBe(why);
+    expect(pick.options.some((o) => o.cardId === view.villain.id)).toBe(false);
+    // With the last Drone gone he can be hurt again, and the lock comes off.
+    const all = drones(view);
+    expect(battle.choose(pick.options.find((o) => o.cardId === all[0]!.id)!.id)).toBe(true);
+    if (all.length === 1) expect(battle.snapshot().villain.held).toBeUndefined();
+  });
+
+  test("ultronarmor: Ultron's plate shows Retaliate 1 from Concussion Blasters, and the hit back is named Retaliate", () => {
+    const battle = deal("ultronarmor");
+    const view = battle.snapshot();
+    const blasters = view.enemyCards.find((c) => c.name === "Concussion Blasters")!.id;
+    const armor = view.enemyCards.find((c) => c.name === "Vibranium Armor")!.id;
+    expect(view.villain.retaliate).toEqual({ amount: 1, by: blasters });
+    expect(battle.heroAction("basicAttack")).toBe(true);
+    if (battle.snapshot().choice) expect(battle.choose(view.villain.id)).toBe(true);
+    const beats = battle.snapshot().beats;
+    const back = beats.find((b) => b.hit?.retaliate)!;
+    expect(back.text).toBe("Ultron retaliates: 1 damage to Spider-Man");
+    expect(back.hit).toMatchObject({ source: view.villain.id, target: view.hero.id, amount: 1, retaliate: blasters });
+    // His own attacks are not retaliate.
+    expect(beats.filter((b) => b.hit && b.hit.source === view.hero.id).every((b) => !b.hit!.retaliate)).toBe(true);
+    // Vibranium Armor is named as the card that gives the tough status.
+    expect(beats.find((b) => b.statusChange?.name === "tough")!.statusBy).toBe(armor);
+  });
+
+  test("ultrongear: Program Transmitter says when it has nothing to do (no side scheme in play)", () => {
+    // 01141: "Forced Response: After Ultron schemes, place 1 threat on each side scheme."
+    const battle = deal("ultrongear");
+    const transmitter = battle.snapshot().enemyCards.find((c) => c.name === "Program Transmitter")!.id;
+    expect(battle.snapshot().enemyCards.some((c) => c.type === "side_scheme")).toBe(false);
+    expect(battle.heroAction("changeForm")).toBe(true);
+    const { beats } = throughVillainPhase(battle);
+    const idle = beats.filter((b) => b.idle);
+    expect(idle.map((b) => b.idle)).toEqual([transmitter]);
+    expect(idle[0]!.text).toBe("Program Transmitter: nothing to do");
+  });
+
   test("ultronswarm: Swarm Attack makes each Drone engaged with the hero attack (01147)", () => {
     const battle = deal("ultronswarm");
     const start = drones(battle.snapshot()).length;
