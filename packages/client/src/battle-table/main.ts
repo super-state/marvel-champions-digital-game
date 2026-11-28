@@ -821,16 +821,19 @@ function paymentView(payment: Payment): DockView {
         : payment.ability
           ? "Use it?"
           : "Play it?",
+    // A cost of typed resources shows its symbols, lit as they are paid, as an either-or spend does.
+    need: payment.need ?? null,
     meter: payment.required
       ? {
           paid: payment.paid,
           required: payment.required,
-          // Only what the count can't say: a resource type still owed, or an overspend.
-          balance: payment.outstanding?.length
-            ? `Need ${payment.outstanding.join(" + ")}`
-            : left < 0
-              ? `${-left} extra`
-              : "",
+          // Only what the count and the symbols can't say: a resource type still owed, or an overspend.
+          balance:
+            payment.outstanding?.length && !payment.need
+              ? `Need ${payment.outstanding.join(" + ")}`
+              : left < 0
+                ? `${-left} extra`
+                : "",
         }
       : null,
     secondary: { label: "Cancel", disabled: discarding, onClick: cancel },
@@ -2486,6 +2489,10 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
     return card ? [card] : [];
   });
   const counter = encounter ? element("encounter-count") : deckCount;
+  if (encounter && table && cards.length) {
+    await millEncounter(beat, cards, next, counter);
+    return;
+  }
   counter.textContent = String(Math.max(0, Number(counter.textContent) - milled.length));
   if (!table || !cards.length) {
     await sleep(700);
@@ -2531,6 +2538,63 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   focusBlur.hidden = !handQuestion() && !revealFocus && !dockFocus;
   focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = "";
   // A dock question still waiting keeps its own blur.
+  if (dockFocus) focusBlur.dataset.ready = "";
+}
+
+/**
+ * Off the encounter deck until a card is found (The Masters of Evil's "until a Masters of Evil minion is discarded"): the
+ * misses turn up one by one off the deck straight onto the encounter discard pile, the deck's count going down with
+ * each, and only the card found is held up in the middle, named, before it is put into play (Adam, 2026-11-28: forty
+ * cards laid out tiny across the screen told the player nothing).
+ */
+async function millEncounter(
+  beat: Beat,
+  cards: readonly Snapshot["encounterDiscard"][number][],
+  next: Beat | undefined,
+  counter: HTMLElement,
+) {
+  const found = next?.entersPlay ? cards.filter((card) => card.id === next.entersPlay) : [];
+  const going = cards.filter((card) => !found.includes(card));
+  // A long run goes quicker card by card, so forty cards take a few seconds, not ten.
+  const gap = reducedMotion() ? 0 : Math.round(Math.min(240, Math.max(85, 2600 / Math.max(1, going.length))));
+  const left = Number(counter.textContent) || 0;
+  narrate(beat, feedLineOf(beat), {
+    title: `Discarding ${plural(cards.length, "card")} from the encounter deck`,
+  });
+  if (going.length) {
+    table!.millToPile(going, gap);
+    going.forEach((_, i) => {
+      sfx.play("flip", { delay: i * gap, gain: 0.55 });
+      window.setTimeout(() => (counter.textContent = String(Math.max(0, left - i - 1))), i * gap + 280);
+    });
+    await sleep(reducedMotion() ? 250 : (going.length - 1) * gap + 620);
+  }
+  counter.textContent = String(Math.max(0, left - cards.length));
+  if (!found.length) return;
+  // The card found turns up off the deck and stands in the middle, the table soft around it, named in the dock; the
+  // beat that follows puts it into play from there.
+  rowFocus = found.map((card) => card.id);
+  focusBlur.dataset.row = "";
+  focusBlur.hidden = false;
+  table!.revealFromDeck(found, "encounterDeck");
+  sfx.play("flip");
+  placeLabels();
+  void focusBlur.offsetWidth;
+  focusBlur.dataset.ready = "";
+  narrate(beat, null, {
+    eyebrow: { text: "Found", icon: "flip", tone: "villain" },
+    title: found.map((card) => nameOf(card.id)).join(", "),
+  });
+  // Stamped on the card once it stands up: the villain phase shows no dock line, so the card itself says why it stopped.
+  await sleep(reducedMotion() ? 100 : 560);
+  for (const card of found) stampCard(card.id, "Found", "boost");
+  await sleep(reducedMotion() ? 600 : 1500);
+  delete focusBlur.dataset.ready;
+  await sleep(reducedMotion() ? 0 : 320);
+  rowFocus = [];
+  delete focusBlur.dataset.row;
+  focusBlur.hidden = !handQuestion() && !revealFocus && !dockFocus;
+  focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = "";
   if (dockFocus) focusBlur.dataset.ready = "";
 }
 
@@ -2700,6 +2764,8 @@ function placeOrderBadges(projected: ReturnType<BattleTable["anchors"]>, clips: 
  * it (`TableCards.spendMarks`), matching the lit symbol in the bar (Adam, 2026-11-26).
  */
 function spendMarks(): Record<string, string> | undefined {
+  // A payment for typed resources (All Tied Up's Action): each picked card wears the symbol it pays.
+  if (state.payment?.paidBy) return { ...state.payment.paidBy };
   const choice = state.choice;
   const meter = choice?.eitherOr === "spend" ? model.spendMeter([...choicePicks]) : null;
   if (!choice || !meter) return undefined;
@@ -2818,7 +2884,7 @@ function placeLabels() {
   }
   // A boost label rides along with its card while the card is held up; it goes when the card leaves.
   for (const [id, burst] of boostBursts) {
-    const card = projected.find((p) => p.id === id);
+    const card = projected.find((p) => p.id === id.replace(/#ability$/, ""));
     if (card) placeBoostBurst(burst.node, card);
     else dropBoostBurst(id);
   }
@@ -3229,9 +3295,53 @@ async function showBoost(reveal: NonNullable<Beat["reveal"]>) {
 function placeBoostBurst(node: HTMLElement, card: { x: number; width: number; bottom: number }) {
   node.style.left = card.x + card.width * 0.33 + "px";
   node.style.top = card.bottom - card.width * 0.25 + "px";
+  // The "[star] Boost" label sits just under the "+N" one, the two read as one card's boost.
+  if (node.classList.contains("boost-ability")) node.style.top = card.bottom - card.width * 0.25 + 64 + "px";
+}
+
+/**
+ * A turned-up boost card's own "[star] Boost:" ability firing: the card flashes as a When Revealed does, a "[star]
+ * Boost" label joins its "+N", and the bar says what the ability does in the card's words.
+ */
+async function showBoostAbility(beat: Beat, reveal: NonNullable<Beat["reveal"]>) {
+  const projected = table?.anchors();
+  const card = projected?.find((p) => p.id === reveal.id);
+  table?.activateWhenRevealed(reveal.id);
+  sfx.play("ability");
+  if (card) {
+    const burst = make("div", "boost-burst boost-ability");
+    burst.setAttribute("role", "status");
+    burst.append(icon("star"), make("span", "", "Boost effect"));
+    stage.append(burst);
+    // Carried with the card like the "+N" (dropped with it as the card is retired).
+    boostBursts.set(reveal.id + "#ability", { node: burst });
+    placeBoostBurst(burst, card);
+    if (!reducedMotion())
+      burst.animate(
+        [
+          { transform: "scale(.55)", opacity: 0 },
+          { transform: "scale(1.18)", opacity: 1, offset: 0.5 },
+          { transform: "scale(1)", opacity: 1 },
+        ],
+        { duration: 300, easing: "ease-out" },
+      );
+  }
+  const text = reveal.boostAbility!.text;
+  narrate(
+    beat,
+    { text: `${reveal.name}: Boost${text ? " · " + text : ""}`, icon: "boost", tone: "villain" },
+    {
+      eyebrow: { text: "Boost ability", icon: "boost", tone: "villain" },
+      title: reveal.name,
+      help: text || null,
+    },
+  );
+  await sleep(reducedMotion() ? 500 : Math.max(ACTIVATION_MS, 1500));
 }
 
 function dropBoostBurst(id: string) {
+  // The card's "[star] Boost" label goes with its "+N".
+  if (!id.endsWith("#ability")) dropBoostBurst(id + "#ability");
   const burst = boostBursts.get(id);
   if (!burst) return;
   boostBursts.delete(id);
@@ -4058,7 +4168,11 @@ async function present(beats: Snapshot["beats"]) {
         paintStatusNotes(previewNotes, null);
       }
       if (beat.reveal.boost) {
-        await showBoost(beat.reveal);
+        // "+N Boost" first; a card with a "[star] Boost:" ability then flashes and says so, so what it does next (Shock
+        // Therapy discarding 3 encounter cards) has a cause (Adam, 2026-11-28). No icons but a Boost ability: the
+        // ability straight away, with no "+0" before it.
+        if (!(beat.reveal.boostAbility && beat.reveal.boost.icons === 0)) await showBoost(beat.reveal);
+        if (beat.reveal.boostAbility) await showBoostAbility(beat, beat.reveal);
         dropBoostBurst(beat.reveal.id);
         // A boost that asks a question (Android Efficiency: "spend a [energy] resource or … a Drone minion") stays up,
         // full size with the table dimmed, like a revealed card asking: the player sees why they are asked (Adam,

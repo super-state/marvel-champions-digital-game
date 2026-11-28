@@ -1739,6 +1739,34 @@ export class BattleTable {
     });
   }
 
+  /**
+   * Cards discarded off the top of the encounter deck one after another ("until a minion is discarded"): each turns up
+   * off the deck as it flies straight onto the encounter discard pile, `gap` ms after the one before, the last on top.
+   * A long run is never laid out across the table (Adam, 2026-11-28: forty cards in a row, tiny, off both edges).
+   */
+  millToPile(cards: readonly TableCard[], gap: number): void {
+    const s = this.#state;
+    if (!s || !cards.length) return;
+    const ids = new Set(cards.map((card) => card.id));
+    this.#deckReveal = this.#deckReveal.filter((card) => !ids.has(card.id));
+    this.setCards({
+      ...s,
+      encounterDiscard: [...s.encounterDiscard.filter((card) => !ids.has(card.id)), ...cards],
+      enemyCards: s.enemyCards.filter((card) => !ids.has(card.id)),
+    });
+    const start = performance.now();
+    cards.forEach((card, index) => {
+      const root = this.#pieces.get(card.id)?.root;
+      if (!root) return;
+      root.position.copy(this.#encounterSlot.position);
+      root.position.y += 0.15;
+      root.scale.copy(this.#encounterSlot.scale);
+      root.rotation.set(this.#encounterSlot.rotation.x, Math.PI, this.#encounterSlot.rotation.z);
+      this.#startFlight(card.id, "draw", start + index * gap);
+    });
+    this.#requestFrame();
+  }
+
   /** The revealed cards the effect keeps rise out of the row and glow. */
   pickFromReveal(ids: readonly string[]): void {
     for (const id of ids) if (this.#deckReveal.some((card) => card.id === id)) this.#deckPicks.add(id);
@@ -2046,6 +2074,10 @@ export class BattleTable {
   bringInEnemy(card: TableCard, from?: { left: number; top: number; width: number; height: number }): void {
     const state = this.#state;
     if (!state || state.enemyCards.some((c) => c.id === card.id)) return;
+    // Found off the encounter deck and still held up in the middle (revealFromDeck): it goes from there.
+    const held = this.#deckReveal.some((c) => c.id === card.id);
+    this.#deckReveal = this.#deckReveal.filter((c) => c.id !== card.id);
+    this.#deckPicks.delete(card.id);
     this.setCards({
       ...state,
       enemyCards: [...state.enemyCards, card],
@@ -2053,7 +2085,9 @@ export class BattleTable {
     });
     const root = this.#pieces.get(card.id)?.root;
     if (!root) return;
-    if (from) {
+    if (held) {
+      // Where it stands.
+    } else if (from) {
       // Held up facing the player, exactly over the card picked in the panel, as raised as a revealed card.
       const view = this.#viewport.getBoundingClientRect();
       const x = from.left + from.width / 2 - view.left;
@@ -2555,6 +2589,9 @@ export class BattleTable {
     for (const [id, card] of this.#encounters) if (!("boostFor" in card && card.boostFor)) ids.add(id);
     for (const [id, flight] of this.#flights) if (flight.kind !== "tuck") ids.add(id);
     if (this.#power) ids.add(this.#power);
+    // A table card lifted under the pointer rises over the plate of the card beside it (Melter rising over Vibro's
+    // health and guard shield; Adam, 2026-11-28): the lifted card hides the part of that plate it covers.
+    if (this.#hovered) ids.add(this.#hovered);
     if (this.#interrupt) ids.add(this.#interrupt.piece.card.id);
     for (const card of this.#deckReveal) ids.add(card.id);
     if (this.#state.discardOpen) for (const card of this.#viewedPile(this.#state)) ids.add(card.id);

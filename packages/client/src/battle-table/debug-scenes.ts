@@ -291,6 +291,15 @@ const SCENES: Record<string, Scene> = {
     hand: ["01003", "01093", "01083", "01007", "01005"],
     encounterTop: ["01102", "01108"],
   },
+  /**
+   * Shock Therapy (Power Drain) as Rhino's first boost card: end the turn, and after its "+1 Boost" the card flashes
+   * with a "[star] Boost" label and the bar reads its Boost ability, before 3 encounter cards go to the discard pile.
+   */
+  boostability: {
+    modules: ["power_drain"],
+    hero: { form: "hero" },
+    encounterTop: ["02045", "01108"],
+  },
   /** Hurt Spider-Man and allies as Rhino attacks: "Defend?" keeps every friendly health badge out of the shade. */
   defend: {
     hero: { form: "hero", damage: 2 },
@@ -398,6 +407,33 @@ const SCENES: Record<string, Scene> = {
     clearMinions: true,
     mainThreat: 5,
     encounterTop: ["01123", "01124", "01132"],
+  },
+  /**
+   * The Masters of Evil dealt facedown, thirteen cards that aren't Masters of Evil minions (Armored Guard, a minion of the Klaw set, among them) under it:
+   * on top of the encounter deck: end the turn and once Klaw has attacked (one of them his boost) it is revealed, the rest flip one by one off the deck onto the encounter discard pile, and
+   * Radioactive Man, found, is held up in the middle before he comes in engaged with you.
+   */
+  mastersofevil: {
+    scenario: "klaw",
+    clearMinions: true,
+    hero: { form: "hero" },
+    dealt: ["01128"],
+    encounterTop: [
+      "01122",
+      "01123",
+      "01124",
+      "01186",
+      "01187",
+      "01122",
+      "01123",
+      "01124",
+      "01186",
+      "01187",
+      "01188",
+      "01189",
+      "01120",
+      "01129",
+    ],
   },
   /**
    * Sonic Converter and Solid-Sound Body on Klaw, the resources for one in hand: spend [energy][mental][physical] to take

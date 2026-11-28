@@ -17,6 +17,7 @@ import {
   legalActions,
   locateCard,
   paymentOptionsPool,
+  printsBoostAbility,
   traitsOf,
   satisfies,
   combineRequirements,
@@ -167,6 +168,13 @@ export interface BattlePayment {
   /** "Spend X [energy] resources" (Energy Channel): the type of resource X counts. The amount is what is paid. */
   spendX?: string;
   outstanding?: readonly string[];
+  /**
+   * A cost that asks for resources of a type (All Tied Up's Action: [mental] [physical]): the symbols it asks for, each
+   * lit once the picks pay it, and the symbol each picked card pays (`cardId` to type). Shown as an either-or spend's
+   * are: lit in the bar and drawn on the card (Adam, 2026-11-28: "where are the full page symbols on the cards?").
+   */
+  need?: readonly SpendNeed[];
+  paidBy?: Readonly<Record<string, SpendNeed["type"]>>;
   subject: BattleCard;
   required: number;
   paid: number;
@@ -513,6 +521,12 @@ export interface BattleBeat {
     art: string;
     landscape: boolean;
     boost: { icons: number; enemy: string } | null;
+    /**
+     * A boost card with a "[star] Boost:" ability of its own (Shock Therapy: "discard 3 cards from the encounter
+     * deck"): its words, so the table can flash the card and say what is about to happen after its "+N" (Adam,
+     * 2026-11-28: three cards went to the discard pile and nothing said why). Absent when it has none or it is ignored.
+     */
+    boostAbility?: { text: string };
     /** A minion: it takes its place without waiting for Continue (its When Revealed then plays out on the table). */
     quick: boolean;
     /** The card has a When Revealed, which fires with a flash before its effect lands. */
@@ -735,6 +749,11 @@ const ENCOUNTER_TYPES = new Set(["minion", "treachery", "attachment", "side_sche
 function isNemesisCard(card: object | undefined): boolean {
   const sets = card && "encounterSetIds" in card ? (card.encounterSetIds as readonly string[] | undefined) : undefined;
   return !!sets?.some((set) => set.endsWith("_nemesis"));
+}
+
+/** The words of a boost card's "[star] Boost:" ability, as printed after the divider ("" when they can't be found). */
+export function boostAbilityText(text: string): string {
+  return /\bBoost\s*:\s*(.+?)\s*$/is.exec(text)?.[1]?.replace(/\s+/g, " ") ?? "";
 }
 
 /** A step of `attacker`'s attack itself: its boost card, the defense, the damage. */
@@ -1160,6 +1179,52 @@ function fillSpend(req: ReturnType<typeof combineRequirements>, pool: ResourcePo
   }
   fill.any = Math.min(req.generic, spare + wilds);
   return fill;
+}
+
+/**
+ * The symbols a typed cost asks for and which picked source pays which, the picks taken in order: a resource pays a
+ * symbol of its own type first, a wild one any typed symbol still unpaid, and what is left the "any" ones.
+ */
+export function typedNeeds(
+  requirement: Partial<Record<"wild" | "energy" | "mental" | "physical" | "generic", number>>,
+  picked: readonly { cardId: string; icons: readonly ResourceType[] }[],
+): { need: SpendNeed[]; paidBy: Record<string, SpendNeed["type"]> } | null {
+  const typed = (["wild", "energy", "mental", "physical"] as const).flatMap((type) =>
+    Array<SpendNeed["type"]>(requirement[type] ?? 0).fill(type),
+  );
+  if (!typed.length) return null;
+  const need = [...typed, ...Array<SpendNeed["type"]>(requirement.generic ?? 0).fill("any")].map((type) => ({
+    type,
+    paid: false,
+  }));
+  const paidBy: Record<string, SpendNeed["type"]> = {};
+  const pay = (cardId: string, at: number) => {
+    if (at < 0) return false;
+    need[at] = { ...need[at]!, paid: true };
+    if (need[at]!.type !== "any") paidBy[cardId] ??= need[at]!.type;
+    return true;
+  };
+  const spare: string[] = [];
+  for (const { cardId, icons } of picked)
+    for (const icon of icons) {
+      const own = need.findIndex((slot) => !slot.paid && slot.type === icon);
+      if (pay(cardId, own)) continue;
+      if (
+        icon === "wild" &&
+        pay(
+          cardId,
+          need.findIndex((slot) => !slot.paid && slot.type !== "any"),
+        )
+      )
+        continue;
+      spare.push(cardId);
+    }
+  for (const cardId of spare)
+    pay(
+      cardId,
+      need.findIndex((slot) => !slot.paid && slot.type === "any"),
+    );
+  return { need, paidBy };
 }
 
 export class BattleModel {
@@ -1823,6 +1888,12 @@ export class BattleModel {
             ...(broughtBy ? { broughtBy } : {}),
             ...(nemesis ? { nemesis: true as const } : {}),
             boost: e.type === "boostCardFlipped" ? { icons: e.boostIcons, enemy: e.enemyInstanceId } : null,
+            ...(card &&
+            e.type === "boostCardFlipped" &&
+            printsBoostAbility(result.state, e.instanceId) &&
+            !events.some((x) => x.type === "boostIgnored" && x.instanceId === e.instanceId)
+              ? { boostAbility: { text: boostAbilityText(plainRulesTextOf(card)) } }
+              : {}),
             art: artFor(card, { kind: "front" })?.url ?? "",
             landscape: isLandscapeType(card?.type ?? ""),
             quick: card?.type === "minion",
@@ -2572,6 +2643,10 @@ export class BattleModel {
     return {
       ability: prompt.kind === "payForAbility",
       ...(typed.length && !sheet.canConfirm ? { outstanding: typed.map(([type, n]) => `${n} ${type}`) } : {}),
+      ...typedNeeds(
+        Object.fromEntries(typed),
+        this.#windowPicks.flatMap((id) => sources.filter((source) => source.id === id)),
+      ),
       subject: this.#card(prompt.instanceId),
       required: prompt.kind === "payForAbility" && prompt.chosenResources ? prompt.chosenResources.min : sheet.cost,
       paid: sheet.paid,
@@ -2606,6 +2681,13 @@ export class BattleModel {
       TABLE_DEPS.abilities[this.#payment.action.abilityId]?.cost?.resourcesX === undefined &&
       priced?.requirement.generic === 0 &&
       priced.required > 0;
+    const sourceIcons = (source: NonNullable<typeof priced>["sources"][number]) => ({
+      cardId: source.instanceId,
+      icons: RESOURCE_TYPES.flatMap((icon) => Array<ResourceType>(source.pool[icon]).fill(icon)),
+    });
+    const spentSources = (priced?.sources ?? []).filter((source) => source.spent).map(sourceIcons);
+    const litBy = (picked: typeof spentSources) =>
+      typedNeeds(priced?.requirement ?? {}, picked)?.need.filter((slot) => slot.paid).length ?? 0;
     const payment =
       priced && this.#subject
         ? {
@@ -2622,6 +2704,7 @@ export class BattleModel {
                 }
               : {}),
             outstanding: priced.outstanding,
+            ...typedNeeds(priced.requirement, spentSources),
             required: priced.required,
             paid: priced.paid,
             canPay: !!priced.command,
@@ -2647,8 +2730,9 @@ export class BattleModel {
                     (source.pool[spendX.resource as ResourceType] ?? 0) > 0) &&
                   (!typedAbility ||
                     source.overpayOnly ||
-                    source.pool.wild > 0 ||
-                    RESOURCE_TYPES.some((type) => (priced.requirement[type] ?? 0) > 0 && source.pool[type] > 0))),
+                    // Only a card that pays a symbol still unlit: once [mental] is paid, another [mental] card can't
+                    // help (as an either-or spend's cards are, Adam, 2026-11-26).
+                    litBy([...spentSources, sourceIcons(source)]) > litBy(spentSources))),
               kind: source.kind,
             })),
           }
