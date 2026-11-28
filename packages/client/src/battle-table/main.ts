@@ -821,16 +821,19 @@ function paymentView(payment: Payment): DockView {
         : payment.ability
           ? "Use it?"
           : "Play it?",
+    // A cost of typed resources shows its symbols, lit as they are paid, as an either-or spend does.
+    need: payment.need ?? null,
     meter: payment.required
       ? {
           paid: payment.paid,
           required: payment.required,
-          // Only what the count can't say: a resource type still owed, or an overspend.
-          balance: payment.outstanding?.length
-            ? `Need ${payment.outstanding.join(" + ")}`
-            : left < 0
-              ? `${-left} extra`
-              : "",
+          // Only what the count and the symbols can't say: a resource type still owed, or an overspend.
+          balance:
+            payment.outstanding?.length && !payment.need
+              ? `Need ${payment.outstanding.join(" + ")}`
+              : left < 0
+                ? `${-left} extra`
+                : "",
         }
       : null,
     secondary: { label: "Cancel", disabled: discarding, onClick: cancel },
@@ -2700,6 +2703,8 @@ function placeOrderBadges(projected: ReturnType<BattleTable["anchors"]>, clips: 
  * it (`TableCards.spendMarks`), matching the lit symbol in the bar (Adam, 2026-11-26).
  */
 function spendMarks(): Record<string, string> | undefined {
+  // A payment for typed resources (All Tied Up's Action): each picked card wears the symbol it pays.
+  if (state.payment?.paidBy) return { ...state.payment.paidBy };
   const choice = state.choice;
   const meter = choice?.eitherOr === "spend" ? model.spendMeter([...choicePicks]) : null;
   if (!choice || !meter) return undefined;

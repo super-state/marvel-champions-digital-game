@@ -596,6 +596,34 @@ test("02048 All Tied Up: its Action spends [mental][physical], discards it, and 
   expect(p.snap.hero.name).toBe("Spider-Man");
 });
 
+// Adam, 2026-11-28 ("where are the full page symbols on the cards?"): a typed cost is shown as an either-or spend is.
+test("02048 All Tied Up: paying shows the two symbols, the one each picked card pays, and only cards that still help", () => {
+  const p = deal(stack(ONE_ICON, "02048"), handOf(...MENTAL_PHYSICAL_HAND));
+  villainPhase(p);
+  const [tied] = heroAttachments(p);
+  p.run(() => p.battle.fieldAction(tied!, p.battle.fieldActions(tied!)[0]!.kind));
+  expect(p.snap.payment!.need).toEqual([
+    { type: "mental", paid: false },
+    { type: "physical", paid: false },
+  ]);
+  expect(p.snap.payment!.paidBy).toEqual({});
+  p.spend("Backflip");
+  const backflip = p.snap.payment!.sources.find((s) => s.label === "Backflip")!;
+  expect(p.snap.payment!.need).toEqual([
+    { type: "mental", paid: false },
+    { type: "physical", paid: true },
+  ]);
+  expect(p.snap.payment!.paidBy).toEqual({ [backflip.cardId]: "physical" });
+  // With [physical] paid, only a [mental] card still helps (Backflip itself stays, to unpick).
+  expect(
+    p.snap.payment!.sources.filter((s) => s.available && s.kind === "handCard" && !s.selected).map((s) => s.label),
+  ).toEqual(["Swinging Web Kick"]);
+  p.spend("Swinging Web Kick");
+  expect(p.snap.payment!.need!.every((slot) => slot.paid)).toBe(true);
+  expect(Object.values(p.snap.payment!.paidBy!).sort()).toEqual(["mental", "physical"]);
+  expect(p.snap.payment!.canPay).toBe(true);
+});
+
 test("02048 All Tied Up: on Spider-Man, he can't change back, and once exhausted he doesn't ready", () => {
   // Round 1 Spider-Man is tied up; round 2 he attacks (exhausting); round 3 he is still exhausted.
   const p = deal(stack(ONE_ICON, "02048", "02049", "02049"));

@@ -147,3 +147,19 @@ fits none, it is a new pattern, so write it in. A fix that only fixes its one ca
 - **Ask:** if this broke tomorrow, which check fails? Have I seen it fail?
 - **Check:** for each new mechanic, break its presentation on purpose once (drop the beat) and see an audit or a
   browser test fail. If nothing fails, the check is missing: write it before the fix counts as done.
+
+## Consistency
+
+### 14. The same kind of thing is shown two different ways
+
+- **Seen:** paying All Tied Up's Action ([mental] [physical]) showed "Need 1 mental" in words and nothing on the
+  cards, while a treachery's "spend a [mental] resource" question lit the printed symbols in the bar and drew the big
+  symbol on each paying card (Adam, 2026-11-28: "where are the full page symbols on the cards?"). Cards that could
+  only pay a symbol already paid stayed lit.
+- **Root cause:** a treatment was built for the one question that prompted it (`eitherOr === "spend"`), not for the
+  kind of thing it is (paying resources of a type). The next card to do the same thing by another route got the old
+  look.
+- **Ask:** what else in the game is this same kind of thing, reached another way: a card's own Action, a hero's
+  ability, a cost on the payment screen, a boost? Do they all look the same?
+- **Check:** when a treatment is designed, list every route to that kind of moment and screenshot each. A new pack's
+  typed costs, picks and questions are compared with `visual-language.md`, not just made to work.

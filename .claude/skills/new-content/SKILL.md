@@ -16,7 +16,7 @@ worked example of this skill.
 | File                                         | What it is                                                                                                                 |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `SKILL.md` (this)                            | The two passes and what "done" means.                                                                                      |
-| [`failure-patterns.md`](failure-patterns.md) | The thirteen ways the table has gone wrong so far, from players' reports and every fix: run each portion past all of them. |
+| [`failure-patterns.md`](failure-patterns.md) | The fourteen ways the table has gone wrong so far, from players' reports and every fix: run each portion past all of them. |
 | [`visual-language.md`](visual-language.md)   | How the table already shows each kind of thing: reuse before inventing.                                                    |
 | `new-mechanics.sh`                           | Lists what a pack's card scripts use that no pack on the table uses yet.                                                   |
 | `audited-packs.txt`                          | The packs whose passes are finished (what the script compares against).                                                    |
