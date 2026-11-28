@@ -305,7 +305,7 @@ test("02006a Criminal Enterprise: the last infamy counter off flips Norman to Gr
   expect(turned).toBeLessThan(counterBeat(p, "madness", 2));
   expect(p.beats[turned]!.text).toBe("Criminal Enterprise turns over: State of Madness");
   // Questions name the side now up: "Green Goblin is about to attack you", not Norman Osborn (Adam's game, 2026-11-28).
-  expect(cardName(game, villainId(p))).toBe("Green Goblin");
+  expect(cardName(game, villainId(p) as engine.InstanceId)).toBe("Green Goblin");
 });
 
 test("02006a Criminal Enterprise: the beats before the flip name Norman Osborn and Criminal Enterprise", () => {
