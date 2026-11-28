@@ -39,6 +39,17 @@ in `main.ts` is where each is played out. Add a line here whenever a new treatme
 | A stat raised or lowered        | A stat token on the card                                                          |
 | A card that can be used now     | It is lit; its actions are in its menu                                            |
 
+## Paying
+
+**The rule (Adam, 2026-11-28): whenever what is being paid for asks for specific symbols (one type, a combination or
+a set of them), the symbols are shown.** However the payment is reached: a card from the hand, a card's or a hero's
+own Action, an encounter card's "spend ..." question.
+
+| What is paid                                     | How the table shows it                                                                                                                                    |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A cost of specific symbols ([mental] [physical]) | The printed symbols in the bar, each lit as it is paid; every picked card tinted with the big symbol it pays; cards that can't pay an unlit symbol dimmed |
+| A cost of any resources ("Pay 2")                | The count and its bar ("1/2") only                                                                                                                        |
+
 ## Words
 
 The dock (the bar above the hand) says what is happening and asks every question; its feed keeps the lines. Words
