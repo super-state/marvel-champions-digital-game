@@ -1775,6 +1775,16 @@ function guardPill(): HTMLElement {
   return pill;
 }
 
+/** A lock on the plate of a card a rule holds down (`BattleCard.held`): pointing at it says what and which card. */
+function heldPill(held: string): HTMLElement {
+  const pill = make("span", "stat-pill");
+  pill.dataset.kind = "held";
+  pill.title = held;
+  pill.setAttribute("aria-label", held);
+  pill.append(icon("lock"));
+  return pill;
+}
+
 /** Why the villain can't be attacked during a guard pick, in a few words: "Hydra Mercenary has Guard". */
 function guardReason(): string {
   const names = (state.choice?.guard?.guards ?? []).map(nameOf);
@@ -2130,6 +2140,7 @@ function synchronizeLabels() {
         label.append(make("span", "plate-name", card.name));
       if (!discardOpen && hp !== undefined) label.append(hpPill(hp));
       if (!discardOpen && card.guard) label.append(guardPill());
+      if (!discardOpen && !inHand && card.held) label.append(heldPill(card.held));
     }
     // Picking whom to attack while guard keeps the villain out of reach: the guard minion's shield pulses.
     label.toggleAttribute("data-guarding", !!state.choice?.guard?.guards.includes(card.id));
@@ -3261,11 +3272,14 @@ function stampCard(
   id: string,
   text: string,
   tone?: "status" | "confused" | "tough" | "surge" | "boost" | "guard" | "interrupt" | "interrupted",
+  /** The card whose rule it is, under the stamp's word: "Can't ready" over "All Tied Up". Such a stamp stays longer. */
+  cause?: string,
 ) {
   const node = make("div", "card-stamp", text);
   if (tone) node.dataset.tone = tone;
   if (tone === "guard") node.prepend(icon("guard"));
-  floatOver(id, node, 1100, [
+  if (cause) node.append(make("small", "stamp-cause", cause));
+  floatOver(id, node, cause ? 1700 : 1100, [
     { transform: "scale(2.4)", opacity: 0 },
     { transform: "scale(.92)", opacity: 1, offset: 0.16 },
     { transform: "scale(1)", opacity: 1, offset: 0.26 },
@@ -3798,6 +3812,37 @@ async function present(beats: Snapshot["beats"]) {
       placeLabels();
       inspect(id);
       await sleep(reducedMotion() ? 200 : 600);
+      continue;
+    }
+    if (beat.stayedExhausted) {
+      // A card that should have readied and didn't: stamped, with the card whose rule holds it ringing, so the player
+      // isn't left to find out next turn (All Tied Up; Adam, 2026-11-28).
+      const { id, by } = beat.stayedExhausted;
+      table?.markActor(id);
+      narrate(beat, feedLineOf(beat), {
+        eyebrow: { text: "Can't ready", icon: "lock", tone: "villain" },
+        title: beat.text,
+      });
+      stampCard(id, "Can't ready", "status", by.map(nameOf).filter(Boolean).join(", ") || undefined);
+      for (const source of by) activationRing(source);
+      sfx.play("status");
+      await sleep(reducedMotion() ? 500 : 1800);
+      continue;
+    }
+    if (beat.again) {
+      // A When Revealed about to resolve a second time: the card making it happen says so first.
+      const { card, by } = beat.again;
+      table?.markActor(by);
+      narrate(beat, feedLineOf(beat), {
+        eyebrow: { text: "Again", icon: "forced", tone: "villain" },
+        title: beat.text,
+      });
+      // On the revealed card, where the player is looking, with the card making it happen named under it.
+      activationRing(by);
+      activationRing(card);
+      stampCard(card, "Again", "surge", nameOf(by) || undefined);
+      sfx.play("status");
+      await sleep(reducedMotion() ? 500 : 1800);
       continue;
     }
     if (beat.droneIn) {

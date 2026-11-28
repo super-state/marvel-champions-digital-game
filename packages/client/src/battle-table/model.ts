@@ -25,6 +25,9 @@ import {
   playCostOf,
   remainingHitPoints,
   threatCannotBeRemoved,
+  activeRules,
+  cannotChangeForm,
+  cannotReady,
   type Command,
   type GameEvent,
   type GameState,
@@ -159,6 +162,12 @@ export interface BattleCard {
    * 1.8 "Guard", p. 21). The table wears a shield on its plate, and calls "Guard" out as it arrives.
    */
   guard?: true;
+  /**
+   * A standing rule stops this card readying, or its player changing form (All Tied Up: "attached character cannot
+   * ready or change form"): what it stops and the card doing it, "Can't ready or change form: All Tied Up". The table
+   * wears a lock on its plate and the hero's menu says it (Adam, 2026-11-28: the form change just vanished).
+   */
+  held?: string;
 }
 
 export interface BattlePayment {
@@ -444,6 +453,16 @@ export interface BattleBeat {
    * table turns it over, as it does the villain (Adam, 2026-11-28: it changed in place, unnoticed).
    */
   cardFlip?: string;
+  /**
+   * A card that would have readied at the end of the player phase stays exhausted, a rule stopping it (All Tied Up):
+   * the card, and the cards whose rule it is. Nothing changes in the game, so only this beat says why.
+   */
+  stayedExhausted?: { id: string; by: string[] };
+  /**
+   * A revealed card's When Revealed resolving one more time for a standing rule (Media Coverage): the revealed card
+   * and the card making it happen again.
+   */
+  again?: { card: string; by: string };
   /**
    * The main scheme's stage was completed and it turned over to its next one (Klaw's Underground Distribution to
    * Secret Rendezvous): `from` and `to` are the stage names, `threat` and `target` the new stage's threat and goal.
@@ -1228,6 +1247,8 @@ export function typedNeeds(
 }
 
 export class BattleModel {
+  /** How many times each revealed card's When Revealed has resolved since it was revealed (`BattleBeat.again`). */
+  #whenRevealedRuns = new Map<string, number>();
   #game!: GameState;
   #actions!: LegalActions;
   #plays = new Map<string, LegalAction>();
@@ -1698,6 +1719,23 @@ export class BattleModel {
       else if (e.type === "cardMoved" && e.from.kind === "deck" && !facedownPuts.has(e.instanceId)) deckLeft--;
       if (e.type === "encounterCardDealt") dealt.add(e.instanceId);
       if (e.type === "abilityResolved") resolving = { card: e.instanceId, label: triggerLabel(e.abilityId) };
+      // A When Revealed resolving again for a standing rule (Media Coverage): the card whose rule it is says so
+      // first, or the second resolution reads as the revealed card misfiring (Adam, 2026-11-28).
+      if (e.type === "encounterCardRevealed") this.#whenRevealedRuns.delete(e.instanceId);
+      if (e.type === "abilityResolved" && TABLE_DEPS.abilities[e.abilityId]?.trigger.kind === "whenRevealed") {
+        const runs = (this.#whenRevealedRuns.get(e.instanceId) ?? 0) + 1;
+        this.#whenRevealedRuns.set(e.instanceId, runs);
+        const [by] = activeRules(this.#game, TABLE_DEPS, "repeatWhenRevealed").flatMap(({ context }) =>
+          context.selfInstanceId ? [context.selfInstanceId] : [],
+        );
+        if (runs > 1 && by)
+          this.#beats.push({
+            enemy,
+            actor: by,
+            text: `${name(by)}: ${name(e.instanceId)}'s When Revealed resolves again`,
+            again: { card: e.instanceId, by },
+          });
+      }
       // Only the ability that resolved last owns what follows; a move into play or a new step ends its say.
       else if (e.type === "stepChanged" || e.type === "cardPlayed") resolving = null;
       if (
@@ -1729,6 +1767,21 @@ export class BattleModel {
       } else if (e.type === "stepChanged") {
         if (e.to.phase !== "player" && e.to.phase !== "villain") continue;
         const villainPhase = e.to.phase === "villain";
+        // The player phase ends and a card a rule holds down has not readied with the rest: said, with the card whose
+        // rule it is, since nothing else on the table changes (All Tied Up; Adam, 2026-11-28).
+        if (villainPhase && e.from.phase === "player") {
+          const seat = result.state.players[0]!;
+          for (const id of [seat.identity.instanceId, ...seat.playArea]) {
+            if (!getInstance(result.state, id)?.exhausted || !cannotReady(result.state, TABLE_DEPS, id)) continue;
+            const by = this.#ruleSources(result.state, "cannotReady", id);
+            this.#beats.push({
+              enemy: false,
+              actor: id,
+              text: `${name(id)} stays exhausted${by.length ? `: ${by.map((source) => name(source)).join(", ")}` : ""}`,
+              stayedExhausted: { id, by },
+            });
+          }
+        }
         if (villainPhase !== enemy || (e.from.phase === "setup" && !villainPhase))
           this.#beats.push({
             enemy: villainPhase,
@@ -2547,6 +2600,7 @@ export class BattleModel {
           { name: "tucked", count: instance.tucked.length },
         ].filter((m) => m.count > 0)
       : [];
+    const held = this.#heldText(id);
     return {
       id,
       attachedTo: instance?.attachedTo ?? null,
@@ -2561,6 +2615,7 @@ export class BattleModel {
       ...(card?.type === "minion" && instance?.engagedWith && hasKeyword(state, id, "guard", TABLE_DEPS)
         ? { guard: true as const }
         : {}),
+      ...(held ? { held } : {}),
       reverseArt:
         id === state.players[0]!.identity.instanceId
           ? (artFor(card, { kind: state.players[0]!.identity.form === "hero" ? "alterEgo" : "hero" })?.url ?? null)
@@ -3266,13 +3321,47 @@ export class BattleModel {
     const view = this.snapshot();
     const state = this.#game;
     const identity = state.players[0]!.identity;
-    if (view.turn !== "player" || view.choice || view.payment || identity.form !== "hero" || view.hero.exhausted)
-      return [];
-    if (view.heroActions.some((action) => action.kind === "basicThwart")) return [];
+    if (view.turn !== "player" || view.choice || view.payment) return [];
+    // A rule holding the hero down (All Tied Up): why the form change is gone, or why they are still exhausted.
+    const held = view.hero.held ? [`${view.hero.held}.`] : [];
+    if (identity.form !== "hero" || view.hero.exhausted) return held;
+    if (view.heroActions.some((action) => action.kind === "basicThwart")) return held;
     const locked = view.enemyCards.filter((card) => card.threatLock && (card.threat ?? 0) > 0);
     const open = view.enemyCards.some((card) => card.threat !== null && card.threat > 0 && !card.threatLock);
-    if (!locked.length || open) return [];
-    return locked.map((card) => `No thwart: ${card.name}. ${card.threatLock}.`);
+    if (!locked.length || open) return held;
+    return [...held, ...locked.map((card) => `No thwart: ${card.name}. ${card.threatLock}.`)];
+  }
+
+  /** The cards whose `kind` rule is in force, those attached to `id` first if any are (the rule's own card). */
+  #ruleSources(state: GameState, kind: "cannotReady" | "cannotChangeForm", id: InstanceId): InstanceId[] {
+    const sources = [
+      ...new Set(
+        activeRules(state, TABLE_DEPS, kind).flatMap(({ context }) =>
+          context.selfInstanceId ? [context.selfInstanceId] : [],
+        ),
+      ),
+    ];
+    const attached = sources.filter((source) => getInstance(state, source)?.attachedTo === id);
+    return attached.length ? attached : sources;
+  }
+
+  /** `BattleCard.held` for the player's identity and the cards in their play area; null for any other card. */
+  #heldText(id: InstanceId): string | null {
+    const state = this.#game;
+    const seat = state.players[0]!;
+    const identity = id === seat.identity.instanceId;
+    if (!identity && !seat.playArea.includes(id)) return null;
+    const ready = cannotReady(state, TABLE_DEPS, id);
+    const form = identity && cannotChangeForm(state, TABLE_DEPS, seat.playerId);
+    if (!ready && !form) return null;
+    const by = [
+      ...new Set([
+        ...(ready ? this.#ruleSources(state, "cannotReady", id) : []),
+        ...(form ? this.#ruleSources(state, "cannotChangeForm", id) : []),
+      ]),
+    ].map((source) => faceUpName(state, source));
+    const what = ready && form ? "Can't ready or change form" : ready ? "Can't ready" : "Can't change form";
+    return by.length ? `${what}: ${by.join(", ")}` : what;
   }
 
   /**
