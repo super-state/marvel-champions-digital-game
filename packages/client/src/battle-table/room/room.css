@@ -186,6 +186,11 @@
 .shelf-leave[hidden] {
   display: none;
 }
+/* While a box is up close its own "Back to the shelf" is the one way back: one back button on screen, never two
+   (Adam, 2026-11-28). */
+.room-campaign:has(.scn-back-bar:not([hidden])) .shelf-leave {
+  display: none;
+}
 
 /* Back, everywhere in the room: the menu's dark glass with its gold edge, and a gold disc holding an arrow that points
    back (Adam, 28 Nov 2026: "more in theme"). Hovering slides it back the way it points. */
