@@ -2555,6 +2555,9 @@ export class BattleTable {
     for (const [id, card] of this.#encounters) if (!("boostFor" in card && card.boostFor)) ids.add(id);
     for (const [id, flight] of this.#flights) if (flight.kind !== "tuck") ids.add(id);
     if (this.#power) ids.add(this.#power);
+    // A table card lifted under the pointer rises over the plate of the card beside it (Melter rising over Vibro's
+    // health and guard shield; Adam, 2026-11-28): the lifted card hides the part of that plate it covers.
+    if (this.#hovered) ids.add(this.#hovered);
     if (this.#interrupt) ids.add(this.#interrupt.piece.card.id);
     for (const card of this.#deckReveal) ids.add(card.id);
     if (this.#state.discardOpen) for (const card of this.#viewedPile(this.#state)) ids.add(card.id);
