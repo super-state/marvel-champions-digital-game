@@ -975,7 +975,26 @@ let card: HTMLElement | null = null;
 let floats: HTMLElement | null = null;
 let backBar: HTMLElement | null = null;
 
-const upClose = () => !!opened && !!card && !card.hidden;
+const upClose = () => !!opened && !!card && (!card.hidden || !!departing);
+
+/**
+ * A scenario picked: it pops in its gold outline and the others step back, and the camera then leaves for the heroes
+ * with the box still up close, as it was (Adam, 2026-11-28: "once selected we need juice and to go from the screen
+ * straight to next screen without undoing the overlay and going back to the shelf"). Out of sight, it is put away.
+ * `stand` holds where the scenarios stood, so the camera leaving doesn't move them.
+ */
+let departing: { index: number; t: number; stand: { spots: THREE.Vector3[]; width: number } | null } | null = null;
+/** Seconds of the pop before the camera sets off, and before the box is put away, long out of sight. */
+const DEPART_POP = 0.34;
+const DEPART_HOLD = 3;
+
+/** The box picked from is put away on its shelf (out of sight by now), all as it was before it came out. */
+function finishDeparting() {
+  if (!departing) return;
+  departing = null;
+  if (picks) picks.inert = false;
+  hoveredCard = -1;
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(name: K, className = "", text = ""): HTMLElementTagNameMap[K] {
   const node = document.createElement(name);
@@ -1059,8 +1078,16 @@ function mark(kind: string, glyph: string): HTMLElement {
 /** A row picked in the box up close: Campaign deals it, or it says why not. */
 function choose(row: ShelfRow) {
   if (!hooks) return;
+  if (departing) return;
   if (row.playable) {
-    hooks.pick(row);
+    const pick = hooks.pick;
+    if (!opened || !card) return pick(row);
+    departing = { index: opened.product.scenarios.indexOf(row.scenario), t: 0, stand: null };
+    // Its words and buttons go at once; the box and its scenarios stay up close as the camera leaves.
+    card.hidden = true;
+    if (floats) floats.hidden = true;
+    if (backBar) backBar.hidden = true;
+    setTimeout(() => pick(row), DEPART_POP * 1000);
     return;
   }
   if (row.status === "beaten") say(`${row.name} is beaten. Play it again in Free Play.`);
@@ -1106,6 +1133,7 @@ function readyCards(box: Box) {
 }
 
 function pickBox(box: Box) {
+  finishDeparting();
   opened = box;
   hovered = -1;
   hoveredCard = -1;
@@ -1129,6 +1157,7 @@ export function refreshScenarioShelf() {
 /** Puts the box back on its shelf; the focus goes back to it. */
 export function closeBox(refocus = true) {
   if (!card) return;
+  finishDeparting();
   card.hidden = true;
   if (floats) floats.hidden = true;
   if (picks) picks.inert = false;
@@ -1390,6 +1419,18 @@ function comeOut(box: Box, t: number) {
 const restAt = new THREE.Vector3();
 const floatAt = new THREE.Vector3();
 /**
+ * The pop as a scenario is picked: it swells quickly past its size and settles a little bigger, the rest shrink back
+ * (`departing`).
+ */
+function departScale(k: number, chosen: number): number {
+  if (chosen < 0 || !departing) return 1;
+  const t = departing.t;
+  if (k !== chosen) return 1 - 0.1 * easeOut(Math.min(1, t / DEPART_POP));
+  const up = Math.min(1, t / 0.12);
+  const settle = Math.min(1, Math.max(0, (t - 0.12) / 0.22));
+  return 1 + 0.18 * easeOut(up) - 0.08 * easeOut(settle);
+}
+/**
  * How the scenarios stand once out: still, each turned a little so a side shows (Adam, 2026-11-27: "I don't like the
  * scenarios floating, it looks a bit cheap. Just have them angled a bit and still so we can see the sides a bit").
  */
@@ -1397,6 +1438,10 @@ const STAND_TURN = -0.32;
 const STANDING = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), STAND_TURN);
 
 function step(dt: number) {
+  if (departing) {
+    departing.t += dt;
+    if (departing.t >= DEPART_HOLD) finishDeparting();
+  }
   for (const [i, box] of boxes.entries()) {
     const up = box === opened && upClose();
     const target = up ? 0 : i === hovered ? 0.4 : 0;
@@ -1405,7 +1450,8 @@ function step(dt: number) {
     box.out += (target - box.out) * Math.min(1, dt * (target > box.out ? 12 : 16));
     if (Math.abs(box.out - target) < 1e-3) box.out = target;
     if (up) {
-      closeFor(box);
+      // Held where it stood while the camera leaves: never placed against the camera on its way.
+      if (!departing) closeFor(box);
       box.fly = Math.min(1, box.fly + dt / COME_OUT);
       comeOut(box, box.fly);
       if (box.fly >= 1) {
@@ -1437,13 +1483,15 @@ function step(dt: number) {
     // picked out wears its gold frame.
     const out = easeOut(Math.max(0, (box.open - 0.3) / 0.7));
     if (box.cards) box.mesh.updateMatrixWorld();
-    const stand = box.cards ? floatLayout(box) : null;
+    let stand = box.cards ? floatLayout(box) : null;
+    if (departing && box === opened && box.cards) stand = departing.stand ??= stand;
     box.cards?.forEach((each, k) => {
       const shown = up && box.open > 0;
       each.visible = shown;
       if (!shown) return;
       const tall = box.size.tall * CLOSE_NEAR;
-      const pointed = box === opened && k === hoveredCard ? 1 : 0;
+      const chosen = departing && box === opened ? departing.index : -1;
+      const pointed = box === opened && k === (chosen >= 0 ? chosen : hoveredCard) ? 1 : 0;
       const frame = each.userData.frame as THREE.Mesh | undefined;
       if (frame) frame.visible = pointed > 0 && out > 0.95;
       restAt.copy(each.userData.rest as THREE.Vector3).applyMatrix4(box.mesh.matrixWorld);
@@ -1458,7 +1506,8 @@ function step(dt: number) {
       // From the box's own scale in its tray to its full size beside it.
       const from = box.mesh.scale.x;
       const grow = from + ((stand!.width / (each.userData.cardW as number)) * CLOSE_NEAR - from) * out;
-      each.scale.setScalar(grow);
+      each.scale.setScalar(grow * departScale(k, chosen));
+      if (chosen >= 0 && k !== chosen) each.position.z -= tall * 0.4 * Math.min(1, departing!.t / DEPART_POP);
     });
   }
   if (veil) {
