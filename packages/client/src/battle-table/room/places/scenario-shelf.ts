@@ -865,6 +865,17 @@ function selectFrame(w: number, h: number): THREE.Mesh {
   return new THREE.Mesh(new THREE.ShapeGeometry(outer), frameGold);
 }
 
+const shellGold = new THREE.MeshBasicMaterial({ color: 0xf2c230, toneMapped: false, side: THREE.BackSide });
+/**
+ * A gold outline round a whole `w` by `h` by `d` box: a slightly bigger box seen only from inside, so its gold shows
+ * just round the box's own outline from wherever it is looked at, its spine and top included (Adam, 2026-11-28: "the
+ * yellow outline needs adjusting to suit the 3d packs").
+ */
+function selectShell(w: number, h: number, d: number): THREE.Mesh {
+  const band = w * 0.05;
+  return new THREE.Mesh(new THREE.BoxGeometry(w + band * 2, h + band * 2, d + band * 2), shellGold);
+}
+
 async function buildCards(box: Box, road: readonly ShelfRow[]): Promise<THREE.Mesh[]> {
   const { across, tall, deep } = box.size;
   const n = box.product.scenarios.length;
@@ -931,8 +942,8 @@ async function buildCards(box: Box, road: readonly ShelfRow[]): Promise<THREE.Me
     card.userData.cardW = cardW;
     // The gold frame round the one picked out (pointed at, or the arrows' and a pad's), outside the box's front, never
     // over it (Adam, 2026-11-27: "the yellow border ... should be outside the box not inside").
-    const frame = selectFrame(cardW, cardH);
-    frame.position.z = campaign ? (cardW * BOX_DEEP) / 2 + 0.002 : 0.002;
+    const frame = campaign ? selectShell(cardW, cardH, cardW * BOX_DEEP) : selectFrame(cardW, cardH);
+    if (!campaign) frame.position.z = 0.002;
     frame.userData.box = card.userData.box;
     frame.userData.scenario = i;
     frame.visible = false;
