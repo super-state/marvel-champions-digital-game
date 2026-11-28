@@ -440,6 +440,10 @@ test.each([true, false])(
       expect(p.snap.deckCount).toBe(deck - 1);
       expect(beat(p, (b) => !!b.draw?.length)).toBeGreaterThanOrEqual(0);
       expect(beat(p, (b) => b.interrupt === at.hero.id)).toBeGreaterThanOrEqual(0);
+      // The line says what it interrupts, and the bar's eyebrow what kind of ability did (Adam, 2026-11-28).
+      const line = p.beats.find((b) => b.interrupt === at.hero.id)!;
+      expect(line.text).toBe("Spider-Man interrupts Rhino’s attack");
+      expect(line.interruptBy).toMatchObject({ label: "Interrupt", villain: false });
       expect(p.snap.drawn).toHaveLength(1);
     } else {
       expect(p.snap.hand.length).toBe(hand);
@@ -757,6 +761,9 @@ test("01061 Great Responsibility: accepting makes the hero take the threat as da
   }
   expect(p.snap.enemyCards.find((c) => c.id === main.id)!.threat).toBe(main.threat);
   expect(beat(p, (b) => b.hit?.target === at.hero.id && b.hit.amount === 1)).toBeGreaterThanOrEqual(0);
+  expect(p.beats.find((b) => b.interrupt === offer.cardId)?.text).toMatch(
+    /^Great Responsibility interrupts 1 threat on /,
+  );
   expect(p.has("Great Responsibility", "discard")).toBe(true);
 });
 
@@ -806,6 +813,10 @@ test.each([true, false])(
         0,
       );
       expect(beat(p, (b) => b.hit?.target === at.hero.id && b.hit.amount > 0)).toBe(-1);
+      const line = p.beats.find((b) => b.interrupt === offer!.cardId)!;
+      expect(line.text).toBe("Backflip interrupts Rhino’s 2 damage to Spider-Man");
+      // The card whose moment it interrupts, stamped "Interrupted" on the table: the hero taking the damage.
+      expect(line.interruptBy).toMatchObject({ label: "Interrupt", villain: false, subject: at.hero.id });
     } else {
       expect(p.snap.heroHp).toBe(8);
       expect(p.has("Backflip", "hand")).toBe(true);

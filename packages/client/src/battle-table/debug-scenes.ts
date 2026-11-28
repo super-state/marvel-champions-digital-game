@@ -47,6 +47,8 @@ interface Scene {
   villainAttachments?: Placement[];
   /** Encounter attachments on Ultron's environment, Ultron Drones (Upgraded Drones attaches there, not to Ultron). */
   environmentAttachments?: Placement[];
+  /** Counters on the environment in play (Criminal Enterprise's infamy). */
+  environmentCounters?: Record<string, number>;
   /** Cards to have in hand (the rest of the hand is refilled from the deck). */
   hand?: string[];
   /** The top of the player's deck, top first. */
@@ -724,6 +726,15 @@ const SCENES: Record<string, Scene> = {
     hero: { form: "alterEgo" },
     encounterTop: ["02031", "02048"],
   },
+  /**
+   * Risky Business with 1 infamy left on Criminal Enterprise: attack Norman Osborn and his Forced Interrupt takes the
+   * damage off the infamy instead, the last counter goes, and both flip (Green Goblin, State of Madness).
+   */
+  normanflip: {
+    scenario: "risky-business",
+    hero: { form: "hero" },
+    environmentCounters: { infamy: 1 },
+  },
   /** End the turn: the Green Goblin's boost card is a Goblin Soldier, which comes into play engaged with Spider-Man. */
   goblinboost: {
     scenario: "mutagen-formula",
@@ -879,10 +890,12 @@ function arrange(state: GameState, scene: Scene): GameState {
   );
   if (scene.environmentAttachments?.length && !environment) throw new Error("scene: no environment in play");
   const onEnvironment = (scene.environmentAttachments ?? []).map((p) => place(p, { attachedTo: environment! }));
+  if (scene.environmentCounters && !environment) throw new Error("scene: no environment in play");
   if (environment)
     instances[environment] = {
       ...instances[environment]!,
       attachments: [...instances[environment]!.attachments, ...onEnvironment],
+      counters: { ...instances[environment]!.counters, ...scene.environmentCounters },
     };
   instances[villain] = {
     ...instances[villain]!,

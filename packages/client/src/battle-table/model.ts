@@ -184,6 +184,86 @@ export interface BattlePayment {
   }[];
 }
 
+/** The paying and resolving around an interrupt: never what it interrupts. */
+const PAYING = new Set<TriggerEvent["kind"]>(["resourcesSpent", "resourcesGenerated", "abilityResolved"]);
+
+/**
+ * The game event an interrupt that resolves after `history` interrupts: the innermost one initiated and not yet
+ * resolved or cancelled (RRG 1.8 "Interrupt", p. 24: it resolves before the event it answers). Null when none is open.
+ */
+export function interruptedEventOf(history: readonly GameEvent[], interrupter: string): TriggerEvent | null {
+  const open: TriggerEvent[] = [];
+  const key = (event: TriggerEvent) => `${event.kind} ${triggerSubjectOf(event, true).subject ?? ""}`;
+  for (const e of history) {
+    if (e.type !== "triggerEvent") continue;
+    if (e.phase === "initiated") {
+      open.push(e.event);
+      continue;
+    }
+    // The resolved or cancelled one is the last open event like it; an event never seen opening closes nothing.
+    const at = open.map(key).lastIndexOf(key(e.event));
+    if (at >= 0) open.splice(at, 1);
+  }
+  for (let i = open.length - 1; i >= 0; i--) {
+    const event = open[i]!;
+    if (PAYING.has(event.kind)) continue;
+    // Its own playing (Backflip, an event, is being played as it resolves).
+    if ((event.kind === "cardPlayed" || event.kind === "cardBeingPlayed") && event.instanceId === interrupter) continue;
+    return event;
+  }
+  return null;
+}
+
+/**
+ * What an interrupt interrupts, in a few words after "… interrupts": "Rhino's attack", "2 damage to Spider-Man",
+ * "the reveal of Advance". Its own card is not named twice: Norman Osborn interrupts "2 incoming damage". Null for an
+ * event the table has no words for: the line then says only who interrupts.
+ */
+export function interruptedWords(
+  event: TriggerEvent,
+  interrupter: string,
+  name: (id: InstanceId) => string,
+): string | null {
+  const own = (id: string) => id === interrupter;
+  const whose = (id: string, thing: string) => (own(id) ? `the ${thing}` : `${name(id as InstanceId)}’s ${thing}`);
+  switch (event.kind) {
+    case "enemyAttack":
+      return whose(event.enemyInstanceId, "attack");
+    case "enemyScheme":
+      return whose(event.enemyInstanceId, "scheme");
+    case "attack":
+      return whose(event.attackerInstanceId, "attack");
+    case "thwart":
+      return whose(event.thwarterInstanceId, "thwart");
+    case "dealDamage": {
+      const amount = `${event.amount} damage`;
+      if (own(event.targetInstanceId)) return `${event.amount} incoming damage`;
+      const target = name(event.targetInstanceId as InstanceId);
+      const source = event.fromAttack && event.sourceInstanceId ? event.sourceInstanceId : null;
+      return source && source !== event.targetInstanceId && !own(source)
+        ? `${name(source as InstanceId)}’s ${amount} to ${target}`
+        : `${amount} to ${target}`;
+    }
+    case "placeThreat":
+      return `${event.amount} threat on ${name(event.schemeInstanceId as InstanceId)}`;
+    case "removeThreat":
+      return `${event.amount} threat coming off ${name(event.schemeInstanceId as InstanceId)}`;
+    case "cardRevealed":
+    case "encounterCardRevealing":
+    case "encounterCardBeingRevealed":
+      return own(event.instanceId) ? "its reveal" : `the reveal of ${name(event.instanceId as InstanceId)}`;
+    case "characterDefeated":
+      return whose(event.instanceId, "defeat");
+    case "cardEntersPlay":
+      return own(event.instanceId) ? null : `${name(event.instanceId as InstanceId)} entering play`;
+    case "cardPlayed":
+    case "cardBeingPlayed":
+      return own(event.instanceId) ? null : `${name(event.instanceId as InstanceId)} being played`;
+    default:
+      return null;
+  }
+}
+
 /** The card a reaction window is about and the amount at stake, so the table can point at it before asking. */
 function triggerSubjectOf(event: TriggerEvent, before: boolean): NonNullable<BattleChoice["event"]> {
   const about = (subject: string | null, amount: number | null = null) => ({
@@ -336,6 +416,11 @@ export interface BattleBeat {
   scheming?: string;
   discardEvent?: string;
   interrupt?: string;
+  /**
+   * The interrupt's kind as printed ("Forced Interrupt"), whose side it is on (an encounter card's has no controller),
+   * and the card of what it interrupts, when the table can tell (`interruptedEventOf`).
+   */
+  interruptBy?: { label: string; villain: boolean; subject: string | null };
   deflection?: { card: string; amount: number };
   modifier?: { id: string; name: string; count: number };
   attackAim?: { source: string; target: string };
@@ -1988,11 +2073,21 @@ export class BattleModel {
           activate: { card: e.instanceId, hero },
         });
       } else if (e.type === "abilityResolved" && TABLE_DEPS.abilities[e.abilityId]?.trigger.kind === "interrupt") {
+        // What it interrupts: the innermost game event still waiting to happen when it resolved, which can have been
+        // set going a move earlier (the attack Backflip was offered on). Said, so a player sees what was stopped or
+        // changed, and by what (Adam, 2026-11-28: Norman Osborn's interrupt swallowed an attack without a word).
+        const interrupted = interruptedEventOf([...this.#events, ...events.slice(0, events.indexOf(e))], e.instanceId);
+        const what = interrupted ? interruptedWords(interrupted, e.instanceId, name) : null;
         this.#beats.push({
           enemy,
           actor: e.instanceId,
           interrupt: e.instanceId,
-          text: `${name(e.instanceId)} interrupts`,
+          interruptBy: {
+            label: triggerLabel(e.abilityId),
+            villain: e.controllerId === null,
+            subject: interrupted ? triggerSubjectOf(interrupted, true).subject : null,
+          },
+          text: what ? `${name(e.instanceId)} interrupts ${what}` : `${name(e.instanceId)} interrupts`,
         });
       } else if (e.type === "threatPrevented" && e.amount > 0) {
         // Threat that never lands ("I Object!") leaves no threat change behind: the log says it was kept off.

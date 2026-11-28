@@ -308,7 +308,12 @@ test("02006a Criminal Enterprise: the beats before the flip name Norman Osborn a
   p.form();
   attackVillain(p);
   const words = p.beats.map((b) => b.text);
-  expect(words).toContain("Norman Osborn interrupts");
+  expect(words).toContain("Norman Osborn interrupts 2 incoming damage");
+  // A forced interrupt of the villain's own, said as one (no question warned of it), on the villain's side.
+  expect(p.beats.find((b) => b.text === "Norman Osborn interrupts 2 incoming damage")?.interruptBy).toMatchObject({
+    label: "Forced Interrupt",
+    villain: true,
+  });
   expect(words).toContain("Criminal Enterprise · -1 infamy");
 });
 

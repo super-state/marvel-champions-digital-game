@@ -62,6 +62,7 @@ import {
   BattleTable,
   ACTIVATION_MS,
   INTERRUPT_MS,
+  INTERRUPT_READ_MS,
   SHINE_MS,
   EXHAUST_MS,
   READY_MS,
@@ -3148,7 +3149,11 @@ async function threatStep(beat: Beat, scheme: string, amount: number) {
   await sleep(reducedMotion() ? 500 : 1300);
 }
 
-function stampCard(id: string, text: string, tone?: "status" | "confused" | "tough" | "surge" | "boost" | "guard") {
+function stampCard(
+  id: string,
+  text: string,
+  tone?: "status" | "confused" | "tough" | "surge" | "boost" | "guard" | "interrupt" | "interrupted",
+) {
   const node = make("div", "card-stamp", text);
   if (tone) node.dataset.tone = tone;
   if (tone === "guard") node.prepend(icon("guard"));
@@ -3307,7 +3312,7 @@ function feedLineOf(beat: Beat): FeedLine | null {
   }
   if (beat.reveal) return { text: beat.text, icon: beat.reveal.boost ? "boost" : "forced", tone: "villain" };
   if (beat.activate) return { text: beat.text, icon: "action", tone: "hero" };
-  if (beat.interrupt) return { text: beat.text, icon: "energy", tone: "hero" };
+  if (beat.interrupt) return { text: beat.text, icon: "energy", tone: beat.interruptBy?.villain ? "villain" : "hero" };
   if (beat.deflection) return { text: beat.text, icon: "tough", tone: "hero" };
   if (beat.attackAim)
     return {
@@ -3736,7 +3741,21 @@ async function present(beats: Snapshot["beats"]) {
       announcement.removeAttribute("data-defeat");
       announcement.hidden = true;
       if (!beat.villainStage) continue;
-    } else narrate(beat, line);
+    } else
+      narrate(
+        beat,
+        line,
+        // An interrupt says so above its line, as printed ("Forced Interrupt"), in its side's colour.
+        beat.interruptBy
+          ? {
+              eyebrow: {
+                text: beat.interruptBy.label,
+                icon: "energy",
+                tone: beat.interruptBy.villain ? "villain" : "hero",
+              },
+            }
+          : {},
+      );
     if (beat.villainStage || beat.villainFlip) {
       table?.showVillain(state.villain, !!(beat.defeat || beat.villainFlip));
       sfx.play("flip");
@@ -3831,7 +3850,15 @@ async function present(beats: Snapshot["beats"]) {
     if (beat.interrupt) {
       table?.pulseInterrupt(beat.interrupt);
       sfx.play("ability");
-      await sleep(INTERRUPT_MS);
+      // Which card interrupts, stamped on it, and the card whose moment it interrupts marked, held long enough to read
+      // with the line in the bar: a forced interrupt comes with no question to warn of it (Adam, 2026-11-28).
+      const by = beat.interruptBy;
+      if (by) {
+        stampCard(beat.interrupt, by.label, "interrupt");
+        if (by.subject && by.subject !== beat.interrupt && by.subject !== heldEncounter)
+          stampCard(by.subject, "Interrupted", "interrupted");
+      }
+      await sleep(by && !reducedMotion() ? INTERRUPT_READ_MS : INTERRUPT_MS);
       const cancelled = heldEncounter;
       if (cancelled && reacting?.card === beat.interrupt && reacting.subject === cancelled) {
         // The interrupt cancels the card it is held up over: that card flickers out, then goes to its discard pile,
