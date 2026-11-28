@@ -178,6 +178,8 @@ export const CHANGE_FIELDS: Record<string, readonly string[]> = {
     "encounterMilled",
     "tucked",
     "handDiscard",
+    // A defeated Drone's card turns up as it leaves for its owner's discard pile.
+    "defeatedCard",
   ],
   // Healing is a statusChange named "damage" with a minus: the heal number floats off the card.
   damage: ["hit", "defeat", "defeatedCard", "statusChange"],
@@ -191,7 +193,8 @@ export const CHANGE_FIELDS: Record<string, readonly string[]> = {
   // A revealed attachment is dealt, turned up, then flies onto its host (the table's "equip" flight, measured frame by
   // frame on All Tied Up, 2026-11-28).
   attachedTo: ["entersPlay", "leftPlay", "defeatedCard", "tucked", "reveal"],
-  controller: ["entersPlay"],
+  // A Drone is the player's own card, the encounter's while it is a minion: it is seen leaving the deck facedown.
+  controller: ["entersPlay", "droneIn", "defeatedCard"],
   tucked: ["tucked", "leftPlay", "defeatedCard"],
 };
 
