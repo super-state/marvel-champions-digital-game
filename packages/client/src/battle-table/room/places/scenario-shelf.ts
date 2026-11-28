@@ -809,8 +809,10 @@ function floatLayout(box: Box): { spots: THREE.Vector3[]; width: number } {
   // where the box stands up close (`closeSpot`), less the box, its gap and a margin; they stand a little nearer, so a
   // touch bigger.
   const tan = Math.tan(((camera.fov / 2) * Math.PI) / 180);
-  const front = Math.max((tall * CLOSE_FIT) / (1.1 * tan), (across * CLOSE_FIT) / (1.0 * tan * camera.aspect));
-  const halfWide = (front + deep / 2) * tan * camera.aspect;
+  // A window caught mid-resize can be momentarily 0 tall: a wide screen's shape, never a broken number.
+  const screen = Number.isFinite(camera.aspect) && camera.aspect > 0 ? camera.aspect : 16 / 9;
+  const front = Math.max((tall * CLOSE_FIT) / (1.1 * tan), (across * CLOSE_FIT) / (1.0 * tan * screen));
+  const halfWide = (front + deep / 2) * tan * screen;
   const room = (halfWide * (1 + CLOSE_LEFT) - across / 2 - tall * 0.6 - tall * 0.3) * 0.94;
   const width = Math.min(tall * 1.4, (room - gap * (perRow - 1)) / perRow, ((tall * 3.0) / rows - gap) * aspect);
   const height = width / aspect;
@@ -853,7 +855,6 @@ async function buildCards(box: Box, road: readonly ShelfRow[]): Promise<THREE.Me
     ((tall - 0.12 - gap * (rows - 1)) / rows) * aspect,
   );
   const cardH = cardW / aspect;
-  const { spots, width } = floatLayout(box);
   // A Core Set scenario's box front shows its villain card's art, as on the table: the campaign's own scan.
   const scans = await Promise.all(
     box.product.scenarios.map((s) => {
@@ -903,8 +904,9 @@ async function buildCards(box: Box, road: readonly ShelfRow[]): Promise<THREE.Me
       ((rows - 1) / 2 - row) * (cardH + gap),
       -deep / 2 + 0.032 + (campaign ? (cardW * BOX_DEEP) / 2 : 0.004),
     );
-    card.userData.float = spots[i]!;
-    card.userData.grow = width / cardW;
+    // Where it stands and how big comes from `floatLayout` each frame, so a window resized while it is out keeps it
+    // on the screen; `cardW` is its size in the tray.
+    card.userData.cardW = cardW;
     // The gold frame round the one picked out (pointed at, or the arrows' and a pad's), outside the box's front, never
     // over it (Adam, 2026-11-27: "the yellow border ... should be outside the box not inside").
     const frame = selectFrame(cardW, cardH);
@@ -1264,12 +1266,16 @@ function closeFor(box: Box) {
 function landedRect(box: Box, at: number) {
   const { spots, width } = floatLayout(box);
   const spot = spots[at]!;
-  const height = width / printAspect(box.product.scenarios[at]!);
+  const scenario = box.product.scenarios[at]!;
+  const height = width / printAspect(scenario);
+  // Its front, turned as it stands.
+  const front = CAMPAIGNS.some((c) => c.id === scenario.id) ? (width * BOX_DEEP) / 2 : 0;
+  const [cos, sin] = [Math.cos(STAND_TURN), Math.sin(STAND_TURN)];
   const r = { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity };
   for (const x of [-width / 2, width / 2])
     for (const y of [-height / 2, height / 2]) {
       cardCorner
-        .set(spot.x + x, spot.y + y, spot.z)
+        .set(spot.x + x * cos + front * sin, spot.y + y, spot.z - x * sin + front * cos)
         .multiplyScalar(CLOSE_NEAR)
         .add(closeAt)
         .project(camera);
@@ -1353,8 +1359,12 @@ function comeOut(box: Box, t: number) {
 }
 const restAt = new THREE.Vector3();
 const floatAt = new THREE.Vector3();
-/** Square to the room: how the scenarios stand once out. */
-const SQUARE = new THREE.Quaternion();
+/**
+ * How the scenarios stand once out: still, each turned a little so a side shows (Adam, 2026-11-27: "I don't like the
+ * scenarios floating, it looks a bit cheap. Just have them angled a bit and still so we can see the sides a bit").
+ */
+const STAND_TURN = -0.32;
+const STANDING = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), STAND_TURN);
 
 function step(dt: number) {
   for (const [i, box] of boxes.entries()) {
@@ -1393,10 +1403,11 @@ function step(dt: number) {
     box.lid.position.set(0, box.size.tall * 0.22 * lift, box.size.deep * 0.35 * lift);
     box.lid.rotation.x = -0.42 * lift;
     box.lid.visible = true;
-    // The scenarios come out from under the lid and stand in a row beside the box, square to the room (out of its
-    // sway), bobbing gently; the one pointed at comes forward.
+    // The scenarios come out from under the lid and stand still in a row beside the box, each turned a little; the one
+    // picked out wears its gold frame.
     const out = easeOut(Math.max(0, (box.open - 0.3) / 0.7));
     if (box.cards) box.mesh.updateMatrixWorld();
+    const stand = box.cards ? floatLayout(box) : null;
     box.cards?.forEach((each, k) => {
       const shown = up && box.open > 0;
       each.visible = shown;
@@ -1406,18 +1417,15 @@ function step(dt: number) {
       const frame = each.userData.frame as THREE.Mesh | undefined;
       if (frame) frame.visible = pointed > 0 && out > 0.95;
       restAt.copy(each.userData.rest as THREE.Vector3).applyMatrix4(box.mesh.matrixWorld);
-      floatAt
-        .copy(each.userData.float as THREE.Vector3)
-        .multiplyScalar(CLOSE_NEAR)
-        .add(closeAt);
+      floatAt.copy(stand!.spots[k]!).multiplyScalar(CLOSE_NEAR).add(closeAt);
       each.position.lerpVectors(restAt, floatAt, out);
-      each.position.z += Math.sin(Math.PI * out) * tall * 0.35 + pointed * tall * 0.12;
-      each.position.y += out * Math.sin(box.swayed * 1.4 + k * 1.3) * tall * 0.02;
-      each.quaternion.slerpQuaternions(box.mesh.quaternion, SQUARE, out);
+      // A small lift as it leaves the tray, then still.
+      each.position.z += Math.sin(Math.PI * out) * tall * 0.35;
+      each.quaternion.slerpQuaternions(box.mesh.quaternion, STANDING, out);
       // From the box's own scale in its tray to its full size beside it.
       const from = box.mesh.scale.x;
-      const grow = from + ((each.userData.grow as number) * CLOSE_NEAR - from) * out;
-      each.scale.setScalar(grow * (1 + pointed * 0.06));
+      const grow = from + ((stand!.width / (each.userData.cardW as number)) * CLOSE_NEAR - from) * out;
+      each.scale.setScalar(grow);
     });
   }
   if (veil) {
