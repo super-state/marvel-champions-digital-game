@@ -72,6 +72,14 @@ export const BEAT_FIELDS: Record<string, { cls: "table" | "meta"; where: string 
   discardEvent: { cls: "table", where: "the event card flies to the discard pile" },
   interrupt: { cls: "table", where: "the card pulses (an interrupt), cancelling what it is held over" },
   cardFlip: { cls: "table", where: "the card turns over on the table to its other side, like the villain" },
+  stayedExhausted: {
+    cls: "table",
+    where: "the card is stamped Can't ready with the card whose rule it is named under it (All Tied Up), which rings",
+  },
+  again: {
+    cls: "table",
+    where: "the revealed card is stamped Again with the card whose rule it is named under it, which rings",
+  },
   interruptBy: {
     cls: "table",
     where: "the interrupting card is stamped Interrupt / Forced Interrupt, and what it interrupts Interrupted",

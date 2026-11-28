@@ -624,6 +624,36 @@ test("02048 All Tied Up: paying shows the two symbols, the one each picked card 
   expect(p.snap.payment!.canPay).toBe(true);
 });
 
+// Adam, 2026-11-28: the form change "just vanished" and the hero stayed exhausted with nothing said. A rule that stops
+// something changes nothing in the game, so the table has to say it: a lock on the plate, a line in the hero's menu,
+// and a beat when the ready is stopped.
+test("02048 All Tied Up: the hero's plate and menu say what it stops and that it is All Tied Up", () => {
+  const p = deal(stack(ONE_ICON, "02048"));
+  expect(p.snap.hero.held).toBeUndefined();
+  expect(p.battle.heroNotes()).toEqual([]);
+  villainPhase(p);
+  expect(p.snap.hero.held).toBe("Can't ready or change form: All Tied Up");
+  expect(p.battle.heroNotes()).toEqual(["Can't ready or change form: All Tied Up."]);
+});
+
+test("02048 All Tied Up: when Spider-Man would ready and can't, a beat says so, naming All Tied Up", () => {
+  const p = deal(stack(ONE_ICON, "02048", "02049", "02049"));
+  p.form();
+  villainPhase(p);
+  const [tied] = heroAttachments(p);
+  // Not exhausted yet: nothing was stopped, so nothing is said.
+  expect(p.beats.some((b) => b.stayedExhausted)).toBe(false);
+  expect(p.run(() => p.battle.heroAction("basicAttack"))).toBe(true);
+  if (p.snap.choice) p.choose({ label: "Goblin Thrall" });
+  p.mark();
+  villainPhase(p);
+  const stayed = p.beats.findIndex((b) => b.stayedExhausted?.id === p.snap.hero.id);
+  expect(p.beats[stayed]!.stayedExhausted!.by).toEqual([tied]);
+  expect(p.beats[stayed]!.text).toBe("Spider-Man stays exhausted: All Tied Up");
+  // Said as the player phase ends, before the villain phase is announced.
+  expect(stayed).toBeLessThan(p.beats.findIndex((b) => b.phase === "villain"));
+});
+
 test("02048 All Tied Up: on Spider-Man, he can't change back, and once exhausted he doesn't ready", () => {
   // Round 1 Spider-Man is tied up; round 2 he attacks (exhausting); round 3 he is still exhausted.
   const p = deal(stack(ONE_ICON, "02048", "02049", "02049"));
@@ -690,6 +720,26 @@ test("02049 Media Coverage: the next When Revealed resolves twice (A Mess of Thi
       .map((b) => b.threat!.to),
   ).toEqual([2, 4, 6]);
   expect(threatOn(p, "A Mess of Things")).toBe(6);
+});
+
+// Adam, 2026-11-28: a When Revealed happening twice read as the revealed card misfiring.
+test("02049 Media Coverage: before a When Revealed resolves again, a beat names Media Coverage", () => {
+  const p = deal(stack(ONE_ICON, "02049", QUIET, "02037"), patchByCode("hero", { statuses: STUNNED }));
+  villainPhase(p);
+  const [media] = heroAttachments(p);
+  // Its own reveal resolves nothing twice.
+  expect(p.beats.some((b) => b.again)).toBe(false);
+  p.mark();
+  villainPhase(p);
+  const id = enemy(p, "A Mess of Things")!.id;
+  const again = p.beats.filter((b) => b.again);
+  expect(again.map((b) => b.again)).toEqual([{ card: id, by: media }]);
+  expect(again[0]!.text).toBe("Media Coverage: A Mess of Things's When Revealed resolves again");
+  // It comes between the two resolutions: one lot of threat before it, one after.
+  const at = p.beats.indexOf(again[0]!);
+  const threats = p.beats.flatMap((b, i) => (b.threat?.scheme === id ? [i] : []));
+  expect(threats.filter((i) => i > at).length).toBeGreaterThan(0);
+  expect(threats.filter((i) => i < at).length).toBeGreaterThan(0);
 });
 
 test("02049 Media Coverage: Running Interference's question is asked twice; refused both times, 1 + 2 + 2 threat", () => {
