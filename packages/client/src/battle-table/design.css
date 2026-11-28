@@ -4,7 +4,8 @@
  *
  *   Type   Public Sans throughout. 900 italic for impact (phase banners, damage numbers, outcomes),
  *          800 for questions and numbers, 700 for buttons and labels, 400 for help text.
- *          Bangers is the logo only.
+ *          The game's name on the title is Public Sans too (900 italic, capitals; Adam, 2026-11-28: "get rid of
+ *          this font" of Bangers there). Bangers is left only on the box prints' comic lettering.
  *   Colour Gold means "you can act here" (primary buttons, targets, selection, focus).
  *          Blue is the hero side, red the villain side. Status hues come from the printed status cards.
  *   Place  Every question the game asks appears in the turn dock (bottom right), with the button that moves
@@ -105,7 +106,7 @@
   --glass: linear-gradient(180deg, #172330f5 0%, #0f1821f5 100%);
   /* Type. */
   --font-ui: "Public Sans", system-ui, sans-serif;
-  --font-logo: Bangers, "Public Sans", sans-serif;
+  --font-logo: "Public Sans", system-ui, sans-serif;
   /* Motion: a fast quint ease-out and a springy overshoot. */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
