@@ -481,8 +481,8 @@ function scenarioPicked(row: ShelfRow) {
   if (index < 0 || play.outro) return;
   fromBox = SHELF_PRODUCTS.find((product) => product.scenarios.includes(row.scenario))?.code ?? "core";
   picked = index;
-  // The box up close goes back on the shelf as the camera leaves (it would follow the camera otherwise).
-  closeBox(false);
+  // The box up close stays as it is while the camera leaves; the shelf puts it away once out of sight
+  // (`scenario-shelf.ts`, departing).
   askHero();
   goTo("decks");
 }

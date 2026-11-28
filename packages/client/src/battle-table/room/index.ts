@@ -205,7 +205,9 @@ function frame(now: number) {
   const { blur, arrived } = stepCamera(dt, scene.fog as Fog);
   if (arrived) arrive();
   fade.style.opacity = String(fadeAmount());
-  renderFrame(Math.max(blur, heading ? 0 : (places[here].blur?.() ?? 0)));
+  // While the camera moves, the place it is leaving keeps its own softness (a box picked on the scenario shelf leaves
+  // with the cabinet behind it still soft, never sharpening first).
+  renderFrame(Math.max(blur, places[here].blur?.() ?? 0));
   requestAnimationFrame(frame);
 }
 const fade = root.querySelector<HTMLElement>(".room-fade")!;
