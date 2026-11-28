@@ -363,6 +363,9 @@ function cards() {
     ...state.encounterDiscard,
     // Last: a card on its way to the hand (Black Cat's pick-up) is named before it gets there.
     ...state.hand,
+    // An event paid for and waiting on the mat for its target is in no zone, but is read like any card when pointed
+    // at (Adam, 2026-11-28: "I should still be able to hover and get a preview of the card in mid flight").
+    ...(staged ? [staged] : []),
     // Cards a question found in a deck or discard pile: named, and read when pointed at in the bar.
     ...(state.choice?.searched?.map((found) => found.card) ?? []),
   ];
@@ -1130,9 +1133,11 @@ function choiceView(choice: Choice): DockView {
           : null,
     secondary: choice.canCancel
       ? { label: spending ? "Back" : "Cancel", onClick: cancel }
-      : !multiple && choice.canSkip
-        ? { label: choice.decline ?? "Skip", onClick: () => choose(null) }
-        : null,
+      : canCallOffPlay()
+        ? { label: "Cancel", onClick: callOffPlay }
+        : !multiple && choice.canSkip
+          ? { label: choice.decline ?? "Skip", onClick: () => choose(null) }
+          : null,
   };
 }
 
@@ -1629,6 +1634,27 @@ function awaitsTarget(id: string): boolean {
     state.choiceSource === id &&
     state.choice.options.some((option) => option.cardId)
   );
+}
+
+/**
+ * An event already paid for, waiting on the mat for its target (For Justice!'s "Choose a target"), can still be called
+ * off: Cancel takes the whole play back, the card and what paid for it to the hand, as Undo would (Adam, 2026-11-28).
+ * The engine has it as played by now, so this is that move undone, not the table's own Cancel of a payment.
+ */
+function canCallOffPlay(): boolean {
+  return (
+    staged?.type === "event" &&
+    awaitsTarget(staged.id) &&
+    !state.choice?.canCancel &&
+    model.canUndo &&
+    !flying &&
+    !discarding &&
+    !presenting
+  );
+}
+function callOffPlay() {
+  if (!canCallOffPlay()) return;
+  undoMove(`${staged!.name} back to hand`);
 }
 
 function choose(id: string | null) {
@@ -4911,7 +4937,11 @@ document.addEventListener(
   true,
 );
 undoButton.onclick = () => {
-  if (undoButton.disabled || presenting || flying || discarding || !model.undo()) return;
+  if (!undoButton.disabled) undoMove();
+};
+/** Undo the last move; `message` is what the feed says about it. */
+function undoMove(message = "Move undone") {
+  if (presenting || flying || discarding || !model.undo()) return;
   if (gameSaved) gameSaved.undone = true;
   state = model.snapshot();
   presented = state.beats;
@@ -4926,7 +4956,7 @@ undoButton.onclick = () => {
   discardOpen = false;
   choicePicks.clear();
   table?.reconcileEncounters([]);
-  say("Move undone");
+  say(message);
   render();
   for (const id of state.facedownEncounters)
     table?.dealEncounter(id, state.facedownBoosts.find((boost) => boost.id === id)?.enemy ?? null);
@@ -4945,7 +4975,7 @@ undoButton.onclick = () => {
     else table?.channelEvent(staged.id);
   }
   inspect(heldEncounter ?? state.hero.id);
-};
+}
 // New game goes back to the campaign shelf, to pick a box (Adam, 2026-11-24); Try Again deals the same villain again.
 restart.textContent = "New game";
 restart.onclick = () => {
@@ -5073,6 +5103,10 @@ function back() {
   }
   if (state?.choice?.canCancel && !discarding && !presenting) {
     cancel();
+    return;
+  }
+  if (canCallOffPlay()) {
+    callOffPlay();
     return;
   }
   // Nothing else to put away: the menu (the dialog closes itself on a second Escape).
