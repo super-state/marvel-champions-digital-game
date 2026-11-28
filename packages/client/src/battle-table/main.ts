@@ -2489,8 +2489,12 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
     return card ? [card] : [];
   });
   const counter = encounter ? element("encounter-count") : deckCount;
-  if (encounter && table && cards.length) {
-    await millEncounter(beat, cards, next, counter);
+  // One rule for both decks (Adam, 2026-11-28: a fix made only for the encounter deck left the player's deck with the
+  // same problem): a long run, or a search that puts the card it finds into play, flips card by card onto that deck's
+  // own discard pile. The row is only for a few cards the player has to read (Black Cat's, Repulsor Blast's).
+  const putIntoPlay = !!next?.entersPlay && milled.includes(next.entersPlay);
+  if (table && cards.length && (cards.length > ROW_MILL_MAX || putIntoPlay)) {
+    await millToPile(beat, cards, next, counter, encounter);
     return;
   }
   counter.textContent = String(Math.max(0, Number(counter.textContent) - milled.length));
@@ -2541,28 +2545,34 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   if (dockFocus) focusBlur.dataset.ready = "";
 }
 
+/** More cards than this off one deck go card by card onto its discard pile instead of standing in a row. */
+const ROW_MILL_MAX = 5;
+
 /**
- * Off the encounter deck until a card is found (The Masters of Evil's "until a Masters of Evil minion is discarded"): the
+ * Off a deck until a card is found, or a long run off it (The Masters of Evil's "until a Masters of Evil minion is discarded"): the
  * misses turn up one by one off the deck straight onto the encounter discard pile, the deck's count going down with
  * each, and only the card found is held up in the middle, named, before it is put into play (Adam, 2026-11-28: forty
  * cards laid out tiny across the screen told the player nothing).
  */
-async function millEncounter(
+async function millToPile(
   beat: Beat,
   cards: readonly Snapshot["encounterDiscard"][number][],
   next: Beat | undefined,
   counter: HTMLElement,
+  encounter: boolean,
 ) {
-  const found = next?.entersPlay ? cards.filter((card) => card.id === next.entersPlay) : [];
+  // The card the search stops on: put into play (The Masters of Evil's minion) or added to the hand (Piotr's Studio).
+  const kept = next?.returned ?? [];
+  const found = cards.filter((card) => card.id === next?.entersPlay || kept.includes(card.id));
   const going = cards.filter((card) => !found.includes(card));
   // A long run goes quicker card by card, so forty cards take a few seconds, not ten.
   const gap = reducedMotion() ? 0 : Math.round(Math.min(240, Math.max(85, 2600 / Math.max(1, going.length))));
   const left = Number(counter.textContent) || 0;
   narrate(beat, feedLineOf(beat), {
-    title: `Discarding ${plural(cards.length, "card")} from the encounter deck`,
+    title: `Discarding ${plural(cards.length, "card")} from ${encounter ? "the encounter deck" : "your deck"}`,
   });
   if (going.length) {
-    table!.millToPile(going, gap);
+    table!.millToPile(going, gap, encounter ? "encounter" : "player");
     going.forEach((_, i) => {
       sfx.play("flip", { delay: i * gap, gain: 0.55 });
       window.setTimeout(() => (counter.textContent = String(Math.max(0, left - i - 1))), i * gap + 280);
@@ -2570,19 +2580,25 @@ async function millEncounter(
     await sleep(reducedMotion() ? 250 : (going.length - 1) * gap + 620);
   }
   counter.textContent = String(Math.max(0, left - cards.length));
+  const miss = beat.millSource?.miss;
+  if (!found.length && miss && going.length) {
+    // None of them is one the effect keeps (Black Cat): said on the pile they landed on.
+    stampCard(going.at(-1)!.id, miss, "status");
+    await sleep(reducedMotion() ? 500 : 1200);
+  }
   if (!found.length) return;
   // The card found turns up off the deck and stands in the middle, the table soft around it, named in the dock; the
-  // beat that follows puts it into play from there.
+  // beat that follows puts it into play, or in the hand, from there.
   rowFocus = found.map((card) => card.id);
   focusBlur.dataset.row = "";
   focusBlur.hidden = false;
-  table!.revealFromDeck(found, "encounterDeck");
+  table!.revealFromDeck(found, encounter ? "encounterDeck" : "deck");
   sfx.play("flip");
   placeLabels();
   void focusBlur.offsetWidth;
   focusBlur.dataset.ready = "";
   narrate(beat, null, {
-    eyebrow: { text: "Found", icon: "flip", tone: "villain" },
+    eyebrow: { text: "Found", icon: "flip", tone: encounter ? "villain" : "hero" },
     title: found.map((card) => nameOf(card.id)).join(", "),
   });
   // Stamped on the card once it stands up: the villain phase shows no dock line, so the card itself says why it stopped.

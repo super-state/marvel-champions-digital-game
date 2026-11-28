@@ -156,10 +156,16 @@ fits none, it is a new pattern, so write it in. A fix that only fixes its one ca
   cards, while a treachery's "spend a [mental] resource" question lit the printed symbols in the bar and drew the big
   symbol on each paying card (Adam, 2026-11-28: "where are the full page symbols on the cards?"). Cards that could
   only pay a symbol already paid stayed lit.
+- **Seen again** (2026-11-28): The Masters of Evil's "discard until a minion" laid ~40 cards out tiny across the
+  table. The fix (flip each onto the discard pile, hold up only the card found) was first built for the encounter deck
+  only; the player's own deck ("discard until you discard an ally", Piotr's Studio, Bulldozer's top 10) kept the old
+  row until Adam asked "have we applied it to a similar situation, i.e. maybe our deck needs to do it".
 - **Root cause:** a treatment was built for the one question that prompted it (`eitherOr === "spend"`), not for the
   kind of thing it is (paying resources of a type). The next card to do the same thing by another route got the old
   look.
 - **Ask:** what else in the game is this same kind of thing, reached another way: a card's own Action, a hero's
-  ability, a cost on the payment screen, a boost? Do they all look the same?
+  ability, a cost on the payment screen, a boost? Is there a mirror on the other side of the table: the player's deck
+  and the encounter deck, your discard pile and the encounter's, your cards and the villain's? Do they all look the
+  same? Build the treatment once for the kind of thing, both sides, in the same change.
 - **Check:** when a treatment is designed, list every route to that kind of moment and screenshot each. A new pack's
   typed costs, picks and questions are compared with `visual-language.md`, not just made to work.

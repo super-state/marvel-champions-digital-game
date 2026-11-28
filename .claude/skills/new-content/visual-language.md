@@ -18,7 +18,8 @@ in `main.ts` is where each is played out. Add a line here whenever a new treatme
 | An encounter card is dealt, revealed, resolved | Flies facedown to the player, turns up in the middle to be read, then to its place or pile | `encounterDeal`, `reveal`, `encounterResolved` |
 | An attachment arrives                          | Revealed, then flies onto its host and tucks beside it                                     | `reveal` (the "equip" flight)                  |
 | A boost card                                   | Lies facedown beside its enemy, turns up with its icons counted                            | `boostFor`, `reveal`                           |
-| Cards discarded from a deck                    | The top cards turn up and go to the discard pile, the card that did it named               | `milled`, `encounterMilled`                    |
+| Cards discarded from a deck (5 or fewer)       | The top cards turn up in a row to be read, then go to the discard pile, the source named   | `milled`, `encounterMilled`                    |
+| A long run, or "discard until" (either deck)   | Each card flips off that deck onto its own pile; only the card found stands up, "Found"    | `milled`, `encounterMilled`                    |
 | A card enters or leaves play                   | It travels from where it was to where it goes; removed from the game evaporates            | `entersPlay`, `leftPlay`, `defeatedCard`       |
 | An interrupt or response                       | The card pulses and is stamped Interrupt / Forced Interrupt; what it stops is stamped      | `interrupt`, `interruptBy`                     |
 | Something prevented or blocked                 | "Blocked" floats, the Tough card lifts off, "No target" stamp                              | `deflection`, `hit` (tough), `nothingFound`    |
