@@ -18,6 +18,31 @@ The 3D table still borrows about 255 files from the old 2D game (mostly `package
 can't be deleted yet. Avoid adding new imports from it: each one is something to untangle later. Game state lives only
 in the engine; the 3D table shows it and sends the player's choices back, it never decides an outcome itself.
 
+## Adding a hero, scenario or card: the rule works, but did the player see it?
+
+How the 3D table shows what happened matters most (Adam, 2026-11-28). Whenever a new piece of the game comes in (a hero,
+a villain, a scenario, a module, a card, a mechanic), "the rule works" is only half done. For everything it does, ask:
+**when the rule fired, did the table show the player what happened, and why?** Every change is seen on the table,
+never only written in the log:
+
+- a card turning over turns over, not swaps its picture (Criminal Enterprise to State of Madness);
+- a counter coming on or off is seen on the card it belongs to;
+- an interrupt or response names the card and what it stops;
+- a card moving between places travels there, from where it was;
+- names and questions use the face that is up (Green Goblin, not Norman Osborn, once he has flipped).
+
+Before calling a new piece done:
+
+1. **List what it can do to the table.** Go through its card text and its set-up: flips, counters, things put into
+   play, attached, swapped, discarded, cancelled or searched for.
+2. **Play each one through in the browser** (a debug scene in `debug-scenes.ts` gets you there fast) and watch it
+   happen, with a screenshot.
+3. **Test that the table shows it, not just that the engine got it right.** A browser test checks that the card moves
+   (`battle-env-flip.spec.ts` watches every frame through a flip). Words alone never count as shown.
+
+Green Goblin's flip was missed this way: the rules tests passed, the shown-check counted the log line, and no one
+played through a flip before it shipped.
+
 Where it is heading: [docs/project/room-plan.md](docs/project/room-plan.md) is the plan for the room (title screen and
 menus as places in one room), Campaign and Free Play, the other four Core Set heroes, deck building, achievements and
 stats, with the order and the version each lands in. Adam said yes to it on 2026-11-24 and it is being built as
