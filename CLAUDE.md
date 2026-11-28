@@ -31,14 +31,11 @@ never only written in the log:
 - a card moving between places travels there, from where it was;
 - names and questions use the face that is up (Green Goblin, not Norman Osborn, once he has flipped).
 
-Before calling a new piece done:
-
-1. **List what it can do to the table.** Go through its card text and its set-up: flips, counters, things put into
-   play, attached, swapped, discarded, cancelled or searched for.
-2. **Play each one through in the browser** (a debug scene in `debug-scenes.ts` gets you there fast) and watch it
-   happen, with a screenshot.
-3. **Test that the table shows it, not just that the engine got it right.** A browser test checks that the card moves
-   (`battle-env-flip.spec.ts` watches every frame through a flip). Words alone never count as shown.
+Follow the `new-content` skill (`.claude/skills/new-content/`) for any new or re-checked hero, villain, scenario,
+module or card. It has the two passes (rules, then the visual information designer's), the script that lists what a
+pack brings that the table has never shown, the ways the table has gone wrong so far (from players' reports and every
+fix), how the table already shows each kind of thing, and a ledger per pack of what is still open. Words alone never
+count as shown.
 
 Green Goblin's flip was missed this way: the rules tests passed, the shown-check counted the log line, and no one
 played through a flip before it shipped.
