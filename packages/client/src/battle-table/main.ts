@@ -5372,8 +5372,26 @@ function previewSpot(id: string) {
     size,
     { left: pinnedLeft ? pinned : 0, width: field.width - pinned, height: field.height },
     hostPoint ? "left" : "right",
+    turnBarBox(field),
   );
   return { card, size, spot, side: spot.left >= around.right ? ("right" as const) : ("left" as const) };
+}
+
+/** The turn bar's box in the playfield's pixels while it shows (its buttons are what a big picture must not cover). */
+function turnBarBox(field: DOMRect) {
+  if (dock.hidden || (roomy.matches && dock.hasAttribute("data-idle"))) return [];
+  const bar = dock.getBoundingClientRect();
+  if (!bar.width || !bar.height) return [];
+  // Its top raised by the notes that hang under the picture (hit points, counters), so they keep clear of it too.
+  const notes = 56;
+  return [
+    {
+      left: bar.left - field.left,
+      right: bar.right - field.left,
+      top: bar.top - field.top - notes,
+      bottom: bar.bottom - field.top,
+    },
+  ];
 }
 
 /**
