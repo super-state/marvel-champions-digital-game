@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "./battle-test";
-import { frames, installPad, PAD, setButton } from "./pad-e2e-helpers.js";
+import { installPad, PAD, tap } from "./pad-e2e-helpers.js";
 
 /**
  * Free Play (`src/battle-table/room/places/free-play.ts`): the setup tray in the room. A game is built on it slot by
@@ -45,12 +45,8 @@ async function dealt(page: Page, title: string): Promise<void> {
 
 /** One press of a pad button, let go once the page has seen it (a held direction would repeat). */
 async function nudge(page: Page, index: number): Promise<void> {
-  await setButton(page, index, true);
-  // Held for two frames: the pad reads a direction held over three reads and 400 ms as held, and repeats it, so on a
-  // busy PC (slow frames) a three-frame tap could step twice.
-  await frames(page, 2);
-  await setButton(page, index, false);
-  await frames(page, 3);
+  // A tap, let go as soon as the game acts on it (`tap`): a fixed hold could read as held on a busy PC and sweep.
+  await tap(page, index);
 }
 
 /** Steps the pad's focus towards the button `name` (in the row `slot`, or anywhere) until it is on it. */
