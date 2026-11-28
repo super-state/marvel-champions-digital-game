@@ -727,6 +727,26 @@ const SCENES: Record<string, Scene> = {
     encounterTop: ["02031", "02048"],
   },
   /**
+   * All Tied Up on Spider-Man: end the turn and it ties him up in hero form. Attack next turn (he exhausts), end the
+   * turn again, and he is still exhausted when the hero phase begins: "attached character cannot ready".
+   */
+  tiedhero: {
+    scenario: "mutagen-formula",
+    modules: ["goblin_gimmicks", "running_interference"],
+    hero: { form: "hero" },
+    encounterTop: ["02031", "02048", "02049", "02049"],
+  },
+  /**
+   * Media Coverage (Running Interference): end the turn and it attaches to Peter Parker. End the next turn and Wicked Ambitions
+   * is revealed, its When Revealed (discard encounter cards, deal damage) resolving a second time for Media Coverage.
+   */
+  mediacoverage: {
+    scenario: "mutagen-formula",
+    modules: ["a_mess_of_things", "running_interference"],
+    hero: { form: "alterEgo" },
+    encounterTop: ["02039", "02049", "02048", "02032"],
+  },
+  /**
    * Risky Business with 1 infamy left on Criminal Enterprise: attack Norman Osborn and his Forced Interrupt takes the
    * damage off the infamy instead, the last counter goes, and both flip (Green Goblin, State of Madness).
    */
