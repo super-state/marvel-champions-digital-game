@@ -44,7 +44,7 @@ let lit: string | null = null;
 const dateOf = (at: number) =>
   new Date(at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
-/** What an achievement's reward is, in words. Only the villains' mats are made yet. */
+/** What an achievement's reward is, in words. The playmat rewards name the artwork they unlock. */
 function rewardWords(reward: string): string {
   const mat = MATS.find((m) => m.reward === reward);
   return mat ? `the ${mat.name} mat` : "a reward still to come";
@@ -304,7 +304,13 @@ interface Trophy {
 const trophyObjects = new Map<string, Trophy>();
 const rolls = new Map<
   MatId,
-  { solid: THREE.Mesh; outline: THREE.LineSegments; material: THREE.MeshStandardMaterial }
+  {
+    root: THREE.Group;
+    restingX: number;
+    solid: THREE.Mesh;
+    outline: THREE.LineSegments;
+    material: THREE.MeshStandardMaterial;
+  }
 >();
 const gold = new THREE.MeshStandardMaterial({
   color: 0xd9a441,
@@ -409,21 +415,22 @@ function buildTrophies(group: THREE.Group, all: readonly Achievement[]) {
     });
   });
 
-  // The mats, rolled up, standing against the wall between the cabinet and the board.
+  // The rolled mats stand in two staggered rows between the cabinet and the board.
   const gapStart = z + width / 2 + 0.35;
   const gapEnd = BOARD.z - BOARD.width / 2 - 0.35;
   MATS.forEach((mat, i) => {
-    const geometry = new THREE.CylinderGeometry(0.17, 0.17, 3.2, 20);
+    const geometry = new THREE.CylinderGeometry(0.13, 0.13, 3.2, 20);
     const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(mat.swatch), roughness: 0.85 });
     const solid = new THREE.Mesh(geometry, material);
     solid.castShadow = true;
     const outline = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 40), outlineLine);
     const roll = new THREE.Group();
     roll.add(solid, outline);
-    roll.position.set(ROOM.HALF_WIDTH - 0.55, ROOM.FLOOR + 1.55, lerp(gapStart, gapEnd, (i + 0.5) / MATS.length));
+    const restingX = ROOM.HALF_WIDTH - 0.55 - (i % 2) * 0.44;
+    roll.position.set(restingX, ROOM.FLOOR + 1.55, lerp(gapStart, gapEnd, (i + 0.5) / MATS.length));
     roll.rotation.z = -0.16;
     group.add(roll);
-    rolls.set(mat.id, { solid, outline, material });
+    rolls.set(mat.id, { root: roll, restingX, solid, outline, material });
   });
 }
 
@@ -445,7 +452,7 @@ function paintRolls() {
     const has = choosable.has(id);
     roll.solid.material = has ? roll.material : unlit;
     roll.outline.visible = !has;
-    roll.solid.parent!.position.x = ROOM.HALF_WIDTH - (id === chosen ? 0.8 : 0.55);
+    roll.root.position.x = roll.restingX - (id === chosen ? 0.14 : 0);
   }
 }
 

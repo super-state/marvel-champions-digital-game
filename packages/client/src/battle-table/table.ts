@@ -1,12 +1,11 @@
 import * as THREE from "three";
 import { CARD_BACKS } from "../art/art-source.js";
 import { cardRadius } from "../art/card-shape.js";
-import rooftop from "../art/tabletop/rooftop.webp?url";
 import { fitBoard, fitToBox, type BoardFit, type TableBox } from "./board-fit.js";
 import { loadWithRetry } from "./picture-retry.js";
 import { revealAside, type ScreenBox } from "./dock-spot.js";
 import { TokenKit, placeTokens } from "./tokens3d.js";
-import { currentMat, MAT_CHANGED, matLook, type MatId, type MatLook } from "./mats.js";
+import { currentMat, MAT_CHANGED, matLook, type MatId } from "./mats.js";
 import { tuckPath } from "./tuck-path.js";
 import { arrangeHand, moveInHand, rememberOrder, slotAt, type HandSlots } from "./hand-order.js";
 import { type CardRect, type FlightPose, type FlightRoute, flightPose, routeFlight } from "./flight-route.js";
@@ -406,83 +405,12 @@ function faceGeometry(shape: THREE.Shape, width: number, height: number): THREE.
   return geometry;
 }
 
-/** A villain mat's own pattern, faint, drawn in fractions of the cloth so any shape of mat gets the same look. */
-function matPattern(ctx: CanvasRenderingContext2D, look: MatLook, width: number, height: number) {
-  if (look.pattern === "none") return;
-  let seed = look.id.length * 977 + 13;
-  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const unit = Math.min(width, height);
-  ctx.save();
-  ctx.strokeStyle = look.ink;
-  ctx.fillStyle = look.ink;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  if (look.pattern === "cracks") {
-    // Rhino: cracked concrete, the cracks running down from the villain's edge and thinning out.
-    ctx.lineWidth = unit * 0.004;
-    for (let i = 0; i < 16; i++) {
-      let x = rand() * width;
-      let y = rand() * height * 0.35;
-      let angle = Math.PI / 2 + (rand() - 0.5) * 1.4;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      const steps = 8 + Math.floor(rand() * 10);
-      for (let step = 0; step < steps; step++) {
-        angle += (rand() - 0.5) * 0.9;
-        x += Math.cos(angle) * unit * 0.035;
-        y += Math.sin(angle) * unit * 0.035;
-        ctx.lineTo(x, y);
-        if (rand() < 0.2) {
-          ctx.moveTo(x, y);
-          ctx.lineTo(x + Math.cos(angle + 1) * unit * 0.04, y + Math.sin(angle + 1) * unit * 0.04);
-          ctx.moveTo(x, y);
-        }
-      }
-      ctx.stroke();
-    }
-  } else if (look.pattern === "waves") {
-    // Klaw: sound rippling out from the villain's edge.
-    for (let i = 1; i < 16; i++) {
-      ctx.lineWidth = unit * (i % 3 === 0 ? 0.006 : 0.0025);
-      ctx.setLineDash(i % 2 ? [] : [unit * 0.02, unit * 0.012]);
-      ctx.beginPath();
-      ctx.ellipse(width / 2, -height * 0.08, unit * 0.075 * i * 1.6, unit * 0.075 * i, 0, 0, Math.PI);
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
-  } else {
-    // Ultron: circuit traces, thicker towards the villain's edge, each ending in a pad.
-    const grid = unit * 0.045;
-    ctx.lineWidth = unit * 0.003;
-    for (let i = 0; i < 60; i++) {
-      let x = Math.round((rand() * width) / grid) * grid;
-      let y = Math.round((rand() * rand() * height * 0.8) / grid) * grid;
-      ctx.beginPath();
-      ctx.arc(x, y, grid * 0.18, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      for (let leg = 0; leg < 3; leg++) {
-        const run = grid * (1 + Math.floor(rand() * 4));
-        if (rand() < 0.5) x += rand() < 0.5 ? run : -run;
-        else y += run;
-        ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(x, y, grid * 0.14, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-  }
-  ctx.restore();
-}
-
 /**
  * The mat's print, drawn at the mat's own proportions (`reshape`, whenever the table settles on a new shape): the
- * rooftop art fills it, cropped rather than stretched, and the stitched border always runs round its edge (Adam,
+ * artwork fills it, cropped rather than stretched, and the stitched border always runs round its edge (Adam,
  * 2026-11-23: the mat "would stretch and fit, keeping its image ... not skewed").
  *
- * It is the mat chosen on this device (`mats.ts`): today's night city, or a villain's mat once it is earned, and it is
+ * It is the mat chosen on this device (`mats.ts`): Night City or an earned mat, and it is
  * drawn again when the choice changes (until `stop`). `mark` gets the drawn mat's id as `data-mat`, for checks.
  */
 export function matPrint(
@@ -495,17 +423,29 @@ export function matPrint(
   const ctx = canvas.getContext("2d")!;
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  let loaded: HTMLImageElement | undefined;
+  const images = new Map<MatId, HTMLImageElement>();
   let drawn: MatId | null = null;
-  function paint(art: HTMLImageElement | undefined = loaded) {
+  let stopped = false;
+
+  function paint() {
     const { width, height } = canvas;
     const look = matLook(currentMat());
+    let art = images.get(look.id);
+    if (!art && !stopped) {
+      const image = new Image();
+      images.set(look.id, image);
+      image.onload = () => {
+        if (!stopped && currentMat() === look.id) paint();
+      };
+      image.src = look.artwork;
+      art = image;
+    }
     drawn = look.id;
     ctx.fillStyle = look.base;
     ctx.fillRect(0, 0, width, height);
-    if (art) {
+    if (art?.naturalWidth && art.naturalHeight) {
       ctx.save();
-      ctx.globalAlpha = look.art;
+      ctx.globalAlpha = look.artOpacity;
       const scale = Math.max(width / art.width, height / art.height);
       ctx.drawImage(
         art,
@@ -515,17 +455,7 @@ export function matPrint(
         art.height * scale,
       );
       ctx.restore();
-      if (look.dye) {
-        // The picture dyed the villain's colour.
-        ctx.save();
-        ctx.globalCompositeOperation = "color";
-        ctx.globalAlpha = look.dyeStrength;
-        ctx.fillStyle = look.dye;
-        ctx.fillRect(0, 0, width, height);
-        ctx.restore();
-      }
     }
-    matPattern(ctx, look, width, height);
     const wash = ctx.createLinearGradient(0, 0, 0, height);
     wash.addColorStop(0, look.wash[0]);
     wash.addColorStop(0.58, look.wash[1]);
@@ -555,12 +485,6 @@ export function matPrint(
     redraw();
   }
   paint();
-  const img = new Image();
-  img.onload = () => {
-    loaded = img;
-    paint(img);
-  };
-  img.src = rooftop;
   const reshape = (aspect: number) => {
     // About two megapixels whatever the shape; repainted only for a real change of shape.
     const width = Math.round(Math.sqrt(1536 * 976 * Math.min(4, Math.max(0.5, aspect))));
@@ -576,7 +500,15 @@ export function matPrint(
     if (currentMat() !== drawn) paint();
   };
   addEventListener(MAT_CHANGED, changed);
-  return { texture, reshape, stop: () => removeEventListener(MAT_CHANGED, changed) };
+  return {
+    texture,
+    reshape,
+    stop() {
+      stopped = true;
+      removeEventListener(MAT_CHANGED, changed);
+      images.clear();
+    },
+  };
 }
 
 /** The scene presents engine state. Only the UI can decide what picking a particular card does. */

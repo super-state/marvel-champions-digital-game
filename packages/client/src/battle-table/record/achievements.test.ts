@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { MATS } from "../mats.js";
 import { achievementsOf, DEFINITIONS, HEROES, newlyEarned, stampsOf, statsOf, trophyRoom } from "./achievements.js";
 import type { FinishedGame, GameFacts } from "./game.js";
 
@@ -64,6 +65,23 @@ describe("the achievements", () => {
       "Iron Man",
       "Black Panther",
     ]);
+  });
+
+  test("the ten illustrated reward mats are unlockable from recorded games", () => {
+    const expertWins = ["rhino", "klaw", "ultron"].map((villain) => game(villain, "win", {}, { difficulty: "expert" }));
+    const heroWins = HEROES.filter((hero) => hero.name === "Black Panther" || hero.name === "Captain Marvel").map(
+      (hero) => game("rhino", "win", { hero: hero.name }, { heroId: hero.id, aspects: ["protection"] }),
+    );
+    const rewards = new Set(
+      achievementsOf([...expertWins, ...heroWins])
+        .filter((a) => a.earned)
+        .map((a) => a.reward),
+    );
+    const unlockable = MATS.filter((mat) => mat.reward !== null);
+
+    expect(unlockable).toHaveLength(10);
+    expect(new Set(MATS.map((mat) => mat.artwork)).size).toBe(11);
+    for (const mat of unlockable) expect(rewards.has(mat.reward!), mat.name).toBe(true);
   });
 
   test("no games, nothing earned", () => {
