@@ -203,8 +203,9 @@
 .room-name {
   margin: 6px 0 0;
   color: var(--text);
-  font: 400 clamp(54px, 8.4vw, 118px) / 0.92 var(--font-logo);
-  letter-spacing: 0.01em;
+  font: italic 900 clamp(44px, 6.4vw, 96px) / 0.92 var(--font-logo);
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
   text-shadow:
     0 4px 0 #0b0705,
     0 10px 30px #000c;
@@ -712,7 +713,7 @@
     top: 26px;
   }
   .room-name {
-    font-size: clamp(44px, 13vw, 64px);
+    font-size: clamp(34px, 10vw, 52px);
   }
   .room-menu {
     left: 16px;
