@@ -76,6 +76,8 @@ export const BEAT_FIELDS: Record<string, { cls: "table" | "meta"; where: string 
     cls: "table",
     where: "the card is stamped Can't ready with the card whose rule it is named under it (All Tied Up), which rings",
   },
+  statusBy: { cls: "meta", where: "with statusChange: the card that gave the status is named under the stamp" },
+  idle: { cls: "table", where: "the card is stamped Nothing to do (its forced ability had no effect)" },
   again: {
     cls: "table",
     where: "the revealed card is stamped Again with the card whose rule it is named under it, which rings",
