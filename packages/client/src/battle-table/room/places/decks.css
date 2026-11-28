@@ -202,6 +202,11 @@
 .room-panel .bench-fav[aria-pressed="true"] {
   color: var(--gold);
 }
+/* While a box is up close its own "Back to the shelf" is the one way back: one back button on screen, never two
+   (Adam, 2026-11-28). */
+.room-panel:has(.bench-back-bar:not([hidden])) > .room-back {
+  display: none;
+}
 .bench-back-bar[hidden] {
   display: none;
 }

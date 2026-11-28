@@ -18,7 +18,8 @@ export interface RoomSetting {
 }
 
 /** The radio, on the shelf's top near its right end. */
-const RADIO = { x: 3.3, z: -8.45, width: 1.9, height: 1.15, depth: 0.75 };
+/** On top of the cube shelf, right of its middle (`ROOM.SHELF_X`). */
+const RADIO = { x: ROOM.SHELF_X + 2.4, z: -8.45, width: 1.9, height: 1.15, depth: 0.75 };
 
 const panel = makePanel(
   "settings",
@@ -156,7 +157,8 @@ export const settingsPlace: Place = {
   ready: () => true,
   view(out) {
     const { x, z, height } = RADIO;
-    setPose(out, [x - 2.2, ROOM.SHELF_TOP + 2.6, z + 8.4], [x - 0.3, ROOM.SHELF_TOP + height * 0.5, z], 34, [8, 32], 0);
+    // From the table's side: the trophy cabinet stands just right of the cube shelf, along the right wall.
+    setPose(out, [x - 4.8, ROOM.SHELF_TOP + 2.6, z + 8.2], [x - 0.6, ROOM.SHELF_TOP + height * 0.5, z], 34, [8, 32], 0);
     fitNarrow(out, camera.aspect, 1.1, 0.6);
   },
   build() {

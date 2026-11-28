@@ -39,7 +39,7 @@ import {
 } from "./places/title.js";
 import { trophies } from "./places/trophies.js";
 import { setGo } from "./nav.js";
-import { buildRoom, renderFrame, resize, root, say, scene } from "./room.js";
+import { buildRoom, renderFrame, resize, root, say, scene, showLamp } from "./room.js";
 
 export type { RoomGame, ShelfHost } from "./places/campaign-play.js";
 export type { RoomSetting } from "./places/settings.js";
@@ -201,7 +201,12 @@ function frame(now: number) {
   }
   if (padPressed() && waitingForPress()) showMenu();
   const time = now / 1000;
-  for (const place of allPlaces) place.step(dt, time);
+  for (const place of allPlaces) {
+    place.step(dt, time);
+    place.away?.(place.id !== here && place.id !== heading);
+  }
+  // The hero shelf stands behind the table: the camera there would look past the lamp (`showLamp`).
+  showLamp(here !== "decks" && heading !== "decks");
   const { blur, arrived } = stepCamera(dt, scene.fog as Fog);
   if (arrived) arrive();
   fade.style.opacity = String(fadeAmount());
@@ -259,6 +264,8 @@ export async function openShelf(over: ShelfHost, start?: PlaceId): Promise<void>
   if (first === "title") {
     // The boxes stand on the table, seen from the doorway: build them once the title is up.
     if (!boxesBuilt()) setTimeout(() => void campaignPlace.build(), 0);
+    // The hero shelf stands behind the table, seen from the doorway too: its boxes once the title has settled.
+    setTimeout(() => void decks.build().catch(() => undefined), 1500);
   }
   renderFrame(stepCamera(0, scene.fog as Fog).blur);
   play.stopped = false;
