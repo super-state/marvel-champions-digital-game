@@ -44,6 +44,20 @@ describe("besideSpot", () => {
     expect(besideSpot({ left: 450, right: 550, top: 300, bottom: 440 }, size, field, "left").left).toBe(86);
     expect(besideSpot({ left: 100, right: 200, top: 300, bottom: 440 }, size, field, "left").left).toBe(264);
   });
+  it("keeps clear of the turn bar: up on the same side, else the other side", () => {
+    const hero = { left: 300, right: 400, top: 400, bottom: 540 };
+    const bar = { left: 150, right: 900, top: 560, bottom: 620 };
+    // Level with the hero it would reach down to 680, over the bar: it slides up just clear of it.
+    expect(besideSpot(hero, size, field, "right", [bar])).toEqual({ left: 464, top: 560 - 12 - 420 });
+    // No room above or below on the right (a short bar spanning the whole height there): it goes to the left.
+    const tall = { left: 450, right: 900, top: 0, bottom: 800 };
+    expect(besideSpot(hero, size, field, "right", [tall])).toEqual({ left: 8, top: 260 });
+    // Nothing in the way: unchanged.
+    expect(besideSpot(hero, size, field, "right", [{ left: 0, right: 50, top: 0, bottom: 50 }])).toEqual({
+      left: 464,
+      top: 260,
+    });
+  });
   it("stays on the playfield near its edges", () => {
     expect(besideSpot({ left: 100, right: 200, top: 0, bottom: 100 }, size, field).top).toBe(8);
     expect(besideSpot({ left: 100, right: 200, top: 700, bottom: 790 }, size, field).top).toBe(800 - 420 - 8);
