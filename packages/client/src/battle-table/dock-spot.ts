@@ -33,23 +33,52 @@ export function dockSpot(input: DockSpotInput): { left: number; top: number } {
  * Where a hovered table card's full-size picture goes: right beside the card, on its right, or on its left when the
  * right has no room, level with the card's middle and always on the playfield, so the player can always see what
  * they are pointing at. `field.left` narrows the room from the left (a card pinned on that side).
+ *
+ * `avoid` are boxes it must not cover: the turn bar's buttons (Adam, 2026-11-28: "previews shouldn't overlap action
+ * bar buttons"). Covering one, it first slides up (then down) on the same side, clear of them; failing that it tries
+ * the other side, level and then slid; with nowhere clear it stays where it was.
  */
 export function besideSpot(
   card: { readonly left: number; readonly right: number; readonly top: number; readonly bottom: number },
   size: { readonly width: number; readonly height: number },
   field: { readonly left?: number; readonly width: number; readonly height: number },
   prefer: "right" | "left" = "right",
+  avoid: readonly ScreenBox[] = [],
 ): { left: number; top: number } {
   const start = field.left ?? 0;
   const end = start + field.width;
   const gap = 64;
   const onLeft = card.left - gap - size.width;
-  let left = card.right + gap;
+  const onRight = card.right + gap;
+  let left = onRight;
   if (prefer === "left" && onLeft >= start + 8) left = onLeft;
   else if (left + size.width > end - 8) left = onLeft;
-  left = Math.max(start + 8, Math.min(left, end - size.width - 8));
-  const top = Math.max(8, Math.min((card.top + card.bottom) / 2 - size.height / 2, field.height - size.height - 8));
-  return { left, top };
+  const clampLeft = (at: number) => Math.max(start + 8, Math.min(at, end - size.width - 8));
+  const clampTop = (at: number) => Math.max(8, Math.min(at, field.height - size.height - 8));
+  left = clampLeft(left);
+  const top = clampTop((card.top + card.bottom) / 2 - size.height / 2);
+  const margin = 12;
+  const covers = (at: { left: number; top: number }) =>
+    avoid.some(
+      (box) =>
+        box.right > at.left - margin &&
+        box.left < at.left + size.width + margin &&
+        box.bottom > at.top - margin &&
+        box.top < at.top + size.height + margin,
+    );
+  if (!covers({ left, top })) return { left, top };
+  // Slid up just clear of a box it covers, or down just below it, wherever that still fits on the playfield.
+  const slides = (at: number) => {
+    const hit = avoid.filter((box) => box.right > at - margin && box.left < at + size.width + margin);
+    const ups = hit.map((box) => box.top - margin - size.height).sort((a, b) => b - a);
+    const downs = hit.map((box) => box.bottom + margin).sort((a, b) => a - b);
+    return [...ups, ...downs]
+      .filter((y) => y >= 8 && y + size.height <= field.height - 8)
+      .map((y) => ({ left: at, top: y }));
+  };
+  const other = clampLeft(left === clampLeft(onLeft) ? onRight : onLeft);
+  const tries = [...slides(left), { left: other, top }, ...slides(other)];
+  return tries.find((at) => !covers(at)) ?? { left, top };
 }
 
 /** A card's box on screen, in the table's pixels. */
