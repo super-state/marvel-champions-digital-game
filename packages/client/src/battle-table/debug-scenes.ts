@@ -400,6 +400,33 @@ const SCENES: Record<string, Scene> = {
     encounterTop: ["01123", "01124", "01132"],
   },
   /**
+   * The Masters of Evil dealt facedown, thirteen cards that aren't Masters of Evil minions (Armored Guard, a minion of the Klaw set, among them) under it:
+   * on top of the encounter deck: end the turn and once Klaw has attacked (one of them his boost) it is revealed, the rest flip one by one off the deck onto the encounter discard pile, and
+   * Radioactive Man, found, is held up in the middle before he comes in engaged with you.
+   */
+  mastersofevil: {
+    scenario: "klaw",
+    clearMinions: true,
+    hero: { form: "hero" },
+    dealt: ["01128"],
+    encounterTop: [
+      "01122",
+      "01123",
+      "01124",
+      "01186",
+      "01187",
+      "01122",
+      "01123",
+      "01124",
+      "01186",
+      "01187",
+      "01188",
+      "01189",
+      "01120",
+      "01129",
+    ],
+  },
+  /**
    * Sonic Converter and Solid-Sound Body on Klaw, the resources for one in hand: spend [energy][mental][physical] to take
    * one off, or attack him and take Solid-Sound Body's retaliate 1.
    */

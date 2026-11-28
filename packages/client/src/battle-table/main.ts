@@ -2486,6 +2486,10 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
     return card ? [card] : [];
   });
   const counter = encounter ? element("encounter-count") : deckCount;
+  if (encounter && table && cards.length) {
+    await millEncounter(beat, cards, next, counter);
+    return;
+  }
   counter.textContent = String(Math.max(0, Number(counter.textContent) - milled.length));
   if (!table || !cards.length) {
     await sleep(700);
@@ -2531,6 +2535,60 @@ async function revealMilled(beat: Beat, next: Beat | undefined) {
   focusBlur.hidden = !handQuestion() && !revealFocus && !dockFocus;
   focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = "";
   // A dock question still waiting keeps its own blur.
+  if (dockFocus) focusBlur.dataset.ready = "";
+}
+
+/**
+ * Off the encounter deck until a card is found (The Masters of Evil's "until a Masters of Evil minion is discarded"): the
+ * misses turn up one by one off the deck straight onto the encounter discard pile, the deck's count going down with
+ * each, and only the card found is held up in the middle, named, before it is put into play (Adam, 2026-11-28: forty
+ * cards laid out tiny across the screen told the player nothing).
+ */
+async function millEncounter(
+  beat: Beat,
+  cards: readonly Snapshot["encounterDiscard"][number][],
+  next: Beat | undefined,
+  counter: HTMLElement,
+) {
+  const found = next?.entersPlay ? cards.filter((card) => card.id === next.entersPlay) : [];
+  const going = cards.filter((card) => !found.includes(card));
+  // A long run goes quicker card by card, so forty cards take a few seconds, not ten.
+  const gap = reducedMotion() ? 0 : Math.round(Math.min(240, Math.max(85, 2600 / Math.max(1, going.length))));
+  const left = Number(counter.textContent) || 0;
+  narrate(beat, feedLineOf(beat), {
+    title: `Discarding ${plural(cards.length, "card")} from the encounter deck`,
+  });
+  if (going.length) {
+    table!.millToPile(going, gap);
+    going.forEach((_, i) => {
+      sfx.play("flip", { delay: i * gap, gain: 0.55 });
+      window.setTimeout(() => (counter.textContent = String(Math.max(0, left - i - 1))), i * gap + 280);
+    });
+    await sleep(reducedMotion() ? 250 : (going.length - 1) * gap + 620);
+  }
+  counter.textContent = String(Math.max(0, left - cards.length));
+  if (!found.length) return;
+  // The card found turns up off the deck and stands in the middle, the table soft around it, named in the dock; the
+  // beat that follows puts it into play from there.
+  rowFocus = found.map((card) => card.id);
+  focusBlur.dataset.row = "";
+  focusBlur.hidden = false;
+  table!.revealFromDeck(found, "encounterDeck");
+  sfx.play("flip");
+  placeLabels();
+  void focusBlur.offsetWidth;
+  focusBlur.dataset.ready = "";
+  narrate(beat, null, {
+    eyebrow: { text: "Found", icon: "flip", tone: "villain" },
+    title: found.map((card) => nameOf(card.id)).join(", "),
+  });
+  await sleep(reducedMotion() ? 600 : 1700);
+  delete focusBlur.dataset.ready;
+  await sleep(reducedMotion() ? 0 : 320);
+  rowFocus = [];
+  delete focusBlur.dataset.row;
+  focusBlur.hidden = !handQuestion() && !revealFocus && !dockFocus;
+  focusBlur.style.maskImage = focusBlur.style.webkitMaskImage = "";
   if (dockFocus) focusBlur.dataset.ready = "";
 }
 
