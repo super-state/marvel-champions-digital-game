@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import * as engine from "@mc/engine";
 import {
   BattleModel,
+  boostAbilityText,
   formWhenRevealed,
   isModuleId,
   MODULES,
@@ -710,5 +711,18 @@ describe("every game the Free Play tray can build is dealt", () => {
     expect(encounter.length).toBeGreaterThan(0);
     expect(battle.encounter).toEqual({ difficulty, modules: [module] });
     expect(battle.matchup.villain).toBe(villain);
+  });
+});
+
+describe("boostAbilityText", () => {
+  test("reads a boost card's own Boost ability, not its When Revealed (Shock Therapy)", () => {
+    expect(
+      boostAbilityText(
+        "When Revealed: Discard 1 cards from the encounter deck. The villain heals 1 damage for each boost icon discarded this way.\n[star] Boost: Discard 3 cards from the encounter deck.",
+      ),
+    ).toBe("Discard 3 cards from the encounter deck.");
+  });
+  test("a card without one reads nothing", () => {
+    expect(boostAbilityText("When Revealed: Place 1 threat here.")).toBe("");
   });
 });

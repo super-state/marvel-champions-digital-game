@@ -291,6 +291,15 @@ const SCENES: Record<string, Scene> = {
     hand: ["01003", "01093", "01083", "01007", "01005"],
     encounterTop: ["01102", "01108"],
   },
+  /**
+   * Shock Therapy (Power Drain) as Rhino's first boost card: end the turn, and after its "+1 Boost" the card flashes
+   * with a "[star] Boost" label and the bar reads its Boost ability, before 3 encounter cards go to the discard pile.
+   */
+  boostability: {
+    modules: ["power_drain"],
+    hero: { form: "hero" },
+    encounterTop: ["02045", "01108"],
+  },
   /** Hurt Spider-Man and allies as Rhino attacks: "Defend?" keeps every friendly health badge out of the shade. */
   defend: {
     hero: { form: "hero", damage: 2 },

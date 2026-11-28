@@ -1746,6 +1746,28 @@ body:has(#read-reveal:focus-visible) #reveal-hint {
   width: 30px;
   height: 30px;
 }
+/* A boost card's own "[star] Boost:" ability firing, under its "+N": the star as the card prints it. */
+.boost-burst.boost-ability {
+  grid-template-columns: auto auto;
+  padding: 6px 14px 6px 10px;
+}
+.boost-burst.boost-ability > span:last-child {
+  color: #ffe1e2;
+  font: 900 16px/1 var(--font-ui);
+}
+.boost-burst .icon-star {
+  width: 24px;
+  height: 24px;
+  overflow: visible;
+  color: #d42a33;
+  filter: drop-shadow(0 0 0.6px #000) drop-shadow(0 0 0.6px #000);
+}
+.boost-burst .icon-star path {
+  stroke: #fff;
+  stroke-width: 2.6px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
 
 /* ── Surge ───────────────────────────────────────────────────────────────── */
 .surge-burst {
