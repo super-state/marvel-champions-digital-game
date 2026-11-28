@@ -3860,7 +3860,8 @@ async function present(beats: Snapshot["beats"]) {
         title: beat.text,
       });
       activationRing(beat.idle);
-      stampCard(beat.idle, "Nothing to do", "status");
+      // Named under the stamp: an attachment is tucked under its host, so the stamp alone would read as the host's.
+      stampCard(beat.idle, "Nothing to do", "status", nameOf(beat.idle) || undefined);
       await sleep(reducedMotion() ? 300 : 900);
       continue;
     }

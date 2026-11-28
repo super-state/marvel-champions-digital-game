@@ -31,17 +31,19 @@ in `main.ts` is where each is played out. Add a line here whenever a new treatme
 
 ## Something stands (it stays true until it's removed)
 
-| What is true                                                | How the table shows it                                                                 |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Health, threat                                              | The pill under the card; damage and threat chips on it                                 |
-| Stunned, confused, tough                                    | A status card on the character                                                         |
-| Counters (infamy, madness, web)                             | A counter token with its number on the card                                            |
-| Exhausted                                                   | The card lies turned                                                                   |
-| Attached                                                    | The attachment is tucked beside its host, its name on the spine                        |
-| Guard                                                       | A shield pill on the minion's plate; picking the villain says why it can't be hit      |
-| A rule holding a card down (can't ready, can't change form) | A lock pill on its plate; the hero's menu says what and which card (`BattleCard.held`) |
-| A stat raised or lowered                                    | A stat token on the card                                                               |
-| A card that can be used now                                 | It is lit; its actions are in its menu                                                 |
+| What is true                                                | How the table shows it                                                                                                                                                                 |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Health, threat                                              | The pill under the card; damage and threat chips on it                                                                                                                                 |
+| Stunned, confused, tough                                    | A status card on the character                                                                                                                                                         |
+| Counters (infamy, madness, web)                             | A counter token with its number on the card                                                                                                                                            |
+| Exhausted                                                   | The card lies turned                                                                                                                                                                   |
+| Attached                                                    | The attachment is tucked beside its host, its name on the spine                                                                                                                        |
+| Guard                                                       | A shield pill on the minion's plate; picking the villain says why it can't be hit                                                                                                      |
+| Retaliate                                                   | A pill with its amount on the character's plate; the hit back is stamped "Retaliate", with the card giving it under it when it isn't printed (`BattleCard.retaliate`, `hit.retaliate`) |
+| A villain that can't be hurt for now                        | The lock pill on its plate with the rule's words; the attack pick is asked and says why, as for Guard (`guard.why`)                                                                    |
+| A rule holding a card down (can't ready, can't change form) | A lock pill on its plate; the hero's menu says what and which card (`BattleCard.held`)                                                                                                 |
+| A stat raised or lowered                                    | A stat token on the card                                                                                                                                                               |
+| A card that can be used now                                 | It is lit; its actions are in its menu                                                                                                                                                 |
 
 ## Paying
 
@@ -63,4 +65,5 @@ the table shows.
 ## Not yet in the language (needed, to design)
 
 See the open lines of each pack's ledger. A stamp can carry its cause as a second, smaller line (`stampCard`'s
-`cause`): use it whenever the card doing something is not the card it is seen on.
+`cause`): use it whenever the card doing something is not the card it is seen on (a status stamp does, `statusBy`). An
+encounter card's forced ability with nothing to do is stamped "Nothing to do" (`idle`).

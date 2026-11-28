@@ -970,8 +970,13 @@
   box-shadow: 0 8px 22px #000b;
 }
 /* The card whose rule it is, under the stamp's word ("Can't ready" over "All Tied Up"). */
+.card-stamp:has(.stamp-cause) {
+  flex-wrap: wrap;
+  justify-content: center;
+}
 .card-stamp .stamp-cause {
   display: block;
+  flex-basis: 100%;
   margin-top: 4px;
   color: #fff;
   font: 800 0.5em/1.1 var(--font-ui);
