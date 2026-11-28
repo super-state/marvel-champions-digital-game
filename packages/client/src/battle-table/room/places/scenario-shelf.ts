@@ -963,8 +963,6 @@ let card: HTMLElement | null = null;
 /** A see-through button over each scenario standing beside the box up close, its words under it. */
 let floats: HTMLElement | null = null;
 let backBar: HTMLElement | null = null;
-let tag: HTMLElement | null = null;
-let hint: HTMLElement | null = null;
 
 const upClose = () => !!opened && !!card && !card.hidden;
 
@@ -1034,7 +1032,6 @@ function paint(focusKey?: string) {
   // The boxes behind are out of reach while one is up close: a pad's D-pad stays on its scenarios.
   if (picks) picks.inert = true;
   if (backBar) backBar.hidden = false;
-  if (hint) hint.hidden = true;
   // The focus starts on the road's next scenario (else the first that plays, else the first).
   const start = rows.find((row) => row.status === "next") ?? rows.find((row) => row.playable) ?? rows[0];
   const key = focusKey ?? (start ? `scenario:${start.key}` : "");
@@ -1125,7 +1122,6 @@ export function closeBox(refocus = true) {
   if (floats) floats.hidden = true;
   if (picks) picks.inert = false;
   if (backBar) backBar.hidden = true;
-  if (hint) hint.hidden = false;
   hoveredCard = -1;
   if (refocus && opened) opened.button.focus({ preventScroll: true });
 }
@@ -1250,26 +1246,6 @@ function placePicks() {
     style.width = `${Math.max(1, r.right - r.left)}px`;
     style.height = `${Math.max(1, r.bottom - r.top)}px`;
   }
-}
-
-let tagText = "";
-function placeTag() {
-  if (!tag) return;
-  const box = boxes[hovered];
-  if (!active || !box || upClose()) {
-    tag.hidden = true;
-    return;
-  }
-  const count = box.product.scenarios.length;
-  const text = `${box.product.name} · ${count} ${count === 1 ? "scenario" : "scenarios"}${box.lock ? ` · locked: ${box.lock}` : box.lit ? "" : " · not on the table yet"}`;
-  if (text !== tagText || tag.hidden) {
-    tag.textContent = tagText = text;
-    tag.hidden = false;
-  }
-  const r = screenRect(box);
-  const half = tag.offsetWidth / 2 + 8;
-  tag.style.left = `${Math.min(innerWidth - half, Math.max(half, (r.left + r.right) / 2))}px`;
-  tag.style.top = `${Math.max(tag.offsetHeight + 8, r.top - 8)}px`;
 }
 
 const cardCorner = new THREE.Vector3();
@@ -1484,7 +1460,6 @@ function step(dt: number) {
   softenCabinet(focusBlur > 0.04);
   if (!active) return;
   placePicks();
-  placeTag();
   placeCard();
 }
 
@@ -1573,11 +1548,8 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
   back.type = "button";
   back.onclick = () => closeBox();
   backBar.append(back);
-  tag = el("p", "scn-tag");
-  tag.hidden = true;
-  hint = el("p", "scn-hint", "Pick a box");
   const holder = el("div", "scn-shelf");
-  holder.append(picks, floats, card, backBar, tag, hint);
+  holder.append(picks, floats, card, backBar);
   panel.append(holder);
 
   buildCase(group);
@@ -1677,7 +1649,6 @@ export const scenarioShelf = {
     active = false;
     hovered = -1;
     renderer.domElement.style.cursor = "default";
-    if (tag) tag.hidden = true;
   },
   /** Escape or B: a box up close goes back on the shelf. */
   back(): boolean {
