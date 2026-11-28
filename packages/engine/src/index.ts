@@ -282,8 +282,11 @@ export {
   allyLimitFor,
   cannotEnterPlay,
   enterPlayBarMessage,
+  cannotChangeForm,
   cannotFlip,
   cannotLeavePlay,
+  cannotReady,
+  whenRevealedRepeats,
   cardAbilitiesCannotRemove,
   resourceIconsInPlay,
   canDivideBasicPower,
@@ -623,6 +626,7 @@ export {
   textBoxBlankToPlayer,
   villainAliasOf,
   traitsOf,
+  activeRules,
 } from "./select.js";
 
 export { selfDamageThreshold } from "./damage-threshold.js";
