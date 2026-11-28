@@ -1740,28 +1740,32 @@ export class BattleTable {
   }
 
   /**
-   * Cards discarded off the top of the encounter deck one after another ("until a minion is discarded"): each turns up
-   * off the deck as it flies straight onto the encounter discard pile, `gap` ms after the one before, the last on top.
+   * Cards discarded off the top of a deck one after another ("until a minion is discarded", "the top 10 cards"): each
+   * turns up off that deck as it flies straight onto its own discard pile, `gap` ms after the one before, the last on top.
    * A long run is never laid out across the table (Adam, 2026-11-28: forty cards in a row, tiny, off both edges).
    */
-  millToPile(cards: readonly TableCard[], gap: number): void {
+  millToPile(cards: readonly TableCard[], gap: number, deck: "encounter" | "player" = "encounter"): void {
     const s = this.#state;
     if (!s || !cards.length) return;
     const ids = new Set(cards.map((card) => card.id));
     this.#deckReveal = this.#deckReveal.filter((card) => !ids.has(card.id));
+    const pile = deck === "encounter" ? "encounterDiscard" : "discard";
     this.setCards({
       ...s,
-      encounterDiscard: [...s.encounterDiscard.filter((card) => !ids.has(card.id)), ...cards],
+      [pile]: [...s[pile].filter((card) => !ids.has(card.id)), ...cards],
       enemyCards: s.enemyCards.filter((card) => !ids.has(card.id)),
+      hand: s.hand.filter((card) => !ids.has(card.id)),
     });
+    const slot = deck === "encounter" ? this.#encounterSlot : this.#deckSlot;
+    const lift = deck === "encounter" ? 0.15 : this.#deckBack.position.z * this.#deckSlot.scale.x + 0.03;
     const start = performance.now();
     cards.forEach((card, index) => {
       const root = this.#pieces.get(card.id)?.root;
       if (!root) return;
-      root.position.copy(this.#encounterSlot.position);
-      root.position.y += 0.15;
-      root.scale.copy(this.#encounterSlot.scale);
-      root.rotation.set(this.#encounterSlot.rotation.x, Math.PI, this.#encounterSlot.rotation.z);
+      root.position.copy(slot.position);
+      root.position.y += lift;
+      root.scale.copy(slot.scale);
+      root.rotation.set(slot.rotation.x, Math.PI, slot.rotation.z);
       this.#startFlight(card.id, "draw", start + index * gap);
     });
     this.#requestFrame();
