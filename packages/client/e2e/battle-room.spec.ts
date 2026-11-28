@@ -243,7 +243,9 @@ test.describe("battle table: the room", () => {
       await expect.poll(() => focused(page)).toBe("Core Set");
       await nudge(page, PAD.a);
       await expect.poll(() => focused(page)).toBe("Rhino");
+      // Right goes to Klaw (locked: the road holds on every table) and left comes back.
       await padTo(page, PAD.right, /^Klaw$/);
+      await padTo(page, PAD.left, /^Rhino$/);
       await nudge(page, PAD.a);
       await at(page, "decks");
       await expect.poll(() => focused(page)).toBe("Spider-Man");
@@ -251,7 +253,7 @@ test.describe("battle table: the room", () => {
       await expect.poll(() => focused(page)).toBe("Play as Spider-Man");
       await nudge(page, PAD.a);
       await at(page, "campaign");
-      await expect(page.locator("#shelf-play")).toHaveText("Play vs Klaw", { timeout: 30_000 });
+      await expect(page.locator("#shelf-play")).toHaveText("Play vs Rhino", { timeout: 30_000 });
       await nudge(page, PAD.b);
       await expect(room(page).locator(".shelf-opened")).toBeHidden();
       await at(page, "decks");

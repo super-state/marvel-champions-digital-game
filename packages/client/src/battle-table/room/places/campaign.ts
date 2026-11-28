@@ -33,7 +33,6 @@ import { buildHeroDeckBox, type HeroDeckBox } from "./hero-shelf.js";
 import { goTo } from "../nav.js";
 import { SHELF_PRODUCTS, type ShelfProduct } from "./scenario-catalogue.js";
 import { boxLock, roadFrom, sideStoryStep, type Road } from "./road.js";
-import { allOpen } from "../../access.js";
 import { makePanel, type Place } from "./place.js";
 import {
   bandPrint,
@@ -319,7 +318,8 @@ let road: Road = roadFrom({ games: null, lock: () => null, allOpen: true });
 /** Reads the road again from the player's games and the room's locks. */
 async function readRoad(): Promise<void> {
   const games = (await play.host?.games?.().catch(() => null)) ?? null;
-  road = roadFrom({ games, lock: (villain) => play.host?.lock?.(villain) ?? null, allOpen: allOpen() });
+  // The road holds on Adam's own table too (Adam, 2026-11-28); a player whose games aren't saved has it all open.
+  road = roadFrom({ games, lock: (villain) => play.host?.lock?.(villain) ?? null, allOpen: false });
 }
 
 /** A scenario the table has a box for, so Play can deal it. */
@@ -931,6 +931,8 @@ export const campaignPlace: Place = {
   key(event) {
     return stage === "shelf" && active ? scenarioShelf.key(event) : false;
   },
+  // A box up close on the scenario shelf softens the cabinet behind it.
+  blur: () => (stage === "shelf" ? scenarioShelf.blur() : 0),
   step(dt, time) {
     if (!built) return;
     toTable = stage === "table" ? Math.min(1, toTable + dt / 1.1) : Math.max(0, toTable - dt / 1.1);

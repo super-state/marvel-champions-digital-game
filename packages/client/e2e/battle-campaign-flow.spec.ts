@@ -24,10 +24,17 @@ test("Campaign: a scenario from the shelf, a hero from the heroes, then the game
   await page.keyboard.press("Escape");
   await expect(room.locator(".scn-card")).toBeHidden();
 
-  // Klaw, played by She-Hulk: the table deals that matchup.
-  await pickCoreScenario(page, "Klaw", "she-hulk");
+  // The road holds on every table: with nothing beaten, Klaw waits on Rhino.
+  await room.locator('[data-scn="box:core"]').focus();
+  await page.keyboard.press("Enter");
+  const klaw = room.locator('[data-scn="scenario:klaw"]');
+  await expect(klaw).toHaveAttribute("aria-disabled", "true", { timeout: 30_000 });
+  await expect(klaw).toContainText("Complete Rhino");
+
+  // Rhino, played by She-Hulk: the table deals that matchup.
+  await pickCoreScenario(page, "Rhino", "she-hulk");
   expect(await page.evaluate(() => localStorage.getItem("battle-hero"))).toBe("she-hulk");
-  await expect(page.locator("#shelf-play")).toHaveText("Play vs Klaw", { timeout: 30_000 });
+  await expect(page.locator("#shelf-play")).toHaveText("Play vs Rhino", { timeout: 30_000 });
   await page.locator("#shelf-play").click();
   await expect(room).toBeHidden({ timeout: 60_000 });
   await expect(page).toHaveTitle(/She-Hulk vs\. Klaw/);
