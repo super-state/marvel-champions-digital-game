@@ -42,7 +42,10 @@ export function cardName(state: GameState, id: InstanceId, view?: ViewerContext)
   // A flipped card reads as the side now up: the Trance of Greed that was the Hypnotic Gaze (its name is public once it flips).
   // A main scheme reads as the stage it is at, not the card's stage-1 name: `currentName` covers the central scheme,
   // extra main schemes and every game area's own.
-  const schemeStage = cardOf(state, id)?.type === "main_scheme" ? currentName(state, id) : undefined;
+  // A villain reads as its side now up too: Green Goblin once Norman Osborn has flipped, not "Norman Osborn is about
+  // to attack you" (Adam's game, 2026-11-28).
+  const type = cardOf(state, id)?.type;
+  const schemeStage = type === "main_scheme" || type === "villain" ? currentName(state, id) : undefined;
   return (
     identityNameOf(state, id) ??
     schemeStage ??

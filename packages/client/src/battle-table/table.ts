@@ -1953,6 +1953,14 @@ export class BattleTable {
     return this.#flights.has(id);
   }
 
+  /**
+   * What `id` is doing and showing now, for the browser tests: its flight's kind ("flip" while it turns over) and the
+   * art on its face, so a test can tell a card turning over from one whose picture swaps in place.
+   */
+  pieceNow(id: string): { flight: string | null; art: string | null } {
+    return { flight: this.#flights.get(id)?.kind ?? null, art: this.#pieces.get(id)?.card.art ?? null };
+  }
+
   /** How many threat chips lie on `id` now (the browser tests count them as a move plays out). */
   threatChips(id: string): number {
     return (this.#pieces.get(id)?.tokens?.children ?? []).reduce((sum, chip) => sum + chipValue(chip), 0);
