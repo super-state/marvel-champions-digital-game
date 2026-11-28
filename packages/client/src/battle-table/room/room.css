@@ -187,6 +187,59 @@
   display: none;
 }
 
+/* Back, everywhere in the room: the menu's dark glass with its gold edge, and a gold disc holding an arrow that points
+   back (Adam, 28 Nov 2026: "more in theme"). Hovering slides it back the way it points. */
+.room-panel .room-back,
+.room-panel .scn-back {
+  --btn-bg: #0d0a08d8;
+  --btn-border: #f5c35b55;
+  --btn-fg: var(--text);
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 20px 0 7px;
+  border-left: 4px solid var(--gold);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  font: 800 16px / 1 var(--font-ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 0 8px 24px #000a;
+}
+.room-panel .room-back::before,
+.room-panel .scn-back::before {
+  content: "";
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--gold)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232b1d06' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 12H6M12 5l-7 7 7 7'/%3E%3C/svg%3E")
+    center / 18px no-repeat;
+  box-shadow: inset 0 -2px 0 #0003;
+  transition: transform 140ms var(--ease-out);
+}
+.room-panel .room-back:enabled:hover,
+.room-panel .room-back:focus-visible,
+:root[data-input="pad"] .room-panel .room-back:focus,
+.room-panel .scn-back:enabled:hover,
+.room-panel .scn-back:focus-visible,
+:root[data-input="pad"] .room-panel .scn-back:focus {
+  --btn-bg: linear-gradient(90deg, #f5c35b38 0%, #f5c35b12 100%), #0d0a08e8;
+  --btn-border: #f5c35b99;
+  outline: none;
+  background: var(--btn-bg);
+  box-shadow:
+    0 0 0 3px #f5c35b44,
+    0 10px 26px #000b;
+}
+.room-panel .room-back:enabled:hover::before,
+.room-panel .room-back:focus-visible::before,
+.room-panel .scn-back:enabled:hover::before,
+.room-panel .scn-back:focus-visible::before {
+  transform: translateX(-3px);
+  background-color: var(--gold-hi);
+}
+
 /* ── The title, in the doorway ── */
 .room-title {
   /* The menu stays over whichever place's view the camera has gone to (the bright boxes, the cabinet): a dark band
