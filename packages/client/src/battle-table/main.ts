@@ -3618,6 +3618,36 @@ async function present(beats: Snapshot["beats"]) {
       await sleep(reducedMotion() ? 300 : 1100);
       continue;
     }
+    if (beat.cardFlip) {
+      // A card turning over to its other side (Criminal Enterprise to State of Madness): called out, then turned over
+      // on the table like the villain, not swapped in place. The counters it gets on its new side come after (their
+      // own beats), so it turns over showing only what it already has.
+      const id = beat.cardFlip;
+      const face = state.enemyCards.find((card) => card.id === id);
+      table?.markActor(id);
+      narrate(beat, feedLineOf(beat), {
+        eyebrow: { text: "Flip", icon: "flip", tone: beat.enemy ? "villain" : "hero" },
+        title: beat.text,
+      });
+      await sleep(reducedMotion() ? 200 : 500);
+      if (face) {
+        const coming = new Map<string, number>();
+        for (const later of beats.slice(index + 1))
+          if (later.statusChange?.id === id)
+            coming.set(later.statusChange.name, (coming.get(later.statusChange.name) ?? 0) + later.statusChange.delta);
+        const markers = (face.markers ?? [])
+          .map((m) => ({ ...m, count: m.count - (coming.get(m.name) ?? 0) }))
+          .filter((m) => m.count > 0);
+        table?.turnEnemyCard({ ...face, markers });
+      }
+      sfx.play("flip");
+      await sleep(reducedMotion() ? 300 : 700);
+      synchronizeLabels();
+      placeLabels();
+      inspect(id);
+      await sleep(reducedMotion() ? 200 : 600);
+      continue;
+    }
     if (beat.droneIn) {
       // Ultron's Drones: the top card of the player's deck is seen leaving it, back up, and landing in the villain's
       // row as a Drone. The card that made it happen (Ultron, a scheme stage, Android Efficiency) is named above it.
@@ -3919,6 +3949,13 @@ async function present(beats: Snapshot["beats"]) {
       } else if (delta < 0 && name === "stunned") {
         stampCard(id, "Unstunned", "status");
         sfx.play("status");
+      } else if (delta < 0 && !STATUS_STAMP[name]) {
+        // A counter coming off (infamy, madness, a web counter spent): the card rings and says how many, rather than
+        // its token's number quietly changing (Adam, 2026-11-28: the last madness counter went unseen).
+        activationRing(id);
+        floatNumber(id, "thwart", `−${-delta}`, name);
+        sfx.play("status");
+        await sleep(reducedMotion() ? 200 : 520);
       } else if (delta > 0 && STATUS_STAMP[name]) {
         const [tone, text] = STATUS_STAMP[name]!;
         stampCard(id, text, tone);

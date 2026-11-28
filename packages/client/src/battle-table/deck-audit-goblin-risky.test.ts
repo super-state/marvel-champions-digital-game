@@ -297,6 +297,12 @@ test("02006a Criminal Enterprise: the last infamy counter off flips Norman to Gr
   const flip = beat(p, (b) => b.villainFlip === true && b.actor === villainId(p));
   expect(counterBeat(p, "infamy", -1)).toBeLessThan(flip);
   expect(counterBeat(p, "madness", 2)).toBeGreaterThan(flip);
+  // The environment turns over on the table too, not in place (Adam, 2026-11-28): after its last infamy counter
+  // comes off, before its madness counters go on.
+  const turned = beat(p, (b) => b.cardFlip === env(p).id);
+  expect(turned).toBeGreaterThan(counterBeat(p, "infamy", -1));
+  expect(turned).toBeLessThan(counterBeat(p, "madness", 2));
+  expect(p.beats[turned]!.text).toBe("Criminal Enterprise turns over: State of Madness");
 });
 
 test("02006a Criminal Enterprise: the beats before the flip name Norman Osborn and Criminal Enterprise", () => {

@@ -71,6 +71,7 @@ export const BEAT_FIELDS: Record<string, { cls: "table" | "meta"; where: string 
   scheming: { cls: "table", where: "the enemy is stamped Schemes" },
   discardEvent: { cls: "table", where: "the event card flies to the discard pile" },
   interrupt: { cls: "table", where: "the card pulses (an interrupt), cancelling what it is held over" },
+  cardFlip: { cls: "table", where: "the card turns over on the table to its other side, like the villain" },
   interruptBy: {
     cls: "table",
     where: "the interrupting card is stamped Interrupt / Forced Interrupt, and what it interrupts Interrupted",
@@ -222,7 +223,9 @@ export const EVENT_RULES: Record<string, Rule> = {
   villainStageAdvanced: state(),
   villainStageRevealed: state(),
   villainFlipped: state(),
-  cardFlipped: beat("a card turned over to its other side"),
+  // Only a beat that turns the card over counts: the words alone, or another beat on the same card in the same move
+  // (the last infamy counter coming off), let Criminal Enterprise swap to State of Madness unseen (Adam, 2026-11-28).
+  cardFlipped: beat("a card turned over to its other side", ["cardFlip"]),
   accelerationTokenAdded: state(),
   playerDeckReset: state(),
   cardTurnedFaceup: state(),

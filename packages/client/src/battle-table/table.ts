@@ -2334,8 +2334,9 @@ export class BattleTable {
     if (!piece) return;
     const old = piece.card.markers ?? [];
     const count = Math.max(0, (old.find((m) => m.name === name)?.count ?? 0) + delta);
-    // A status card discarded (tough used up, a stun or confusion shed) lifts off the card and fades away.
-    if ((name === "tough" || ((name === "stunned" || name === "confused") && !count)) && delta < 0) {
+    // A status card discarded (tough used up, a stun or confusion shed) lifts off the card and fades away, and so does
+    // a counter token when its last counter comes off (the last infamy on Criminal Enterprise).
+    if ((name === "tough" || !count) && delta < 0) {
       const token = piece.markers.children.find((child) => child.name === name) as THREE.Group | undefined;
       if (token) {
         this.#drops.delete(token);

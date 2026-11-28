@@ -432,6 +432,11 @@ export interface BattleBeat {
   villainStage?: number;
   villainFlip?: boolean;
   /**
+   * A card in play other than the villain turns over to its other side (Criminal Enterprise to State of Madness): the
+   * table turns it over, as it does the villain (Adam, 2026-11-28: it changed in place, unnoticed).
+   */
+  cardFlip?: string;
+  /**
    * The main scheme's stage was completed and it turned over to its next one (Klaw's Underground Distribution to
    * Secret Rendezvous): `from` and `to` are the stage names, `threat` and `target` the new stage's threat and goal.
    */
@@ -1749,7 +1754,12 @@ export class BattleModel {
         // the side it leaves, then the side it shows.
         const from = name(e.instanceId);
         turned.add(e.instanceId);
-        this.#beats.push({ enemy, actor: e.instanceId, text: `${from} turns over: ${name(e.instanceId)}` });
+        this.#beats.push({
+          enemy,
+          actor: e.instanceId,
+          cardFlip: e.instanceId,
+          text: `${from} turns over: ${name(e.instanceId)}`,
+        });
       } else if (e.type === "villainFlipped") {
         turned.add(e.instanceId);
         this.#beats.push({
