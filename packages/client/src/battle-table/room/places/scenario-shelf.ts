@@ -964,7 +964,6 @@ let card: HTMLElement | null = null;
 let floats: HTMLElement | null = null;
 let backBar: HTMLElement | null = null;
 let tag: HTMLElement | null = null;
-let hint: HTMLElement | null = null;
 
 const upClose = () => !!opened && !!card && !card.hidden;
 
@@ -1034,7 +1033,6 @@ function paint(focusKey?: string) {
   // The boxes behind are out of reach while one is up close: a pad's D-pad stays on its scenarios.
   if (picks) picks.inert = true;
   if (backBar) backBar.hidden = false;
-  if (hint) hint.hidden = true;
   // The focus starts on the road's next scenario (else the first that plays, else the first).
   const start = rows.find((row) => row.status === "next") ?? rows.find((row) => row.playable) ?? rows[0];
   const key = focusKey ?? (start ? `scenario:${start.key}` : "");
@@ -1125,7 +1123,6 @@ export function closeBox(refocus = true) {
   if (floats) floats.hidden = true;
   if (picks) picks.inert = false;
   if (backBar) backBar.hidden = true;
-  if (hint) hint.hidden = false;
   hoveredCard = -1;
   if (refocus && opened) opened.button.focus({ preventScroll: true });
 }
@@ -1575,9 +1572,8 @@ export async function buildScenarioShelf(panel: HTMLElement, given: ScenarioShel
   backBar.append(back);
   tag = el("p", "scn-tag");
   tag.hidden = true;
-  hint = el("p", "scn-hint", "Pick a box");
   const holder = el("div", "scn-shelf");
-  holder.append(picks, floats, card, backBar, tag, hint);
+  holder.append(picks, floats, card, backBar, tag);
   panel.append(holder);
 
   buildCase(group);
